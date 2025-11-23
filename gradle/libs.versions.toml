@@ -1,0 +1,16 @@
+[versions]
+# libraries
+junit = "4.13.2"
+
+# plugins
+kotlin = "2.2.21"
+# https://github.com/JetBrains/intellij-platform-gradle-plugin
+intellijPlatorm = "2.10.4"
+
+[libraries]
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+
+[plugins]
+intellijPlatform = { id = "org.jetbrains.intellij.platform", version.ref = "intellijPlatorm" }
+kotlin = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }

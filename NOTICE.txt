@@ -1,0 +1,13 @@
+Quanta AI IntelliJ Plugin includes third-party libraries:
+
+- jlayer: LGPL 1.0 / 1.2 / 2.0
+  http://www.javazoom.net/javalayer/javalayer.html
+  License file: licenses/LGPL-3-jlayer.txt
+
+- openai-java: Apache License 2.0
+  https://github.com/openai/openai-java
+  License file: licenses/APACHE-2.0-openai-java.txt
+
+- jave-core: Apache License 2.0
+  https://github.com/schildi/jave-core
+  License file: licenses/APACHE-2.0-jave-core.txt
