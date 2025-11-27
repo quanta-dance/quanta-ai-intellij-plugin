@@ -65,12 +65,14 @@
                     anchor="right"/>
 
         <!-- Ensure MCP watcher is instantiated on project open -->
-        <postStartupActivity implementation="com.github.quanta_dance.quanta.plugins.intellij.mcp.McpServersStartupActivity"/>
+        <postStartupActivity
+                implementation="com.github.quanta_dance.quanta.plugins.intellij.mcp.McpServersStartupActivity"/>
     </extensions>
 
     <applicationListeners>
-        <listener class="com.github.quanta_dance.quanta.plugins.intellij.listeners.QuantaAIApplicationActivationListener"
-                  topic="com.intellij.openapi.application.ApplicationActivationListener"/>
+        <listener
+                class="com.github.quanta_dance.quanta.plugins.intellij.listeners.QuantaAIApplicationActivationListener"
+                topic="com.intellij.openapi.application.ApplicationActivationListener"/>
     </applicationListeners>
 
     <!-- Will add Plugin Configuration Settings into Settings -> QuantaDance Plugin Settings -->

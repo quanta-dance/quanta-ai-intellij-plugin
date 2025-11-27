@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="-1 -1 18 18" fill="currentColor">
     <!-- Core particle (AI nucleus) -->
-    <circle cx="8" cy="8" r="1" fill="#6C707E"/>
+    <circle cx="8" cy="8" r="1" fill="#CED0D6"/>
 
     <!-- Orbit paths -->
     <ellipse cx="8" cy="8" rx="7.5" ry="3.5"
-             fill="none" stroke="#6C707E" stroke-width="1"/>
+             fill="none" stroke="#CED0D6" stroke-width="1"/>
     <ellipse cx="8" cy="8" rx="3.5" ry="7.5"
-             fill="none" stroke="#6C707E" stroke-width="1"/>
+             fill="none" stroke="#CED0D6" stroke-width="1"/>
   </svg>
