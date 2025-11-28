@@ -36,12 +36,12 @@ class QuantaAISettingsComponent {
     private var maxOutputTokensField = JBTextField("Max output tokens")
 
     private var models = arrayOf(
+        ChatModel.GPT_5_1_CODEX,
+        ChatModel.GPT_5_1,
         ChatModel.GPT_5,
         ChatModel.GPT_5_MINI,
         ChatModel.GPT_5_NANO,
-        ChatModel.GPT_5_1,
-        ChatModel.GPT_5_1_CODEX,
-        ChatModel.GPT_5_1_MINI
+
     ).map { i -> i.toString() }.toTypedArray()
 
     private var aiChatModelField = ComboBox(models)

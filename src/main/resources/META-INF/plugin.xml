@@ -42,7 +42,7 @@
   ]]></description>
 
     <change-notes>
-        Initial version
+        Fix model selection for gpt-5.1 and gpt-5.1-codex
     </change-notes>
 
 
@@ -103,15 +103,6 @@
                icon="/icons/quantadance.svg">
             <add-to-group group-id="Floating.CodeToolbar" anchor="first"/>
         </group>
-
-        <action id="PopupPromptAction"
-                class="com.github.quanta_dance.quanta.plugins.intellij.actions.PopupPromptAction"
-                text="Prompt to Quanta AI"
-                description="Prompt to AI"
-                icon="AllIcons.Actions.Edit">
-            <add-to-group group-id="EditorPopupMenu.QuantaAI"/>
-            <add-to-group group-id="Floating.CodeToolbar.QuantaAI"/>
-        </action>
 
         <action id="ReviewSelectedAction"
                 class="com.github.quanta_dance.quanta.plugins.intellij.actions.ReviewSelectedAction"

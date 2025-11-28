@@ -69,12 +69,12 @@ class OpenAIService(private val project: Project) {
     }
 
     private fun normalize(id: String): String {
-        val s = id.lowercase().replace(" ", "").replace("_", "").replace("gpt5", "gpt-5");
-        return when {
-            s.contains("nano") -> ChatModel.GPT_5_NANO.toString()
-            s.contains("mini") -> ChatModel.GPT_5_MINI.toString()
-            s.contains("gpt-5") -> ChatModel.GPT_5.toString()
-            else -> ChatModel.GPT_5_MINI.toString()
+        val cm = ChatModel.of(id)
+        try {
+            cm.validate()
+            return cm.toString()
+        } catch (_: Throwable) {
+            return ChatModel.GPT_5_MINI.toString()
         }
     }
 
@@ -206,7 +206,8 @@ class OpenAIService(private val project: Project) {
             try {
                 val effectiveForThisCall = getEffectiveModel()
                 inputs.add(systemMessage("{\"currentModel\":\"${effectiveForThisCall}\"}"))
-            } catch (_: Throwable) {}
+            } catch (_: Throwable) {
+            }
 
             inputs.add(userMessage(text))
 
@@ -218,34 +219,91 @@ class OpenAIService(private val project: Project) {
                 var spinner: ToolWindowService.SpinnerHandle? = null
                 try {
                     val effectiveForThisCall = getEffectiveModel()
-                    spinner = project.service<ToolWindowService>().startSpinner("AI is thinking [${effectiveForThisCall}]")
+                    spinner =
+                        project.service<ToolWindowService>().startSpinner("AI is thinking [${effectiveForThisCall}]")
                     val createParams = createParamsBuilder(inputs).build()
-                    try { val payload = mapper.writeValueAsString(createParams); thisLogger().warn("OpenAI request payload: ${payload.take(6000)}") } catch (_: Throwable) {}
+                    try {
+                        val payload = mapper.writeValueAsString(createParams); thisLogger().warn(
+                            "OpenAI request payload: ${
+                                payload.take(
+                                    6000
+                                )
+                            }"
+                        )
+                    } catch (_: Throwable) {
+                    }
                     val structResponse = oAI.responses().create(createParams)
                     spinner?.stopSuccess()
                     structResponse.output().map { item ->
                         when {
-                            item.isReasoning() -> { val reasoning = item.asReasoning(); reasoning.summary().forEach { summary -> project.service<ToolWindowService>().addToolingMessage("Reasoning", summary.text()) }; inputs.add(ResponseInputItem.ofReasoning(reasoning)) }
+                            item.isReasoning() -> {
+                                val reasoning = item.asReasoning(); reasoning.summary().forEach { summary ->
+                                    project.service<ToolWindowService>().addToolingMessage("Reasoning", summary.text())
+                                }; inputs.add(ResponseInputItem.ofReasoning(reasoning))
+                            }
+
                             item.isFunctionCall() -> {
                                 val functionCall: ResponseFunctionToolCall = item.asFunctionCall()
                                 val callId = functionCall.callId()
-                                if (!processedCallIds.add(callId)) { return@map }
+                                if (!processedCallIds.add(callId)) {
+                                    return@map
+                                }
                                 inputs.add(ResponseInputItem.ofFunctionCall(functionCall)); reprocess = true
                                 try {
                                     val functionResult = routeFunction(functionCall)
-                                    inputs.add(ResponseInputItem.ofFunctionCallOutput(ResponseInputItem.FunctionCallOutput.builder().callId(functionCall.callId()).outputAsJson(functionResult).build()))
+                                    inputs.add(
+                                        ResponseInputItem.ofFunctionCallOutput(
+                                            ResponseInputItem.FunctionCallOutput.builder().callId(functionCall.callId())
+                                                .outputAsJson(functionResult).build()
+                                        )
+                                    )
                                 } catch (_: Throwable) {
-                                    val errorPayload = buildToolErrorPayload(functionCall.name(), code = "unhandled_exception")
-                                    inputs.add(ResponseInputItem.ofFunctionCallOutput(ResponseInputItem.FunctionCallOutput.builder().callId(functionCall.callId()).outputAsJson(errorPayload).build()))
+                                    val errorPayload =
+                                        buildToolErrorPayload(functionCall.name(), code = "unhandled_exception")
+                                    inputs.add(
+                                        ResponseInputItem.ofFunctionCallOutput(
+                                            ResponseInputItem.FunctionCallOutput.builder().callId(functionCall.callId())
+                                                .outputAsJson(errorPayload).build()
+                                        )
+                                    )
                                 }
                             }
-                            item.isMessage() -> { item.message().map { m -> m.content().forEach { c -> val message = c.asOutputText(); project.service<ToolWindowService>().addToolingMessage("AI", message.summaryMessage); message.ttsSummary?.also { summary -> if (!spokeThisTurn) { project.service<AIVoiceService>().say(summary); spokeThisTurn = true } } } }; val ias = item.asMessage(); inputs.add(ResponseInputItem.ofResponseOutputMessage(ias.rawMessage)) }
-                            item.isImageGenerationCall() -> { /* no-op */ }
+
+                            item.isMessage() -> {
+                                item.message().map { m ->
+                                    m.content().forEach { c ->
+                                        val message = c.asOutputText(); project.service<ToolWindowService>()
+                                        .addToolingMessage(
+                                            "AI",
+                                            message.summaryMessage
+                                        ); message.ttsSummary?.also { summary ->
+                                        if (!spokeThisTurn) {
+                                            project.service<AIVoiceService>().say(summary); spokeThisTurn = true
+                                        }
+                                    }
+                                    }
+                                };
+                                val ias =
+                                    item.asMessage(); inputs.add(ResponseInputItem.ofResponseOutputMessage(ias.rawMessage))
+                            }
+
+                            item.isImageGenerationCall() -> { /* no-op */
+                            }
+
                             else -> thisLogger().warn("Unknown item type received.")
                         }
                     }
-                } catch (e: InterruptedException) { spinner?.stopError("Cancelled after interruption"); thisLogger().warn("Execution interrupted: ", e); Thread.currentThread().interrupt(); break }
-                catch (e: Throwable) { spinner?.stopError(e.message ?: "Unexpected error"); thisLogger().warn("Unexpected Error: ", e); showNotification(project, e.message.orEmpty(), NotificationType.ERROR); break }
+                } catch (e: InterruptedException) {
+                    spinner?.stopError("Cancelled after interruption"); thisLogger().warn(
+                        "Execution interrupted: ",
+                        e
+                    ); Thread.currentThread().interrupt(); break
+                } catch (e: Throwable) {
+                    spinner?.stopError(e.message ?: "Unexpected error"); thisLogger().warn(
+                        "Unexpected Error: ",
+                        e
+                    ); showNotification(project, e.message.orEmpty(), NotificationType.ERROR); break
+                }
             }
             operationInProgress = false; pcs.firePropertyChange("inProgress", true, false)
         }
@@ -255,7 +313,11 @@ class OpenAIService(private val project: Project) {
         val name = functionCall.name()
         DynamicMcpToolProvider.resolve(name)?.let { (server, method) ->
             val argsJson = functionCall.arguments()
-            val argsMap: Map<String, Any?> = try { @Suppress("UNCHECKED_CAST") mapper.readValue(argsJson, Map::class.java) as Map<String, Any?> } catch (_: Throwable) { emptyMap() }
+            val argsMap: Map<String, Any?> = try {
+                @Suppress("UNCHECKED_CAST") mapper.readValue(argsJson, Map::class.java) as Map<String, Any?>
+            } catch (_: Throwable) {
+                emptyMap()
+            }
             val out = project.service<McpClientService>().invokeTool(server, method, argsMap, null)
             return mapOf("output" to out)
         }
@@ -264,22 +326,76 @@ class OpenAIService(private val project: Project) {
             val server = name.substring(0, idx)
             val method = name.substring(idx + 1)
             val argsJson = functionCall.arguments()
-            val argsMap: Map<String, Any?> = try { @Suppress("UNCHECKED_CAST") mapper.readValue(argsJson, Map::class.java) as Map<String, Any?> } catch (_: Throwable) { emptyMap() }
+            val argsMap: Map<String, Any?> = try {
+                @Suppress("UNCHECKED_CAST") mapper.readValue(argsJson, Map::class.java) as Map<String, Any?>
+            } catch (_: Throwable) {
+                emptyMap()
+            }
             val out = project.service<McpClientService>().invokeTool(server, method, argsMap, null)
             return mapOf("output" to out)
         }
         return callFunction(functionCall)
     }
 
-    private fun showNotification(project: Project?, content: String, type: NotificationType = NotificationType.INFORMATION) { val notificationGroup = NotificationGroupManager.getInstance().getNotificationGroup("Plugin Notifications"); val notification = notificationGroup.createNotification(content, type); notification.notify(project) }
+    private fun showNotification(
+        project: Project?,
+        content: String,
+        type: NotificationType = NotificationType.INFORMATION
+    ) {
+        val notificationGroup = NotificationGroupManager.getInstance().getNotificationGroup("Plugin Notifications");
+        val notification = notificationGroup.createNotification(content, type); notification.notify(project)
+    }
 
-    fun transcript(inputStream: InputStream): String { return try { transcriptAsync(inputStream).get() } catch (e: InterruptedException) { Thread.currentThread().interrupt(); throw RuntimeException("Transcription was interrupted", e) } catch (e: Exception) { throw RuntimeException("Failed to transcribe audio", e) } }
+    fun transcript(inputStream: InputStream): String {
+        return try {
+            transcriptAsync(inputStream).get()
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt(); throw RuntimeException("Transcription was interrupted", e)
+        } catch (e: Exception) {
+            throw RuntimeException("Failed to transcribe audio", e)
+        }
+    }
 
-    fun transcriptAsync(inputStream: InputStream): CompletableFuture<String> { val mf = MultipartField.builder<InputStream>().value(inputStream).contentType("audio/wav").filename("audio.wav").build(); val params = TranscriptionCreateParams.builder().file(mf).model(AudioModel.WHISPER_1).build(); return oAI.async().audio().transcriptions().create(params).thenApply { response -> response.asTranscription().text() } }
+    fun transcriptAsync(inputStream: InputStream): CompletableFuture<String> {
+        val mf = MultipartField.builder<InputStream>().value(inputStream).contentType("audio/wav").filename("audio.wav")
+            .build();
+        val params =
+            TranscriptionCreateParams.builder().file(mf).model(AudioModel.WHISPER_1).build(); return oAI.async().audio()
+            .transcriptions().create(params).thenApply { response -> response.asTranscription().text() }
+    }
 
-    fun transcriptStreaming(inputStream: InputStream, onDelta: (String) -> Unit, onDone: (String) -> Unit): CompletableFuture<Void?> { val mf = MultipartField.builder<InputStream>().value(inputStream).contentType("audio/wav").filename("audio.wav").build(); val params = TranscriptionCreateParams.builder().file(mf).model(AudioModel.WHISPER_1).build(); val response = oAI.async().audio().transcriptions().createStreaming(params); response.subscribe { event -> if (event.isTranscriptTextDelta()) { onDelta(event.asTranscriptTextDelta().delta()) } else if (event.isTranscriptTextDone()) { onDone(event.asTranscriptTextDone().text()) } }; return response.onCompleteFuture() }
+    fun transcriptStreaming(
+        inputStream: InputStream,
+        onDelta: (String) -> Unit,
+        onDone: (String) -> Unit
+    ): CompletableFuture<Void?> {
+        val mf = MultipartField.builder<InputStream>().value(inputStream).contentType("audio/wav").filename("audio.wav")
+            .build();
+        val params = TranscriptionCreateParams.builder().file(mf).model(AudioModel.WHISPER_1).build();
+        val response = oAI.async().audio().transcriptions().createStreaming(params); response.subscribe { event ->
+            if (event.isTranscriptTextDelta()) {
+                onDelta(event.asTranscriptTextDelta().delta())
+            } else if (event.isTranscriptTextDone()) {
+                onDone(event.asTranscriptTextDone().text())
+            }
+        }; return response.onCompleteFuture()
+    }
 
-    private fun callFunction(functionCall: ResponseFunctionToolCall): Any { thisLogger().debug("Calling ${functionCall.name()}"); return try { toolInvoker.invoke(project, functionCall) } catch (e: Throwable) { thisLogger().error(e.message, e); showNotification(project, e.message.orEmpty(), NotificationType.ERROR); buildToolErrorPayload(functionCall.name(), code = "unhandled_exception") } }
+    private fun callFunction(functionCall: ResponseFunctionToolCall): Any {
+        thisLogger().debug("Calling ${functionCall.name()}"); return try {
+            toolInvoker.invoke(project, functionCall)
+        } catch (e: Throwable) {
+            thisLogger().error(e.message, e); showNotification(
+                project,
+                e.message.orEmpty(),
+                NotificationType.ERROR
+            ); buildToolErrorPayload(functionCall.name(), code = "unhandled_exception")
+        }
+    }
 
-    fun generateImage(promptText: String): String { val params = ImageGenerateParams.builder().prompt(promptText).size(ImageGenerateParams.Size._1024X1024).model(ImageModel.DALL_E_3).build(); return oAI.images().generate(params).data().orElseThrow().stream().flatMap { image -> image.url().stream() }.findFirst().orElseThrow() }
+    fun generateImage(promptText: String): String {
+        val params = ImageGenerateParams.builder().prompt(promptText).size(ImageGenerateParams.Size._1024X1024)
+            .model(ImageModel.DALL_E_3).build(); return oAI.images().generate(params).data().orElseThrow().stream()
+            .flatMap { image -> image.url().stream() }.findFirst().orElseThrow()
+    }
 }

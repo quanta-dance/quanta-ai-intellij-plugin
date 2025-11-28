@@ -25,7 +25,7 @@ class QuantaAISettingsState : PersistentStateComponent<QuantaAISettingsState.Qua
         var maxTokens: Long? = 2048,
         var aiChatModel: String = ChatModel.GPT_5_NANO.toString(),
         // Dynamic model switching
-        var dynamicModelEnabled: Boolean? = true,
+        var dynamicModelEnabled: Boolean? = false,
         // Optional: user-customizable extra system instructions appended to defaults
         var extraInstructions: String? = "",
     )
