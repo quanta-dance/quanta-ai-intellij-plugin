@@ -46,7 +46,9 @@ class OpenAIService(private val project: Project) {
     private val pcs = PropertyChangeSupport(this)
 
     private val oAI: OpenAIClient = OpenAIClientProvider.get(project)
-    private val inputs: MutableList<ResponseInputItem> = Collections.synchronizedList(ArrayList<ResponseInputItem>())
+
+    // Maintain only the previous response id; do not accumulate conversation history locally.
+    private var lastResponseId: String? = null
 
     // New: session identifier for the current dialog. Generated on init and whenever a new session is started.
     private var currentSessionId: String = UUID.randomUUID().toString()
@@ -96,7 +98,10 @@ class OpenAIService(private val project: Project) {
         return if (settings.dynamicModelEnabled == true) clampToMax(currentModel, maxModel) else normalize(maxModel)
     }
 
-    private fun createParamsBuilder(inputs: MutableList<ResponseInputItem>): StructuredResponseCreateParams.Builder<OpenAIResponse> {
+    private fun createParamsBuilder(
+        inputs: MutableList<ResponseInputItem>,
+        previousId: String?
+    ): StructuredResponseCreateParams.Builder<OpenAIResponse> {
         val effectiveModel = getEffectiveModel()
         val builder = ResponseCreateParams.builder()
             .instructions(mergedInstructions())
@@ -105,6 +110,9 @@ class OpenAIService(private val project: Project) {
             .maxOutputTokens(QuantaAISettingsState.instance.state.maxTokens)
             .text(OpenAIResponse::class.java)
             .model(ChatModel.of(effectiveModel))
+        if (!previousId.isNullOrBlank()) {
+            builder.previousResponseId(previousId)
+        }
         toolsFor(project).forEach { tool -> builder.addTool(tool) }
         val mcp = project.service<McpClientService>()
         DynamicMcpToolProvider.buildTools(mcp).forEach { t -> builder.addTool(t) }
@@ -155,22 +163,16 @@ class OpenAIService(private val project: Project) {
         code: String = "tool_error",
         hint: String? = null
     ): Map<String, Any> {
-        val base = mutableMapOf<String, Any>(
-            "status" to "error",
-            "tool" to toolName,
-            "code" to code
-        ); if (hint != null) base["hint"] = hint; return base
+        val base = mutableMapOf<String, Any>("status" to "error", "tool" to toolName, "code" to code)
+        if (hint != null) base["hint"] = hint; return base
     }
 
-    /**
-     * Public API: start a new session — clears the current dialog buffer (inputs), generates a new session id,
-     * and notifies listeners so the UI can update. Returns the new session id.
-     */
+    /** Start a new session: reset session id and previous response id, clear UI. */
     fun newSession(): String {
         thisLogger().info("Starting new AI session. Previous session: $currentSessionId")
-        inputs.clear()
         val old = currentSessionId
         currentSessionId = UUID.randomUUID().toString()
+        lastResponseId = null
         pcs.firePropertyChange("session", old, currentSessionId)
         project.service<ToolWindowService>().clear()
         return currentSessionId
@@ -178,20 +180,22 @@ class OpenAIService(private val project: Project) {
 
     fun getCurrentSessionId(): String = currentSessionId
 
-    fun stopAndClearSession() { // convenience for UI actions
-        stopProcessing()
-        newSession()
+    fun stopAndClearSession() {
+        stopProcessing(); newSession()
     }
 
     fun sendMessage(text: String, messageCallback: (OpenAIResponse) -> Unit = {}, toolCallback: () -> Unit = {}) {
         operationInProgress = true
         pcs.firePropertyChange("inProgress", false, true)
         processingFuture = ApplicationManager.getApplication().executeOnPooledThread {
+            // Per-call inputs; do not accumulate across turns
+            val requestInputs = Collections.synchronizedList(mutableListOf<ResponseInputItem>())
+
             val ctx = CurrentFileContextProvider(project).getCurrent()
             if (ctx != null) {
-                inputs.add(systemMessage("Current file open: ${ctx.filePathRelative}, file version: ${ctx.version} - you must always reread file if version changed"))
+                requestInputs.add(systemMessage("Current file open: ${ctx.filePathRelative}, file version: ${ctx.version} - you must always reread file if version changed"))
                 val caretLine = ctx.caretLine;
-                val caretCol = ctx.caretColumn;
+                val caretCol = ctx.caretColumn
                 val sb = StringBuilder()
                 if (caretLine != null && caretCol != null) sb.append("User Caret position in the file ${ctx.filePathRelative} - Line: $caretLine, Column (Offset): $caretCol") else sb.append(
                     "User Caret position in the file ${ctx.filePathRelative} - not available"
@@ -201,19 +205,21 @@ class OpenAIService(private val project: Project) {
                         "Selected text is: ${ctx.selectedText}"
                     )
                 }
-                inputs.add(systemMessage(sb.toString()))
+                requestInputs.add(systemMessage(sb.toString()))
             }
             try {
-                val effectiveForThisCall = getEffectiveModel()
-                inputs.add(systemMessage("{\"currentModel\":\"${effectiveForThisCall}\"}"))
+                val effectiveForThisCall =
+                    getEffectiveModel(); requestInputs.add(systemMessage("{\"currentModel\":\"${effectiveForThisCall}\"}"))
             } catch (_: Throwable) {
             }
 
-            inputs.add(userMessage(text))
+            requestInputs.add(userMessage(text))
 
-            var reprocess = true;
+            var reprocess = true
             var spokeThisTurn = false
             val processedCallIds = mutableSetOf<String>()
+            var previousIdForThisTurn = lastResponseId
+
             while (reprocess) {
                 reprocess = false
                 var spinner: ToolWindowService.SpinnerHandle? = null
@@ -221,7 +227,8 @@ class OpenAIService(private val project: Project) {
                     val effectiveForThisCall = getEffectiveModel()
                     spinner =
                         project.service<ToolWindowService>().startSpinner("AI is thinking [${effectiveForThisCall}]")
-                    val createParams = createParamsBuilder(inputs).build()
+
+                    val createParams = createParamsBuilder(requestInputs, previousIdForThisTurn).build()
                     try {
                         val payload = mapper.writeValueAsString(createParams); thisLogger().warn(
                             "OpenAI request payload: ${
@@ -232,37 +239,47 @@ class OpenAIService(private val project: Project) {
                         )
                     } catch (_: Throwable) {
                     }
+
                     val structResponse = oAI.responses().create(createParams)
+                    try {
+                        previousIdForThisTurn = structResponse.id()
+                    } catch (_: Throwable) {
+                    }
                     spinner?.stopSuccess()
+
+                    // After sending, inputs are only used for tool-call outputs, clear them now
+                    requestInputs.clear()
+
+                    // Collect tool outputs for all function calls; do NOT re-send the functionCall items themselves
+                    val pendingToolOutputs = mutableListOf<ResponseInputItem>()
+
                     structResponse.output().map { item ->
                         when {
                             item.isReasoning() -> {
-                                val reasoning = item.asReasoning(); reasoning.summary().forEach { summary ->
+                                val reasoning = item.asReasoning()
+                                reasoning.summary().forEach { summary ->
                                     project.service<ToolWindowService>().addToolingMessage("Reasoning", summary.text())
-                                }; inputs.add(ResponseInputItem.ofReasoning(reasoning))
+                                }
                             }
 
                             item.isFunctionCall() -> {
                                 val functionCall: ResponseFunctionToolCall = item.asFunctionCall()
                                 val callId = functionCall.callId()
-                                if (!processedCallIds.add(callId)) {
-                                    return@map
-                                }
-                                inputs.add(ResponseInputItem.ofFunctionCall(functionCall)); reprocess = true
+                                if (!processedCallIds.add(callId)) return@map
                                 try {
                                     val functionResult = routeFunction(functionCall)
-                                    inputs.add(
+                                    pendingToolOutputs.add(
                                         ResponseInputItem.ofFunctionCallOutput(
-                                            ResponseInputItem.FunctionCallOutput.builder().callId(functionCall.callId())
+                                            ResponseInputItem.FunctionCallOutput.builder().callId(callId)
                                                 .outputAsJson(functionResult).build()
                                         )
                                     )
                                 } catch (_: Throwable) {
                                     val errorPayload =
                                         buildToolErrorPayload(functionCall.name(), code = "unhandled_exception")
-                                    inputs.add(
+                                    pendingToolOutputs.add(
                                         ResponseInputItem.ofFunctionCallOutput(
-                                            ResponseInputItem.FunctionCallOutput.builder().callId(functionCall.callId())
+                                            ResponseInputItem.FunctionCallOutput.builder().callId(callId)
                                                 .outputAsJson(errorPayload).build()
                                         )
                                     )
@@ -272,19 +289,16 @@ class OpenAIService(private val project: Project) {
                             item.isMessage() -> {
                                 item.message().map { m ->
                                     m.content().forEach { c ->
-                                        val message = c.asOutputText(); project.service<ToolWindowService>()
-                                        .addToolingMessage(
-                                            "AI",
-                                            message.summaryMessage
-                                        ); message.ttsSummary?.also { summary ->
-                                        if (!spokeThisTurn) {
-                                            project.service<AIVoiceService>().say(summary); spokeThisTurn = true
+                                        val message = c.asOutputText()
+                                        project.service<ToolWindowService>()
+                                            .addToolingMessage("AI", message.summaryMessage)
+                                        message.ttsSummary?.also { summary ->
+                                            if (!spokeThisTurn) {
+                                                project.service<AIVoiceService>().say(summary); spokeThisTurn = true
+                                            }
                                         }
                                     }
-                                    }
-                                };
-                                val ias =
-                                    item.asMessage(); inputs.add(ResponseInputItem.ofResponseOutputMessage(ias.rawMessage))
+                                }
                             }
 
                             item.isImageGenerationCall() -> { /* no-op */
@@ -292,6 +306,11 @@ class OpenAIService(private val project: Project) {
 
                             else -> thisLogger().warn("Unknown item type received.")
                         }
+                    }
+
+                    if (pendingToolOutputs.isNotEmpty()) {
+                        requestInputs.addAll(pendingToolOutputs)
+                        reprocess = true
                     }
                 } catch (e: InterruptedException) {
                     spinner?.stopError("Cancelled after interruption"); thisLogger().warn(
@@ -305,6 +324,8 @@ class OpenAIService(private val project: Project) {
                     ); showNotification(project, e.message.orEmpty(), NotificationType.ERROR); break
                 }
             }
+            // Persist the last response id for the next user turn
+            lastResponseId = previousIdForThisTurn
             operationInProgress = false; pcs.firePropertyChange("inProgress", true, false)
         }
     }
@@ -358,10 +379,10 @@ class OpenAIService(private val project: Project) {
 
     fun transcriptAsync(inputStream: InputStream): CompletableFuture<String> {
         val mf = MultipartField.builder<InputStream>().value(inputStream).contentType("audio/wav").filename("audio.wav")
-            .build();
-        val params =
-            TranscriptionCreateParams.builder().file(mf).model(AudioModel.WHISPER_1).build(); return oAI.async().audio()
-            .transcriptions().create(params).thenApply { response -> response.asTranscription().text() }
+            .build()
+        val params = TranscriptionCreateParams.builder().file(mf).model(AudioModel.WHISPER_1).build();
+        return oAI.async().audio().transcriptions().create(params)
+            .thenApply { response -> response.asTranscription().text() }
     }
 
     fun transcriptStreaming(
@@ -370,19 +391,22 @@ class OpenAIService(private val project: Project) {
         onDone: (String) -> Unit
     ): CompletableFuture<Void?> {
         val mf = MultipartField.builder<InputStream>().value(inputStream).contentType("audio/wav").filename("audio.wav")
-            .build();
-        val params = TranscriptionCreateParams.builder().file(mf).model(AudioModel.WHISPER_1).build();
-        val response = oAI.async().audio().transcriptions().createStreaming(params); response.subscribe { event ->
+            .build()
+        val params = TranscriptionCreateParams.builder().file(mf).model(AudioModel.WHISPER_1).build()
+        val response = oAI.async().audio().transcriptions().createStreaming(params)
+        response.subscribe { event ->
             if (event.isTranscriptTextDelta()) {
                 onDelta(event.asTranscriptTextDelta().delta())
             } else if (event.isTranscriptTextDone()) {
                 onDone(event.asTranscriptTextDone().text())
             }
-        }; return response.onCompleteFuture()
+        }
+        return response.onCompleteFuture()
     }
 
     private fun callFunction(functionCall: ResponseFunctionToolCall): Any {
-        thisLogger().debug("Calling ${functionCall.name()}"); return try {
+        thisLogger().debug("Calling ${functionCall.name()}")
+        return try {
             toolInvoker.invoke(project, functionCall)
         } catch (e: Throwable) {
             thisLogger().error(e.message, e); showNotification(
@@ -395,7 +419,8 @@ class OpenAIService(private val project: Project) {
 
     fun generateImage(promptText: String): String {
         val params = ImageGenerateParams.builder().prompt(promptText).size(ImageGenerateParams.Size._1024X1024)
-            .model(ImageModel.DALL_E_3).build(); return oAI.images().generate(params).data().orElseThrow().stream()
-            .flatMap { image -> image.url().stream() }.findFirst().orElseThrow()
+            .model(ImageModel.DALL_E_3).build()
+        return oAI.images().generate(params).data().orElseThrow().stream().flatMap { image -> image.url().stream() }
+            .findFirst().orElseThrow()
     }
 }
