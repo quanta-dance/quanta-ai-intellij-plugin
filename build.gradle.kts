@@ -2,6 +2,7 @@ import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
+    id("com.diffplug.spotless") version "6.25.0"
     id("java")
     alias(libs.plugins.intellijPlatform)
     alias(libs.plugins.kotlin)
@@ -10,7 +11,7 @@ plugins {
     id("com.gradleup.shadow") version "9.2.2"
 }
 
-group = "com.github.quanta_dance"
+group = "com.github.quantadance"
 
 repositories {
     mavenLocal()
@@ -43,10 +44,10 @@ tasks {
         isZip64 = true
 
         // IntelliJ bundles a lot; ship our own shaded copies to avoid classpath conflicts
-        relocate("io.ktor", "com.github.quanta_dance.quanta.shaded.io.ktor")
-        relocate("kotlinx.coroutines", "com.github.quanta_dance.quanta.shaded.kotlinx.coroutines")
-        relocate("kotlinx.io", "com.github.quanta_dance.quanta.shaded.kotlinx.io")
-        relocate("io.modelcontextprotocol", "com.github.quanta_dance.quanta.shaded.io.modelcontextprotocol")
+        relocate("io.ktor", "com.github.quantadance.quanta.shaded.io.ktor")
+        relocate("kotlinx.coroutines", "com.github.quantadance.quanta.shaded.kotlinx.coroutines")
+        relocate("kotlinx.io", "com.github.quantadance.quanta.shaded.kotlinx.io")
+        relocate("io.modelcontextprotocol", "com.github.quantadance.quanta.shaded.io.modelcontextprotocol")
 
         dependencies {
             // Exclude IntelliJ SDK dependencies from shading
@@ -60,8 +61,8 @@ tasks {
         untilBuild.set("271.*")
         changeNotes.set(
             """
-        Initial version of Quanta AI plugin
-    """.trimIndent()
+            Initial version of Quanta AI plugin
+            """.trimIndent(),
         )
     }
 
@@ -84,7 +85,7 @@ tasks {
         // Enable internal mode and debug categories so QDLog debug appears during runIde
         jvmArgs(
             "-Didea.is.internal=true",
-            "-Didea.log.debug.categories=com.github.quanta_dance.quanta.plugins.intellij.*"
+            "-Didea.log.debug.categories=com.github.quantadance.quanta.plugins.intellij.*",
         )
     }
 
@@ -107,7 +108,7 @@ dependencies {
                 "com.intellij.java",
                 "com.intellij.gradle",
                 "Git4Idea",
-            )
+            ),
         )
         pluginVerifier()
         zipSigner()
@@ -148,11 +149,10 @@ dependencies {
     testImplementation("io.mockk:mockk-agent-jvm:1.13.5")
 }
 
-
 // ensure sqlite-jdbc is available in the plugin sandbox at runtime
 tasks.register<Task>("copyRuntimeLibsToSandbox") {
     doLast {
-        val sandboxLib = file("${buildDir}/idea-sandbox/plugins/${project.name}/lib")
+        val sandboxLib = file("$buildDir/idea-sandbox/plugins/${project.name}/lib")
         sandboxLib.mkdirs()
         configurations.runtimeClasspath.get().forEach { file ->
             if (file.name.contains("sqlite-jdbc") || file.name.contains("sqlite")) {
@@ -167,7 +167,7 @@ tasks.register<Task>("copyRuntimeLibsToSandbox") {
 
 tasks.register<Copy>("copyLicenses") {
     from("LICENSE.txt", "NOTICE.txt", "licenses")
-    into("${buildDir}/distributions/licenses")
+    into("$buildDir/distributions/licenses")
 }
 
 tasks.named("buildPlugin") {
@@ -177,4 +177,13 @@ tasks.named("buildPlugin") {
 
 tasks.named("runIde") {
     dependsOn("copyRuntimeLibsToSandbox")
+}
+
+spotless {
+    kotlin {
+        licenseHeaderFile(
+            rootProject.file("config/license/HEADER")
+        )
+        ktlint()
+    }
 }

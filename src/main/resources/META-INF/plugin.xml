@@ -1,7 +1,7 @@
 <!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
 <idea-plugin url="https://github.com/quanta-dance/quanta-ai-intelliJ-plugin" require-restart="false">
     <!-- Unique identifier of the plugin. It should be FQN. It cannot be changed between the plugin versions. -->
-    <id>com.github.quanta_dance.quanta-ai-intellij-plugin</id>
+    <id>com.github.quantadance.quanta-ai-intellij-plugin</id>
 
     <!-- Public plugin name should be written in Title Case.
          Guidelines: https://plugins.jetbrains.com/docs/marketplace/plugin-overview-page.html#plugin-name -->
@@ -59,31 +59,31 @@
     <!-- Extension points defined by the plugin.
          Read more: https://plugins.jetbrains.com/docs/intellij/plugin-extension-points.html -->
     <extensions defaultExtensionNs="com.intellij">
-        <toolWindow factoryClass="com.github.quanta_dance.quanta.plugins.intellij.toolWindow.QuantaAIToolWindowFactory"
+        <toolWindow factoryClass="com.github.quantadance.quanta.plugins.intellij.toolWindow.QuantaAIToolWindowFactory"
                     id="Quanta AI"
                     icon="/icons/quantadance.svg"
                     anchor="right"/>
 
         <!-- Ensure MCP watcher is instantiated on project open -->
         <postStartupActivity
-                implementation="com.github.quanta_dance.quanta.plugins.intellij.mcp.McpServersStartupActivity"/>
+                implementation="com.github.quantadance.quanta.plugins.intellij.mcp.McpServersStartupActivity"/>
     </extensions>
 
     <applicationListeners>
         <listener
-                class="com.github.quanta_dance.quanta.plugins.intellij.listeners.QuantaAIApplicationActivationListener"
+                class="com.github.quantadance.quanta.plugins.intellij.listeners.QuantaAIApplicationActivationListener"
                 topic="com.intellij.openapi.application.ApplicationActivationListener"/>
     </applicationListeners>
 
     <!-- Will add Plugin Configuration Settings into Settings -> QuantaDance Plugin Settings -->
     <extensions defaultExtensionNs="com.intellij">
         <applicationService
-                serviceImplementation="com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState"/>
+                serviceImplementation="com.github.quantadance.quanta.plugins.intellij.settings.QuantaAISettingsState"/>
         <applicationConfigurable
                 parentId="tools"
-                id="com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAIPluginConfigurable"
+                id="com.github.quantadance.quanta.plugins.intellij.settings.QuantaAIPluginConfigurable"
                 displayName="Quanta AI"
-                instance="com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAIPluginConfigurable"/>
+                instance="com.github.quantadance.quanta.plugins.intellij.settings.QuantaAIPluginConfigurable"/>
         <notificationGroup id="Plugin Notifications"
                            displayType="STICKY_BALLOON"
                            isLogByDefault="true"/>
@@ -105,7 +105,7 @@
         </group>
 
         <action id="ReviewSelectedAction"
-                class="com.github.quanta_dance.quanta.plugins.intellij.actions.ReviewSelectedAction"
+                class="com.github.quantadance.quanta.plugins.intellij.actions.ReviewSelectedAction"
                 text="Review Selected Code"
                 description="Review code by AI">
             <add-to-group group-id="EditorPopupMenu.QuantaAI"/>
@@ -113,7 +113,7 @@
         </action>
 
         <action id="RefactorSelectedAction"
-                class="com.github.quanta_dance.quanta.plugins.intellij.actions.RefactorSelectedAction"
+                class="com.github.quantadance.quanta.plugins.intellij.actions.RefactorSelectedAction"
                 text="Refactor Selected Code"
                 description="Refactor code by AI">
             <add-to-group group-id="EditorPopupMenu.QuantaAI"/>
@@ -121,7 +121,7 @@
         </action>
 
         <action id="CommentSelectedAction"
-                class="com.github.quanta_dance.quanta.plugins.intellij.actions.CommentSelectedAction"
+                class="com.github.quantadance.quanta.plugins.intellij.actions.CommentSelectedAction"
                 text="Add Comments to the Code"
                 description="Add Comments to the code by AI">
             <add-to-group group-id="EditorPopupMenu.QuantaAI"/>
@@ -129,7 +129,7 @@
         </action>
 
         <action id="CustomUserAction"
-                class="com.github.quanta_dance.quanta.plugins.intellij.actions.CustomUserAction"
+                class="com.github.quantadance.quanta.plugins.intellij.actions.CustomUserAction"
                 text="Custom User Action"
                 description="Execute AI Prompt defined by user">
             <add-to-group group-id="EditorPopupMenu.QuantaAI"/>
@@ -137,7 +137,7 @@
         </action>
 
         <action id="SettingsAction"
-                class="com.github.quanta_dance.quanta.plugins.intellij.actions.SettingsAction"
+                class="com.github.quantadance.quanta.plugins.intellij.actions.SettingsAction"
                 text="Quanta AI Settings"
                 description="Open Quanta AI plugin settings"
                 icon="AllIcons.General.Settings">

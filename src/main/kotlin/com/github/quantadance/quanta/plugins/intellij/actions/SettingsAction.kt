@@ -1,0 +1,27 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
+package com.github.quantadance.quanta.plugins.intellij.actions
+
+import com.intellij.icons.AllIcons
+import com.intellij.openapi.actionSystem.AnAction
+import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.options.ShowSettingsUtil
+import com.intellij.openapi.project.Project
+
+class SettingsAction : AnAction("Quanta AI Settings", "Open Quanta AI plugin settings", AllIcons.General.Settings) {
+    override fun actionPerformed(e: AnActionEvent) {
+        val project: Project? = e.project
+        if (project != null) {
+            ShowSettingsUtil.getInstance().showSettingsDialog(
+                project,
+                com.github.quantadance.quanta.plugins.intellij.settings.QuantaAIPluginConfigurable::class.java,
+            )
+        } else {
+            ShowSettingsUtil.getInstance().showSettingsDialog(
+                null as Project?,
+                com.github.quantadance.quanta.plugins.intellij.settings.QuantaAIPluginConfigurable::class.java,
+            )
+        }
+    }
+}

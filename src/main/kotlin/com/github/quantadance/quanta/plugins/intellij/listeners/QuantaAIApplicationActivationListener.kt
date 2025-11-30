@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
+package com.github.quantadance.quanta.plugins.intellij.listeners
+
+import com.intellij.openapi.application.ApplicationActivationListener
+import com.intellij.openapi.wm.IdeFrame
+
+internal class QuantaAIApplicationActivationListener : ApplicationActivationListener {
+    override fun applicationActivated(ideFrame: IdeFrame) {
+        // thisLogger().warn("Don't forget to remove all non-needed sample code files with their corresponding registration entries in `plugin.xml`.")
+    }
+}
