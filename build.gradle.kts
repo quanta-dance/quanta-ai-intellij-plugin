@@ -37,6 +37,15 @@ kotlin {
     }
 }
 
+// Ensure IntelliJ Platform's kotlinx-coroutines wins on the test classpath to avoid NoSuchMethodError
+configurations {
+    named("testRuntimeClasspath") {
+        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
+        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-jdk8")
+        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-debug")
+    }
+}
+
 tasks {
 
     shadowJar {
