@@ -152,7 +152,7 @@ dependencies {
 // ensure sqlite-jdbc is available in the plugin sandbox at runtime
 tasks.register<Task>("copyRuntimeLibsToSandbox") {
     doLast {
-        val sandboxLib = file("$buildDir/idea-sandbox/plugins/${project.name}/lib")
+        val sandboxLib = layout.buildDirectory.dir("idea-sandbox/plugins/${project.name}/lib").get().asFile
         sandboxLib.mkdirs()
         configurations.runtimeClasspath.get().forEach { file ->
             if (file.name.contains("sqlite-jdbc") || file.name.contains("sqlite")) {
@@ -167,7 +167,7 @@ tasks.register<Task>("copyRuntimeLibsToSandbox") {
 
 tasks.register<Copy>("copyLicenses") {
     from("LICENSE.txt", "NOTICE.txt", "licenses")
-    into("$buildDir/distributions/licenses")
+    into(layout.buildDirectory.dir("distributions/licenses"))
 }
 
 tasks.named("buildPlugin") {
