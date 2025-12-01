@@ -1,12 +1,15 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.tools
 
-import kotlin.test.Test
-import org.mockito.Mockito
 import com.intellij.openapi.project.Project
+import org.mockito.Mockito
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.createDirectory
 import kotlin.io.path.createFile
+import kotlin.test.Test
 
 class ListFilesTest {
     private lateinit var listFiles: ListFiles
@@ -28,7 +31,7 @@ class ListFilesTest {
         listFiles.path = "subDir"
 
 //        val result = listFiles.execute(project)
-      //  assert(listOf(file1.fileName.toString()) == result)
+        //  assert(listOf(file1.fileName.toString()) == result)
         assert(true)
     }
 

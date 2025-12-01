@@ -1,7 +1,10 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.project
 
-import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
 import com.github.quanta_dance.quanta.plugins.intellij.project.VersionUtil.computeVersion
+import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
@@ -10,7 +13,6 @@ import com.intellij.psi.PsiManager
 import java.nio.file.Paths
 
 class CurrentFileContextProvider(private val project: Project) {
-
     data class CurrentFileContext(
         val projectBase: String,
         val filePathRelative: String,
@@ -21,7 +23,7 @@ class CurrentFileContextProvider(private val project: Project) {
         val selectionStartColumn: Int?,
         val selectionEndLine: Int?,
         val selectionEndColumn: Int?,
-        val selectedText: String?
+        val selectedText: String?,
     )
 
     fun getCurrent(): CurrentFileContext? {
@@ -29,21 +31,23 @@ class CurrentFileContextProvider(private val project: Project) {
         val editor = FileEditorManager.getInstance(project).selectedTextEditor ?: return null
         val vf = editor.virtualFile ?: return null
 
-        val rel = try {
-            val filePath = Paths.get(vf.path).toAbsolutePath().normalize().toString()
-            val relPath = Paths.get(basePath).toAbsolutePath().normalize().relativize(Paths.get(filePath)).toString()
-            PathUtils.relativizeToProject(basePath, Paths.get(filePath)) // ensure forward slashes
-        } catch (_: Throwable) {
-            return null
-        }
+        val rel =
+            try {
+                val filePath = Paths.get(vf.path).toAbsolutePath().normalize().toString()
+                val relPath = Paths.get(basePath).toAbsolutePath().normalize().relativize(Paths.get(filePath)).toString()
+                PathUtils.relativizeToProject(basePath, Paths.get(filePath)) // ensure forward slashes
+            } catch (_: Throwable) {
+                return null
+            }
 
-        val version = ApplicationManager.getApplication().runReadAction<Long> {
-            val psi = PsiManager.getInstance(project).findFile(vf)
-            val psiStamp = psi?.modificationStamp ?: 0L
-            val docStamp = FileDocumentManager.getInstance().getDocument(vf)?.modificationStamp ?: 0L
-            val vfsStamp = VersionUtil.safeVfsStamp(vf)
-            computeVersion(psiStamp, docStamp, vfsStamp)
-        }
+        val version =
+            ApplicationManager.getApplication().runReadAction<Long> {
+                val psi = PsiManager.getInstance(project).findFile(vf)
+                val psiStamp = psi?.modificationStamp ?: 0L
+                val docStamp = FileDocumentManager.getInstance().getDocument(vf)?.modificationStamp ?: 0L
+                val vfsStamp = VersionUtil.safeVfsStamp(vf)
+                computeVersion(psiStamp, docStamp, vfsStamp)
+            }
 
         return ApplicationManager.getApplication().runReadAction<CurrentFileContext> {
             val caretModel = editor.caretModel
@@ -84,7 +88,7 @@ class CurrentFileContextProvider(private val project: Project) {
                 selectionStartColumn = selStartCol,
                 selectionEndLine = selEndLine,
                 selectionEndColumn = selEndCol,
-                selectedText = selText
+                selectedText = selText,
             )
         }
     }

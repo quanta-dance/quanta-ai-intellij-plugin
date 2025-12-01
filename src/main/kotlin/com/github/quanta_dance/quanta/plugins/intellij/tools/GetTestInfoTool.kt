@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.tools
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
@@ -21,8 +24,15 @@ class GetTestInfoTool : ToolInterface<GetTestInfoResult> {
     @JsonPropertyDescription("Path to XML reports directory relative to project root. Default: 'build/test-results/test'")
     var reportsDir: String? = null
 
-    private fun addMsg(project: Project, title: String, msg: String) {
-        try { project.service<ToolWindowService>().addToolingMessage(title, msg) } catch (_: Throwable) {}
+    private fun addMsg(
+        project: Project,
+        title: String,
+        msg: String,
+    ) {
+        try {
+            project.service<ToolWindowService>().addToolingMessage(title, msg)
+        } catch (_: Throwable) {
+        }
     }
 
     override fun execute(project: Project): GetTestInfoResult {
@@ -77,18 +87,19 @@ class GetTestInfoTool : ToolInterface<GetTestInfoResult> {
                         if (sysOutNodes.length > 0) systemOut = (sysOutNodes.item(0) as org.w3c.dom.Element).textContent
                         if (sysErrNodes.length > 0) systemErr = (sysErrNodes.item(0) as org.w3c.dom.Element).textContent
 
-                        val test = TestCaseResult(
-                            className = className,
-                            name = methodName,
-                            status = status,
-                            durationMillis = durationMillis,
-                            failureMessage = failureMessage,
-                            failureType = failureType,
-                            failureStackTrace = failureStack,
-                            systemOut = systemOut,
-                            systemErr = systemErr,
-                            reportFilePath = file.absolutePath
-                        )
+                        val test =
+                            TestCaseResult(
+                                className = className,
+                                name = methodName,
+                                status = status,
+                                durationMillis = durationMillis,
+                                failureMessage = failureMessage,
+                                failureType = failureType,
+                                failureStackTrace = failureStack,
+                                systemOut = systemOut,
+                                systemErr = systemErr,
+                                reportFilePath = file.absolutePath,
+                            )
                         addMsg(project, "Get test info", "$klass#$name -> $status from ${file.name}")
                         return GetTestInfoResult(test = test)
                     }

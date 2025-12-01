@@ -1,11 +1,13 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.settings
 
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.options.Configurable
 import javax.swing.JComponent
 
-
 class QuantaAIPluginConfigurable : Configurable {
-
     private val settingsComponent: QuantaAISettingsComponent by lazy(::QuantaAISettingsComponent)
 
     override fun getDisplayName(): String {
@@ -18,15 +20,15 @@ class QuantaAIPluginConfigurable : Configurable {
         val settings = QuantaAISettingsState.instance.state
         return settingsComponent.run {
             this.hostValue != settings.host ||
-                    this.tokenValue != settings.token ||
-                    this.voiceEnabled != settings.voiceEnabled ||
-                    this.voiceByLocalTTS != settings.voiceByLocalTTS ||
-                    this.customPromptValue != settings.customPrompt ||
-                    this.maxTokensValue != settings.maxTokens ||
-                    this.aiChatModelValue != settings.aiChatModel ||
-                    this.extraInstructionsValue != (settings.extraInstructions ?: "") ||
-                    // Dynamic model toggle only (no default/max models)
-                    this.dynamicModelEnabled != (settings.dynamicModelEnabled ?: true)
+                this.tokenValue != settings.token ||
+                this.voiceEnabled != settings.voiceEnabled ||
+                this.voiceByLocalTTS != settings.voiceByLocalTTS ||
+                this.customPromptValue != settings.customPrompt ||
+                this.maxTokensValue != settings.maxTokens ||
+                this.aiChatModelValue != settings.aiChatModel ||
+                this.extraInstructionsValue != (settings.extraInstructions ?: "") ||
+                // Dynamic model toggle only (no default/max models)
+                this.dynamicModelEnabled != (settings.dynamicModelEnabled ?: true)
         }
     }
 
@@ -44,6 +46,12 @@ class QuantaAIPluginConfigurable : Configurable {
             // Dynamic model toggle only
             settings.dynamicModelEnabled = this.dynamicModelEnabled
         }
+        // Notify listeners that settings changed so services can refresh their clients
+        val snapshot = settings.copy()
+        ApplicationManager.getApplication()
+            .messageBus
+            .syncPublisher(QuantaAISettingsListener.TOPIC)
+            .onSettingsChanged(snapshot)
     }
 
     override fun reset() {

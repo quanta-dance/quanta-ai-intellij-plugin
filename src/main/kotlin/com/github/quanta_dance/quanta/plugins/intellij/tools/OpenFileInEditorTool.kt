@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.tools
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
@@ -16,7 +19,6 @@ import java.io.File
 
 @JsonClassDescription("Open a project file in the editor and optionally move the caret to a line/column or select a range")
 class OpenFileInEditorTool : ToolInterface<String> {
-
     @JsonPropertyDescription("Relative to the project root path to the file to open.")
     var filePath: String? = null
 
@@ -29,7 +31,9 @@ class OpenFileInEditorTool : ToolInterface<String> {
     @JsonPropertyDescription("If true, activates the editor after opening. Default: true")
     var focus: Boolean = true
 
-    @JsonPropertyDescription("Optional selection start line (1-based). If provided with end, selection takes precedence over caret movement.")
+    @JsonPropertyDescription(
+        "Optional selection start line (1-based). If provided with end, selection takes precedence over caret movement.",
+    )
     var selectionStartLine: Int? = null
 
     @JsonPropertyDescription("Optional selection start column (0-based)")
@@ -41,28 +45,39 @@ class OpenFileInEditorTool : ToolInterface<String> {
     @JsonPropertyDescription("Optional selection end column (0-based)")
     var selectionEndColumn: Int? = null
 
-    private fun addMsg(project: Project, title: String, msg: String) {
-        try { project.service<ToolWindowService>().addToolingMessage(title, msg) } catch (_: Throwable) {}
+    private fun addMsg(
+        project: Project,
+        title: String,
+        msg: String,
+    ) {
+        try {
+            project.service<ToolWindowService>().addToolingMessage(title, msg)
+        } catch (_: Throwable) {
+        }
     }
 
     override fun execute(project: Project): String {
         val basePath = project.basePath ?: return "Project base path not found."
 
-        val resolved = try {
-            PathUtils.resolveWithinProject(basePath, filePath)
-        } catch (e: IllegalArgumentException) {
-            addMsg(project, "Open file - rejected", e.message ?: "Invalid path")
-            return e.message ?: "Invalid path"
-        }
+        val resolved =
+            try {
+                PathUtils.resolveWithinProject(basePath, filePath)
+            } catch (e: IllegalArgumentException) {
+                addMsg(project, "Open file - rejected", e.message ?: "Invalid path")
+                return e.message ?: "Invalid path"
+            }
 
         val relToBase = PathUtils.relativizeToProject(basePath, resolved)
         val ioFile = File(resolved.toUri())
 
         // Ensure VFS is in-sync and find the file
-        val vFile = try {
-            VfsUtil.markDirtyAndRefresh(false, true, true, ioFile)
-            LocalFileSystem.getInstance().refreshAndFindFileByIoFile(ioFile)
-        } catch (_: Throwable) { null }
+        val vFile =
+            try {
+                VfsUtil.markDirtyAndRefresh(false, true, true, ioFile)
+                LocalFileSystem.getInstance().refreshAndFindFileByIoFile(ioFile)
+            } catch (_: Throwable) {
+                null
+            }
 
         if (vFile == null || vFile.isDirectory) {
             val reason = if (vFile == null) "File not found" else "Path is a directory"
@@ -84,13 +99,14 @@ class OpenFileInEditorTool : ToolInterface<String> {
         return try {
             var opened = false
             ApplicationManager.getApplication().invokeAndWait {
-                val descriptor = if (!wantSelection && targetLine != null && targetColumn != null) {
-                    OpenFileDescriptor(project, vFile, targetLine, targetColumn)
-                } else if (!wantSelection && targetLine != null) {
-                    OpenFileDescriptor(project, vFile, targetLine, 0)
-                } else {
-                    OpenFileDescriptor(project, vFile, 0)
-                }
+                val descriptor =
+                    if (!wantSelection && targetLine != null && targetColumn != null) {
+                        OpenFileDescriptor(project, vFile, targetLine, targetColumn)
+                    } else if (!wantSelection && targetLine != null) {
+                        OpenFileDescriptor(project, vFile, targetLine, 0)
+                    } else {
+                        OpenFileDescriptor(project, vFile, 0)
+                    }
                 val editor = FileEditorManager.getInstance(project).openTextEditor(descriptor, focus)
                 opened = editor != null
 
@@ -110,26 +126,27 @@ class OpenFileInEditorTool : ToolInterface<String> {
                 }
             }
 
-            val details = buildString {
-                append(relToBase)
-                if (wantSelection) {
-                    append(" @ selection=")
-                    append("[")
-                    append((selectionStartLine ?: 0))
-                    append(":")
-                    append((selectionStartColumn ?: 0))
-                    append(" -> ")
-                    append((selectionEndLine ?: 0))
-                    append(":")
-                    append((selectionEndColumn ?: 0))
-                    append("]")
-                } else if (targetLine != null) {
-                    append(" @ line=")
-                    append(targetLine + 1)
-                    append(", col=")
-                    append(targetColumn ?: 0)
+            val details =
+                buildString {
+                    append(relToBase)
+                    if (wantSelection) {
+                        append(" @ selection=")
+                        append("[")
+                        append((selectionStartLine ?: 0))
+                        append(":")
+                        append((selectionStartColumn ?: 0))
+                        append(" -> ")
+                        append((selectionEndLine ?: 0))
+                        append(":")
+                        append((selectionEndColumn ?: 0))
+                        append("]")
+                    } else if (targetLine != null) {
+                        append(" @ line=")
+                        append(targetLine + 1)
+                        append(", col=")
+                        append(targetColumn ?: 0)
+                    }
                 }
-            }
             addMsg(project, "Open file", details)
             if (opened) "Opened $relToBase" else "Opened (no editor) $relToBase"
         } catch (e: Throwable) {

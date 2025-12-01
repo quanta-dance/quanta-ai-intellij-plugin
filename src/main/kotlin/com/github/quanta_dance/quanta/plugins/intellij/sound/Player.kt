@@ -1,15 +1,21 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
+package com.github.quanta_dance.quanta.plugins.intellij.sound
+
 import com.intellij.openapi.diagnostic.Logger
-import javazoom.jl.player.Player as JLayerPlayer
 import java.io.InputStream
+import javazoom.jl.player.Player as JLayerPlayer
 
 object Player {
-
     private val logger = Logger.getInstance(Player::class.java)
 
     @Volatile
     private var currentThread: Thread? = null
+
     @Volatile
     private var currentPlayer: JLayerPlayer? = null
+
     @Volatile
     private var currentStream: InputStream? = null
 
@@ -21,7 +27,10 @@ object Player {
      * @param onFinished Callback invoked when playback ends or fails
      */
     @Synchronized
-    fun playMp3(audioData: InputStream, onFinished: (() -> Unit)? = null) {
+    fun playMp3(
+        audioData: InputStream,
+        onFinished: (() -> Unit)? = null,
+    ) {
         // Stop previous playback if still running
         stop()
 
@@ -29,15 +38,16 @@ object Player {
         currentPlayer = player
         currentStream = audioData
 
-        val t = Thread({
-            try {
-                player.play() // blocks until stream ends or stopped
-            } catch (t: Throwable) {
-                logger.warn("Playback interrupted or failed: ${t.message}", t)
-            } finally {
-                cleanup(player, audioData, onFinished)
-            }
-        }, "AI-MP3-Player")
+        val t =
+            Thread({
+                try {
+                    player.play() // blocks until stream ends or stopped
+                } catch (t: Throwable) {
+                    logger.warn("Playback interrupted or failed: ${t.message}", t)
+                } finally {
+                    cleanup(player, audioData, onFinished)
+                }
+            }, "AI-MP3-Player")
 
         currentThread = t
         t.isDaemon = true
@@ -51,15 +61,18 @@ object Player {
     fun stop() {
         try {
             currentPlayer?.close()
-        } catch (_: Throwable) {}
+        } catch (_: Throwable) {
+        }
 
         try {
             currentStream?.close()
-        } catch (_: Throwable) {}
+        } catch (_: Throwable) {
+        }
 
         try {
             currentThread?.interrupt()
-        } catch (_: Throwable) {}
+        } catch (_: Throwable) {
+        }
 
         currentPlayer = null
         currentThread = null
@@ -73,11 +86,12 @@ object Player {
     private fun cleanup(
         player: JLayerPlayer,
         audioData: InputStream,
-        onFinished: (() -> Unit)?
+        onFinished: (() -> Unit)?,
     ) {
         try {
             audioData.close()
-        } catch (_: Throwable) {}
+        } catch (_: Throwable) {
+        }
 
         if (currentPlayer === player) {
             currentPlayer = null

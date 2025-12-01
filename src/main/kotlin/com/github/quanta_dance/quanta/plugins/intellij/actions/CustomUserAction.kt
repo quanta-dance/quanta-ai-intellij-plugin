@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.actions
 
 import com.github.quanta_dance.quanta.plugins.intellij.services.OpenAIService
@@ -19,7 +22,6 @@ class CustomUserAction : AnAction() {
         ApplicationManager.getApplication().executeOnPooledThread {
             project?.service<OpenAIService>()?.sendMessage(QuantaAISettingsState.instance.state.customPrompt)
         }
-
     }
 
     override fun update(e: AnActionEvent) {

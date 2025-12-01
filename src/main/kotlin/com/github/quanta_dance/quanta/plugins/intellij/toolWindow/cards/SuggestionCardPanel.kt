@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.toolWindow.cards
 
 import com.github.quanta_dance.quanta.plugins.intellij.models.Suggestion
@@ -26,21 +29,30 @@ import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
 import com.intellij.ui.components.JBScrollPane
-import java.awt.*
+import java.awt.BorderLayout
+import java.awt.Cursor
+import java.awt.Dimension
+import java.awt.FlowLayout
+import java.awt.MouseInfo
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import java.nio.file.Paths
-import javax.swing.*
+import javax.swing.BorderFactory
+import javax.swing.JButton
+import javax.swing.JLabel
+import javax.swing.JPanel
+import javax.swing.JTextArea
+import javax.swing.JWindow
 import javax.swing.SwingUtilities
+import javax.swing.UIManager
 
 class SuggestionCardPanel(
     private var suggestion: Suggestion,
 ) :
     JPanel(BorderLayout()) {
-
     private fun isActionable(): Boolean {
         return suggestion.suggested_code.isNotBlank() && suggestion.replaced_code.isNotBlank() &&
-                suggestion.original_line_from > 0 && suggestion.original_line_to >= suggestion.original_line_from
+            suggestion.original_line_from > 0 && suggestion.original_line_to >= suggestion.original_line_from
     }
 
     private lateinit var fileLabel: JBLabel
@@ -66,14 +78,15 @@ class SuggestionCardPanel(
         val vFile = LocalFileSystem.getInstance().refreshAndFindFileByPath(project.basePath + "/" + suggestion.file) ?: return
         val doc = FileDocumentManager.getInstance().getDocument(vFile) ?: return
         if (docListener != null) return
-        docListener = object : DocumentListener {
-            override fun documentChanged(event: DocumentEvent) {
-                // Re-map on any change and update label lines
-                SwingUtilities.invokeLater {
-                    remapAndUpdateLabel(project)
+        docListener =
+            object : DocumentListener {
+                override fun documentChanged(event: DocumentEvent) {
+                    // Re-map on any change and update label lines
+                    SwingUtilities.invokeLater {
+                        remapAndUpdateLabel(project)
+                    }
                 }
             }
-        }
         doc.addDocumentListener(docListener!!)
     }
 
@@ -88,7 +101,12 @@ class SuggestionCardPanel(
         }
     }
 
-    private fun scrollToOffsetAndSelect(project: Project, filePath: String, startOffset: Int, endOffset: Int) {
+    private fun scrollToOffsetAndSelect(
+        project: Project,
+        filePath: String,
+        startOffset: Int,
+        endOffset: Int,
+    ) {
         val virtualFile: VirtualFile? = LocalFileSystem.getInstance().findFileByPath(project.basePath + "/" + filePath)
         virtualFile?.let {
             OpenFileDescriptor(project, it, startOffset).navigate(true)
@@ -107,80 +125,90 @@ class SuggestionCardPanel(
         border = BorderFactory.createTitledBorder(if (actionable) "Suggestion (actionable)" else "Suggestion (info)")
         maximumSize = Dimension(500, Int.MAX_VALUE)
 
-        centerPanel = JBPanel<Nothing>(BorderLayout()).also { cp ->
-            if (actionable) {
-                val codeViewerField = createEditorField().apply { minimumSize = Dimension(400, 20) }
-                val codeViewerScrollPane = JBScrollPane(codeViewerField).apply { border = BorderFactory.createEmptyBorder() }
-                cp.add(codeViewerScrollPane, BorderLayout.CENTER)
-            } else {
-                val info = JTextArea("This suggestion is descriptive only and cannot be applied automatically.").apply {
-                    isEditable = false
-                    lineWrap = true
-                    wrapStyleWord = true
-                    foreground = JBColor.GRAY
-                    background = UIManager.getColor("Label.background")
-                    border = BorderFactory.createEmptyBorder(6, 6, 6, 6)
+        centerPanel =
+            JBPanel<Nothing>(BorderLayout()).also { cp ->
+                if (actionable) {
+                    val codeViewerField = createEditorField().apply { minimumSize = Dimension(400, 20) }
+                    val codeViewerScrollPane = JBScrollPane(codeViewerField).apply { border = BorderFactory.createEmptyBorder() }
+                    cp.add(codeViewerScrollPane, BorderLayout.CENTER)
+                } else {
+                    val info =
+                        JTextArea("This suggestion is descriptive only and cannot be applied automatically.").apply {
+                            isEditable = false
+                            lineWrap = true
+                            wrapStyleWord = true
+                            foreground = JBColor.GRAY
+                            background = UIManager.getColor("Label.background")
+                            border = BorderFactory.createEmptyBorder(6, 6, 6, 6)
+                        }
+                    cp.add(info, BorderLayout.CENTER)
                 }
-                cp.add(info, BorderLayout.CENTER)
             }
-        }
 
-        val descriptionArea = JTextArea(suggestion.message).apply {
-            isEditable = false
-            lineWrap = true
-            wrapStyleWord = true
-            font = font.deriveFont(font.size2D - 1)
-            foreground = JBColor.GRAY
-            background = UIManager.getColor("Label.background")
-        }
+        val descriptionArea =
+            JTextArea(suggestion.message).apply {
+                isEditable = false
+                lineWrap = true
+                wrapStyleWord = true
+                font = font.deriveFont(font.size2D - 1)
+                foreground = JBColor.GRAY
+                background = UIManager.getColor("Label.background")
+            }
         val descriptionScrollPane = JBScrollPane(descriptionArea).apply { border = BorderFactory.createEmptyBorder(5, 5, 5, 1) }
 
         val fileName = Paths.get(suggestion.file).fileName.toString()
-        fileLabel = JBLabel(fileName + ":" + suggestion.original_line_from + "-" + suggestion.original_line_to).apply {
-            font = font.deriveFont(font.size2D - 3)
-            foreground = JBColor.BLUE
-            cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-            border = BorderFactory.createEmptyBorder(2, 5, 2, 1)
-            toolTipText = suggestion.file
-            addMouseListener(object : MouseAdapter() {
-                override fun mouseClicked(e: MouseEvent?) {
-                    ProjectManager.getInstance().openProjects.firstOrNull()?.let { project ->
-                        val (start, end) = remapOffsets(project) ?: return
-                        scrollToOffsetAndSelect(project, suggestion.file, start, end)
-                    }
-                }
-            })
-        }
-
-        actionsPanel = JBPanel<Nothing>(FlowLayout(FlowLayout.LEFT, 6, 0)).apply {
-            val ignoreBtn = JButton("Ignore").apply {
-                toolTipText = "Ignore this suggestion."
-                addActionListener {
-                    this@SuggestionCardPanel.isVisible = false
-                    this@SuggestionCardPanel.parent?.remove(this@SuggestionCardPanel)
-                    this@SuggestionCardPanel.parent?.revalidate()
-                    this@SuggestionCardPanel.parent?.repaint()
-                }
+        fileLabel =
+            JBLabel(fileName + ":" + suggestion.original_line_from + "-" + suggestion.original_line_to).apply {
+                font = font.deriveFont(font.size2D - 3)
+                foreground = JBColor.BLUE
+                cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+                border = BorderFactory.createEmptyBorder(2, 5, 2, 1)
+                toolTipText = suggestion.file
+                addMouseListener(
+                    object : MouseAdapter() {
+                        override fun mouseClicked(e: MouseEvent?) {
+                            ProjectManager.getInstance().openProjects.firstOrNull()?.let { project ->
+                                val (start, end) = remapOffsets(project) ?: return
+                                scrollToOffsetAndSelect(project, suggestion.file, start, end)
+                            }
+                        }
+                    },
+                )
             }
-            val applyBtn = JButton("Apply").apply {
-                isEnabled = actionable
-                toolTipText = if (actionable) "Apply this change." else "Non-actionable suggestion"
-                addActionListener {
-                    if (!actionable) return@addActionListener
-                    ProjectManager.getInstance().openProjects.firstOrNull()?.let { project ->
-                        applyDirectly(project)
-                    }
-                }
-            }
-            add(ignoreBtn)
-            add(applyBtn)
-        }
 
-        val topPanel = JBPanel<Nothing>(BorderLayout()).apply {
-            add(fileLabel, BorderLayout.NORTH)
-            add(descriptionScrollPane, BorderLayout.CENTER)
-            add(actionsPanel, BorderLayout.SOUTH)
-        }
+        actionsPanel =
+            JBPanel<Nothing>(FlowLayout(FlowLayout.LEFT, 6, 0)).apply {
+                val ignoreBtn =
+                    JButton("Ignore").apply {
+                        toolTipText = "Ignore this suggestion."
+                        addActionListener {
+                            this@SuggestionCardPanel.isVisible = false
+                            this@SuggestionCardPanel.parent?.remove(this@SuggestionCardPanel)
+                            this@SuggestionCardPanel.parent?.revalidate()
+                            this@SuggestionCardPanel.parent?.repaint()
+                        }
+                    }
+                val applyBtn =
+                    JButton("Apply").apply {
+                        isEnabled = actionable
+                        toolTipText = if (actionable) "Apply this change." else "Non-actionable suggestion"
+                        addActionListener {
+                            if (!actionable) return@addActionListener
+                            ProjectManager.getInstance().openProjects.firstOrNull()?.let { project ->
+                                applyDirectly(project)
+                            }
+                        }
+                    }
+                add(ignoreBtn)
+                add(applyBtn)
+            }
+
+        val topPanel =
+            JBPanel<Nothing>(BorderLayout()).apply {
+                add(fileLabel, BorderLayout.NORTH)
+                add(descriptionScrollPane, BorderLayout.CENTER)
+                add(actionsPanel, BorderLayout.SOUTH)
+            }
 
         add(topPanel, BorderLayout.NORTH)
         add(centerPanel, BorderLayout.CENTER)
@@ -196,7 +224,12 @@ class SuggestionCardPanel(
         return startOffset to endOffset
     }
 
-    private fun fuzzyFind(docText: CharSequence, needle: String, windowStart: Int, windowEnd: Int): Int? {
+    private fun fuzzyFind(
+        docText: CharSequence,
+        needle: String,
+        windowStart: Int,
+        windowEnd: Int,
+    ): Int? {
         if (needle.isEmpty()) return null
         val start = windowStart.coerceAtLeast(0)
         val end = windowEnd.coerceAtMost(docText.length)
@@ -215,8 +248,9 @@ class SuggestionCardPanel(
         if (currentSegment != suggestion.replaced_code) {
             val windowStart = (plannedStart - 1000).coerceAtLeast(0)
             val windowEnd = (plannedEnd + 1000).coerceAtMost(doc.textLength)
-            val found = fuzzyFind(doc.charsSequence, suggestion.replaced_code, windowStart, windowEnd)
-                ?: doc.charsSequence.indexOf(suggestion.replaced_code).takeIf { it >= 0 }
+            val found =
+                fuzzyFind(doc.charsSequence, suggestion.replaced_code, windowStart, windowEnd)
+                    ?: doc.charsSequence.indexOf(suggestion.replaced_code).takeIf { it >= 0 }
             if (found != null) {
                 start = found
                 end = found + suggestion.replaced_code.length
@@ -237,7 +271,11 @@ class SuggestionCardPanel(
         suggestion = suggestion.copy(original_line_from = newStartLine, original_line_to = newEndLine)
     }
 
-    private fun markAppliedUI(newStartOffset: Int, newEndOffset: Int, project: Project) {
+    private fun markAppliedUI(
+        newStartOffset: Int,
+        newEndOffset: Int,
+        project: Project,
+    ) {
         // Hide code viewer area
         centerPanel?.isVisible = false
         // Disable and remove action buttons
@@ -247,12 +285,14 @@ class SuggestionCardPanel(
             actionsPanel = null
         }
         // Show applied status
-        val status = JLabel("Applied").apply {
-            foreground = JBColor(0x2E7D32, 0x81C784)
-            border = BorderFactory.createEmptyBorder(4, 8, 4, 8)
-        }
+        val status =
+            JLabel("Applied").apply {
+                foreground = JBColor(0x2E7D32, 0x81C784)
+                border = BorderFactory.createEmptyBorder(4, 8, 4, 8)
+            }
         add(status, BorderLayout.SOUTH)
-        revalidate(); repaint()
+        revalidate()
+        repaint()
         // Select applied region in editor
         scrollToOffsetAndSelect(project, suggestion.file, newStartOffset, newEndOffset)
     }
@@ -278,10 +318,11 @@ class SuggestionCardPanel(
                 fileLabel.text = Paths.get(suggestion.file).fileName.toString() + ":" + newStartLine + "-" + newEndLine
 
                 // Update model with new lines
-                suggestion = suggestion.copy(
-                    original_line_from = newStartLine,
-                    original_line_to = newEndLine
-                )
+                suggestion =
+                    suggestion.copy(
+                        original_line_from = newStartLine,
+                        original_line_to = newEndLine,
+                    )
 
                 // Reflect applied state in UI and select region
                 markAppliedUI(start, start + suggestion.suggested_code.length, project)
@@ -292,22 +333,25 @@ class SuggestionCardPanel(
     private fun createEditorField(): EditorTextField {
         val extension = FileUtilRt.getExtension(suggestion.file)
         val fileType = FileTypeManager.getInstance().getFileTypeByExtension(extension)
-        val document = EditorFactory.getInstance().createDocument(
-            suggestion.suggested_code
-        )
+        val document =
+            EditorFactory.getInstance().createDocument(
+                suggestion.suggested_code,
+            )
         return EditorTextField(document, null, fileType, true, false).apply {
             preferredSize = null
 
             if (suggestion.replaced_code.isNotEmpty()) {
-                addMouseListener(object : MouseAdapter() {
-                    override fun mouseEntered(e: MouseEvent?) {
-                        showOriginalCodeTooltip()
-                    }
+                addMouseListener(
+                    object : MouseAdapter() {
+                        override fun mouseEntered(e: MouseEvent?) {
+                            showOriginalCodeTooltip()
+                        }
 
-                    override fun mouseExited(e: MouseEvent?) {
-                        hideOriginalCodeTooltip()
-                    }
-                })
+                        override fun mouseExited(e: MouseEvent?) {
+                            hideOriginalCodeTooltip()
+                        }
+                    },
+                )
             }
 
             addSettingsProvider { editor ->
@@ -324,27 +368,32 @@ class SuggestionCardPanel(
         if (tooltipWindow == null) {
             val extension = FileUtilRt.getExtension(suggestion.file)
             val fileType = FileTypeManager.getInstance().getFileTypeByExtension(extension)
-            val tooltipEditorField = EditorTextField(
-                EditorFactory.getInstance().createDocument(suggestion.replaced_code), null,
-                fileType, true, false
-            ).apply {
-                border = BorderFactory.createTitledBorder("Original code")
-                preferredSize = Dimension(600, 200)
-                addSettingsProvider { editor ->
-                    editor.colorsScheme = editor.colorsScheme
-                    editor.highlighter =
-                        EditorHighlighterFactory.getInstance()
-                            .createEditorHighlighter(fileType, editor.colorsScheme, null)
+            val tooltipEditorField =
+                EditorTextField(
+                    EditorFactory.getInstance().createDocument(suggestion.replaced_code),
+                    null,
+                    fileType,
+                    true,
+                    false,
+                ).apply {
+                    border = BorderFactory.createTitledBorder("Original code")
+                    preferredSize = Dimension(600, 200)
+                    addSettingsProvider { editor ->
+                        editor.colorsScheme = editor.colorsScheme
+                        editor.highlighter =
+                            EditorHighlighterFactory.getInstance()
+                                .createEditorHighlighter(fileType, editor.colorsScheme, null)
+                    }
                 }
-            }
 
-            tooltipWindow = JWindow().apply {
-                layout = BorderLayout()
-                add(tooltipEditorField, BorderLayout.CENTER)
-                preferredSize = tooltipEditorField.preferredSize
-                size = tooltipEditorField.preferredSize
-                isVisible = false
-            }
+            tooltipWindow =
+                JWindow().apply {
+                    layout = BorderLayout()
+                    add(tooltipEditorField, BorderLayout.CENTER)
+                    preferredSize = tooltipEditorField.preferredSize
+                    size = tooltipEditorField.preferredSize
+                    isVisible = false
+                }
         }
 
         val location = MouseInfo.getPointerInfo().location
@@ -370,10 +419,15 @@ class SuggestionCardPanel(
             settings.isCaretRowShown = true
 
             val baseOffset = (suggestion.original_line_from - 1).coerceAtLeast(0)
-            val converter = object : LineNumberConverter {
-                override fun convert(editor: Editor, line: Int): Int = line + baseOffset
-                override fun getMaxLineNumber(editor: Editor): Int = editor.document.lineCount + baseOffset
-            }
+            val converter =
+                object : LineNumberConverter {
+                    override fun convert(
+                        editor: Editor,
+                        line: Int,
+                    ): Int = line + baseOffset
+
+                    override fun getMaxLineNumber(editor: Editor): Int = editor.document.lineCount + baseOffset
+                }
             gutterComponentEx.setLineNumberConverter(converter)
         }
     }

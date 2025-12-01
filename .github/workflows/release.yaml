@@ -3,7 +3,9 @@ name: Build & Publish IntelliJ Plugin
 on:
   push:
     tags:
-      - "v*"       # Triggers workflow on tag push (v1.0.0, v1.2.3, etc.)
+      # Trigger on semantic version tags without 'v' prefix, e.g., 1.2.3 or 1.2.3-beta1
+      - "*.*.*"
+      - "*.*.*-*"
 
   workflow_dispatch:   # Allows manual run
 

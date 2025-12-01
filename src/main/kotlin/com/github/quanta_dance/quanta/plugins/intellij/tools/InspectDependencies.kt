@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.tools
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
@@ -11,14 +14,15 @@ import com.intellij.psi.search.GlobalSearchScope
 
 @JsonClassDescription("Inspect available dependency classes and methods via PSI. Useful to discover SDK APIs by package.")
 class InspectDependencies : ToolInterface<InspectDependencies.Result> {
-
     @JsonPropertyDescription("Root package to inspect, e.g., 'com.openai.models.responses'")
     var packageName: String? = null
 
     @JsonPropertyDescription("Optional substring to filter class names. Supports 'a|b|c' list (OR semantics).")
     var classNameContains: String? = null
 
-    @JsonPropertyDescription("Optional substring to filter method names. Supports 'a|b|c' list (OR semantics) or regex if useRegexForMethodFilter=true.")
+    @JsonPropertyDescription(
+        "Optional substring to filter method names. Supports 'a|b|c' list (OR semantics) or regex if useRegexForMethodFilter=true.",
+    )
     var methodNameContains: String? = null
 
     @JsonPropertyDescription("Interpret methodNameContains as a regex (default false). If false, treats 'a|b|c' as OR list of substrings.")
@@ -29,13 +33,13 @@ class InspectDependencies : ToolInterface<InspectDependencies.Result> {
 
     data class ClassInfo(
         val qualifiedName: String,
-        val methods: List<String>
+        val methods: List<String>,
     )
 
     data class Result(
         val packageScanned: String,
         val totalClassesFound: Int,
-        val classes: List<ClassInfo>
+        val classes: List<ClassInfo>,
     )
 
     override fun execute(project: Project): Result {
@@ -46,14 +50,33 @@ class InspectDependencies : ToolInterface<InspectDependencies.Result> {
             ApplicationManager.getApplication().runReadAction<Result> {
                 val facade = JavaPsiFacade.getInstance(project)
                 val scope = GlobalSearchScope.allScope(project)
-                val root = try { facade.findPackage(pkg) } catch (_: Throwable) { null }
-                    ?: return@runReadAction Result(pkg, 0, emptyList())
+                val root =
+                    try {
+                        facade.findPackage(pkg)
+                    } catch (_: Throwable) {
+                        null
+                    }
+                        ?: return@runReadAction Result(pkg, 0, emptyList())
 
                 val out = mutableListOf<ClassInfo>()
                 val filterClass = classNameContains?.takeIf { it.isNotBlank() }?.lowercase()
                 val filterMethodsRaw = methodNameContains?.takeIf { it.isNotBlank() }
-                val methodRegex = if (useRegexForMethodFilter && filterMethodsRaw != null) runCatching { Regex(filterMethodsRaw, RegexOption.IGNORE_CASE) }.getOrNull() else null
-                val methodTokens = if (!useRegexForMethodFilter && filterMethodsRaw != null) filterMethodsRaw.split('|').map { it.trim().lowercase() }.filter { it.isNotEmpty() } else emptyList()
+                val methodRegex =
+                    if (useRegexForMethodFilter && filterMethodsRaw != null) {
+                        runCatching {
+                            Regex(filterMethodsRaw, RegexOption.IGNORE_CASE)
+                        }.getOrNull()
+                    } else {
+                        null
+                    }
+                val methodTokens =
+                    if (!useRegexForMethodFilter && filterMethodsRaw != null) {
+                        filterMethodsRaw.split('|').map {
+                            it.trim().lowercase()
+                        }.filter { it.isNotEmpty() }
+                    } else {
+                        emptyList()
+                    }
 
                 var visitedCount = 0
                 val visited = HashSet<String>()
@@ -81,11 +104,12 @@ class InspectDependencies : ToolInterface<InspectDependencies.Result> {
                             visitedCount++
                             val qnLower = qn.lowercase()
                             if (!classMatches(qnLower)) return@forEach
-                            val methods = psiClass.methods
-                                .asSequence()
-                                .map { it.renderSignature() }
-                                .filter { methodMatches(it.lowercase()) }
-                                .toList()
+                            val methods =
+                                psiClass.methods
+                                    .asSequence()
+                                    .map { it.renderSignature() }
+                                    .filter { methodMatches(it.lowercase()) }
+                                    .toList()
                             out.add(ClassInfo(qn, methods))
                             if (out.size >= limit) return
                         }
@@ -118,11 +142,12 @@ class InspectDependencies : ToolInterface<InspectDependencies.Result> {
 
 private fun PsiMethod.renderSignature(): String {
     val name = this.name
-    val params = parameterList.parameters.joinToString(", ") { p ->
-        val t = p.type.presentableText
-        val n = p.name ?: "_"
-        "$t $n"
-    }
+    val params =
+        parameterList.parameters.joinToString(", ") { p ->
+            val t = p.type.presentableText
+            val n = p.name ?: "_"
+            "$t $n"
+        }
     val ret = returnType?.presentableText ?: "void"
     val modifiers = this.modifierList.text.trim().replace("\n", " ")
     val cls = (containingClass?.qualifiedName ?: containingClass?.name ?: "")

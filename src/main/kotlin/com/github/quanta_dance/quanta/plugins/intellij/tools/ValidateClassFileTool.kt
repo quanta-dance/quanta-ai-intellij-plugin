@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.tools
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
@@ -11,27 +14,37 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VfsUtil
-import com.intellij.psi.*
+import com.intellij.psi.PsiDocumentManager
+import com.intellij.psi.PsiErrorElement
+import com.intellij.psi.PsiFile
+import com.intellij.psi.PsiManager
+import com.intellij.psi.PsiRecursiveElementWalkingVisitor
 
 @JsonClassDescription("Validate a class file and return any compilation errors.")
 class ValidateClassFileTool : ToolInterface<List<String>> {
-
     @JsonPropertyDescription("Relative to project root path to the file to validate.")
     var filePath: String? = null
 
-    companion object { private val logger = Logger.getInstance(ValidateClassFileTool::class.java) }
+    companion object {
+        private val logger = Logger.getInstance(ValidateClassFileTool::class.java)
+    }
 
-    fun getCompilationErrors(project: Project, psiFile: PsiFile): List<String> {
+    fun getCompilationErrors(
+        project: Project,
+        psiFile: PsiFile,
+    ): List<String> {
         val errors = mutableListOf<String>()
         val document = PsiDocumentManager.getInstance(project).getDocument(psiFile) ?: return errors
 
         // Collect syntax/parse errors using public PSI API
-        psiFile.accept(object : PsiRecursiveElementWalkingVisitor() {
-            override fun visitErrorElement(element: PsiErrorElement) {
-                val line = document.getLineNumber(element.textOffset) + 1
-                errors.add("Error: ${element.errorDescription} at line $line")
-            }
-        })
+        psiFile.accept(
+            object : PsiRecursiveElementWalkingVisitor() {
+                override fun visitErrorElement(element: PsiErrorElement) {
+                    val line = document.getLineNumber(element.textOffset) + 1
+                    errors.add("Error: ${element.errorDescription} at line $line")
+                }
+            },
+        )
 
         return errors
     }
@@ -44,21 +57,28 @@ class ValidateClassFileTool : ToolInterface<List<String>> {
 
         // Refresh and find VFS file by absolute path to avoid stale baseDir-based lookups
         val absPath = java.nio.file.Paths.get(basePath, filePath).toString()
-        val vFile = try {
-            val ioFile = java.io.File(absPath)
-            VfsUtil.markDirtyAndRefresh(true, true, true, ioFile)
-            LocalFileSystem.getInstance().refreshAndFindFileByIoFile(ioFile)
-        } catch (t: Throwable) {
-            null
-        }
+        val vFile =
+            try {
+                val ioFile = java.io.File(absPath)
+                VfsUtil.markDirtyAndRefresh(true, true, true, ioFile)
+                LocalFileSystem.getInstance().refreshAndFindFileByIoFile(ioFile)
+            } catch (t: Throwable) {
+                null
+            }
         if (vFile == null) {
             errors.add("Class file not found.")
             return errors
         }
 
         // Commit docs so PSI is up to date
-        try { FileDocumentManager.getInstance().saveAllDocuments() } catch (_: Throwable) {}
-        try { PsiDocumentManager.getInstance(project).commitAllDocuments() } catch (_: Throwable) {}
+        try {
+            FileDocumentManager.getInstance().saveAllDocuments()
+        } catch (_: Throwable) {
+        }
+        try {
+            PsiDocumentManager.getInstance(project).commitAllDocuments()
+        } catch (_: Throwable) {
+        }
 
         val psiFile = PsiManager.getInstance(project).findFile(vFile)
         if (psiFile == null) {
@@ -81,7 +101,7 @@ class ValidateClassFileTool : ToolInterface<List<String>> {
             val errors = findErrors(project)
             project.service<ToolWindowService>().addToolingMessage(
                 "Validate compilation errors " + filePath.orEmpty(),
-                errors.joinToString("\n")
+                errors.joinToString("\n"),
             )
             errors
         }

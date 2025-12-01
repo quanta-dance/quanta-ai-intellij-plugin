@@ -1,5 +1,9 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.actions
 
+import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAIPluginConfigurable
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
@@ -10,9 +14,15 @@ class SettingsAction : AnAction("Quanta AI Settings", "Open Quanta AI plugin set
     override fun actionPerformed(e: AnActionEvent) {
         val project: Project? = e.project
         if (project != null) {
-            ShowSettingsUtil.getInstance().showSettingsDialog(project, com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAIPluginConfigurable::class.java)
+            ShowSettingsUtil.getInstance().showSettingsDialog(
+                project,
+                QuantaAIPluginConfigurable::class.java,
+            )
         } else {
-            ShowSettingsUtil.getInstance().showSettingsDialog(null as Project?, com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAIPluginConfigurable::class.java)
+            ShowSettingsUtil.getInstance().showSettingsDialog(
+                null as Project?,
+                QuantaAIPluginConfigurable::class.java,
+            )
         }
     }
 }

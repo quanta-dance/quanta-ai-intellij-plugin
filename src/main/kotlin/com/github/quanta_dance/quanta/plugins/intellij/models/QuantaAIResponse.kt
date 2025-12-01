@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.models
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
@@ -9,7 +12,6 @@ data class OpenAIResponse(
     @JsonPropertyDescription("General message summarizing the AI response.")
     val summaryMessage: String,
     @JsonPropertyDescription("Required Audio summary suitable for TTS. This MUST be short, catchy and natural.")
-    //@JsonPropertyDescription("Short Text to be converted into an audio summary for the user. This should be short and natural. If response contains modifications or suggestions, explicitly mention that")
     val ttsSummary: String,
 )
 
@@ -39,5 +41,5 @@ data class Suggestion(
 @JsonClassDescription("Full file replacement modification (rarely used).")
 data class Modification(
     val file: String,
-    val content: String
+    val content: String,
 )

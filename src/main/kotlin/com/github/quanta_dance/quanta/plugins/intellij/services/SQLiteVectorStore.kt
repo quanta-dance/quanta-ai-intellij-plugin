@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.services
 
 import com.intellij.openapi.components.Service
@@ -10,13 +13,12 @@ import java.nio.ByteOrder
 import java.security.MessageDigest
 import java.sql.Connection
 import java.sql.DriverManager
-import java.util.*
+import java.util.Properties
 
 data class SearchResult(val id: String, val score: Double, val metadata: Map<String, String>)
 
 @Service(Service.Level.PROJECT)
 class SQLiteVectorStore(private val project: Project) {
-
     private val dbFile: File
     private val conn: Connection
 
@@ -48,13 +50,18 @@ class SQLiteVectorStore(private val project: Project) {
                     chunk_hash TEXT,
                     created_at INTEGER
                 );
-                """.trimIndent()
+                """.trimIndent(),
             )
             stmt.execute("CREATE INDEX IF NOT EXISTS idx_project ON embeddings(project);")
         }
     }
 
-    fun upsert(id: String, vector: FloatArray, metadata: Map<String, String>, chunkHash: String? = null) {
+    fun upsert(
+        id: String,
+        vector: FloatArray,
+        metadata: Map<String, String>,
+        chunkHash: String? = null,
+    ) {
         val metadataJson = mapToJson(metadata)
         val vectorBlob = floatArrayToBytes(vector)
         val sql = "REPLACE INTO embeddings(id, project, vector, metadata, chunk_hash, created_at) VALUES(?,?,?,?,?,?)"
@@ -88,10 +95,18 @@ class SQLiteVectorStore(private val project: Project) {
         }
     }
 
-    fun search(queryVector: FloatArray, topK: Int = 10, projectKey: String? = null): List<SearchResult> {
+    fun search(
+        queryVector: FloatArray,
+        topK: Int = 10,
+        projectKey: String? = null,
+    ): List<SearchResult> {
         val results = mutableListOf<SearchResult>()
         val sql =
-            if (projectKey != null) "SELECT id, vector, metadata FROM embeddings WHERE project = ?" else "SELECT id, vector, metadata FROM embeddings"
+            if (projectKey != null) {
+                "SELECT id, vector, metadata FROM embeddings WHERE project = ?"
+            } else {
+                "SELECT id, vector, metadata FROM embeddings"
+            }
         conn.prepareStatement(sql).use { ps ->
             if (projectKey != null) ps.setString(1, projectKey)
             val rs = ps.executeQuery()
@@ -111,7 +126,7 @@ class SQLiteVectorStore(private val project: Project) {
         val props = Properties()
         map.forEach { (k, v) -> props.setProperty(k, v) }
         val out = StringBuilder()
-        props.forEach { k, v -> out.append("${k}=${v}\\n") }
+        props.forEach { k, v -> out.append("$k=${v}\\n") }
         return out.toString()
     }
 
@@ -142,7 +157,10 @@ class SQLiteVectorStore(private val project: Project) {
         return fa
     }
 
-    private fun cosineSimilarity(a: FloatArray, b: FloatArray): Double {
+    private fun cosineSimilarity(
+        a: FloatArray,
+        b: FloatArray,
+    ): Double {
         val len = minOf(a.size, b.size)
         var dot = 0.0
         var na = 0.0

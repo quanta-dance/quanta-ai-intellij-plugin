@@ -2,6 +2,7 @@ import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
+    id("com.diffplug.spotless") version "6.25.0"
     id("java")
     alias(libs.plugins.intellijPlatform)
     alias(libs.plugins.kotlin)
@@ -36,6 +37,15 @@ kotlin {
     }
 }
 
+// Ensure IntelliJ Platform's kotlinx-coroutines wins on the test classpath to avoid NoSuchMethodError
+configurations {
+    named("testRuntimeClasspath") {
+        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
+        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-jdk8")
+        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-debug")
+    }
+}
+
 tasks {
 
     shadowJar {
@@ -60,8 +70,8 @@ tasks {
         untilBuild.set("271.*")
         changeNotes.set(
             """
-        Initial version of Quanta AI plugin
-    """.trimIndent()
+            Initial version of Quanta AI plugin
+            """.trimIndent(),
         )
     }
 
@@ -84,7 +94,7 @@ tasks {
         // Enable internal mode and debug categories so QDLog debug appears during runIde
         jvmArgs(
             "-Didea.is.internal=true",
-            "-Didea.log.debug.categories=com.github.quanta_dance.quanta.plugins.intellij.*"
+            "-Didea.log.debug.categories=com.github.quanta_dance.quanta.plugins.intellij.*",
         )
     }
 
@@ -107,7 +117,7 @@ dependencies {
                 "com.intellij.java",
                 "com.intellij.gradle",
                 "Git4Idea",
-            )
+            ),
         )
         pluginVerifier()
         zipSigner()
@@ -148,11 +158,10 @@ dependencies {
     testImplementation("io.mockk:mockk-agent-jvm:1.13.5")
 }
 
-
 // ensure sqlite-jdbc is available in the plugin sandbox at runtime
 tasks.register<Task>("copyRuntimeLibsToSandbox") {
     doLast {
-        val sandboxLib = file("${buildDir}/idea-sandbox/plugins/${project.name}/lib")
+        val sandboxLib = layout.buildDirectory.dir("idea-sandbox/plugins/${project.name}/lib").get().asFile
         sandboxLib.mkdirs()
         configurations.runtimeClasspath.get().forEach { file ->
             if (file.name.contains("sqlite-jdbc") || file.name.contains("sqlite")) {
@@ -167,7 +176,7 @@ tasks.register<Task>("copyRuntimeLibsToSandbox") {
 
 tasks.register<Copy>("copyLicenses") {
     from("LICENSE.txt", "NOTICE.txt", "licenses")
-    into("${buildDir}/distributions/licenses")
+    into(layout.buildDirectory.dir("distributions/licenses"))
 }
 
 tasks.named("buildPlugin") {
@@ -177,4 +186,13 @@ tasks.named("buildPlugin") {
 
 tasks.named("runIde") {
     dependsOn("copyRuntimeLibsToSandbox")
+}
+
+spotless {
+    kotlin {
+        licenseHeaderFile(
+            rootProject.file("config/license/HEADER")
+        )
+        ktlint()
+    }
 }

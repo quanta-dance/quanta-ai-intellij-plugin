@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.services.openai
 
 import com.github.quanta_dance.quanta.plugins.intellij.tools.ToolsRegistry
@@ -8,7 +11,10 @@ import com.openai.models.responses.ResponseFunctionToolCall
 class DefaultToolInvoker : ToolInvoker {
     private val log = Logger.getInstance(DefaultToolInvoker::class.java)
 
-    override fun invoke(project: Project, functionCall: ResponseFunctionToolCall): Any {
+    override fun invoke(
+        project: Project,
+        functionCall: ResponseFunctionToolCall,
+    ): Any {
         val name = functionCall.name()
         val available = ToolsRegistry.toolsFor(project)
         available.forEach { toolClass ->

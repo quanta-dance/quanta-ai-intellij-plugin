@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.tools
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
@@ -9,7 +12,12 @@ import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.execution.impl.ConsoleViewImpl
-import com.intellij.execution.process.*
+import com.intellij.execution.process.ProcessEvent
+import com.intellij.execution.process.ProcessHandler
+import com.intellij.execution.process.ProcessHandlerFactory
+import com.intellij.execution.process.ProcessListener
+import com.intellij.execution.process.ProcessNotCreatedException
+import com.intellij.execution.process.ProcessOutputType
 import com.intellij.execution.ui.ConsoleView
 import com.intellij.execution.ui.ConsoleViewContentType
 import com.intellij.openapi.application.ApplicationManager
@@ -28,7 +36,6 @@ import java.io.IOException
  */
 @JsonClassDescription("Execute command in the terminal. For example: echo \"Hello, World!\"")
 class TerminalCommandTool : ToolInterface<String> {
-
     @JsonPropertyDescription("Command to execute, e.g. echo 'hello world'")
     var command: String? = null
 
@@ -48,15 +55,17 @@ class TerminalCommandTool : ToolInterface<String> {
         if (cmd.isEmpty()) return "Command is not specified."
 
         // Execute via the system shell to support arguments and quoting
-        val commandLine = if (SystemInfo.isWindows) {
-            GeneralCommandLine("cmd").withParameters("/c", cmd)
-        } else {
-            GeneralCommandLine("/bin/sh").withParameters("-c", cmd)
-        }
+        val commandLine =
+            if (SystemInfo.isWindows) {
+                GeneralCommandLine("cmd").withParameters("/c", cmd)
+            } else {
+                GeneralCommandLine("/bin/sh").withParameters("-c", cmd)
+            }
 
-        val envMap: Map<String, String> = envVars
-            .filter { it.name.isNotBlank() }
-            .associate { it.name to (it.value ?: "") }
+        val envMap: Map<String, String> =
+            envVars
+                .filter { it.name.isNotBlank() }
+                .associate { it.name to (it.value ?: "") }
         if (envMap.isNotEmpty()) {
             commandLine.withEnvironment(envMap)
         }
@@ -82,7 +91,6 @@ class TerminalCommandTool : ToolInterface<String> {
                 val content = contentFactory.createContent(consoleView?.component, "Quanta AI", false)
                 contentManager?.addContent(content)
                 contentManager?.setSelectedContent(content)
-
             } else {
                 contentManager.setSelectedContent(existingContent)
             }
@@ -95,29 +103,46 @@ class TerminalCommandTool : ToolInterface<String> {
             val outputBuilder = StringBuilder()
             val processHandler: ProcessHandler = ProcessHandlerFactory.getInstance().createProcessHandler(commandLine)
 
-            processHandler.addProcessListener(object : ProcessListener {
-                private var filteredEcho = false
-                override fun onTextAvailable(event: ProcessEvent, outputType: Key<*>) {
-                    // Ignore system service messages
-                    if (outputType === ProcessOutputType.SYSTEM) return
+            processHandler.addProcessListener(
+                object : ProcessListener {
+                    private var filteredEcho = false
 
-                    val text = event.text.replace("\r", "")
-                    val trimmed = text.trim()
+                    override fun onTextAvailable(
+                        event: ProcessEvent,
+                        outputType: Key<*>,
+                    ) {
+                        // Ignore system service messages
+                        if (outputType === ProcessOutputType.SYSTEM) return
 
-                    // Filter an initial echo of the command (some shells or configurations may echo)
-                    if (!filteredEcho && (trimmed == cmd || trimmed == commandLine.commandLineString)) {
-                        filteredEcho = true
-                        return
+                        val text = event.text.replace("\r", "")
+                        val trimmed = text.trim()
+
+                        // Filter an initial echo of the command (some shells or configurations may echo)
+                        if (!filteredEcho && (trimmed == cmd || trimmed == commandLine.commandLineString)) {
+                            filteredEcho = true
+                            return
+                        }
+
+                        outputBuilder.append(text)
+                        val contentType =
+                            if (outputType === ProcessOutputType.STDERR) {
+                                ConsoleViewContentType.ERROR_OUTPUT
+                            } else {
+                                ConsoleViewContentType.NORMAL_OUTPUT
+                            }
+                        consoleView?.print(text, contentType)
                     }
 
-                    outputBuilder.append(text)
-                    val contentType = if (outputType === ProcessOutputType.STDERR) ConsoleViewContentType.ERROR_OUTPUT else ConsoleViewContentType.NORMAL_OUTPUT
-                    consoleView?.print(text, contentType)
-                }
-                override fun startNotified(event: ProcessEvent) { }
-                override fun processTerminated(event: ProcessEvent) { }
-                override fun processWillTerminate(event: ProcessEvent, willBeDestroyed: Boolean) { }
-            })
+                    override fun startNotified(event: ProcessEvent) {}
+
+                    override fun processTerminated(event: ProcessEvent) {}
+
+                    override fun processWillTerminate(
+                        event: ProcessEvent,
+                        willBeDestroyed: Boolean,
+                    ) {}
+                },
+            )
 
             processHandler.startNotify()
             processHandler.waitFor()
@@ -150,5 +175,5 @@ data class EnvVarEntry(
     @field:JsonPropertyDescription("Variable name")
     val name: String = "",
     @field:JsonPropertyDescription("Variable value")
-    val value: String? = null
+    val value: String? = null,
 )

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.tools
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
@@ -30,13 +33,13 @@ class RunGradleTestsTool : ToolInterface<RunTestsResult> {
     var reportsDir: String? = null
 
     override fun execute(project: Project): RunTestsResult {
-        val basePath = project.basePath ?: return RunTestsResult(false,0,0,0, emptyList(), null, "Project base path not found")
+        val basePath = project.basePath ?: return RunTestsResult(false, 0, 0, 0, emptyList(), null, "Project base path not found")
         val tasksList = (tasks?.trim()?.takeIf { it.isNotEmpty() } ?: "test").split(" ").filter { it.isNotBlank() }
 
         val gradlewName = if (SystemInfo.isWindows) "gradlew.bat" else "gradlew"
         val gradlew = File(basePath, gradlewName)
         if (!gradlew.exists()) {
-            return RunTestsResult(false,0,0,0, emptyList(), null, "Gradle wrapper not found: $gradlewName")
+            return RunTestsResult(false, 0, 0, 0, emptyList(), null, "Gradle wrapper not found: $gradlewName")
         }
 
         val args = mutableListOf<String>()
@@ -48,19 +51,30 @@ class RunGradleTestsTool : ToolInterface<RunTestsResult> {
 
         // Start a single tooling message and spinner
         val taskLine = "tasks=${args.joinToString(" ")}"
-        val tool = try { project.service<ToolWindowService>().startToolingMessage("Run tests", taskLine) } catch (_: Throwable) { null }
-        val spinner = try { project.service<ToolWindowService>().startSpinner("In progress...") } catch (_: Throwable) { null }
+        val tool =
+            try {
+                project.service<ToolWindowService>().startToolingMessage("Run tests", taskLine)
+            } catch (_: Throwable) {
+                null
+            }
+        val spinner =
+            try {
+                project.service<ToolWindowService>().startSpinner("In progress...")
+            } catch (_: Throwable) {
+                null
+            }
 
-        val process = try {
-            ProcessBuilder(args)
-                .directory(File(basePath))
-                .redirectErrorStream(true)
-                .start()
-        } catch (e: Exception) {
-            spinner?.stopError("Failed to start gradle")
-            tool?.setText(taskLine + "\n\nFailed to start gradle: ${e.message}")
-            return RunTestsResult(false,0,0,0, emptyList(), null, "Failed to start gradle: ${e.message}")
-        }
+        val process =
+            try {
+                ProcessBuilder(args)
+                    .directory(File(basePath))
+                    .redirectErrorStream(true)
+                    .start()
+            } catch (e: Exception) {
+                spinner?.stopError("Failed to start gradle")
+                tool?.setText(taskLine + "\n\nFailed to start gradle: ${e.message}")
+                return RunTestsResult(false, 0, 0, 0, emptyList(), null, "Failed to start gradle: ${e.message}")
+            }
 
         val output = StringBuilder()
         val start = System.currentTimeMillis()
@@ -80,21 +94,22 @@ class RunGradleTestsTool : ToolInterface<RunTestsResult> {
         fun rebuildPanelText(): String {
             val elapsedSec = ((System.currentTimeMillis() - start) / 1000)
             val taskInfo = currentTask?.let { "\nCurrent: > Task :$it" } ?: ""
-            val body = buildString {
-                if (recent.isNotEmpty()) {
-                    append(recent.joinToString("\n"))
-                    append("\n")
+            val body =
+                buildString {
+                    if (recent.isNotEmpty()) {
+                        append(recent.joinToString("\n"))
+                        append("\n")
+                    }
+                    append("Elapsed: ")
+                    append(elapsedSec)
+                    append("s, passed: ")
+                    append(passed)
+                    append(", failed: ")
+                    append(failed)
+                    append(", skipped: ")
+                    append(skipped)
+                    append(taskInfo)
                 }
-                append("Elapsed: ")
-                append(elapsedSec)
-                append("s, passed: ")
-                append(passed)
-                append(", failed: ")
-                append(failed)
-                append(", skipped: ")
-                append(skipped)
-                append(taskInfo)
-            }
             return "$taskLine\n\n$body"
         }
 
@@ -151,15 +166,18 @@ class RunGradleTestsTool : ToolInterface<RunTestsResult> {
             process.destroyForcibly()
             spinner?.stopError("Timeout")
             tool?.setText(taskLine + "\n\nTimeout while running Gradle tests")
-            return RunTestsResult(false,0,0,0, emptyList(), null, "Gradle test execution timed out")
+            return RunTestsResult(false, 0, 0, 0, emptyList(), null, "Gradle test execution timed out")
         }
         val exitCode = process.exitValue()
 
-        val tail = if (stdoutTailLines > 0) {
-            val lines = output.toString().lines()
-            val count = if (stdoutTailLines > lines.size) lines.size else stdoutTailLines
-            lines.takeLast(count).joinToString("\n")
-        } else null
+        val tail =
+            if (stdoutTailLines > 0) {
+                val lines = output.toString().lines()
+                val count = if (stdoutTailLines > lines.size) lines.size else stdoutTailLines
+                lines.takeLast(count).joinToString("\n")
+            } else {
+                null
+            }
 
         // Refresh VFS for reports dir asynchronously, then parse synchronously from IO to avoid read lock issues
         val reportsPath = reportsDir?.takeIf { it.isNotBlank() } ?: "build/test-results/test"
@@ -170,18 +188,27 @@ class RunGradleTestsTool : ToolInterface<RunTestsResult> {
 
         if (success) {
             spinner?.stopSuccess()
-            val finalText = if (parseResult.failed == 0) {
-                rebuildPanelText() + "\nAll tests passed"
-            } else {
-                rebuildPanelText() + "\n${parseResult.failed} tests failed out of ${parseResult.total}"
-            }
+            val finalText =
+                if (parseResult.failed == 0) {
+                    rebuildPanelText() + "\nAll tests passed"
+                } else {
+                    rebuildPanelText() + "\n${parseResult.failed} tests failed out of ${parseResult.total}"
+                }
             tool?.setText(finalText)
         } else {
             spinner?.stopError("Gradle exit=$exitCode")
             tool?.setText(rebuildPanelText() + "\nGradle failed with exit code $exitCode")
         }
 
-        return RunTestsResult(success, parseResult.total, parseResult.failed, parseResult.skipped, parseResult.failedTests, tail, if (success) "" else "Gradle failed with exit code $exitCode")
+        return RunTestsResult(
+            success,
+            parseResult.total,
+            parseResult.failed,
+            parseResult.skipped,
+            parseResult.failedTests,
+            tail,
+            if (success) "" else "Gradle failed with exit code $exitCode",
+        )
     }
 
     private data class Aggregate(
@@ -197,7 +224,7 @@ class RunGradleTestsTool : ToolInterface<RunTestsResult> {
         var skipped = 0
         val failedTests = mutableListOf<TestCaseResult>()
 
-        if (!dir.exists()) return Aggregate(0,0,0, emptyList())
+        if (!dir.exists()) return Aggregate(0, 0, 0, emptyList())
 
         val factory = DocumentBuilderFactory.newInstance()
         dir.walkTopDown().filter { it.isFile && it.extension.equals("xml", true) }.forEach { file ->
@@ -246,18 +273,19 @@ class RunGradleTestsTool : ToolInterface<RunTestsResult> {
                     total += 1
 
                     if (status == "failed" || status == "error") {
-                        failedTests += TestCaseResult(
-                            className = className,
-                            name = name,
-                            status = status,
-                            durationMillis = durationMillis,
-                            failureMessage = failureMessage,
-                            failureType = failureType,
-                            failureStackTrace = failureStack,
-                            systemOut = systemOut,
-                            systemErr = systemErr,
-                            reportFilePath = file.absolutePath
-                        )
+                        failedTests +=
+                            TestCaseResult(
+                                className = className,
+                                name = name,
+                                status = status,
+                                durationMillis = durationMillis,
+                                failureMessage = failureMessage,
+                                failureType = failureType,
+                                failureStackTrace = failureStack,
+                                systemOut = systemOut,
+                                systemErr = systemErr,
+                                reportFilePath = file.absolutePath,
+                            )
                     }
                 }
             } catch (_: Exception) {

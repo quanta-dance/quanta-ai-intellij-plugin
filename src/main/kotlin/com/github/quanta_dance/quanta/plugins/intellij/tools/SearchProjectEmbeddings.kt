@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.tools
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
@@ -10,7 +13,6 @@ import com.intellij.openapi.project.Project
 
 @JsonClassDescription("Search project embeddings for a query text. Returns topK results with id, score and metadata.")
 class SearchProjectEmbeddings : ToolInterface<SearchProjectEmbeddingsResult> {
-
     @JsonPropertyDescription("The query text to search for.")
     var queryText: String? = null
 
@@ -23,14 +25,16 @@ class SearchProjectEmbeddings : ToolInterface<SearchProjectEmbeddingsResult> {
         val vectorStore = project.service<VectorStoreService>()
 
         // Generate embedding synchronously via EmbeddingService (suspend -> runBlocking)
-        val embedding = kotlinx.coroutines.runBlocking {
-            embeddingService.createEmbeddings(listOf(query))[0]
-        }
+        val embedding =
+            kotlinx.coroutines.runBlocking {
+                embeddingService.createEmbeddings(listOf(query))[0]
+            }
         val results = vectorStore.search(embedding, topK, project.basePath ?: project.name)
 
-        val items = results.map { r ->
-            SearchProjectEmbeddingsResult.Item(r.id, r.score, r.metadata, r.metadata["path"].orEmpty())
-        }
+        val items =
+            results.map { r ->
+                SearchProjectEmbeddingsResult.Item(r.id, r.score, r.metadata, r.metadata["path"].orEmpty())
+            }
         return SearchProjectEmbeddingsResult(items)
     }
 }

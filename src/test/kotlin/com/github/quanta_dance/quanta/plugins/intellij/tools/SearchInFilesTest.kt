@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.tools
 
 import com.intellij.find.FindModel
@@ -12,11 +15,18 @@ import com.intellij.psi.PsiManager
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.usageView.UsageInfo
 import com.intellij.util.Processor
-import io.mockk.*
-import kotlin.test.*
+import io.mockk.MockKAnnotations
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.mockkStatic
+import io.mockk.unmockkAll
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
-class SearchInFilesUnitTest {
-
+class SearchInFilesTest {
     @BeforeTest
     fun setUp() {
         MockKAnnotations.init(this, relaxUnitFun = true)
@@ -25,7 +35,10 @@ class SearchInFilesUnitTest {
         mockkStatic(ApplicationManager::class)
         val app = mockk<Application>()
         every { ApplicationManager.getApplication() } returns app
-        every { app.runReadAction(any<Runnable>()) } answers { arg<Runnable>(0).run(); null }
+        every { app.runReadAction(any<Runnable>()) } answers {
+            arg<Runnable>(0).run()
+            null
+        }
     }
 
     @AfterTest
@@ -50,12 +63,22 @@ class SearchInFilesUnitTest {
         val project = mockk<Project>()
         every { project.basePath } returns "/project"
         // Stub projectScope to avoid getUserData calls in GlobalSearchScope.projectScope
-        every { GlobalSearchScope.projectScope(project) } returns object : GlobalSearchScope(project) {
-            override fun contains(file: VirtualFile) = true
-            override fun isSearchInModuleContent(aModule: com.intellij.openapi.module.Module) = true
-            override fun isSearchInLibraries() = false
-        }
-        every { FindInProjectUtil.findUsages(any<FindModel>(), project, any<Processor<UsageInfo>>(), any()) } throws RuntimeException("boom")
+        every { GlobalSearchScope.projectScope(project) } returns
+            object : GlobalSearchScope(project) {
+                override fun contains(file: VirtualFile) = true
+
+                override fun isSearchInModuleContent(aModule: com.intellij.openapi.module.Module) = true
+
+                override fun isSearchInLibraries() = false
+            }
+        every {
+            FindInProjectUtil.findUsages(
+                any<FindModel>(),
+                project,
+                any<Processor<UsageInfo>>(),
+                any(),
+            )
+        } throws RuntimeException("boom")
         val res = tool.execute(project)
         assertTrue(res.modelSummary?.contains("Search failed") == true)
         assertEquals(0, res.matches.size)
@@ -68,11 +91,14 @@ class SearchInFilesUnitTest {
         val project = mockk<Project>()
         every { project.basePath } returns "/project"
         // Stub projectScope
-        every { GlobalSearchScope.projectScope(project) } returns object : GlobalSearchScope(project) {
-            override fun contains(file: VirtualFile) = true
-            override fun isSearchInModuleContent(aModule: com.intellij.openapi.module.Module) = true
-            override fun isSearchInLibraries() = false
-        }
+        every { GlobalSearchScope.projectScope(project) } returns
+            object : GlobalSearchScope(project) {
+                override fun contains(file: VirtualFile) = true
+
+                override fun isSearchInModuleContent(aModule: com.intellij.openapi.module.Module) = true
+
+                override fun isSearchInLibraries() = false
+            }
 
         val usage = mockk<UsageInfo>()
         val vfile = mockk<VirtualFile>()
@@ -114,11 +140,14 @@ class SearchInFilesUnitTest {
         every { project.basePath } returns "/project"
 
         // Stub projectScope
-        every { GlobalSearchScope.projectScope(project) } returns object : GlobalSearchScope(project) {
-            override fun contains(file: VirtualFile) = true
-            override fun isSearchInModuleContent(aModule: com.intellij.openapi.module.Module) = true
-            override fun isSearchInLibraries() = false
-        }
+        every { GlobalSearchScope.projectScope(project) } returns
+            object : GlobalSearchScope(project) {
+                override fun contains(file: VirtualFile) = true
+
+                override fun isSearchInModuleContent(aModule: com.intellij.openapi.module.Module) = true
+
+                override fun isSearchInLibraries() = false
+            }
 
         val usage = mockk<UsageInfo>()
         val vfile = mockk<VirtualFile>()

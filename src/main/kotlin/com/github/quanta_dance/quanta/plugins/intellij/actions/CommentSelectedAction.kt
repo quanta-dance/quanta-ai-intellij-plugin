@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.actions
 
 import com.github.quanta_dance.quanta.plugins.intellij.services.OpenAIService
@@ -10,17 +13,15 @@ import com.intellij.openapi.project.Project
 
 class CommentSelectedAction : AnAction() {
     override fun actionPerformed(event: AnActionEvent) {
-        //val file: VirtualFile? = event.getData(CommonDataKeys.VIRTUAL_FILE)
+        // val file: VirtualFile? = event.getData(CommonDataKeys.VIRTUAL_FILE)
         val project: Project? = event.project
 
         ApplicationManager.getApplication().executeOnPooledThread {
             project?.service<OpenAIService>()?.sendMessage(
                 "Add comments to selected code. If nothing selected - add comments to the whole file. " +
-                        "Comments should include javadoc for java files, scaladoc for scala files, godoc fo golang and etc",
-
-                )
+                    "Comments should include javadoc for java files, scaladoc for scala files, godoc fo golang and etc",
+            )
         }
-
     }
 
     override fun update(e: AnActionEvent) {

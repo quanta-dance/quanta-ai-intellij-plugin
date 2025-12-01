@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.toolWindow
 
 import com.github.quanta_dance.quanta.plugins.intellij.services.OpenAIService
@@ -14,10 +17,11 @@ import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.ui.content.ContentFactory
 
-
 class QuantaAIToolWindowFactory : ToolWindowFactory {
-
-    override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
+    override fun createToolWindowContent(
+        project: Project,
+        toolWindow: ToolWindow,
+    ) {
         val mainPanel = MainPanel(project)
 
         project.service<ToolWindowService>().setToolWindowFactory(mainPanel)
@@ -29,29 +33,36 @@ class QuantaAIToolWindowFactory : ToolWindowFactory {
         val titleGroup = DefaultActionGroup()
 
         // New Session action — clears current dialog and starts a new session (with user confirmation)
-        val newSessionAction = object : AnAction("New Session") {
-            override fun actionPerformed(e: AnActionEvent) {
-                try {
-                    // Ask user to confirm starting a new session to avoid accidental loss of conversation
-                    val confirmed = Messages.showYesNoDialog(
-                        project,
-                        "Start a new session? This will clear the current conversation history.",
-                        "Start New Session",
-                        "Start New Session",
-                        "Cancel",
-                        Messages.getQuestionIcon()
-                    ) == Messages.YES
+        val newSessionAction =
+            object : AnAction("New Session") {
+                override fun actionPerformed(e: AnActionEvent) {
+                    try {
+                        // Ask user to confirm starting a new session to avoid accidental loss of conversation
+                        val confirmed =
+                            Messages.showYesNoDialog(
+                                project,
+                                "Start a new session? This will clear the current conversation history.",
+                                "Start New Session",
+                                "Start New Session",
+                                "Cancel",
+                                Messages.getQuestionIcon(),
+                            ) == Messages.YES
 
-                    if (!confirmed) return
+                        if (!confirmed) return
 
-                    val service = project.service<OpenAIService>()
-                    val newId = service.newSession()
-                    project.service<ToolWindowService>().addToolingMessage("AI", "New session started: $newId")
-                } catch (ex: Throwable) {
-                    try { project.service<ToolWindowService>().addToolingMessage("AI", "Failed to start new session: ${ex.message}") } catch (_: Throwable) {}
+                        val service = project.service<OpenAIService>()
+                        val newId = service.newSession()
+                        project.service<ToolWindowService>().addToolingMessage("AI", "New session started: $newId")
+                    } catch (ex: Throwable) {
+                        try {
+                            project.service<ToolWindowService>().addToolingMessage("AI", "Failed to start new session: ${ex.message}")
+                        } catch (
+                            _: Throwable,
+                        ) {
+                        }
+                    }
                 }
             }
-        }
 
         titleGroup.add(newSessionAction)
 
@@ -86,13 +97,15 @@ class QuantaAIToolWindowFactory : ToolWindowFactory {
             }
         }
 
-        val content = ContentFactory.getInstance().createContent(
-            mainPanel, "", false
-        )
+        val content =
+            ContentFactory.getInstance().createContent(
+                mainPanel,
+                "",
+                false,
+            )
         toolWindow.contentManager.addContent(content)
 
         // Ensure the tool window is registered for each project
         toolWindow.setAvailable(true, null)
     }
-
 }

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.services.openai
 
 import com.github.quanta_dance.quanta.plugins.intellij.services.SQLiteVectorStore
@@ -15,12 +18,16 @@ class EmbeddingService(private val project: Project) {
     private val log = Logger.getInstance(EmbeddingService::class.java)
     private val oAI: OpenAIClient = OpenAIClientProvider.get(project)
 
-    suspend fun createEmbeddings(texts: List<String>, model: String = "text-embedding-3-small"): List<FloatArray> =
+    suspend fun createEmbeddings(
+        texts: List<String>,
+        model: String = "text-embedding-3-small",
+    ): List<FloatArray> =
         withContext(Dispatchers.IO) {
-            val params = com.openai.models.embeddings.EmbeddingCreateParams.builder()
-                .model(com.openai.models.embeddings.EmbeddingModel.of(model))
-                .input(texts.first())
-                .build()
+            val params =
+                com.openai.models.embeddings.EmbeddingCreateParams.builder()
+                    .model(com.openai.models.embeddings.EmbeddingModel.of(model))
+                    .input(texts.first())
+                    .build()
             val output = oAI.embeddings().create(params).data()
             output.map { item -> item.embedding().map { it.toFloat() }.toFloatArray() }
         }

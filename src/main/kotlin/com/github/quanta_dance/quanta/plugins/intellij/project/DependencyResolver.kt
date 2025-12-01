@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.project
 
 import com.intellij.openapi.project.Project
@@ -10,18 +13,21 @@ import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiJavaFile
 import com.intellij.psi.search.GlobalSearchScope
 
-
-object ImportToDependencyResolver {
-    fun resolveImportsToDependencies(project: Project, psiFile: PsiFile?): Set<String> {
-        val libs = HashSet<String>();
+object DependencyResolver {
+    fun resolveImportsToDependencies(
+        project: Project,
+        psiFile: PsiFile?,
+    ): Set<String> {
+        val libs = HashSet<String>()
 
         try {
             if (psiFile is PsiJavaFile) {
                 for (importStatement in psiFile.importList!!.importStatements) {
                     val importText = importStatement.qualifiedName
                     if (importText != null) {
-                        val psiClass = JavaPsiFacade.getInstance(project)
-                            .findClass(importText, GlobalSearchScope.allScope(project))
+                        val psiClass =
+                            JavaPsiFacade.getInstance(project)
+                                .findClass(importText, GlobalSearchScope.allScope(project))
 
                         if (psiClass != null) {
                             val classFile = psiClass.containingFile.virtualFile
@@ -39,10 +45,12 @@ object ImportToDependencyResolver {
             //
         }
         return libs
-
     }
 
-    private fun getLibraryForClass(project: Project, classFile: VirtualFile): String? {
+    private fun getLibraryForClass(
+        project: Project,
+        classFile: VirtualFile,
+    ): String? {
         val fileIndex = ProjectRootManager.getInstance(project).fileIndex
         val entries: MutableList<OrderEntry> = fileIndex.getOrderEntriesForFile(classFile)
 

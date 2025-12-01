@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.toolWindow.cards
 
 import com.intellij.icons.AllIcons
@@ -14,13 +17,14 @@ class SpinnerCardPanel(message: String) : JBPanel<SpinnerCardPanel>(BorderLayout
 
     init {
         isOpaque = false
-        val row = JBPanel<Nothing>().apply {
-            layout = BoxLayout(this, BoxLayout.X_AXIS)
-            isOpaque = false
-            add(icon)
-            add(Box.createHorizontalStrut(8))
-            add(statusLabel)
-        }
+        val row =
+            JBPanel<Nothing>().apply {
+                layout = BoxLayout(this, BoxLayout.X_AXIS)
+                isOpaque = false
+                add(icon)
+                add(Box.createHorizontalStrut(8))
+                add(statusLabel)
+            }
         add(row, BorderLayout.WEST)
     }
 

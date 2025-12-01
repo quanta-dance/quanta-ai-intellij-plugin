@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.tools
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
@@ -21,32 +24,38 @@ import java.nio.charset.StandardCharsets
 
 @JsonClassDescription(
     "Create or Update specified file with provided content. " +
-            "Before modifying methods in the file you may need to check for this method references as they might need to be updated."
+        "Before modifying methods in the file you may need to check for this method references as they might need to be updated.",
 )
 class CreateOrUpdateFile : ToolInterface<String> {
-
     @JsonPropertyDescription("Relative to the project root path to the requested file.")
     var filePath: String? = null
 
-    @JsonPropertyDescription("New content for the file to be modified. This MUST be a complete replacement of file content. Existing content of file will be replaced with this content.")
+    @JsonPropertyDescription(
+        "New content for the file to be modified. This MUST be a complete replacement of file content. " +
+            "Existing content of file will be replaced with this content.",
+    )
     var content: String? = null
 
     @JsonPropertyDescription("If true, validates the updated file after write and reports compilation errors.")
     var validateAfterUpdate: Boolean = false
 
-    companion object { private val logger = Logger.getInstance(CreateOrUpdateFile::class.java) }
+    companion object {
+        private val logger = Logger.getInstance(CreateOrUpdateFile::class.java)
+    }
 
     override fun execute(project: Project): String {
         var result: String = "File successfully updated"
         var lastModified: Long = 0
         val projectBase = project.basePath ?: return "Project base path not found."
-        val resolved = try {
-            PathUtils.resolveWithinProject(projectBase, filePath)
-        } catch (e: IllegalArgumentException) {
-            project.service<ToolWindowService>().addToolingMessage("Modify File - rejected", e.message ?: "Invalid path")
-            QDLog.warn(logger, { "Invalid path for CreateOrUpdateFile: ${filePath}" }, e)
-            return e.message ?: "Invalid path"
-        }
+        val resolved =
+            try {
+                PathUtils.resolveWithinProject(projectBase, filePath)
+            } catch (e: IllegalArgumentException) {
+                project.service<ToolWindowService>()
+                    .addToolingMessage("Modify File - rejected", e.message ?: "Invalid path")
+                QDLog.warn(logger, { "Invalid path for CreateOrUpdateFile: $filePath" }, e)
+                return e.message ?: "Invalid path"
+            }
         val relToBase = PathUtils.relativizeToProject(projectBase, resolved)
 
         var updatedVirtualFile: VirtualFile? = null
@@ -57,16 +66,19 @@ class CreateOrUpdateFile : ToolInterface<String> {
                 try {
                     val ioFile = resolved.toFile()
                     ioFile.parentFile?.mkdirs()
-                    val parentVf = try {
-                        VfsUtil.createDirectories(ioFile.parentFile.absolutePath)
-                    } catch (e: Throwable) {
-                        QDLog.debug(logger) { "VFS createDirectories failed: ${e.message}" }
-                        val found = LocalFileSystem.getInstance().refreshAndFindFileByIoFile(ioFile.parentFile)
-                            ?: throw IllegalStateException("Unable to create directories for: ${ioFile.parentFile}")
-                        found
-                    }
-                    val virtualFile = parentVf.findChild(ioFile.name)
-                        ?: parentVf.createChildData(this, ioFile.name)
+                    val parentVf =
+                        try {
+                            VfsUtil.createDirectories(ioFile.parentFile.absolutePath)
+                        } catch (e: Throwable) {
+                            QDLog.debug(logger) { "VFS createDirectories failed: ${e.message}" }
+                            val found =
+                                LocalFileSystem.getInstance().refreshAndFindFileByIoFile(ioFile.parentFile)
+                                    ?: throw IllegalStateException("Unable to create directories for: ${ioFile.parentFile}")
+                            found
+                        }
+                    val virtualFile =
+                        parentVf.findChild(ioFile.name)
+                            ?: parentVf.createChildData(this, ioFile.name)
                     updatedVirtualFile = virtualFile
 
                     val document = FileDocumentManager.getInstance().getDocument(virtualFile)
@@ -96,7 +108,8 @@ class CreateOrUpdateFile : ToolInterface<String> {
                     lastModified = psiFile?.modificationStamp ?: 0
                 } catch (e: Throwable) {
                     QDLog.warn(logger, { "Failed to update file $relToBase" }, e)
-                    project.service<ToolWindowService>().addToolingMessage("Modify File - failed", e.message ?: "Write action failed")
+                    project.service<ToolWindowService>()
+                        .addToolingMessage("Modify File - failed", e.message ?: "Write action failed")
                     throw e
                 }
             }
@@ -104,7 +117,11 @@ class CreateOrUpdateFile : ToolInterface<String> {
 
         // Ensure documents are committed and VFS refreshed so validation sees the latest content
         try {
-            try { PsiDocumentManager.getInstance(project).commitAllDocuments() } catch (e: Throwable) { QDLog.debug(logger) { "commitAllDocuments failed: ${e.message}" } }
+            try {
+                PsiDocumentManager.getInstance(project).commitAllDocuments()
+            } catch (e: Throwable) {
+                QDLog.debug(logger) { "commitAllDocuments failed: ${e.message}" }
+            }
             FileDocumentManager.getInstance().saveAllDocuments()
             val ioFile = resolved.toFile()
             val vFile = LocalFileSystem.getInstance().refreshAndFindFileByIoFile(ioFile)
@@ -115,7 +132,11 @@ class CreateOrUpdateFile : ToolInterface<String> {
                 } catch (e: Throwable) {
                     QDLog.debug(logger) { "VFS markDirtyAndRefresh failed: ${e.message}" }
                 }
-                try { PsiDocumentManager.getInstance(project).commitAllDocuments() } catch (e: Throwable) { QDLog.debug(logger) { "commitAllDocuments after refresh failed: ${e.message}" } }
+                try {
+                    PsiDocumentManager.getInstance(project).commitAllDocuments()
+                } catch (e: Throwable) {
+                    QDLog.debug(logger) { "commitAllDocuments after refresh failed: ${e.message}" }
+                }
             }
         } catch (e: Throwable) {
             QDLog.debug(logger) { "Post-write sync failed: ${e.message}" }
@@ -125,16 +146,18 @@ class CreateOrUpdateFile : ToolInterface<String> {
             try {
                 val validator = ValidateClassFileTool()
                 validator.filePath = relToBase
-                val errors = ApplicationManager.getApplication().runReadAction<List<String>> {
-                    validator.findErrors(project)
-                }
-                val summary = if (errors.size == 1 && errors.first().equals("No compilation errors found.", ignoreCase = true)) {
-                    "No compilation errors found."
-                } else if (errors.isEmpty()) {
-                    "Validation completed, no errors reported."
-                } else {
-                    errors.joinToString("\n").let { if (it.length > 2000) it.take(2000) + "\n..." else it }
-                }
+                val errors =
+                    ApplicationManager.getApplication().runReadAction<List<String>> {
+                        validator.findErrors(project)
+                    }
+                val summary =
+                    if (errors.size == 1 && errors.first().equals("No compilation errors found.", ignoreCase = true)) {
+                        "No compilation errors found."
+                    } else if (errors.isEmpty()) {
+                        "Validation completed, no errors reported."
+                    } else {
+                        errors.joinToString("\n").let { if (it.length > 2000) it.take(2000) + "\n..." else it }
+                    }
                 result += "\nValidation: " + summary.lines().first()
             } catch (e: Throwable) {
                 result += "\nValidation: skipped (${e.message})"

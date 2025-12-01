@@ -1,0 +1,5 @@
+root = true
+
+[*.{kt,kts}]
+# Allow underscores in package names (you publish with underscores)
+ktlint_standard_package-name = disabled

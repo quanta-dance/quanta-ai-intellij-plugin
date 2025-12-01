@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.toolWindow.cards
 
 import com.intellij.ui.JBColor
@@ -13,32 +16,34 @@ class MessageCardPanel(
     private val message: String,
 ) :
     JBPanel<Nothing>(BorderLayout()) {
-
     init {
         initializeUI()
     }
 
     private fun initializeUI() {
-        val descriptionArea = JTextArea(message).apply {
-            isEditable = false
-            lineWrap = true
-            wrapStyleWord = true
-            font = font.deriveFont(font.size2D - 1)
-            foreground = JBColor.DARK_GRAY
-            background = UIManager.getColor("Panel.background")
-            border = BorderFactory.createEmptyBorder(5, 5, 5, 5)
-            maximumSize = this.preferredSize // Set maximum size to preferred size
-        }
+        val descriptionArea =
+            JTextArea(message).apply {
+                isEditable = false
+                lineWrap = true
+                wrapStyleWord = true
+                font = font.deriveFont(font.size2D - 1)
+                foreground = JBColor.DARK_GRAY
+                background = UIManager.getColor("Panel.background")
+                border = BorderFactory.createEmptyBorder(5, 5, 5, 5)
+                maximumSize = this.preferredSize // Set maximum size to preferred size
+            }
 
-        val descriptionScrollPane = JBScrollPane(descriptionArea).apply {
-            border = BorderFactory.createTitledBorder(BorderFactory.createLineBorder(JBColor.LIGHT_GRAY), title)
-        }
+        val descriptionScrollPane =
+            JBScrollPane(descriptionArea).apply {
+                border = BorderFactory.createTitledBorder(BorderFactory.createLineBorder(JBColor.LIGHT_GRAY), title)
+            }
 
-        val topPanel = JBPanel<Nothing>(BorderLayout()).apply {
-            add(descriptionScrollPane, BorderLayout.NORTH) // Align to North to prevent expanding
-            border = BorderFactory.createEmptyBorder(5, 5, 5, 5)
-            background = UIManager.getColor("Panel.background")
-        }
+        val topPanel =
+            JBPanel<Nothing>(BorderLayout()).apply {
+                add(descriptionScrollPane, BorderLayout.NORTH) // Align to North to prevent expanding
+                border = BorderFactory.createEmptyBorder(5, 5, 5, 5)
+                background = UIManager.getColor("Panel.background")
+            }
 
         add(topPanel, BorderLayout.NORTH)
     }

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.tools
 
 import com.intellij.openapi.project.Project
@@ -5,52 +8,57 @@ import java.io.File
 import java.util.ArrayDeque
 
 object ToolsRegistry {
-
     enum class Group { GENERIC, GRADLE, GO }
 
     data class ToolEntry(val clazz: Class<out ToolInterface<out Any>>, val group: Group = Group.GENERIC)
 
     private fun javaPsiAvailable(project: Project?): Boolean {
-        fun tryLoad(loader: ClassLoader?): Boolean = try {
-            loader?.loadClass("com.intellij.psi.JavaPsiFacade")
-            true
-        } catch (_: Throwable) { false }
+        fun tryLoad(loader: ClassLoader?): Boolean =
+            try {
+                loader?.loadClass("com.intellij.psi.JavaPsiFacade")
+                true
+            } catch (_: Throwable) {
+                false
+            }
         if (tryLoad(this::class.java.classLoader)) return true
         if (project != null && tryLoad(project::class.java.classLoader)) return true
         return try {
             Class.forName("com.intellij.psi.JavaPsiFacade")
             true
-        } catch (_: Throwable) { false }
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     private fun baseEntries(project: Project?): List<ToolEntry> {
-        val list = mutableListOf(
-            ToolEntry(CodeRefactorSuggester::class.java, Group.GENERIC),
-            ToolEntry(CreateOrUpdateFile::class.java, Group.GENERIC),
-            ToolEntry(SearchProjectEmbeddings::class.java, Group.GENERIC),
-            ToolEntry(UpsertProjectEmbedding::class.java, Group.GENERIC),
-            ToolEntry(SearchInFiles::class.java, Group.GENERIC),
-            ToolEntry(GetProjectDetails::class.java, Group.GENERIC),
-            ToolEntry(ReadFileContent::class.java, Group.GENERIC),
-            ToolEntry(ListFiles::class.java, Group.GENERIC),
-            ToolEntry(GetFileReferencesAndDependencies::class.java, Group.GENERIC),
-            ToolEntry(GenerateImage::class.java, Group.GENERIC),
-            ToolEntry(SoundGeneratorTool::class.java, Group.GENERIC),
-            ToolEntry(DeleteFileTool::class.java, Group.GENERIC),
-            ToolEntry(CopyFileOrDirectoryTool::class.java, Group.GENERIC),
-            ToolEntry(ValidateClassFileTool::class.java, Group.GENERIC),
-            // Gradle
-            ToolEntry(TerminalCommandTool::class.java, Group.GENERIC),
-            ToolEntry(RunGradleTestsTool::class.java, Group.GRADLE),
-            ToolEntry(GetTestInfoTool::class.java, Group.GRADLE),
-            // Editor/file
-            ToolEntry(OpenFileInEditorTool::class.java, Group.GENERIC),
-            ToolEntry(PatchFile::class.java, Group.GENERIC),
-            // Go
-            ToolEntry(RunGoTestsTool::class.java, Group.GO),
-            // Dynamic model tool
-            ToolEntry(RequestModelSwitch::class.java, Group.GENERIC),
-        )
+        val list =
+            mutableListOf(
+                ToolEntry(CodeRefactorSuggester::class.java, Group.GENERIC),
+                ToolEntry(CreateOrUpdateFile::class.java, Group.GENERIC),
+                ToolEntry(SearchProjectEmbeddings::class.java, Group.GENERIC),
+                ToolEntry(UpsertProjectEmbedding::class.java, Group.GENERIC),
+                ToolEntry(SearchInFiles::class.java, Group.GENERIC),
+                ToolEntry(GetProjectDetails::class.java, Group.GENERIC),
+                ToolEntry(ReadFileContent::class.java, Group.GENERIC),
+                ToolEntry(ListFiles::class.java, Group.GENERIC),
+                ToolEntry(GetFileReferencesAndDependencies::class.java, Group.GENERIC),
+                ToolEntry(GenerateImage::class.java, Group.GENERIC),
+                ToolEntry(SoundGeneratorTool::class.java, Group.GENERIC),
+                ToolEntry(DeleteFileTool::class.java, Group.GENERIC),
+                ToolEntry(CopyFileOrDirectoryTool::class.java, Group.GENERIC),
+                ToolEntry(ValidateClassFileTool::class.java, Group.GENERIC),
+                // Gradle
+                ToolEntry(TerminalCommandTool::class.java, Group.GENERIC),
+                ToolEntry(RunGradleTestsTool::class.java, Group.GRADLE),
+                ToolEntry(GetTestInfoTool::class.java, Group.GRADLE),
+                // Editor/file
+                ToolEntry(OpenFileInEditorTool::class.java, Group.GENERIC),
+                ToolEntry(PatchFile::class.java, Group.GENERIC),
+                // Go
+                ToolEntry(RunGoTestsTool::class.java, Group.GO),
+                // Dynamic model tool
+                ToolEntry(RequestModelSwitch::class.java, Group.GENERIC),
+            )
         if (javaPsiAvailable(project)) {
             list.add(ToolEntry(InspectDependencies::class.java, Group.GENERIC))
         }
@@ -74,7 +82,7 @@ object ToolsRegistry {
 
     private fun detectGradle(root: File): Boolean {
         return File(root, "gradlew").exists() || File(root, "gradlew.bat").exists() ||
-                File(root, "build.gradle").exists() || File(root, "build.gradle.kts").exists()
+            File(root, "build.gradle").exists() || File(root, "build.gradle.kts").exists()
     }
 
     private fun detectGo(root: File): Boolean {
@@ -104,7 +112,9 @@ object ToolsRegistry {
         }
         // 3) Heuristic fallback: look for .go files in common folders
         val dirs = listOf(root, File(root, "cmd"), File(root, "pkg"), File(root, "internal"))
-        return dirs.any { dir -> dir.exists() && dir.isDirectory && dir.listFiles()?.any { it.isFile && it.extension.equals("go", true) } == true }
+        return dirs.any {
+                dir ->
+            dir.exists() && dir.isDirectory && dir.listFiles()?.any { it.isFile && it.extension.equals("go", true) } == true
+        }
     }
-
 }

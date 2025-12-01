@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.project
 
 import com.intellij.openapi.application.ApplicationManager
@@ -12,7 +15,6 @@ import java.io.InputStreamReader
 import java.nio.charset.StandardCharsets
 
 object ProjectVersionUtil {
-
     fun getProjectBuildFiles(project: Project): List<String> {
         val projectBaseDir =
             project.basePath?.let { LocalFileSystem.getInstance().findFileByPath(it) } ?: return emptyList()
@@ -22,15 +24,13 @@ object ProjectVersionUtil {
         }.map { it.name }
     }
 
-
     fun buildProjectFileTree(
         file: VirtualFile,
         baseDir: VirtualFile,
         fileIndex: ProjectFileIndex,
         indent: String = "",
-        builder: StringBuilder = StringBuilder()
+        builder: StringBuilder = StringBuilder(),
     ): StringBuilder {
-
         if (!fileIndex.isInContent(file)) return builder
 
         if (file == baseDir) {
@@ -102,14 +102,15 @@ object ProjectVersionUtil {
     private fun getKotlinVersion(project: Project): String? {
         // Try from classpath libs first (kotlin-stdlib-<ver>.jar)
         val libs = OrderEnumerator.orderEntries(project).librariesOnly().classesRoots
-        val fromJar = libs.firstOrNull { vf ->
-            val p = vf.path
-            p.contains("kotlin-stdlib-") || p.contains("kotlin-reflect-") || p.contains("kotlin-stdlib-jdk")
-        }?.path?.let { path ->
-            // Extract version after kotlin-stdlib- or kotlin-reflect-
-            val re = Regex("kotlin-(?:stdlib(?:-jdk[0-9]+)?|reflect)-([0-9][0-9a-zA-Z+_.-]*)")
-            re.find(path)?.groupValues?.getOrNull(1)
-        }
+        val fromJar =
+            libs.firstOrNull { vf ->
+                val p = vf.path
+                p.contains("kotlin-stdlib-") || p.contains("kotlin-reflect-") || p.contains("kotlin-stdlib-jdk")
+            }?.path?.let { path ->
+                // Extract version after kotlin-stdlib- or kotlin-reflect-
+                val re = Regex("kotlin-(?:stdlib(?:-jdk[0-9]+)?|reflect)-([0-9][0-9a-zA-Z+_.-]*)")
+                re.find(path)?.groupValues?.getOrNull(1)
+            }
         val cleanedJar = sanitizeKotlinVersion(fromJar)
         if (!cleanedJar.isNullOrBlank()) return cleanedJar
 
@@ -117,14 +118,15 @@ object ProjectVersionUtil {
         val base = project.basePath ?: return null
         val gradleKts = LocalFileSystem.getInstance().findFileByPath("$base/build.gradle.kts")
         val gradleGroovy = LocalFileSystem.getInstance().findFileByPath("$base/build.gradle")
-        val versionFromBuild = sequenceOf(gradleKts, gradleGroovy).mapNotNull { vf -> vf?.let { readText(it) } }
-            .mapNotNull { text ->
-                // plugins { kotlin("jvm") version "1.9.24" } or id("org.jetbrains.kotlin.jvm") version "1.9.24"
-                val r1 = Regex("""kotlin\("[^\"]+"\)\s+version\s+"([^\"]+)"""")
-                val r2 = Regex("""id\("org\.jetbrains\.kotlin\.[^"]+"\)\s+version\s+"([^"]+)"""")
-                r1.find(text)?.groupValues?.getOrNull(1) ?: r2.find(text)?.groupValues?.getOrNull(1)
-            }
-            .firstOrNull()
+        val versionFromBuild =
+            sequenceOf(gradleKts, gradleGroovy).mapNotNull { vf -> vf?.let { readText(it) } }
+                .mapNotNull { text ->
+                    // plugins { kotlin("jvm") version "1.9.24" } or id("org.jetbrains.kotlin.jvm") version "1.9.24"
+                    val r1 = Regex("""kotlin\("[^\"]+"\)\s+version\s+"([^\"]+)"""")
+                    val r2 = Regex("""id\("org\.jetbrains\.kotlin\.[^"]+"\)\s+version\s+"([^"]+)"""")
+                    r1.find(text)?.groupValues?.getOrNull(1) ?: r2.find(text)?.groupValues?.getOrNull(1)
+                }
+                .firstOrNull()
         return sanitizeKotlinVersion(versionFromBuild)
     }
 
@@ -138,10 +140,11 @@ object ProjectVersionUtil {
         val jvmToolchain = Regex("""jvmToolchain\((\d+)\)""").find(text)?.groupValues?.getOrNull(1)
 
         // kotlinOptions { jvmTarget = "17" } or jvmTarget = 17
-        val jvmTarget = Regex("""kotlinOptions\s*\{[^}]*jvmTarget\s*=\s*"?([A-Za-z0-9_.]+)"?""")
-            .find(text)?.groupValues?.getOrNull(1)
-            ?: Regex("""compilerOptions\s*\{[^}]*jvmTarget\.set\(JvmTarget\.JVM_(\d+)\)""")
+        val jvmTarget =
+            Regex("""kotlinOptions\s*\{[^}]*jvmTarget\s*=\s*"?([A-Za-z0-9_.]+)"?""")
                 .find(text)?.groupValues?.getOrNull(1)
+                ?: Regex("""compilerOptions\s*\{[^}]*jvmTarget\.set\(JvmTarget\.JVM_(\d+)\)""")
+                    .find(text)?.groupValues?.getOrNull(1)
 
         // languageVersion = "2.0" or compilerOptions { languageVersion.set(KotlinVersion.KOTLIN_2_0) }
         var lang = Regex("""languageVersion\s*=\s*"([0-9][0-9_.]*)"""").find(text)?.groupValues?.getOrNull(1)
@@ -156,9 +159,10 @@ object ProjectVersionUtil {
 
     private fun getGradleVersion(project: Project): String? {
         val base = project.basePath ?: return null
-        val wrapper = LocalFileSystem.getInstance()
-            .findFileByPath("$base/gradle/wrapper/gradle-wrapper.properties")
-            ?: return null
+        val wrapper =
+            LocalFileSystem.getInstance()
+                .findFileByPath("$base/gradle/wrapper/gradle-wrapper.properties")
+                ?: return null
         val text = readText(wrapper) ?: return null
         // distributionUrl=https://services.gradle.org/distributions/gradle-8.9-bin.zip
         val m = Regex("""distributionUrl=.*gradle-([0-9.]+)-""").find(text)
@@ -167,9 +171,10 @@ object ProjectVersionUtil {
 
     private fun getMavenVersion(project: Project): String? {
         val base = project.basePath ?: return null
-        val wrapper = LocalFileSystem.getInstance()
-            .findFileByPath("$base/.mvn/wrapper/maven-wrapper.properties")
-            ?: return null
+        val wrapper =
+            LocalFileSystem.getInstance()
+                .findFileByPath("$base/.mvn/wrapper/maven-wrapper.properties")
+                ?: return null
         val text = readText(wrapper) ?: return null
         // distributionUrl=https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/3.9.8/apache-maven-3.9.8-bin.zip
         val m = Regex("""distributionUrl=.*apache-maven-([0-9.]+)-""").find(text)
@@ -200,8 +205,9 @@ object ProjectVersionUtil {
         var ts: String? = null
         readText(pkgJson)?.let { text ->
             // engines: { "node": ">=18" }
-            node = Regex(""""engines"\s*:\s*\{[^}]*"node"\s*:\s*"([^"]+)"""")
-                .find(text)?.groupValues?.getOrNull(1)
+            node =
+                Regex(""""engines"\s*:\s*\{[^}]*"node"\s*:\s*"([^"]+)"""")
+                    .find(text)?.groupValues?.getOrNull(1)
             // dependencies/devDependencies: { "typescript": "^5.4.0" }
             ts = Regex(""""typescript"\s*:\s*"([^"]+)"""").find(text)?.groupValues?.getOrNull(1)
         }

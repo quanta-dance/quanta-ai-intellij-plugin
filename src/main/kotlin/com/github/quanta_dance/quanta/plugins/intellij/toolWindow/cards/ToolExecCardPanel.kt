@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.toolWindow.cards
 
 import com.intellij.ui.JBColor
@@ -13,16 +16,16 @@ class ToolExecCardPanel(
     private val title: String,
     message: String,
 ) : JBPanel<Nothing>(BorderLayout()) {
-
-    private val descriptionArea = JTextArea(message).apply {
-        isEditable = false
-        lineWrap = true
-        wrapStyleWord = true
-        font = font.deriveFont(font.size2D - 1)
-        foreground = JBColor.GRAY
-        background = UIManager.getColor("Label.background")
-        maximumSize = preferredSize
-    }
+    private val descriptionArea =
+        JTextArea(message).apply {
+            isEditable = false
+            lineWrap = true
+            wrapStyleWord = true
+            font = font.deriveFont(font.size2D - 1)
+            foreground = JBColor.GRAY
+            background = UIManager.getColor("Label.background")
+            maximumSize = preferredSize
+        }
 
     init {
         initializeUI()
@@ -31,16 +34,18 @@ class ToolExecCardPanel(
     private fun initializeUI() {
         this.border = BorderFactory.createTitledBorder(title)
 
-        val descriptionScrollPane = JBScrollPane(descriptionArea).apply {
-            border = BorderFactory.createEmptyBorder(5, 5, 5, 1)
-            maximumSize = Dimension(500, descriptionArea.preferredSize.height)
-        }
+        val descriptionScrollPane =
+            JBScrollPane(descriptionArea).apply {
+                border = BorderFactory.createEmptyBorder(5, 5, 5, 1)
+                maximumSize = Dimension(500, descriptionArea.preferredSize.height)
+            }
 
-        val topPanel = JBPanel<Nothing>(BorderLayout()).apply {
-            add(descriptionScrollPane, BorderLayout.NORTH)
-            border = BorderFactory.createEmptyBorder(5, 5, 5, 5)
-            background = UIManager.getColor("Panel.background")
-        }
+        val topPanel =
+            JBPanel<Nothing>(BorderLayout()).apply {
+                add(descriptionScrollPane, BorderLayout.NORTH)
+                border = BorderFactory.createEmptyBorder(5, 5, 5, 5)
+                background = UIManager.getColor("Panel.background")
+            }
 
         add(topPanel, BorderLayout.NORTH)
     }

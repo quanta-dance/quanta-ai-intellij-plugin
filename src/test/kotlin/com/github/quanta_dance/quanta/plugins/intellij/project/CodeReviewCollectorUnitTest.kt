@@ -1,15 +1,23 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.project
 
 import com.intellij.openapi.project.Project
-import com.intellij.psi.PsiMethod
-import com.intellij.psi.PsiElement
-import com.intellij.psi.PsiFile
+import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiClass
 import com.intellij.psi.PsiDocumentManager
-import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiFile
+import com.intellij.psi.PsiMethod
 import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.util.Query
-import io.mockk.*
+import io.mockk.MockKAnnotations
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.mockkStatic
+import io.mockk.unmockkAll
+import io.mockk.verify
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -21,7 +29,6 @@ import kotlin.test.assertTrue
  * These tests do not require IntelliJ test fixtures and can be run as standard unit tests.
  */
 class CodeReviewCollectorUnitTest {
-
     @BeforeTest
     fun setUp() {
         MockKAnnotations.init(this, relaxUnitFun = true)
@@ -48,7 +55,7 @@ class CodeReviewCollectorUnitTest {
         every { emptyQuery.findAll() } returns emptyList()
         every { ReferencesSearch.search(method, any()) } returns emptyQuery
 
-        val result = CodeReviewCollector.getMethodUsagesWithReferencesSearch(method, project)
+        val result = CodeReferenceSelector.getMethodUsagesWithReferencesSearch(method, project)
         assertEquals(0, result.size)
     }
 
@@ -88,7 +95,7 @@ class CodeReviewCollectorUnitTest {
         every { q.findAll() } returns listOf(reference)
         every { ReferencesSearch.search(method, any()) } returns q
 
-        val result = CodeReviewCollector.getMethodUsagesWithReferencesSearch(method, project)
+        val result = CodeReferenceSelector.getMethodUsagesWithReferencesSearch(method, project)
         // Ensure call happened and method returned a List (don't rely on formatting specifics)
         verify { ReferencesSearch.search(method, any()) }
         assertTrue(result is List<*>)
@@ -106,7 +113,7 @@ class CodeReviewCollectorUnitTest {
         every { emptyQuery.findAll() } returns emptyList()
         every { ReferencesSearch.search(any(), any()) } returns emptyQuery
 
-        val refs = CodeReviewCollector.findClassReferences(psiClass)
+        val refs = CodeReferenceSelector.findClassReferences(psiClass)
         assertTrue(refs.isEmpty())
     }
 }

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.tools
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
@@ -6,13 +9,13 @@ import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowServic
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import java.nio.file.Files
-import java.nio.file.Path
-import java.nio.file.Paths
 import java.nio.file.StandardCopyOption
 
-@JsonClassDescription("Tool to copy a specified file or directory within the project. Before modifying methods in the file you may need to check for this method references as they might need to be updated.")
+@JsonClassDescription(
+    "Tool to copy a specified file or directory within the project. " +
+        "Before modifying methods in the file you may need to check for this method references as they might need to be updated.",
+)
 class CopyFileOrDirectoryTool : ToolInterface<String> {
-
     @JsonPropertyDescription("Source path of the file or directory to be copied.")
     var sourcePath: String? = null
 
@@ -27,14 +30,20 @@ class CopyFileOrDirectoryTool : ToolInterface<String> {
 
     override fun execute(project: Project): String {
         val base = project.basePath ?: return "Project base path not found."
-        val source = try { PathUtils.resolveWithinProject(base, sourcePath) } catch (e: IllegalArgumentException) {
-            project.service<ToolWindowService>().addToolingMessage("Copy - rejected", e.message ?: "Invalid source path")
-            return e.message ?: "Invalid source path"
-        }
-        val destination = try { PathUtils.resolveWithinProject(base, destinationPath) } catch (e: IllegalArgumentException) {
-            project.service<ToolWindowService>().addToolingMessage("Copy - rejected", e.message ?: "Invalid destination path")
-            return e.message ?: "Invalid destination path"
-        }
+        val source =
+            try {
+                PathUtils.resolveWithinProject(base, sourcePath)
+            } catch (e: IllegalArgumentException) {
+                project.service<ToolWindowService>().addToolingMessage("Copy - rejected", e.message ?: "Invalid source path")
+                return e.message ?: "Invalid source path"
+            }
+        val destination =
+            try {
+                PathUtils.resolveWithinProject(base, destinationPath)
+            } catch (e: IllegalArgumentException) {
+                project.service<ToolWindowService>().addToolingMessage("Copy - rejected", e.message ?: "Invalid destination path")
+                return e.message ?: "Invalid destination path"
+            }
 
         // Prevent copying into itself or into a child of itself
         val sourceNorm = source.toAbsolutePath().normalize()
@@ -73,7 +82,7 @@ class CopyFileOrDirectoryTool : ToolInterface<String> {
                 }
             }
             val relMsg = PathUtils.relativizeToProject(base, destNorm)
-            project.service<ToolWindowService>().addToolingMessage("Copy successful", "${sourcePath} -> ${relMsg}")
+            project.service<ToolWindowService>().addToolingMessage("Copy successful", "$sourcePath -> $relMsg")
             "Copy successful"
         } catch (e: Exception) {
             val msg = "Error copying: ${e.message}"

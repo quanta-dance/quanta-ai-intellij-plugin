@@ -1,15 +1,20 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.project
 
 import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
-import com.intellij.psi.*
+import com.intellij.psi.PsiClass
+import com.intellij.psi.PsiDocumentManager
+import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiFile
+import com.intellij.psi.PsiMethod
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.SearchScope
 import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.psi.util.PsiTreeUtil
-import com.intellij.psi.PsiDocumentManager
-import com.intellij.openapi.vfs.VirtualFile
 import java.nio.file.Paths
 
 /**
@@ -18,10 +23,9 @@ import java.nio.file.Paths
  * It provides methods to find usages of methods and classes, compute file-relative
  * paths and obtain line numbers for PSI elements.
  */
-object CodeReviewCollector {
-
+object CodeReferenceSelector {
     private val excludedPackages = setOf("java.lang", "java.util", "java.io", "java.net")
-    private val logger = Logger.getInstance(CodeReviewCollector::class.java)
+    private val logger = Logger.getInstance(CodeReferenceSelector::class.java)
 
     /**
      * Return the 1-based line number of the provided element using its text range and
@@ -71,7 +75,10 @@ object CodeReviewCollector {
      * @param project IntelliJ project instance used to compute relative paths
      * @return list of formatted usage descriptions
      */
-    fun getMethodUsagesWithReferencesSearch(method: PsiMethod, project: Project): List<String> {
+    fun getMethodUsagesWithReferencesSearch(
+        method: PsiMethod,
+        project: Project,
+    ): List<String> {
         val methodUsages = mutableListOf<String>()
         try {
             val references = ReferencesSearch.search(method, method.useScope)
@@ -86,17 +93,18 @@ object CodeReviewCollector {
                     // If no base path, we still want relative behaviour to fail gracefully
                     QDLog.debug(logger) { "Project base path is null or blank; skipping relative path computation." }
                 }
-                val relativeFilePath = try {
-                    if (!basePath.isNullOrBlank()) {
-                        Paths.get(basePath).relativize(Paths.get(containingFilePath)).toString()
-                    } else {
+                val relativeFilePath =
+                    try {
+                        if (!basePath.isNullOrBlank()) {
+                            Paths.get(basePath).relativize(Paths.get(containingFilePath)).toString()
+                        } else {
+                            containingFilePath
+                        }
+                    } catch (e: Exception) {
+                        // Fallback to absolute path if relativize fails
+                        QDLog.debug(logger) { "Failed to relativize path: ${e.message}" }
                         containingFilePath
                     }
-                } catch (e: Exception) {
-                    // Fallback to absolute path if relativize fails
-                    QDLog.debug(logger) { "Failed to relativize path: ${e.message}" }
-                    containingFilePath
-                }
 
                 val containingClass = PsiTreeUtil.getParentOfType(element, PsiClass::class.java)
                 val qualifiedName = containingClass?.qualifiedName.orEmpty()
@@ -104,9 +112,9 @@ object CodeReviewCollector {
                     val lineNumber = getLineNumberOneBased(element)
                     methodUsages.add(
                         "Method: '${method.name}' Line ${currFileLine}\n" +
-                                "Used in Class: '${containingClass.name}'\n" +
-                                "File: '$relativeFilePath'\n" +
-                                "Line: $lineNumber\n"
+                            "Used in Class: '${containingClass.name}'\n" +
+                            "File: '$relativeFilePath'\n" +
+                            "Line: $lineNumber\n",
                     )
                 }
             }
@@ -150,7 +158,10 @@ object CodeReviewCollector {
      * @param visited mutable set of visited class keys to avoid cycles
      * @return list of usage descriptions
      */
-    private fun findClassReferencesInternal(psiClass: PsiClass, visited: MutableSet<String>): List<String> {
+    private fun findClassReferencesInternal(
+        psiClass: PsiClass,
+        visited: MutableSet<String>,
+    ): List<String> {
         val references = mutableListOf<String>()
         val classKey = psiClass.qualifiedName ?: psiClass.name ?: psiClass.hashCode().toString()
         if (visited.contains(classKey)) return references
@@ -161,22 +172,23 @@ object CodeReviewCollector {
             val searchScope: SearchScope = GlobalSearchScope.projectScope(project)
             val classSearchResults = ReferencesSearch.search(psiClass, searchScope)
             val basePath = project.basePath
-            for (reference in classSearchResults) {
-                val psiElement = reference.element ?: continue
+            for (reference in classSearchResults.findAll().iterator()) {
+                val psiElement = reference.element
                 val file = psiElement.containingFile ?: continue
                 val virtual = file.virtualFile ?: continue
-                val relativeFilePath = try {
-                    if (!basePath.isNullOrBlank()) {
-                        Paths.get(basePath).relativize(Paths.get(virtual.path)).toString()
-                    } else {
+                val relativeFilePath =
+                    try {
+                        if (!basePath.isNullOrBlank()) {
+                            Paths.get(basePath).relativize(Paths.get(virtual.path)).toString()
+                        } else {
+                            virtual.path
+                        }
+                    } catch (e: Exception) {
                         virtual.path
                     }
-                } catch (e: Exception) {
-                    virtual.path
-                }
                 if (relativeFilePath.isNotEmpty()) {
                     val lineNumber = getLineNumberOneBased(psiElement)
-                    references.add("Class '${psiClass.name}' used in ${relativeFilePath}, Line: $lineNumber")
+                    references.add("Class '${psiClass.name}' used in $relativeFilePath, Line: $lineNumber")
                 }
             }
         } catch (e: Exception) {
@@ -212,7 +224,10 @@ object CodeReviewCollector {
      * @param project current IntelliJ project used for relative path computation
      * @return list of formatted reference and definition descriptions
      */
-    fun getAllReferencesAndDefinitions(psiFile: PsiFile, project: Project): List<String> {
+    fun getAllReferencesAndDefinitions(
+        psiFile: PsiFile,
+        project: Project,
+    ): List<String> {
         val methodUsages = mutableListOf<String>()
         val methodDeclarations = PsiTreeUtil.collectElementsOfType(psiFile, PsiMethod::class.java)
         val allClassReferences = mutableListOf<String>()

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.mcp
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
@@ -19,7 +22,7 @@ data class McpServerConfig(
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class McpServersFile(
-    val mcpServers: Map<String, McpServerConfig> = emptyMap()
+    val mcpServers: Map<String, McpServerConfig> = emptyMap(),
 )
 
 object McpServersConfigLoader {
@@ -29,7 +32,7 @@ object McpServersConfigLoader {
     data class LoadResult(
         val file: McpServersFile?,
         val parseError: String? = null,
-        val validationWarnings: List<String> = emptyList()
+        val validationWarnings: List<String> = emptyList(),
     )
 
     fun load(project: Project): McpServersFile {

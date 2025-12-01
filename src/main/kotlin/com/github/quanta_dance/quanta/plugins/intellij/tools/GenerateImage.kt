@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.tools
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
@@ -14,14 +17,16 @@ import java.net.URL
 
 @JsonClassDescription("Generate image with provided prompt")
 class GenerateImage : ToolInterface<String> {
-
     @JsonPropertyDescription("Title for the image. 20 characters maximum")
     var imageTitle: String? = null
 
     @JsonPropertyDescription("Prompt to generate a image")
     var promptText: String? = null
 
-    @JsonPropertyDescription("Optional file path (including filename) where the image will be saved. If omitted, only the URL is returned and shown in tool window.")
+    @JsonPropertyDescription(
+        "Optional file path (including filename) where the image will be saved." +
+            " If omitted, only the URL is returned and shown in tool window.",
+    )
     var filePath: String? = null
 
     companion object {
@@ -52,14 +57,15 @@ class GenerateImage : ToolInterface<String> {
             val fp = filePath
             if (fp != null) {
                 val projectBase = project.basePath ?: throw IllegalStateException("Project base path not found.")
-                val resolved = try {
-                    PathUtils.resolveWithinProject(projectBase, fp)
-                } catch (e: IllegalArgumentException) {
-                    project.service<ToolWindowService>()
-                        .addToolingMessage("Save Image - rejected", e.message ?: "Invalid path")
-                    QDLog.warn(logger, { "Invalid path for GenerateImage: $fp" }, e)
-                    throw e
-                }
+                val resolved =
+                    try {
+                        PathUtils.resolveWithinProject(projectBase, fp)
+                    } catch (e: IllegalArgumentException) {
+                        project.service<ToolWindowService>()
+                            .addToolingMessage("Save Image - rejected", e.message ?: "Invalid path")
+                        QDLog.warn(logger, { "Invalid path for GenerateImage: $fp" }, e)
+                        throw e
+                    }
 
                 // download the URL
                 BufferedInputStream(URL(url).openStream()).use { bis ->

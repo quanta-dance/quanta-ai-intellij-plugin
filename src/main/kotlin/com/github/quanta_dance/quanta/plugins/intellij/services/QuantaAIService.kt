@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.services
 
 import com.github.quanta_dance.quanta.plugins.intellij.sound.AudioCapture
@@ -11,7 +14,6 @@ import java.util.concurrent.CompletableFuture
 
 @Service(Service.Level.PROJECT)
 class QuantaAIService(private val project: Project) {
-
     private var capture: AudioCapture? = null
 
     companion object {
@@ -35,63 +37,66 @@ class QuantaAIService(private val project: Project) {
         onSpeechDetected: () -> Unit,
         onMuteChanged: (Boolean) -> Unit = {},
         onPartial: (String) -> Unit = {},
-        onFinal: (String) -> Unit = {}
+        onFinal: (String) -> Unit = {},
     ) {
         val oAI = project.service<OpenAIService>()
 
-        capture = AudioCapture(
-            fullBufferCallback = { wavBytes ->
-                // Optional final fallback (block-based), can be removed if not needed
-                CompletableFuture.runAsync {
-                    try {
-                        val text = oAI.transcript(wavBytes.inputStream())
-                        if (text.isNotBlank()) {
-                            ApplicationManager.getApplication().invokeLater {
-                                project.service<ToolWindowService>().addUserMessage(text)
+        capture =
+            AudioCapture(
+                fullBufferCallback = { wavBytes ->
+                    // Optional final fallback (block-based), can be removed if not needed
+                    CompletableFuture.runAsync {
+                        try {
+                            val text = oAI.transcript(wavBytes.inputStream())
+                            if (text.isNotBlank()) {
+                                ApplicationManager.getApplication().invokeLater {
+                                    project.service<ToolWindowService>().addUserMessage(text)
+                                }
+                                onFinal(text)
+                                oAI.sendMessage(text)
                             }
-                            onFinal(text)
-                            oAI.sendMessage(text)
+                        } catch (t: Throwable) {
+                            QDLog.warn(logger) { "Final transcription failed: ${t.message}" }
                         }
-                    } catch (t: Throwable) {
-                        QDLog.warn(logger) { "Final transcription failed: ${t.message}" }
                     }
-                }
-            },
-            onStreamStart = { inputStream: InputStream ->
-                // TODO: this currently doesn't work. openAI client doesn't produce events
-                // Start true streaming; AudioCapture will write a WAV header and stream PCM frames.
+                },
+                onStreamStart = { inputStream: InputStream ->
+                    // TODO: this currently doesn't work. openAI client doesn't produce events
+                    // Start true streaming; AudioCapture will write a WAV header and stream PCM frames.
 
-              //  val currentUserMessage = project.service<ToolWindowService>().addUserMessage("")
-                   CompletableFuture.runAsync {
-                       oAI.transcriptStreaming(
-                           inputStream,
-                           onDelta = { delta ->
-                               onPartial(delta)
-                               ApplicationManager.getApplication().invokeLater {
-                                //   currentUserMessage?.appendPartial(delta)
-                               }
-                           },
-                           onDone = { fin ->
-                               if (fin.isNotBlank()) {
-                                   onFinal(fin)
-                                   ApplicationManager.getApplication().invokeLater {
-                                    //   currentUserMessage?.appendPartial(fin) // repaint
-                                   }
-                                   try {
-                                       oAI.sendMessage(fin)
-                                   } catch (_: Throwable) {
-                                   }
-                               }
-                           }
-                       )
-                   }
-
-
-            },
-            onStreamBytes = { _, _ -> /* not needed; AudioCapture streams directly */ },
-            onStreamEnd = { /* nothing to send here; AudioCapture closes stream */ },
-            onMuteChanged = onMuteChanged,
-        )
+                    //  val currentUserMessage = project.service<ToolWindowService>().addUserMessage("")
+                    CompletableFuture.runAsync {
+                        oAI.transcriptStreaming(
+                            inputStream,
+                            onDelta = { delta ->
+                                onPartial(delta)
+                                ApplicationManager.getApplication().invokeLater {
+                                    //   currentUserMessage?.appendPartial(delta)
+                                }
+                            },
+                            onDone = { fin ->
+                                if (fin.isNotBlank()) {
+                                    onFinal(fin)
+                                    ApplicationManager.getApplication().invokeLater {
+                                        //   currentUserMessage?.appendPartial(fin) // repaint
+                                    }
+                                    try {
+                                        oAI.sendMessage(fin)
+                                    } catch (_: Throwable) {
+                                    }
+                                }
+                            },
+                        )
+                    }
+                },
+                onStreamBytes = { _, _ ->
+                    // not needed; AudioCapture streams directly
+                },
+                onStreamEnd = {
+                    // nothing to send here; AudioCapture closes stream
+                },
+                onMuteChanged = onMuteChanged,
+            )
         capture?.startCapture(
             onSilence = {
                 onSilenceDetected()

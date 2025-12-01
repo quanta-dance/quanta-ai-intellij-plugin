@@ -1,23 +1,30 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.settings
 
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.components.*
+import com.intellij.openapi.components.PersistentStateComponent
+import com.intellij.openapi.components.State
+import com.intellij.openapi.components.Storage
+import com.intellij.openapi.components.service
 import com.openai.models.ChatModel
 
 @State(
     name = "QuantaDanceSettingsState",
-    storages = [Storage("quantadance.xml")]
+    storages = [Storage("quantadance.xml")],
 )
 class QuantaAISettingsState : PersistentStateComponent<QuantaAISettingsState.QuantaAIState> {
-
     companion object {
         val instance: QuantaAISettingsState
             get() = ApplicationManager.getApplication().service<QuantaAISettingsState>()
+
+        const val DEFAULT_HOST = "https://api.openai.com/v1/"
     }
 
     // default configuration
     data class QuantaAIState(
-        var host: String = "https://api.openai.com/v1/",
+        var host: String = DEFAULT_HOST,
         var token: String = "",
         var voiceEnabled: Boolean = true,
         var voiceByLocalTTS: Boolean = false,
@@ -39,5 +46,4 @@ class QuantaAISettingsState : PersistentStateComponent<QuantaAISettingsState.Qua
     override fun loadState(state: QuantaAIState) {
         this.state = state
     }
-
 }

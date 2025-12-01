@@ -1,6 +1,10 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.services
 
 import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.sound.Player
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
@@ -8,7 +12,6 @@ import com.intellij.openapi.project.Project
 
 @Service(Service.Level.PROJECT)
 class AIVoiceService(private val project: Project) {
-
     private var process: Process? = null
 
     companion object {
@@ -34,19 +37,21 @@ class AIVoiceService(private val project: Project) {
         stopTalking()
         QDLog.debug(logger) { "Muting mic while speaking" }
         project.service<QuantaAIService>().mute(true)
-        val useLocalMacTts = System.getProperty("os.name").contains("Mac", ignoreCase = true)
-                && QuantaAISettingsState.instance.state.voiceByLocalTTS
+        val useLocalMacTts =
+            System.getProperty("os.name").contains("Mac", ignoreCase = true) &&
+                QuantaAISettingsState.instance.state.voiceByLocalTTS
         if (useLocalMacTts) {
-            val th = Thread {
-                try {
-                    process = ProcessBuilder("say", message).inheritIO().start()
-                    process?.waitFor()
-                } catch (e: Exception) {
-                    QDLog.error(logger, { "Local TTS process failed" }, e)
-                } finally {
-                    project.service<QuantaAIService>().mute(false)
+            val th =
+                Thread {
+                    try {
+                        process = ProcessBuilder("say", message).inheritIO().start()
+                        process?.waitFor()
+                    } catch (e: Exception) {
+                        QDLog.error(logger, { "Local TTS process failed" }, e)
+                    } finally {
+                        project.service<QuantaAIService>().mute(false)
+                    }
                 }
-            }
             th.isDaemon = true
             th.start()
         } else {

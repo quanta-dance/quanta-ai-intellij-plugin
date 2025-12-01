@@ -1,7 +1,14 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.services
 
 import com.github.quanta_dance.quanta.plugins.intellij.models.Suggestion
-import com.github.quanta_dance.quanta.plugins.intellij.toolWindow.cards.*
+import com.github.quanta_dance.quanta.plugins.intellij.toolWindow.cards.ImageCardPanel
+import com.github.quanta_dance.quanta.plugins.intellij.toolWindow.cards.SpinnerCardPanel
+import com.github.quanta_dance.quanta.plugins.intellij.toolWindow.cards.SuggestionCardPanel
+import com.github.quanta_dance.quanta.plugins.intellij.toolWindow.cards.ToolExecCardPanel
+import com.github.quanta_dance.quanta.plugins.intellij.toolWindow.cards.UserMessageCardPanel
 import com.github.quanta_dance.quanta.plugins.intellij.toolWindow.panels.MainPanel
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
@@ -16,7 +23,6 @@ import javax.swing.SwingUtilities
 
 @Service(Service.Level.PROJECT)
 class ToolWindowService(private val project: Project) {
-
     private var mainToolPanel: JPanel? = null
     private var messageScrollPane: JBScrollPane? = null
 
@@ -48,7 +54,10 @@ class ToolWindowService(private val project: Project) {
         return messagePanel
     }
 
-    fun addToolingMessage(toolName: String, arguments: String) {
+    fun addToolingMessage(
+        toolName: String,
+        arguments: String,
+    ) {
         ApplicationManager.getApplication().invokeLater {
             mainToolPanel?.add(ToolExecCardPanel(toolName, arguments))
             mainToolPanel?.revalidate()
@@ -71,6 +80,7 @@ class ToolWindowService(private val project: Project) {
                 }
             }
         }
+
         fun appendLine(line: String) {
             ApplicationManager.getApplication().invokeLater {
                 panel.appendLine(line)
@@ -83,7 +93,10 @@ class ToolWindowService(private val project: Project) {
         }
     }
 
-    fun startToolingMessage(toolName: String, initialText: String): ToolExecHandle? {
+    fun startToolingMessage(
+        toolName: String,
+        initialText: String,
+    ): ToolExecHandle? {
         val container = mainToolPanel ?: return null
         val panel = ToolExecCardPanel(toolName, initialText)
         ApplicationManager.getApplication().invokeLater {
@@ -97,7 +110,10 @@ class ToolWindowService(private val project: Project) {
         return ToolExecHandle(container, panel)
     }
 
-    fun addImage(title: String, url: String) {
+    fun addImage(
+        title: String,
+        url: String,
+    ) {
         ApplicationManager.getApplication().invokeLater {
             mainToolPanel?.add(ImageCardPanel(title, url))
             mainToolPanel?.revalidate()
@@ -126,7 +142,7 @@ class ToolWindowService(private val project: Project) {
     inner class SpinnerHandle(
         private val container: JPanel,
         private val panel: SpinnerCardPanel,
-        private val timer: Timer
+        private val timer: Timer,
     ) {
         fun stopSuccess() {
             ApplicationManager.getApplication().invokeLater {
@@ -161,12 +177,16 @@ class ToolWindowService(private val project: Project) {
                 messageScrollPane?.verticalScrollBar?.value = messageScrollPane?.verticalScrollBar?.maximum!!
             }
         }
-        timer.scheduleAtFixedRate(object : TimerTask() {
-            override fun run() {
-                val elapsed = ((System.currentTimeMillis() - start) / 1000)
-                SwingUtilities.invokeLater { card.setSeconds(elapsed) }
-            }
-        }, 0L, 1000L)
+        timer.scheduleAtFixedRate(
+            object : TimerTask() {
+                override fun run() {
+                    val elapsed = ((System.currentTimeMillis() - start) / 1000)
+                    SwingUtilities.invokeLater { card.setSeconds(elapsed) }
+                }
+            },
+            0L,
+            1000L,
+        )
         return SpinnerHandle(container, card, timer)
     }
 }

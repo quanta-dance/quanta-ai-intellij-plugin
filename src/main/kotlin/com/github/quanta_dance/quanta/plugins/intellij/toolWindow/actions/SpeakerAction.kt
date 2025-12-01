@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.toolWindow.actions
 
 import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState
@@ -15,7 +18,6 @@ import javax.swing.Icon
  * Displays the status based on user selection whether AI will speak to the user or not.
  */
 class SpeakerAction : ToggleAction("Toggle Voice Feedback", "Toggle voice feedback on or off", speakerOff) {
-
     companion object {
         private val speakerOff: Icon = getIcon("/icons/speakerOff.svg", javaClass)
         private val speakerOn: Icon = getIcon("/icons/speakerOn.svg", javaClass)
@@ -30,12 +32,14 @@ class SpeakerAction : ToggleAction("Toggle Voice Feedback", "Toggle voice feedba
         return ApplicationManager.getApplication().service<QuantaAISettingsState>().state.voiceEnabled
     }
 
-    override fun setSelected(e: AnActionEvent, sel: Boolean) {
+    override fun setSelected(
+        e: AnActionEvent,
+        sel: Boolean,
+    ) {
         ApplicationManager.getApplication().service<QuantaAISettingsState>().state.voiceEnabled = sel
     }
 
     override fun getActionUpdateThread(): ActionUpdateThread {
         return ActionUpdateThread.EDT
     }
-
 }

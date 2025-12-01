@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.mcp
 
 import com.fasterxml.jackson.databind.JsonNode
@@ -16,12 +19,15 @@ import java.util.concurrent.ConcurrentHashMap
  * Provides resolve(name) -> (server, method) for routing.
  */
 object DynamicMcpToolProvider {
-
     private val logger = Logger.getInstance(DynamicMcpToolProvider::class.java)
     private val nameMap: ConcurrentHashMap<String, Pair<String, String>> = ConcurrentHashMap()
 
     private fun sanitize(segment: String): String = segment.replace(Regex("[^A-Za-z0-9_-]"), "_")
-    private fun buildName(server: String, method: String): String = "mcp_" + sanitize(server) + "_" + sanitize(method)
+
+    private fun buildName(
+        server: String,
+        method: String,
+    ): String = "mcp_" + sanitize(server) + "_" + sanitize(method)
 
     fun buildTools(mcp: McpClientService): List<Tool> {
         val out = mutableListOf<Tool>()
@@ -35,10 +41,11 @@ object DynamicMcpToolProvider {
                 val fnName = buildName(server, method)
                 nameMap[fnName] = server to method
 
-                val description = buildString {
-                    append("MCP method '").append(method).append("' on server '").append(server).append("'. ")
-                    t.description?.let { if (it.isNotBlank()) append(it).append(' ') }
-                }
+                val description =
+                    buildString {
+                        append("MCP method '").append(method).append("' on server '").append(server).append("'. ")
+                        t.description?.let { if (it.isNotBlank()) append(it).append(' ') }
+                    }
 
                 val map: MutableMap<String, JsonValue> = hashMapOf<String, JsonValue>()
 
@@ -46,20 +53,20 @@ object DynamicMcpToolProvider {
                     map[entry.key] = JsonValue.fromJsonNode(jsonElementToJsonNode(entry.value))
                 }
 
-                val fnTool = FunctionTool.builder()
-                    .name(fnName)
-                    .description(description)
-                    .parameters(
-                        FunctionTool.Parameters.builder()
-                            .putAdditionalProperty("type", JsonValue.from("object"))
-                            .putAdditionalProperty("properties", JsonValue.from(map))
-                            .putAdditionalProperty("required", JsonValue.from(t.inputSchema.required.orEmpty()))
-                            .putAdditionalProperty("additionalProperties", JsonValue.from(false))
-                            .build()
-                    )
-                    .strict(false)
-                    .build()
-
+                val fnTool =
+                    FunctionTool.builder()
+                        .name(fnName)
+                        .description(description)
+                        .parameters(
+                            FunctionTool.Parameters.builder()
+                                .putAdditionalProperty("type", JsonValue.from("object"))
+                                .putAdditionalProperty("properties", JsonValue.from(map))
+                                .putAdditionalProperty("required", JsonValue.from(t.inputSchema.required.orEmpty()))
+                                .putAdditionalProperty("additionalProperties", JsonValue.from(false))
+                                .build(),
+                        )
+                        .strict(false)
+                        .build()
 
                 try {
                     fnTool.validate()
@@ -78,4 +85,3 @@ object DynamicMcpToolProvider {
 
     fun resolve(name: String): Pair<String, String>? = nameMap[name]
 }
-

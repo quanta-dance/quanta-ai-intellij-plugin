@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.tools
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
@@ -10,7 +13,6 @@ import com.openai.models.ChatModel
 
 @JsonClassDescription("Request to switch the conversation model tier. Returns approval decision and the clamped model.")
 class RequestModelSwitch : ToolInterface<Map<String, Any>> {
-
     @JsonPropertyDescription("Requested target model id, e.g., gpt-5-mini or gpt-5-nano")
     var desiredModel: String? = null
 
@@ -20,7 +22,9 @@ class RequestModelSwitch : ToolInterface<Map<String, Any>> {
     @JsonPropertyDescription("Optional hint: 'upgrade' or 'downgrade'")
     var direction: String? = null
 
-    @JsonPropertyDescription("Optional: current model id the agent is running on. Including this helps the agent decide whether to request upgrade/downgrade.")
+    @JsonPropertyDescription(
+        "Optional: current model id the agent is running on. Including this helps the agent decide whether to request upgrade/downgrade.",
+    )
     var currentModel: String? = null
 
     override fun execute(project: Project): Map<String, Any> {
@@ -39,6 +43,7 @@ class RequestModelSwitch : ToolInterface<Map<String, Any>> {
                 else -> 1 // default to middle tier if unknown
             }
         }
+
         fun normalize(id: String): String {
             val s = id.lowercase()
             return when {
@@ -76,26 +81,28 @@ class RequestModelSwitch : ToolInterface<Map<String, Any>> {
                 // within cap: approve
                 approved = true
                 chosen = capped
-                msg = when (direction?.lowercase()) {
-                    "upgrade" -> "Approved upgrade to $chosen from $normCurrent"
-                    "downgrade" -> "Approved downgrade to $chosen from $normCurrent"
-                    else -> "Approved model change to $chosen from $normCurrent"
-                }
+                msg =
+                    when (direction?.lowercase()) {
+                        "upgrade" -> "Approved upgrade to $chosen from $normCurrent"
+                        "downgrade" -> "Approved downgrade to $chosen from $normCurrent"
+                        else -> "Approved model change to $chosen from $normCurrent"
+                    }
             }
         }
 
         try {
             project.service<ToolWindowService>().addToolingMessage(
                 "Model switch request",
-                "runtime=$normCurrent requested=$normRequested cap=$normMax -> approved=$approved new=$chosen reason=${reason.orEmpty()}"
+                "runtime=$normCurrent requested=$normRequested cap=$normMax -> approved=$approved new=$chosen reason=${reason.orEmpty()}",
             )
-        } catch (_: Throwable) {}
+        } catch (_: Throwable) {
+        }
 
         return mapOf(
             "approved" to approved,
             "newModel" to chosen,
             "reason" to (reason ?: msg),
-            "currentModel" to normCurrent
+            "currentModel" to normCurrent,
         )
     }
 }

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.actions
 
 import com.github.quanta_dance.quanta.plugins.intellij.services.OpenAIService
@@ -18,7 +21,6 @@ class ReviewSelectedAction : AnAction() {
         ApplicationManager.getApplication().executeOnPooledThread {
             project?.service<OpenAIService>()?.sendMessage("Review and suggest changes in selected code")
         }
-
     }
 
     override fun update(e: AnActionEvent) {

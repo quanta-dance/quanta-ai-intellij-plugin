@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.tools
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
@@ -7,17 +10,19 @@ import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowServic
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 
-@JsonClassDescription("Publish actionable code refactoring suggestions to the UI. Non-actionable (descriptive-only) items must not be provided here.")
+@JsonClassDescription(
+    "Publish actionable code refactoring suggestions to the UI. Non-actionable (descriptive-only) items must not be provided here.",
+)
 class CodeRefactorSuggester : ToolInterface<String> {
-
     @JsonPropertyDescription(
-        "Only provide actionable suggestions: each item MUST include file, valid original line range (for display only), replaced_code (exact current text), and suggested_code (replacement). Descriptive-only suggestions are not accepted."
+        "Only provide actionable suggestions: each item MUST include file, valid original line range (for display only)," +
+            " replaced_code (exact current text), and suggested_code (replacement). Descriptive-only suggestions are not accepted.",
     )
     var suggestions: List<Suggestion> = emptyList()
 
     private fun isActionable(s: Suggestion): Boolean =
         s.file.isNotBlank() && s.suggested_code.isNotBlank() && s.replaced_code.isNotBlank() &&
-                s.original_line_from > 0 && s.original_line_to >= s.original_line_from
+            s.original_line_from > 0 && s.original_line_to >= s.original_line_from
 
     override fun execute(project: Project): String {
         if (suggestions.isEmpty()) return "No refactor suggestions available."
