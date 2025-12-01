@@ -12,10 +12,12 @@ import com.github.quantadance.quanta.plugins.intellij.services.openai.DefaultToo
 import com.github.quantadance.quanta.plugins.intellij.services.openai.OpenAIClientProvider
 import com.github.quantadance.quanta.plugins.intellij.services.openai.ToolInvoker
 import com.github.quantadance.quanta.plugins.intellij.settings.Instructions
+import com.github.quantadance.quanta.plugins.intellij.settings.QuantaAISettingsListener
 import com.github.quantadance.quanta.plugins.intellij.settings.QuantaAISettingsState
 import com.github.quantadance.quanta.plugins.intellij.tools.ToolsRegistry.toolsFor
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
@@ -46,12 +48,22 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Future
 
 @Service(Service.Level.PROJECT)
-class OpenAIService(private val project: Project) {
+class OpenAIService(private val project: Project) : Disposable {
     private var processingFuture: Future<*>? = null
     private var operationInProgress = false
     private val pcs = PropertyChangeSupport(this)
 
-    private val oAI: OpenAIClient = OpenAIClientProvider.get(project)
+    @Volatile
+    private var oAI: OpenAIClient = OpenAIClientProvider.get(project)
+
+    // Track last-used connection and model settings so we refresh only when needed
+    @Volatile
+    private var clientKey: Pair<String, String> =
+        QuantaAISettingsState.instance.state.let { it.host to it.token }
+
+    @Volatile
+    private var modelKey: Pair<Boolean, String> =
+        QuantaAISettingsState.instance.state.let { (it.dynamicModelEnabled == true) to it.aiChatModel }
 
     // Maintain only the previous response id; do not accumulate conversation history locally.
     private var lastResponseId: String? = null
@@ -137,6 +149,35 @@ class OpenAIService(private val project: Project) {
     init {
         thisLogger().warn("AI Service initialized.")
         QDLog.info(thisLogger()) { "AI Service initialized." }
+
+        // React to settings changes with service as disposable parent (do not use Project as disposable)
+        project.messageBus.connect(this).subscribe(
+            QuantaAISettingsListener.TOPIC,
+            object : QuantaAISettingsListener {
+                override fun onSettingsChanged(newState: QuantaAISettingsState.QuantaAIState) {
+                    try {
+                        val newClientKey = newState.host to newState.token
+                        if (newClientKey != clientKey) {
+                            oAI = OpenAIClientProvider.get(project)
+                            clientKey = newClientKey
+                            thisLogger().info("OpenAI client reinitialized after host/token change")
+                        }
+                        val newModelKey = (newState.dynamicModelEnabled == true) to newState.aiChatModel
+                        if (newModelKey != modelKey) {
+                            val dynamic = newState.dynamicModelEnabled == true
+                            val maxModel = newState.aiChatModel.ifBlank { ChatModel.GPT_5_MINI.toString() }
+                            currentModel = normalize(if (dynamic) ChatModel.GPT_5_MINI.toString() else maxModel)
+                            modelKey = newModelKey
+                        }
+                    } catch (_: Throwable) {
+                    }
+                }
+            },
+        )
+    }
+
+    override fun dispose() {
+        // nothing to dispose explicitly; message bus connection is tied to this service
     }
 
     private fun userMessage(text: String): ResponseInputItem =

@@ -3,6 +3,7 @@
 
 package com.github.quantadance.quanta.plugins.intellij.settings
 
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.options.Configurable
 import javax.swing.JComponent
 
@@ -45,6 +46,12 @@ class QuantaAIPluginConfigurable : Configurable {
             // Dynamic model toggle only
             settings.dynamicModelEnabled = this.dynamicModelEnabled
         }
+        // Notify listeners that settings changed so services can refresh their clients
+        val snapshot = settings.copy()
+        ApplicationManager.getApplication()
+            .messageBus
+            .syncPublisher(QuantaAISettingsListener.TOPIC)
+            .onSettingsChanged(snapshot)
     }
 
     override fun reset() {

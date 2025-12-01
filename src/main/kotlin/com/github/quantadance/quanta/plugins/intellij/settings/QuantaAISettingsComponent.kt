@@ -28,7 +28,11 @@ import javax.swing.JPanel
 import javax.swing.JScrollPane
 
 class QuantaAISettingsComponent {
-    private var hostField = JBTextField()
+    private var hostField =
+        JBTextField().apply {
+            this.emptyText.text = QuantaAISettingsState.DEFAULT_HOST
+            this.toolTipText = "Default host is ${QuantaAISettingsState.DEFAULT_HOST}"
+        }
     private var tokenField =
         JBPasswordField().apply {
             columns = 30
@@ -157,7 +161,7 @@ class QuantaAISettingsComponent {
             .panel
 
     var hostValue: String
-        get() = hostField.text
+        get() = hostField.text.trim().ifBlank { QuantaAISettingsState.DEFAULT_HOST }
         set(value) {
             hostField.text = value
         }

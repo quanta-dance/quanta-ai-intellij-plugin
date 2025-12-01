@@ -18,11 +18,13 @@ class QuantaAISettingsState : PersistentStateComponent<QuantaAISettingsState.Qua
     companion object {
         val instance: QuantaAISettingsState
             get() = ApplicationManager.getApplication().service<QuantaAISettingsState>()
+
+        const val DEFAULT_HOST = "https://api.openai.com/v1/"
     }
 
     // default configuration
     data class QuantaAIState(
-        var host: String = "https://api.openai.com/v1/",
+        var host: String = DEFAULT_HOST,
         var token: String = "",
         var voiceEnabled: Boolean = true,
         var voiceByLocalTTS: Boolean = false,
