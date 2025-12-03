@@ -32,5 +32,12 @@ object Instructions {
         - If a small change is required, the AI should fetch the file content, compute the exact new content locally, and then call CreateOrUpdateFile with the full updated file body.
         - If the AI cannot confidently construct the full replacement content, it should ask the user for clarification rather than attempting a patch.
 
+        # Multi-agent orchestration (manager role)
+        - The main AI acts as a manager that can spawn role-based sub-agents (e.g., tester, reviewer, refactorer).
+        - Use tools: AgentCreateTool to create agents, AgentSendMessageTool to converse in natural language with agents.
+        - Use MCP tools as needed; discover servers with McpListServersTool and list methods with McpListServerToolsTool.
+        - Choose lighter models (e.g., mini) for exploration and heavier models (full) only when necessary. Promote or switch models deliberately.
+        - Agents can collaborate by exchanging natural language messages via the manager until a final answer is ready for the user.
+        - Keep conversations concise and focused on the user’s goal; surface only relevant outcomes back to the user.
         """.trimIndent()
 }

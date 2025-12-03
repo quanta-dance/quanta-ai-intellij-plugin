@@ -33,6 +33,8 @@ class QuantaAISettingsState : PersistentStateComponent<QuantaAISettingsState.Qua
         var aiChatModel: String = ChatModel.GPT_5_NANO.toString(),
         // Dynamic model switching
         var dynamicModelEnabled: Boolean? = false,
+        // Agentic mode toggle (manager can spawn agents and use agent tools)
+        var agenticEnabled: Boolean? = true,
         // Optional: user-customizable extra system instructions appended to defaults
         var extraInstructions: String? = "",
     )

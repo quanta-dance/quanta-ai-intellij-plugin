@@ -3,6 +3,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.tools
 
+import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState
 import com.intellij.openapi.project.Project
 import java.io.File
 import java.util.ArrayDeque
@@ -31,6 +32,8 @@ object ToolsRegistry {
     }
 
     private fun baseEntries(project: Project?): List<ToolEntry> {
+        val settings = QuantaAISettingsState.instance.state
+        val agentic = settings.agenticEnabled ?: true
         val list =
             mutableListOf(
                 ToolEntry(CodeRefactorSuggester::class.java, Group.GENERIC),
@@ -47,18 +50,20 @@ object ToolsRegistry {
                 ToolEntry(DeleteFileTool::class.java, Group.GENERIC),
                 ToolEntry(CopyFileOrDirectoryTool::class.java, Group.GENERIC),
                 ToolEntry(ValidateClassFileTool::class.java, Group.GENERIC),
-                // Gradle
                 ToolEntry(TerminalCommandTool::class.java, Group.GENERIC),
                 ToolEntry(RunGradleTestsTool::class.java, Group.GRADLE),
                 ToolEntry(GetTestInfoTool::class.java, Group.GRADLE),
-                // Editor/file
                 ToolEntry(OpenFileInEditorTool::class.java, Group.GENERIC),
                 ToolEntry(PatchFile::class.java, Group.GENERIC),
-                // Go
                 ToolEntry(RunGoTestsTool::class.java, Group.GO),
-                // Dynamic model tool
                 ToolEntry(RequestModelSwitch::class.java, Group.GENERIC),
+                ToolEntry(McpListServersTool::class.java, Group.GENERIC),
+                ToolEntry(McpListServerToolsTool::class.java, Group.GENERIC),
             )
+        if (agentic) {
+            list.add(ToolEntry(AgentCreateTool::class.java, Group.GENERIC))
+            list.add(ToolEntry(AgentSendMessageTool::class.java, Group.GENERIC))
+        }
         if (javaPsiAvailable(project)) {
             list.add(ToolEntry(InspectDependencies::class.java, Group.GENERIC))
         }
@@ -86,9 +91,7 @@ object ToolsRegistry {
     }
 
     private fun detectGo(root: File): Boolean {
-        // 1) Direct module in root
         if (File(root, "go.mod").exists()) return true
-        // 2) BFS search for go.mod in subdirs (bounded)
         val maxDirs = 5000
         val dq: ArrayDeque<File> = ArrayDeque()
         dq.add(root)
@@ -97,10 +100,8 @@ object ToolsRegistry {
             val dir = dq.removeFirst()
             visited++
             if (!dir.isDirectory) continue
-            // Fast path: go.mod
             val mod = File(dir, "go.mod")
             if (mod.exists()) return true
-            // Enqueue children dirs (skip hidden and VCS folders)
             val children = dir.listFiles() ?: continue
             for (c in children) {
                 if (c.isDirectory) {
@@ -110,11 +111,7 @@ object ToolsRegistry {
                 }
             }
         }
-        // 3) Heuristic fallback: look for .go files in common folders
         val dirs = listOf(root, File(root, "cmd"), File(root, "pkg"), File(root, "internal"))
-        return dirs.any {
-                dir ->
-            dir.exists() && dir.isDirectory && dir.listFiles()?.any { it.isFile && it.extension.equals("go", true) } == true
-        }
+        return dirs.any { dir -> dir.exists() && dir.isDirectory && dir.listFiles()?.any { it.isFile && it.extension.equals("go", true) } == true }
     }
 }

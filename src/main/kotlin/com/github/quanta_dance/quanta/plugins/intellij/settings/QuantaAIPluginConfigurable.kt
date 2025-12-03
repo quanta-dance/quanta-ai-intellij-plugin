@@ -27,8 +27,8 @@ class QuantaAIPluginConfigurable : Configurable {
                 this.maxTokensValue != settings.maxTokens ||
                 this.aiChatModelValue != settings.aiChatModel ||
                 this.extraInstructionsValue != (settings.extraInstructions ?: "") ||
-                // Dynamic model toggle only (no default/max models)
-                this.dynamicModelEnabled != (settings.dynamicModelEnabled ?: true)
+                this.dynamicModelEnabled != (settings.dynamicModelEnabled ?: true) ||
+                this.agenticEnabled != (settings.agenticEnabled ?: true)
         }
     }
 
@@ -43,10 +43,9 @@ class QuantaAIPluginConfigurable : Configurable {
             settings.maxTokens = this.maxTokensValue
             settings.aiChatModel = this.aiChatModelValue
             settings.extraInstructions = this.extraInstructionsValue
-            // Dynamic model toggle only
             settings.dynamicModelEnabled = this.dynamicModelEnabled
+            settings.agenticEnabled = this.agenticEnabled
         }
-        // Notify listeners that settings changed so services can refresh their clients
         val snapshot = settings.copy()
         ApplicationManager.getApplication()
             .messageBus
@@ -65,8 +64,8 @@ class QuantaAIPluginConfigurable : Configurable {
             this.maxTokensValue = settings.maxTokens
             this.aiChatModelValue = settings.aiChatModel
             this.extraInstructionsValue = settings.extraInstructions.orEmpty()
-            // Dynamic model toggle only
             this.dynamicModelEnabled = (settings.dynamicModelEnabled ?: true)
+            this.agenticEnabled = (settings.agenticEnabled ?: true)
         }
     }
 }

@@ -60,15 +60,19 @@ class QuantaAISettingsComponent {
 
     private var aiChatModelField = ComboBox(models)
 
-    // Dynamic model controls
     private var dynamicModelEnabledField =
         JBCheckBox("Enable dynamic model switching").apply {
             toolTipText = "Allow the assistant to switch model tier within the configured cap."
         }
 
+    // New: Agentic mode toggle
+    private var agenticEnabledField =
+        JBCheckBox("Enable agentic mode").apply {
+            toolTipText = "Allow the manager to create role-based sub-agents and use agent tools."
+        }
+
     private var customPromptField = JBTextField()
 
-    // New: Custom Instructions (multiline)
     private var extraInstructionsArea =
         JBTextArea(8, 60).apply {
             lineWrap = true
@@ -77,7 +81,6 @@ class QuantaAISettingsComponent {
         }
     private var extraInstructionsScroll = JScrollPane(extraInstructionsArea)
 
-    // New: Edit MCP servers.json button
     private val editMcpButton =
         JButton("Edit MCP Servers…").apply {
             toolTipText = "Open or create .quantadance/mcp-servers.json in the current project"
@@ -130,7 +133,7 @@ class QuantaAISettingsComponent {
                 "https://platform.openai.com/docs/pricing</a></html>",
         ).apply {
             cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-            foreground = Color(42, 122, 255) // IntelliJ blue
+            foreground = Color(42, 122, 255)
             addMouseListener(
                 object : MouseAdapter() {
                     override fun mouseClicked(e: MouseEvent?) {
@@ -152,6 +155,7 @@ class QuantaAISettingsComponent {
             .addSeparator()
             .addLabeledComponent(JBLabel("AI chat model: "), aiChatModelField, 1, false)
             .addComponent(dynamicModelEnabledField)
+            .addComponent(agenticEnabledField)
             .addSeparator()
             .addLabeledComponent(JBLabel("Custom prompt: "), customPromptField, 1, false)
             .addLabeledComponent(JBLabel("Custom instructions: "), extraInstructionsScroll, 1, false)
@@ -162,61 +166,42 @@ class QuantaAISettingsComponent {
 
     var hostValue: String
         get() = hostField.text.trim().ifBlank { QuantaAISettingsState.DEFAULT_HOST }
-        set(value) {
-            hostField.text = value
-        }
+        set(value) { hostField.text = value }
 
     var tokenValue: String
         get() = String(tokenField.password)
-        set(value) {
-            tokenField.text = value
-        }
+        set(value) { tokenField.text = value }
 
     var voiceEnabled: Boolean
         get() = voiceEnabledField.isSelected
-        set(value) {
-            voiceEnabledField.isSelected = value
-        }
+        set(value) { voiceEnabledField.isSelected = value }
 
     var voiceByLocalTTS: Boolean
         get() = voiceByLocalTTSField.isSelected
-        set(value) {
-            voiceByLocalTTSField.isSelected = value
-        }
+        set(value) { voiceByLocalTTSField.isSelected = value }
 
     var aiChatModelValue: String
         get() = aiChatModelField.selectedItem as String
-        set(value) {
-            aiChatModelField.selectedItem = value
-        }
+        set(value) { aiChatModelField.selectedItem = value }
 
     var customPromptValue: String
         get() = customPromptField.text
-        set(value) {
-            customPromptField.text = value
-        }
+        set(value) { customPromptField.text = value }
 
     var extraInstructionsValue: String
         get() = extraInstructionsArea.text
-        set(value) {
-            extraInstructionsArea.text = value
-        }
+        set(value) { extraInstructionsArea.text = value }
 
     var maxTokensValue: Long?
         get() =
-            try {
-                Integer.parseInt(maxOutputTokensField.text).toLong()
-            } catch (e: NumberFormatException) {
-                null
-            }
-        set(value) {
-            maxOutputTokensField.text = value.toString()
-        }
+            try { Integer.parseInt(maxOutputTokensField.text).toLong() } catch (e: NumberFormatException) { null }
+        set(value) { maxOutputTokensField.text = value.toString() }
 
-    // Dynamic model settings bindings (only enabled flag kept)
     var dynamicModelEnabled: Boolean
         get() = dynamicModelEnabledField.isSelected
-        set(value) {
-            dynamicModelEnabledField.isSelected = value
-        }
+        set(value) { dynamicModelEnabledField.isSelected = value }
+
+    var agenticEnabled: Boolean
+        get() = agenticEnabledField.isSelected
+        set(value) { agenticEnabledField.isSelected = value }
 }
