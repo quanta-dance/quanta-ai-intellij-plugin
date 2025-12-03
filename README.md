@@ -1,3 +1,6 @@
+[![JetBrains Plugins](https://img.shields.io/jetbrains/plugin/v/29113?logo=jetbrains&label=Quanta%20AI)](https://plugins.jetbrains.com/plugin/29113-quanta-ai/)
+
+
 # Quanta AI
 
 Quanta AI is an AI-powered coding assistant designed to integrate with IntelliJ IDEA. This plugin leverages OpenAI models to assist developers with code modifications, reviews, and refactoring directly within the IDE.
