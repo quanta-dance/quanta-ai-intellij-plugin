@@ -1,5 +1,4 @@
-[![JetBrains Plugins](https://img.shields.io/jetbrains/plugin/v/29113?logo=jetbrains&label=Quanta%20AI)](https://plugins.jetbrains.com/plugin/29113-quanta-ai/)
-
+[![Download from JetBrains Marketplace](https://img.shields.io/badge/JetBrains%20Marketplace-Quanta%20AI-blue?logo=jetbrains)](https://plugins.jetbrains.com/plugin/29113-quanta-ai/)
 
 # Quanta AI
 
