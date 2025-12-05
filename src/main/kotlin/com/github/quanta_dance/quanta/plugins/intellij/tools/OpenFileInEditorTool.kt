@@ -19,30 +19,30 @@ import java.io.File
 
 @JsonClassDescription("Open a project file in the editor and optionally move the caret to a line/column or select a range")
 class OpenFileInEditorTool : ToolInterface<String> {
-    @JsonPropertyDescription("Relative to the project root path to the file to open.")
+    @field:JsonPropertyDescription("Relative to the project root path to the file to open.")
     var filePath: String? = null
 
-    @JsonPropertyDescription("1-based line number to place the caret at. If null or <= 0, the file is opened without moving caret.")
+    @field:JsonPropertyDescription("1-based line number to place the caret at. If null or <= 0, the file is opened without moving caret.")
     var line: Int? = null
 
-    @JsonPropertyDescription("0-based column to place the caret at. Ignored if 'line' is not provided or <= 0.")
+    @field:JsonPropertyDescription("0-based column to place the caret at. Ignored if 'line' is not provided or <= 0.")
     var column: Int? = null
 
-    @JsonPropertyDescription("If true, activates the editor after opening. Default: true")
+    @field:JsonPropertyDescription("If true, activates the editor after opening. Default: true")
     var focus: Boolean = true
 
-    @JsonPropertyDescription(
+    @field:JsonPropertyDescription(
         "Optional selection start line (1-based). If provided with end, selection takes precedence over caret movement.",
     )
     var selectionStartLine: Int? = null
 
-    @JsonPropertyDescription("Optional selection start column (0-based)")
+    @field:JsonPropertyDescription("Optional selection start column (0-based)")
     var selectionStartColumn: Int? = null
 
-    @JsonPropertyDescription("Optional selection end line (1-based)")
+    @field:JsonPropertyDescription("Optional selection end line (1-based)")
     var selectionEndLine: Int? = null
 
-    @JsonPropertyDescription("Optional selection end column (0-based)")
+    @field:JsonPropertyDescription("Optional selection end column (0-based)")
     var selectionEndColumn: Int? = null
 
     private fun addMsg(

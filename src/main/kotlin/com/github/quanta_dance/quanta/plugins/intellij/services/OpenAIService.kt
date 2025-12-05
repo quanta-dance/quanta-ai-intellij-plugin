@@ -65,7 +65,7 @@ class OpenAIService(private val project: Project) : Disposable {
     private var modelKey: Pair<Boolean, String> =
         QuantaAISettingsState.instance.state.let { (it.dynamicModelEnabled == true) to it.aiChatModel }
 
-    private var lastResponseId: String? = null
+    private var lastResponseId: String? = QuantaAISettingsState.instance.state.mainLastResponseId
     private var currentSessionId: String = UUID.randomUUID().toString()
 
     private val toolInvoker: ToolInvoker = DefaultToolInvoker()
@@ -80,7 +80,6 @@ class OpenAIService(private val project: Project) : Disposable {
             normalize(initial)
         }
 
-    // Labels
     private val managerLabel: String = "AI(manager)"
 
     private fun rank(id: String): Int {
@@ -227,6 +226,8 @@ class OpenAIService(private val project: Project) : Disposable {
         val old = currentSessionId
         currentSessionId = UUID.randomUUID().toString()
         lastResponseId = null
+        // Persist main last response id reset
+        QuantaAISettingsState.instance.state.mainLastResponseId = null
         pcs.firePropertyChange("session", old, currentSessionId)
         project.service<ToolWindowService>().clear()
         return currentSessionId
@@ -253,7 +254,6 @@ class OpenAIService(private val project: Project) : Disposable {
         return structResponse to id
     }
 
-    // Reusable turn executor for agents: processes tool calls and posts messages with agent label
     fun agentTurn(
         inputs: MutableList<ResponseInputItem>,
         previousId: String?,
@@ -280,7 +280,6 @@ class OpenAIService(private val project: Project) : Disposable {
                         val functionCall: ResponseFunctionToolCall = item.asFunctionCall()
                         val callId = functionCall.callId()
                         if (!processedCallIds.add(callId)) return@map
-                        // Log tool call under the agent label
                         project.service<ToolWindowService>().addToolingMessage(agentLabel, "Calling tool: ${functionCall.name()}")
                         try {
                             val functionResult = routeFunction(functionCall)
@@ -375,7 +374,6 @@ class OpenAIService(private val project: Project) : Disposable {
                                 val functionCall: ResponseFunctionToolCall = item.asFunctionCall()
                                 val callId = functionCall.callId()
                                 if (!processedCallIds.add(callId)) return@map
-                                // Log tool call under manager label
                                 project.service<ToolWindowService>().addToolingMessage(managerLabel, "Calling tool: ${functionCall.name()}")
                                 try {
                                     val functionResult = routeFunction(functionCall)
@@ -428,7 +426,9 @@ class OpenAIService(private val project: Project) : Disposable {
                     break
                 }
             }
+            // Persist the last response id for the next user turn and restore across restarts
             lastResponseId = previousIdForThisTurn
+            QuantaAISettingsState.instance.state.mainLastResponseId = lastResponseId
             operationInProgress = false
             pcs.firePropertyChange("inProgress", true, false)
         }

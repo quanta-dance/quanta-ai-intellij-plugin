@@ -29,22 +29,22 @@ import java.util.concurrent.atomic.AtomicInteger
         "Returns concise matches and a modelSummary for AI context.",
 )
 class SearchInFiles : ToolInterface<SearchInFilesResult> {
-    @JsonPropertyDescription("Text to search for in project files (regex supported). Use a|b|c for OR.")
+    @field:JsonPropertyDescription("Text to search for in project files (regex supported). Use a|b|c for OR.")
     var query: String? = null
 
-    @JsonPropertyDescription("Maximum number of matches to return (soft limit). Hard limit is 50.")
+    @field:JsonPropertyDescription("Maximum number of matches to return (soft limit). Hard limit is 50.")
     var maxResults: Int = 10
 
-    @JsonPropertyDescription(
+    @field:JsonPropertyDescription(
         "Optional list of file extensions to include (e.g., ['kt','java','txt']). " +
             "To search across all extensions, omit this field or pass ['*'].",
     )
     var includeExtensions: List<String>? = null
 
-    @JsonPropertyDescription("Optional list of path segments to exclude (e.g., ['.git','build','out']).")
+    @field:JsonPropertyDescription("Optional list of path segments to exclude (e.g., ['.git','build','out']).")
     var excludePathSegments: List<String>? = null
 
-    @JsonPropertyDescription("Number of top files to summarize for the model context. Default 3.")
+    @field:JsonPropertyDescription("Number of top files to summarize for the model context. Default 3.")
     var topForModel: Int = 3
 
     private val hardResultLimit = 50

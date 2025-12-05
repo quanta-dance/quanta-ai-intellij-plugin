@@ -29,35 +29,35 @@ import com.intellij.psi.PsiManager
 )
 class PatchFile : ToolInterface<String> {
     data class Patch(
-        @JsonPropertyDescription("1-based start line (inclusive)")
+        @field:JsonPropertyDescription("1-based start line (inclusive)")
         var fromLine: Int = 1,
-        @JsonPropertyDescription("1-based end line (inclusive)")
+        @field:JsonPropertyDescription("1-based end line (inclusive)")
         var toLine: Int = 1,
-        @JsonPropertyDescription("Replacement content for the specified line range")
+        @field:JsonPropertyDescription("Replacement content for the specified line range")
         var newContent: String = "",
-        @JsonPropertyDescription(
+        @field:JsonPropertyDescription(
             "Optional expected current text for the specified line range. " +
                 "If provided and does not match, patch is skipped or triggers failure depending on stopOnMismatch.",
         )
         var expectedText: String? = null,
     )
 
-    @JsonPropertyDescription("Relative to the project root path to the requested file.")
+    @field:JsonPropertyDescription("Relative to the project root path to the requested file.")
     var filePath: String? = null
 
-    @JsonPropertyDescription("List of line-range patches to apply. Each patch uses 1-based lines inclusive.")
+    @field:JsonPropertyDescription("List of line-range patches to apply. Each patch uses 1-based lines inclusive.")
     var patches: List<Patch>? = null
 
-    @JsonPropertyDescription("If true, validates the updated file after write and reports compilation errors.")
+    @field:JsonPropertyDescription("If true, validates the updated file after write and reports compilation errors.")
     var validateAfterUpdate: Boolean = false
 
-    @JsonPropertyDescription(
+    @field:JsonPropertyDescription(
         "If true (default), aborts and applies nothing when any patch guard fails. " +
             "If false, skips only mismatched patches and applies the rest.",
     )
     var stopOnMismatch: Boolean = true
 
-    @JsonPropertyDescription(
+    @field:JsonPropertyDescription(
         "Optional expected file version (PSI/Document/VFS) before patching. " +
             "If present and does not match, no changes are applied.",
     )

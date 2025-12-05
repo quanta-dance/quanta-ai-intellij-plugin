@@ -23,26 +23,26 @@ import com.intellij.openapi.vfs.isFile
         "around caret/selection for the current file.",
 )
 class ReadFileContent : ToolInterface<ReadFileResult> {
-    @JsonPropertyDescription("Relative to the project root path to the requested file.")
+    @field:JsonPropertyDescription("Relative to the project root path to the requested file.")
     var filePath: String? = null
 
-    @JsonPropertyDescription("If true, returns content with prefixed line numbers. Default false.")
+    @field:JsonPropertyDescription("If true, returns content with prefixed line numbers. Default false.")
     var includeLineNumbers: Boolean = false
 
     // New controls to keep responses small and relevant
-    @JsonPropertyDescription("Maximum characters to return; if exceeded, tool truncates per strategy. Default 20000.")
+    @field:JsonPropertyDescription("Maximum characters to return; if exceeded, tool truncates per strategy. Default 20000.")
     var maxChars: Int = 20_000
 
-    @JsonPropertyDescription("Preferred truncation strategy when file exceeds maxChars: head | tail | window. Default window.")
+    @field:JsonPropertyDescription("Preferred truncation strategy when file exceeds maxChars: head | tail | window. Default window.")
     var strategy: String = "window"
 
-    @JsonPropertyDescription(
+    @field:JsonPropertyDescription(
         "If true (default), and the file is the current editor file with caret/selection, " +
             "return a window around caret/selection when truncating.",
     )
     var preferWindowIfCurrentFile: Boolean = true
 
-    @JsonPropertyDescription("Window radius in lines (before and after caret or selection) when strategy=window. Default 200.")
+    @field:JsonPropertyDescription("Window radius in lines (before and after caret or selection) when strategy=window. Default 200.")
     var windowRadiusLines: Int = 300
 
     companion object {

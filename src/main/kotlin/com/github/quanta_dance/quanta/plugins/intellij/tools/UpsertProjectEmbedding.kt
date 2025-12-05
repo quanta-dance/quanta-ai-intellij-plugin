@@ -14,13 +14,13 @@ import com.intellij.openapi.project.Project
 
 @JsonClassDescription("Create or update embedding for a given id and text in project-local vector DB.")
 class UpsertProjectEmbedding : ToolInterface<UpsertEmbeddingResult> {
-    @JsonPropertyDescription("Unique id for the embedding (e.g., project|path|chunkIndex)")
+    @field:JsonPropertyDescription("Unique id for the embedding (e.g., project|path|chunkIndex)")
     var id: String? = null
 
-    @JsonPropertyDescription("Text content to embed.")
+    @field:JsonPropertyDescription("Text content to embed.")
     var text: String? = null
 
-    @JsonPropertyDescription("Optional metadata as JSON string.")
+    @field:JsonPropertyDescription("Optional metadata as JSON string.")
     var metadataJson: String? = null
 
     override fun execute(project: Project): UpsertEmbeddingResult {

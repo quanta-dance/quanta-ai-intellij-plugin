@@ -13,10 +13,10 @@ import com.intellij.openapi.project.Project
 
 @JsonClassDescription("Search project embeddings for a query text. Returns topK results with id, score and metadata.")
 class SearchProjectEmbeddings : ToolInterface<SearchProjectEmbeddingsResult> {
-    @JsonPropertyDescription("The query text to search for.")
+    @field:JsonPropertyDescription("The query text to search for.")
     var queryText: String? = null
 
-    @JsonPropertyDescription("Number of results to return.")
+    @field:JsonPropertyDescription("Number of results to return.")
     var topK: Int = 5
 
     override fun execute(project: Project): SearchProjectEmbeddingsResult {

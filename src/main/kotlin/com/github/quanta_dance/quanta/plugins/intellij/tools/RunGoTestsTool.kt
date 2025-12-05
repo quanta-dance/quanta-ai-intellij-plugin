@@ -25,31 +25,31 @@ class RunGoTestsTool : ToolInterface<RunGoTestsTool.Result> {
         val error: String?,
     )
 
-    @JsonPropertyDescription("Go package pattern to test (default: './...')")
+    @field:JsonPropertyDescription("Go package pattern to test (default: './...')")
     var packages: String? = null
 
-    @JsonPropertyDescription("-run filter (regexp) to select tests, e.g., 'TestFoo|TestBar'")
+    @field:JsonPropertyDescription("-run filter (regexp) to select tests, e.g., 'TestFoo|TestBar'")
     var runRegex: String? = null
 
-    @JsonPropertyDescription("Enable verbose output (-v) (default: false). Output is still bounded in returned stdout tail.")
+    @field:JsonPropertyDescription("Enable verbose output (-v) (default: false). Output is still bounded in returned stdout tail.")
     var verbose: Boolean = false
 
-    @JsonPropertyDescription(
+    @field:JsonPropertyDescription(
         "Working directory relative to the project root (default: project root). " +
             "If autoDetectModule=true and go.mod exists in project root, it will be used.",
     )
     var workingDir: String? = null
 
-    @JsonPropertyDescription("Auto-detect go module by checking go.mod in project root (default: true)")
+    @field:JsonPropertyDescription("Auto-detect go module by checking go.mod in project root (default: true)")
     var autoDetectModule: Boolean = true
 
-    @JsonPropertyDescription("How many lines of stdout tail to include in the result (0 = none). Default: 50")
+    @field:JsonPropertyDescription("How many lines of stdout tail to include in the result (0 = none). Default: 50")
     var stdoutTailLines: Int = 50
 
-    @JsonPropertyDescription("Timeout minutes for go test. Default: 30")
+    @field:JsonPropertyDescription("Timeout minutes for go test. Default: 30")
     var timeoutMinutes: Long = 30
 
-    @JsonPropertyDescription(
+    @field:JsonPropertyDescription(
         "Absolute path to go binary (optional). If omitted, we try GOROOT/bin/go, common locations, or '/usr/bin/env go'.",
     )
     var goBinary: String? = null

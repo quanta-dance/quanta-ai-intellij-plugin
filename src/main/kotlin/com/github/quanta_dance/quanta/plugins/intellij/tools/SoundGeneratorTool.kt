@@ -18,10 +18,10 @@ import java.util.concurrent.CompletableFuture
 
 @JsonClassDescription("Generate an MP3 from text using OpenAI and save to a file")
 class SoundGeneratorTool : ToolInterface<String> {
-    @JsonPropertyDescription("Text prompt to generate speech from")
+    @field:JsonPropertyDescription("Text prompt to generate speech from")
     var text: String? = null
 
-    @JsonPropertyDescription("File path (including filename) where the mp3 will be saved")
+    @field:JsonPropertyDescription("File path (including filename) where the mp3 will be saved")
     var filePath: String? = null
 
     companion object {

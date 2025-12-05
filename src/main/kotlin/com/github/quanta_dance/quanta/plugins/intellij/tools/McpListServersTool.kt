@@ -11,7 +11,7 @@ import com.intellij.openapi.project.Project
 
 @JsonClassDescription("List available MCP servers discovered by the plugin.")
 class McpListServersTool : ToolInterface<Map<String, Any>> {
-    @JsonPropertyDescription("If true, include tool counts per server in the response")
+    @field:JsonPropertyDescription("If true, include tool counts per server in the response")
     var includeDetails: Boolean = false
 
     override fun execute(project: Project): Map<String, Any> {

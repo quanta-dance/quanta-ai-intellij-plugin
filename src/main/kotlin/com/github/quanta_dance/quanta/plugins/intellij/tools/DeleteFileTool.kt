@@ -16,13 +16,13 @@ import java.nio.file.Path
         "Before modifying methods in the file you may need to check for this method references as they might need to be updated.",
 )
 class DeleteFileTool : ToolInterface<String> {
-    @JsonPropertyDescription("Relative to the project root path to the file to be deleted.")
+    @field:JsonPropertyDescription("Relative to the project root path to the file to be deleted.")
     var filePath: String? = null
 
-    @JsonPropertyDescription("Must be true to perform deletion. Default false to prevent accidental deletes.")
+    @field:JsonPropertyDescription("Must be true to perform deletion. Default false to prevent accidental deletes.")
     var confirmed: Boolean = false
 
-    @JsonPropertyDescription("Delete directories recursively if true. Default false (will fail on non-empty directories).")
+    @field:JsonPropertyDescription("Delete directories recursively if true. Default false (will fail on non-empty directories).")
     var recursive: Boolean = false
 
     private fun deleteRecursively(path: Path) {

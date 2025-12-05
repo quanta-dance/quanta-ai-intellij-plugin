@@ -63,6 +63,7 @@ object ToolsRegistry {
         if (agentic) {
             list.add(ToolEntry(AgentCreateTool::class.java, Group.GENERIC))
             list.add(ToolEntry(AgentSendMessageTool::class.java, Group.GENERIC))
+            list.add(ToolEntry(AgentRemoveTool::class.java, Group.GENERIC))
         }
         if (javaPsiAvailable(project)) {
             list.add(ToolEntry(InspectDependencies::class.java, Group.GENERIC))

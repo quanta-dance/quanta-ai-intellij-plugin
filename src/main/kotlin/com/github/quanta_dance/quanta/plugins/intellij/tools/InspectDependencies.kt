@@ -14,21 +14,21 @@ import com.intellij.psi.search.GlobalSearchScope
 
 @JsonClassDescription("Inspect available dependency classes and methods via PSI. Useful to discover SDK APIs by package.")
 class InspectDependencies : ToolInterface<InspectDependencies.Result> {
-    @JsonPropertyDescription("Root package to inspect, e.g., 'com.openai.models.responses'")
+    @field:JsonPropertyDescription("Root package to inspect, e.g., 'com.openai.models.responses'")
     var packageName: String? = null
 
-    @JsonPropertyDescription("Optional substring to filter class names. Supports 'a|b|c' list (OR semantics).")
+    @field:JsonPropertyDescription("Optional substring to filter class names. Supports 'a|b|c' list (OR semantics).")
     var classNameContains: String? = null
 
-    @JsonPropertyDescription(
+    @field:JsonPropertyDescription(
         "Optional substring to filter method names. Supports 'a|b|c' list (OR semantics) or regex if useRegexForMethodFilter=true.",
     )
     var methodNameContains: String? = null
 
-    @JsonPropertyDescription("Interpret methodNameContains as a regex (default false). If false, treats 'a|b|c' as OR list of substrings.")
+    @field:JsonPropertyDescription("Interpret methodNameContains as a regex (default false). If false, treats 'a|b|c' as OR list of substrings.")
     var useRegexForMethodFilter: Boolean = false
 
-    @JsonPropertyDescription("Maximum number of classes to return. Default 200.")
+    @field:JsonPropertyDescription("Maximum number of classes to return. Default 200.")
     var limit: Int = 200
 
     data class ClassInfo(

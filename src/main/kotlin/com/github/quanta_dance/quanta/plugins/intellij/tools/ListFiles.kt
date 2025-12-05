@@ -14,7 +14,7 @@ import kotlin.io.path.listDirectoryEntries
 
 @JsonClassDescription("Read list of files in the requested directory")
 class ListFiles : ToolInterface<List<String>> {
-    @JsonPropertyDescription("Relative to the project root path to the file list.")
+    @field:JsonPropertyDescription("Relative to the project root path to the file list.")
     var path: String? = null
 
     override fun execute(project: Project): List<String> {

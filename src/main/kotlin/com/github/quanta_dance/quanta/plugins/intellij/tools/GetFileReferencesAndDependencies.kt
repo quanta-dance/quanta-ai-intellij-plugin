@@ -17,7 +17,7 @@ import com.intellij.psi.PsiManager
 
 @JsonClassDescription("Get file dependencies which are imports including library versions, methods and function referenced to other files")
 class GetFileReferencesAndDependencies : ToolInterface<List<String>> {
-    @JsonPropertyDescription("Relative to the project root path to the requested file.")
+    @field:JsonPropertyDescription("Relative to the project root path to the requested file.")
     var filePath: String? = null
 
     override fun execute(project: Project): List<String> {

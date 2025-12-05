@@ -11,7 +11,7 @@ import com.intellij.openapi.project.Project
 
 @JsonClassDescription("List available MCP tools for a given server.")
 class McpListServerToolsTool : ToolInterface<Map<String, Any>> {
-    @JsonPropertyDescription("MCP server name")
+    @field:JsonPropertyDescription("MCP server name")
     var server: String = ""
 
     override fun execute(project: Project): Map<String, Any> {

@@ -36,11 +36,11 @@ import java.io.IOException
  */
 @JsonClassDescription("Execute command in the terminal. For example: echo \"Hello, World!\"")
 class TerminalCommandTool : ToolInterface<String> {
-    @JsonPropertyDescription("Command to execute, e.g. echo 'hello world'")
+    @field:JsonPropertyDescription("Command to execute, e.g. echo 'hello world'")
     var command: String? = null
 
     @JsonProperty("envVars")
-    @JsonPropertyDescription("Environment variables as list entries, e.g. [{\"name\":\"KEY\",\"value\":\"VALUE\"}]")
+    @field:JsonPropertyDescription("Environment variables as list entries, e.g. [{\"name\":\"KEY\",\"value\":\"VALUE\"}]")
     @JsonSetter(nulls = Nulls.AS_EMPTY)
     var envVars: MutableList<EnvVarEntry> = mutableListOf()
 

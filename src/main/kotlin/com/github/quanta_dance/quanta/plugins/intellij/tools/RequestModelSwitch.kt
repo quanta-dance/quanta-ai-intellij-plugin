@@ -13,16 +13,16 @@ import com.openai.models.ChatModel
 
 @JsonClassDescription("Request to switch the conversation model tier. Returns approval decision and the clamped model.")
 class RequestModelSwitch : ToolInterface<Map<String, Any>> {
-    @JsonPropertyDescription("Requested target model id, e.g., gpt-5-mini or gpt-5-nano")
+    @field:JsonPropertyDescription("Requested target model id, e.g., gpt-5-mini or gpt-5-nano")
     var desiredModel: String? = null
 
-    @JsonPropertyDescription("Optional human-readable reason for the request")
+    @field:JsonPropertyDescription("Optional human-readable reason for the request")
     var reason: String? = null
 
-    @JsonPropertyDescription("Optional hint: 'upgrade' or 'downgrade'")
+    @field:JsonPropertyDescription("Optional hint: 'upgrade' or 'downgrade'")
     var direction: String? = null
 
-    @JsonPropertyDescription(
+    @field:JsonPropertyDescription(
         "Optional: current model id the agent is running on. Including this helps the agent decide whether to request upgrade/downgrade.",
     )
     var currentModel: String? = null

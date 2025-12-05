@@ -11,22 +11,22 @@ import com.intellij.openapi.project.Project
 
 @JsonClassDescription("Create a new role-based agent that can perform tasks and converse in natural language.")
 class AgentCreateTool : ToolInterface<Map<String, Any>> {
-    @JsonPropertyDescription("Agent role name, e.g., tester, reviewer, refactorer")
+    @field:JsonPropertyDescription("Agent role name, e.g., tester, reviewer, refactorer")
     var role: String = "agent"
 
-    @JsonPropertyDescription("Optional per-agent model id override (e.g., gpt-5-mini, gpt-5, gpt-4o-mini)")
+    @field:JsonPropertyDescription("Optional per-agent model id override (e.g., gpt-5-mini, gpt-5, gpt-4o-mini)")
     var model: String? = null
 
-    @JsonPropertyDescription("Additional role-specific instructions for this agent")
+    @field:JsonPropertyDescription("Additional role-specific instructions for this agent")
     var instructions: String? = null
 
-    @JsonPropertyDescription("Whether this agent can use MCP tools. Default: true")
+    @field:JsonPropertyDescription("Whether this agent can use MCP tools. Default: true")
     var includeMcp: Boolean = true
 
-    @JsonPropertyDescription("Whether this agent can use built-in IDE/file tools. Default: true")
+    @field:JsonPropertyDescription("Whether this agent can use built-in IDE/file tools. Default: true")
     var allowBuiltInTools: Boolean = true
 
-    @JsonPropertyDescription("Optional list of allowed MCP server names for guidance")
+    @field:JsonPropertyDescription("Optional list of allowed MCP server names for guidance")
     var allowedMcpServers: List<String>? = null
 
     override fun execute(project: Project): Map<String, Any> {

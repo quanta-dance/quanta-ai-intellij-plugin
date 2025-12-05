@@ -16,16 +16,16 @@ import java.nio.file.StandardCopyOption
         "Before modifying methods in the file you may need to check for this method references as they might need to be updated.",
 )
 class CopyFileOrDirectoryTool : ToolInterface<String> {
-    @JsonPropertyDescription("Source path of the file or directory to be copied.")
+    @field:JsonPropertyDescription("Source path of the file or directory to be copied.")
     var sourcePath: String? = null
 
-    @JsonPropertyDescription("Destination path where the file or directory should be copied.")
+    @field:JsonPropertyDescription("Destination path where the file or directory should be copied.")
     var destinationPath: String? = null
 
-    @JsonPropertyDescription("Overwrite existing files if true. Default false.")
+    @field:JsonPropertyDescription("Overwrite existing files if true. Default false.")
     var overwriteExisting: Boolean = false
 
-    @JsonPropertyDescription("Copy file attributes if true. Default false.")
+    @field:JsonPropertyDescription("Copy file attributes if true. Default false.")
     var copyAttributes: Boolean = false
 
     override fun execute(project: Project): String {

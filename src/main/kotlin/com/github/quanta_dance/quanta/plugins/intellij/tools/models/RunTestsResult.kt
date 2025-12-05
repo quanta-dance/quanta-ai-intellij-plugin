@@ -8,18 +8,18 @@ import com.fasterxml.jackson.annotation.JsonPropertyDescription
 
 @JsonClassDescription("Result of running Gradle tests")
 data class RunTestsResult(
-    @JsonPropertyDescription("Whether gradle test execution completed successfully (exit code 0)")
+    @field:JsonPropertyDescription("Whether gradle test execution completed successfully (exit code 0)")
     val success: Boolean,
-    @JsonPropertyDescription("Total number of test cases found in reports")
+    @field:JsonPropertyDescription("Total number of test cases found in reports")
     val totalCount: Int,
-    @JsonPropertyDescription("Number of failed test cases")
+    @field:JsonPropertyDescription("Number of failed test cases")
     val failedCount: Int,
-    @JsonPropertyDescription("Number of skipped/ignored test cases")
+    @field:JsonPropertyDescription("Number of skipped/ignored test cases")
     val skippedCount: Int,
-    @JsonPropertyDescription("List of failed test cases with details")
+    @field:JsonPropertyDescription("List of failed test cases with details")
     val failedTests: List<TestCaseResult> = emptyList(),
-    @JsonPropertyDescription("Optional tail of stdout from gradle, for quick context")
+    @field:JsonPropertyDescription("Optional tail of stdout from gradle, for quick context")
     val stdoutTail: String? = null,
-    @JsonPropertyDescription("Optional error message if gradle failed")
+    @field:JsonPropertyDescription("Optional error message if gradle failed")
     val error: String = "",
 )

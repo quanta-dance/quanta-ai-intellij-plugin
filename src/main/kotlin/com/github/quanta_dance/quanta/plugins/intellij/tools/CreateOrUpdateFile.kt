@@ -23,44 +23,71 @@ import com.intellij.psi.PsiManager
 import java.nio.charset.StandardCharsets
 
 @JsonClassDescription(
-    "Create or Update specified file with provided content. " +
-        "Before modifying methods in the file you may need to check for this method references as they might need to be updated.",
+    "Create or Update specified file. Supports full replacement via 'content' or partial line-range updates via 'patches'. " +
+        "Before modifying methods in the file you may need to check for method references as they might need updates.",
 )
 class CreateOrUpdateFile : ToolInterface<String> {
-    @JsonPropertyDescription("Relative to the project root path to the requested file.")
+    // Partial patch model (compatible with PatchFile)
+    data class Patch(
+        @field:JsonPropertyDescription("1-based start line (inclusive)")
+        var fromLine: Int = 1,
+        @field:JsonPropertyDescription("1-based end line (inclusive)")
+        var toLine: Int = 1,
+        @field:JsonPropertyDescription("Replacement content for the specified line range")
+        var newContent: String = "",
+        @field:JsonPropertyDescription("Optional expected current text for the specified line range")
+        var expectedText: String? = null,
+    )
+
+    @field:JsonPropertyDescription("Relative to the project root path to the requested file.")
     var filePath: String? = null
 
-    @JsonPropertyDescription(
-        "New content for the file to be modified. This MUST be a complete replacement of file content. " +
-            "Existing content of file will be replaced with this content.",
+    @field:JsonPropertyDescription(
+        "New content for the file to be modified. If provided and 'patches' is empty, this fully replaces file content.",
     )
     var content: String? = null
 
-    @JsonPropertyDescription("If true, validates the updated file after write and reports compilation errors.")
-    var validateAfterUpdate: Boolean = false
+    @field:JsonPropertyDescription("If true, validates the updated file after write and reports compilation errors.")
+    var validateAfterUpdate: Boolean = true
+
+    @field:JsonPropertyDescription(
+        "Optional list of line-range patches to apply (1-based inclusive lines). If non-empty, patches are applied instead of full replace.",
+    )
+    var patches: List<Patch>? = null
 
     companion object {
         private val logger = Logger.getInstance(CreateOrUpdateFile::class.java)
     }
 
     override fun execute(project: Project): String {
-        var result: String = "File successfully updated"
-        var lastModified: Long = 0
         val projectBase = project.basePath ?: return "Project base path not found."
         val resolved =
             try {
                 PathUtils.resolveWithinProject(projectBase, filePath)
             } catch (e: IllegalArgumentException) {
-                project.service<ToolWindowService>()
-                    .addToolingMessage("Modify File - rejected", e.message ?: "Invalid path")
+                project.service<ToolWindowService>().addToolingMessage("Modify File - rejected", e.message ?: "Invalid path")
                 QDLog.warn(logger, { "Invalid path for CreateOrUpdateFile: $filePath" }, e)
                 return e.message ?: "Invalid path"
             }
         val relToBase = PathUtils.relativizeToProject(projectBase, resolved)
 
+        // If patches provided, delegate to PatchFile for partial updates
+        val patchList = patches?.toList().orEmpty()
+        if (patchList.isNotEmpty()) {
+            val pf = PatchFile().apply {
+                filePath = relToBase
+                this.patches = patchList.map { p -> PatchFile.Patch(p.fromLine, p.toLine, p.newContent, p.expectedText) }
+                validateAfterUpdate = this@CreateOrUpdateFile.validateAfterUpdate
+                stopOnMismatch = true
+            }
+            return pf.execute(project)
+        }
+
+        // Otherwise perform full replacement
+        var result: String = "File successfully updated"
+        var lastModified: Long = 0
         var updatedVirtualFile: VirtualFile? = null
 
-        // Perform the file content update within a write action and commit/save document
         ApplicationManager.getApplication().invokeAndWait {
             WriteCommandAction.runWriteCommandAction(project) {
                 try {
@@ -71,14 +98,10 @@ class CreateOrUpdateFile : ToolInterface<String> {
                             VfsUtil.createDirectories(ioFile.parentFile.absolutePath)
                         } catch (e: Throwable) {
                             QDLog.debug(logger) { "VFS createDirectories failed: ${e.message}" }
-                            val found =
-                                LocalFileSystem.getInstance().refreshAndFindFileByIoFile(ioFile.parentFile)
-                                    ?: throw IllegalStateException("Unable to create directories for: ${ioFile.parentFile}")
-                            found
+                            LocalFileSystem.getInstance().refreshAndFindFileByIoFile(ioFile.parentFile)
+                                ?: throw IllegalStateException("Unable to create directories for: ${ioFile.parentFile}")
                         }
-                    val virtualFile =
-                        parentVf.findChild(ioFile.name)
-                            ?: parentVf.createChildData(this, ioFile.name)
+                    val virtualFile = parentVf.findChild(ioFile.name) ?: parentVf.createChildData(this, ioFile.name)
                     updatedVirtualFile = virtualFile
 
                     val document = FileDocumentManager.getInstance().getDocument(virtualFile)
@@ -98,8 +121,7 @@ class CreateOrUpdateFile : ToolInterface<String> {
                         }
                     }
                     try {
-                        FileEditorManager.getInstance(project)
-                            .openTextEditor(OpenFileDescriptor(project, virtualFile), true)
+                        FileEditorManager.getInstance(project).openTextEditor(OpenFileDescriptor(project, virtualFile), true)
                     } catch (e: Throwable) {
                         QDLog.debug(logger) { "Failed to open editor for $relToBase: ${e.message}" }
                     }
@@ -108,35 +130,21 @@ class CreateOrUpdateFile : ToolInterface<String> {
                     lastModified = psiFile?.modificationStamp ?: 0
                 } catch (e: Throwable) {
                     QDLog.warn(logger, { "Failed to update file $relToBase" }, e)
-                    project.service<ToolWindowService>()
-                        .addToolingMessage("Modify File - failed", e.message ?: "Write action failed")
+                    project.service<ToolWindowService>().addToolingMessage("Modify File - failed", e.message ?: "Write action failed")
                     throw e
                 }
             }
         }
 
-        // Ensure documents are committed and VFS refreshed so validation sees the latest content
         try {
-            try {
-                PsiDocumentManager.getInstance(project).commitAllDocuments()
-            } catch (e: Throwable) {
-                QDLog.debug(logger) { "commitAllDocuments failed: ${e.message}" }
-            }
+            PsiDocumentManager.getInstance(project).commitAllDocuments()
             FileDocumentManager.getInstance().saveAllDocuments()
             val ioFile = resolved.toFile()
             val vFile = LocalFileSystem.getInstance().refreshAndFindFileByIoFile(ioFile)
             if (vFile != null) {
-                try {
-                    VfsUtil.markDirtyAndRefresh(true, true, true, vFile)
-                    updatedVirtualFile = vFile
-                } catch (e: Throwable) {
-                    QDLog.debug(logger) { "VFS markDirtyAndRefresh failed: ${e.message}" }
-                }
-                try {
-                    PsiDocumentManager.getInstance(project).commitAllDocuments()
-                } catch (e: Throwable) {
-                    QDLog.debug(logger) { "commitAllDocuments after refresh failed: ${e.message}" }
-                }
+                try { VfsUtil.markDirtyAndRefresh(true, true, true, vFile) } catch (_: Throwable) {}
+                updatedVirtualFile = vFile
+                try { PsiDocumentManager.getInstance(project).commitAllDocuments() } catch (_: Throwable) {}
             }
         } catch (e: Throwable) {
             QDLog.debug(logger) { "Post-write sync failed: ${e.message}" }
@@ -144,14 +152,10 @@ class CreateOrUpdateFile : ToolInterface<String> {
 
         if (validateAfterUpdate) {
             try {
-                val validator = ValidateClassFileTool()
-                validator.filePath = relToBase
-                val errors =
-                    ApplicationManager.getApplication().runReadAction<List<String>> {
-                        validator.findErrors(project)
-                    }
+                val validator = ValidateClassFileTool().apply { filePath = relToBase }
+                val errors = ApplicationManager.getApplication().runReadAction<List<String>> { validator.findErrors(project) }
                 val summary =
-                    if (errors.size == 1 && errors.first().equals("No compilation errors found.", ignoreCase = true)) {
+                    if (errors.size == 1 && errors.first().equals("No compilation errors found.", true)) {
                         "No compilation errors found."
                     } else if (errors.isEmpty()) {
                         "Validation completed, no errors reported."

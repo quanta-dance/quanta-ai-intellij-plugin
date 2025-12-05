@@ -20,16 +20,16 @@ import javax.xml.parsers.DocumentBuilderFactory
 
 @JsonClassDescription("Run Gradle tests and collect failed tests from XML reports")
 class RunGradleTestsTool : ToolInterface<RunTestsResult> {
-    @JsonPropertyDescription("Gradle task names to run, space-separated. Default: 'test'")
+    @field:JsonPropertyDescription("Gradle task names to run, space-separated. Default: 'test'")
     var tasks: String? = null
 
-    @JsonPropertyDescription("Whether to run 'cleanTest' before tests to remove stale reports. Default: true")
+    @field:JsonPropertyDescription("Whether to run 'cleanTest' before tests to remove stale reports. Default: true")
     var cleanBefore: Boolean = true
 
-    @JsonPropertyDescription("How many lines of stdout tail to include in the result (0 = none). Default: 50")
+    @field:JsonPropertyDescription("How many lines of stdout tail to include in the result (0 = none). Default: 50")
     var stdoutTailLines: Int = 50
 
-    @JsonPropertyDescription("Path to XML reports directory relative to project root. Default: 'build/test-results/test'")
+    @field:JsonPropertyDescription("Path to XML reports directory relative to project root. Default: 'build/test-results/test'")
     var reportsDir: String? = null
 
     override fun execute(project: Project): RunTestsResult {

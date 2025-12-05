@@ -14,7 +14,7 @@ import com.intellij.openapi.project.Project
     "Publish actionable code refactoring suggestions to the UI. Non-actionable (descriptive-only) items must not be provided here.",
 )
 class CodeRefactorSuggester : ToolInterface<String> {
-    @JsonPropertyDescription(
+    @field:JsonPropertyDescription(
         "Only provide actionable suggestions: each item MUST include file, valid original line range (for display only)," +
             " replaced_code (exact current text), and suggested_code (replacement). Descriptive-only suggestions are not accepted.",
     )

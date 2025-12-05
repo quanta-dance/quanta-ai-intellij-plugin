@@ -17,13 +17,13 @@ import java.net.URL
 
 @JsonClassDescription("Generate image with provided prompt")
 class GenerateImage : ToolInterface<String> {
-    @JsonPropertyDescription("Title for the image. 20 characters maximum")
+    @field:JsonPropertyDescription("Title for the image. 20 characters maximum")
     var imageTitle: String? = null
 
-    @JsonPropertyDescription("Prompt to generate a image")
+    @field:JsonPropertyDescription("Prompt to generate a image")
     var promptText: String? = null
 
-    @JsonPropertyDescription(
+    @field:JsonPropertyDescription(
         "Optional file path (including filename) where the image will be saved." +
             " If omitted, only the URL is returned and shown in tool window.",
     )

@@ -22,7 +22,7 @@ import com.intellij.psi.PsiRecursiveElementWalkingVisitor
 
 @JsonClassDescription("Validate a class file and return any compilation errors.")
 class ValidateClassFileTool : ToolInterface<List<String>> {
-    @JsonPropertyDescription("Relative to project root path to the file to validate.")
+    @field:JsonPropertyDescription("Relative to project root path to the file to validate.")
     var filePath: String? = null
 
     companion object {

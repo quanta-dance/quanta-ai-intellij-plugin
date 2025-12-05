@@ -15,13 +15,13 @@ import javax.xml.parsers.DocumentBuilderFactory
 
 @JsonClassDescription("Get detailed information for a specific test case from Gradle XML reports")
 class GetTestInfoTool : ToolInterface<GetTestInfoResult> {
-    @JsonPropertyDescription("Fully qualified test class name to look up")
+    @field:JsonPropertyDescription("Fully qualified test class name to look up")
     var testClass: String? = null
 
-    @JsonPropertyDescription("Test method name")
+    @field:JsonPropertyDescription("Test method name")
     var testName: String? = null
 
-    @JsonPropertyDescription("Path to XML reports directory relative to project root. Default: 'build/test-results/test'")
+    @field:JsonPropertyDescription("Path to XML reports directory relative to project root. Default: 'build/test-results/test'")
     var reportsDir: String? = null
 
     private fun addMsg(

@@ -11,10 +11,10 @@ import com.intellij.openapi.project.Project
 
 @JsonClassDescription("Send a natural-language message to a specific agent and get its reply.")
 class AgentSendMessageTool : ToolInterface<Map<String, Any>> {
-    @JsonPropertyDescription("Target agent id returned by AgentCreateTool")
+    @field:JsonPropertyDescription("Target agent id returned by AgentCreateTool")
     var agentId: String = ""
 
-    @JsonPropertyDescription("Message to send to the agent")
+    @field:JsonPropertyDescription("Message to send to the agent")
     var message: String = ""
 
     override fun execute(project: Project): Map<String, Any> {

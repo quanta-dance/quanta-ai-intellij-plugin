@@ -23,18 +23,18 @@ import git4idea.repo.GitRepositoryManager
 @JsonClassDescription("Provide Project Details and a bounded, depth-first project structure with clear truncation indicators.")
 class GetProjectDetails : ToolInterface<String> {
     // Defaults chosen to keep output readable while allowing full small projects
-    @JsonPropertyDescription("Include a truncated project tree in the summary. Default: false")
+    @field:JsonPropertyDescription("Include a truncated project tree in the summary. Default: false")
     var includeTree: Boolean = false
 
-    @JsonPropertyDescription("Maximum number of lines to output for the tree. Default: 500 (hard cap)")
+    @field:JsonPropertyDescription("Maximum number of lines to output for the tree. Default: 500 (hard cap)")
     var maxEntries: Int = 500
 
-    @JsonPropertyDescription(
+    @field:JsonPropertyDescription(
         "Maximum total characters for the tree output. Default: 10,000",
     )
     var maxChars: Int = 10000
 
-    @JsonPropertyDescription(
+    @field:JsonPropertyDescription(
         "Maximum depth to traverse (root’s direct children are depth 1). Default: 12.\n" +
             "Adaptive behavior: for JVM projects (Java/Kotlin/Scala with src/main/java|kotlin|scala), " +
             "an effective depth of at least 32 is used to accommodate deep package structures.",
