@@ -4,6 +4,36 @@
 package com.github.quanta_dance.quanta.plugins.intellij.tools
 
 import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentCreateTool
+import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentRemoveTool
+import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentSendMessageTool
+import com.github.quanta_dance.quanta.plugins.intellij.tools.build.GetTestInfoTool
+import com.github.quanta_dance.quanta.plugins.intellij.tools.build.GradleSyncTool
+import com.github.quanta_dance.quanta.plugins.intellij.tools.build.RunGradleTestsTool
+import com.github.quanta_dance.quanta.plugins.intellij.tools.catalog.ListToolsCatalogTool
+import com.github.quanta_dance.quanta.plugins.intellij.tools.catalog.SetToolScopeTool
+import com.github.quanta_dance.quanta.plugins.intellij.tools.go.RunGoTestsTool
+import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.CopyFileOrDirectoryTool
+import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.CreateOrUpdateFile
+import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.DeleteFileTool
+import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.GetFileReferencesAndDependencies
+import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.InspectDependencies
+import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.ListFiles
+import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.OpenFileInEditorTool
+import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile
+import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.ReadFileContent
+import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.ValidateClassFileTool
+import com.github.quanta_dance.quanta.plugins.intellij.tools.mcp.McpListServerToolsTool
+import com.github.quanta_dance.quanta.plugins.intellij.tools.mcp.McpListServersTool
+import com.github.quanta_dance.quanta.plugins.intellij.tools.media.GenerateImage
+import com.github.quanta_dance.quanta.plugins.intellij.tools.media.SoundGeneratorTool
+import com.github.quanta_dance.quanta.plugins.intellij.tools.project.GetProjectDetails
+import com.github.quanta_dance.quanta.plugins.intellij.tools.project.SearchInFiles
+import com.github.quanta_dance.quanta.plugins.intellij.tools.project.SearchProjectEmbeddings
+import com.github.quanta_dance.quanta.plugins.intellij.tools.project.UpsertProjectEmbedding
+import com.github.quanta_dance.quanta.plugins.intellij.tools.refactor.CodeRefactorSuggester
+import com.github.quanta_dance.quanta.plugins.intellij.tools.system.RequestModelSwitch
+import com.github.quanta_dance.quanta.plugins.intellij.tools.system.TerminalCommandTool
 import com.intellij.openapi.project.Project
 import java.io.File
 import java.util.ArrayDeque
@@ -48,6 +78,7 @@ object ToolsRegistry {
             ToolEntry(CopyFileOrDirectoryTool::class.java, Group.GENERIC),
             ToolEntry(ValidateClassFileTool::class.java, Group.GENERIC),
             ToolEntry(TerminalCommandTool::class.java, Group.GENERIC),
+            ToolEntry(GradleSyncTool::class.java, Group.GRADLE),
             ToolEntry(RunGradleTestsTool::class.java, Group.GRADLE),
             ToolEntry(GetTestInfoTool::class.java, Group.GRADLE),
             ToolEntry(OpenFileInEditorTool::class.java, Group.GENERIC),

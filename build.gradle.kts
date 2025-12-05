@@ -95,6 +95,7 @@ tasks {
         jvmArgs(
             "-Didea.is.internal=true",
             "-Didea.log.debug.categories=com.github.quanta_dance.quanta.plugins.intellij.*",
+            "-Djava.net.preferIPv4Stack=true"
         )
     }
 
