@@ -45,19 +45,13 @@
         Fix model selection for gpt-5.1 and gpt-5.1-codex
     </change-notes>
 
-
-    <!-- Product and plugin compatibility requirements.
-         Read more: https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html -->
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.vcs</depends>
     <depends>Git4Idea</depends>
-    <!-- Optional Java plugin dependency; config-file will be loaded only when available (e.g., IntelliJ IDEA) -->
     <depends optional="true" config-file="java.xml">com.intellij.java</depends>
     <depends>com.intellij.gradle</depends>
     <resource-bundle>messages.QuantaAIBundle</resource-bundle>
 
-    <!-- Extension points defined by the plugin.
-         Read more: https://plugins.jetbrains.com/docs/intellij/plugin-extension-points.html -->
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow factoryClass="com.github.quanta_dance.quanta.plugins.intellij.toolWindow.QuantaAIToolWindowFactory"
                     id="Quanta AI"
@@ -65,40 +59,32 @@
                     anchor="right"/>
 
         <!-- Ensure MCP watcher is instantiated on project open -->
-        <postStartupActivity
-                implementation="com.github.quanta_dance.quanta.plugins.intellij.mcp.McpServersStartupActivity"/>
+        <postStartupActivity implementation="com.github.quanta_dance.quanta.plugins.intellij.mcp.McpServersStartupActivity"/>
+
+        <!-- Prewarm OpenAI client on project open -->
+        <postStartupActivity implementation="com.github.quanta_dance.quanta.plugins.intellij.listeners.QuantaAIApplicationActivationListener"/>
     </extensions>
 
-    <applicationListeners>
-        <listener
-                class="com.github.quanta_dance.quanta.plugins.intellij.listeners.QuantaAIApplicationActivationListener"
-                topic="com.intellij.openapi.application.ApplicationActivationListener"/>
-    </applicationListeners>
+    <!-- Removed application-level activation listener to avoid ClassCastException -->
 
-    <!-- Will add Plugin Configuration Settings into Settings -> QuantaDance Plugin Settings -->
     <extensions defaultExtensionNs="com.intellij">
-        <applicationService
-                serviceImplementation="com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState"/>
+        <applicationService serviceImplementation="com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState"/>
         <applicationConfigurable
                 parentId="tools"
                 id="com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAIPluginConfigurable"
                 displayName="Quanta AI"
                 instance="com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAIPluginConfigurable"/>
-        <notificationGroup id="Plugin Notifications"
-                           displayType="STICKY_BALLOON"
-                           isLogByDefault="true"/>
+        <notificationGroup id="Plugin Notifications" displayType="STICKY_BALLOON" isLogByDefault="true"/>
     </extensions>
 
     <actions>
-        <group id="EditorPopupMenu.QuantaAI"
-               class="com.intellij.openapi.actionSystem.DefaultActionGroup"
+        <group id="EditorPopupMenu.QuantaAI" class="com.intellij.openapi.actionSystem.DefaultActionGroup"
                text="QuantaDance Actions" popup="true" description="QuantaDance"
                icon="/icons/quantadance.svg">
             <add-to-group group-id="EditorPopupMenu" anchor="first"/>
         </group>
 
-        <group id="Floating.CodeToolbar.QuantaAI"
-               class="com.intellij.openapi.actionSystem.DefaultActionGroup"
+        <group id="Floating.CodeToolbar.QuantaAI" class="com.intellij.openapi.actionSystem.DefaultActionGroup"
                text="QuantaAI Actions" popup="true" description="QuantaAI"
                icon="/icons/quantadance.svg">
             <add-to-group group-id="Floating.CodeToolbar" anchor="first"/>
@@ -140,7 +126,6 @@
                 class="com.github.quanta_dance.quanta.plugins.intellij.actions.SettingsAction"
                 text="Quanta AI Settings"
                 description="Open Quanta AI plugin settings"
-                icon="AllIcons.General.Settings">
-        </action>
+                icon="AllIcons.General.Settings"/>
     </actions>
 </idea-plugin>

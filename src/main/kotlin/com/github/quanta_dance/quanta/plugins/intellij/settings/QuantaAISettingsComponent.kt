@@ -17,7 +17,9 @@ import com.intellij.ui.components.JBPasswordField
 import com.intellij.ui.components.JBTextArea
 import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.FormBuilder
+import com.openai.models.AllModels
 import com.openai.models.ChatModel
+import com.openai.models.ResponsesModel
 import java.awt.Color
 import java.awt.Cursor
 import java.awt.event.MouseAdapter
@@ -49,14 +51,15 @@ class QuantaAISettingsComponent {
 
     private var maxOutputTokensField = JBTextField("Max output tokens")
 
-    private var models =
+    private var models: Array<String> =
         arrayOf(
-            ChatModel.GPT_5_1_CODEX,
-            ChatModel.GPT_5_1,
-            ChatModel.GPT_5,
-            ChatModel.GPT_5_MINI,
-            ChatModel.GPT_5_NANO,
-        ).map { i -> i.toString() }.toTypedArray()
+            AllModels.ResponsesOnlyModel.GPT_5_1_CODEX_MAX.toString(),
+            ChatModel.GPT_5_1_CODEX.toString(),
+            ChatModel.GPT_5_1.toString(),
+            ChatModel.GPT_5.toString(),
+            ChatModel.GPT_5_MINI.toString(),
+            ChatModel.GPT_5_NANO.toString(),
+        )
 
     private var aiChatModelField = ComboBox(models)
 
@@ -106,8 +109,8 @@ class QuantaAISettingsComponent {
                             """
                             {
                             """.trimIndent() +
-                                "\"mcpServers\": { }\n" +
-                                "}".trimIndent(),
+                                    "\"mcpServers\": { }\n" +
+                                    "}".trimIndent(),
                         )
                     }
                     LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)?.let { vFile ->
@@ -130,7 +133,7 @@ class QuantaAISettingsComponent {
     val linkLabel =
         JBLabel(
             "<html>Model Pricing details available at <a href=\"https://platform.openai.com/docs/pricing\">" +
-                "https://platform.openai.com/docs/pricing</a></html>",
+                    "https://platform.openai.com/docs/pricing</a></html>",
         ).apply {
             cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
             foreground = Color(42, 122, 255)
@@ -166,42 +169,66 @@ class QuantaAISettingsComponent {
 
     var hostValue: String
         get() = hostField.text.trim().ifBlank { QuantaAISettingsState.DEFAULT_HOST }
-        set(value) { hostField.text = value }
+        set(value) {
+            hostField.text = value
+        }
 
     var tokenValue: String
         get() = String(tokenField.password)
-        set(value) { tokenField.text = value }
+        set(value) {
+            tokenField.text = value
+        }
 
     var voiceEnabled: Boolean
         get() = voiceEnabledField.isSelected
-        set(value) { voiceEnabledField.isSelected = value }
+        set(value) {
+            voiceEnabledField.isSelected = value
+        }
 
     var voiceByLocalTTS: Boolean
         get() = voiceByLocalTTSField.isSelected
-        set(value) { voiceByLocalTTSField.isSelected = value }
+        set(value) {
+            voiceByLocalTTSField.isSelected = value
+        }
 
     var aiChatModelValue: String
         get() = aiChatModelField.selectedItem as String
-        set(value) { aiChatModelField.selectedItem = value }
+        set(value) {
+            aiChatModelField.selectedItem = value
+        }
 
     var customPromptValue: String
         get() = customPromptField.text
-        set(value) { customPromptField.text = value }
+        set(value) {
+            customPromptField.text = value
+        }
 
     var extraInstructionsValue: String
         get() = extraInstructionsArea.text
-        set(value) { extraInstructionsArea.text = value }
+        set(value) {
+            extraInstructionsArea.text = value
+        }
 
     var maxTokensValue: Long?
         get() =
-            try { Integer.parseInt(maxOutputTokensField.text).toLong() } catch (e: NumberFormatException) { null }
-        set(value) { maxOutputTokensField.text = value.toString() }
+            try {
+                Integer.parseInt(maxOutputTokensField.text).toLong()
+            } catch (e: NumberFormatException) {
+                null
+            }
+        set(value) {
+            maxOutputTokensField.text = value.toString()
+        }
 
     var dynamicModelEnabled: Boolean
         get() = dynamicModelEnabledField.isSelected
-        set(value) { dynamicModelEnabledField.isSelected = value }
+        set(value) {
+            dynamicModelEnabledField.isSelected = value
+        }
 
     var agenticEnabled: Boolean
         get() = agenticEnabledField.isSelected
-        set(value) { agenticEnabledField.isSelected = value }
+        set(value) {
+            agenticEnabledField.isSelected = value
+        }
 }

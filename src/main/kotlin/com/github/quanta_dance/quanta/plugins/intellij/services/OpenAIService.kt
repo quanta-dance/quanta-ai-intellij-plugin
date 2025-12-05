@@ -3,6 +3,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.services
 
+import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.quanta_dance.quanta.plugins.intellij.mcp.DynamicMcpToolProvider
 import com.github.quanta_dance.quanta.plugins.intellij.mcp.McpClientService
@@ -39,14 +40,18 @@ import com.openai.models.responses.ResponseFunctionToolCall
 import com.openai.models.responses.ResponseInputItem
 import com.openai.models.responses.StructuredResponse
 import com.openai.models.responses.StructuredResponseCreateParams
+import com.openai.models.responses.Tool
 import java.beans.PropertyChangeListener
 import java.beans.PropertyChangeSupport
 import java.io.BufferedInputStream
 import java.io.InputStream
 import java.util.Collections
+import java.util.Timer
+import java.util.TimerTask
 import java.util.UUID
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Future
+import java.util.concurrent.atomic.AtomicBoolean
 
 @Service(Service.Level.PROJECT)
 class OpenAIService(private val project: Project) : Disposable {
@@ -54,16 +59,9 @@ class OpenAIService(private val project: Project) : Disposable {
     private var operationInProgress = false
     private val pcs = PropertyChangeSupport(this)
 
-    @Volatile
-    private var oAI: OpenAIClient = OpenAIClientProvider.get(project)
-
-    @Volatile
-    private var clientKey: Pair<String, String> =
-        QuantaAISettingsState.instance.state.let { it.host to it.token }
-
-    @Volatile
-    private var modelKey: Pair<Boolean, String> =
-        QuantaAISettingsState.instance.state.let { (it.dynamicModelEnabled == true) to it.aiChatModel }
+    @Volatile private var oAI: OpenAIClient = OpenAIClientProvider.get(project)
+    @Volatile private var clientKey: Pair<String, String> = QuantaAISettingsState.instance.state.let { it.host to it.token }
+    @Volatile private var modelKey: Pair<Boolean, String> = QuantaAISettingsState.instance.state.let { (it.dynamicModelEnabled == true) to it.aiChatModel }
 
     private var lastResponseId: String? = QuantaAISettingsState.instance.state.mainLastResponseId
     private var currentSessionId: String = UUID.randomUUID().toString()
@@ -71,16 +69,19 @@ class OpenAIService(private val project: Project) : Disposable {
     private val toolInvoker: ToolInvoker = DefaultToolInvoker()
     private val mapper = ObjectMapper()
 
-    private var currentModel: String =
-        run {
-            val s = QuantaAISettingsState.instance.state
-            val dynamic = s.dynamicModelEnabled == true
-            val maxModel = s.aiChatModel.ifBlank { ChatModel.GPT_5_MINI.toString() }
-            val initial = if (dynamic) ChatModel.GPT_5_MINI.toString() else maxModel
-            normalize(initial)
-        }
+    private var currentModel: String = run {
+        val s = QuantaAISettingsState.instance.state
+        val dynamic = s.dynamicModelEnabled == true
+        val maxModel = s.aiChatModel.ifBlank { ChatModel.GPT_5_MINI.toString() }
+        val initial = if (dynamic) ChatModel.GPT_5_MINI.toString() else maxModel
+        normalize(initial)
+    }
 
     private val managerLabel: String = "AI(manager)"
+
+    @Volatile private var lastCtxHash: Int? = null
+    @Volatile private var cachedMcpSignature: String? = null
+    @Volatile private var cachedMcpTools: List<Tool> = emptyList()
 
     private fun rank(id: String): Int {
         val s = id.lowercase()
@@ -94,17 +95,11 @@ class OpenAIService(private val project: Project) : Disposable {
 
     private fun normalize(id: String): String {
         val cm = ChatModel.of(id)
-        return try {
-            cm.validate()
-            cm.toString()
-        } catch (_: Throwable) {
-            ChatModel.GPT_5_MINI.toString()
-        }
+        return try { cm.validate(); cm.toString() } catch (_: Throwable) { ChatModel.GPT_5_MINI.toString() }
     }
 
     private fun clampToMax(requested: String, max: String): String {
-        val r = normalize(requested)
-        val m = normalize(max)
+        val r = normalize(requested); val m = normalize(max)
         return if (rank(r) <= rank(m)) r else m
     }
 
@@ -120,31 +115,29 @@ class OpenAIService(private val project: Project) : Disposable {
         return if (settings.dynamicModelEnabled == true) clampToMax(currentModel, maxModel) else normalize(maxModel)
     }
 
-    fun createParamsBuilder(
-        inputs: MutableList<ResponseInputItem>,
-        previousId: String?,
-        overrideInstructions: String? = null,
-        overrideModel: String? = null,
-        allowedToolClassFilter: ((Class<*>) -> Boolean)? = null,
-        includeMcp: Boolean = true,
-    ): StructuredResponseCreateParams.Builder<OpenAIResponse> {
-        val effectiveModel = overrideModel?.let { normalize(it) } ?: getEffectiveModel()
-        val builder =
-            ResponseCreateParams.builder()
-                .instructions(overrideInstructions ?: mergedInstructions())
-                .inputOfResponse(inputs)
-                .reasoning(Reasoning.builder().effort(ReasoningEffort.LOW).build())
-                .maxOutputTokens(QuantaAISettingsState.instance.state.maxTokens)
-                .text(OpenAIResponse::class.java)
-                .model(ChatModel.of(effectiveModel))
-        if (!previousId.isNullOrBlank()) builder.previousResponseId(previousId)
-        val allTools = toolsFor(project)
-        allTools.filter { clazz -> allowedToolClassFilter?.invoke(clazz) ?: true }.forEach { tool -> builder.addTool(tool) }
-        if (includeMcp) {
-            val mcp = project.service<McpClientService>()
-            DynamicMcpToolProvider.buildTools(mcp).forEach { t -> builder.addTool(t) }
+    private fun computeMcpSignature(mcp: McpClientService): String {
+        val servers = mcp.listServers()
+        val sb = StringBuilder()
+        servers.sorted().forEach { s ->
+            sb.append(s).append(':')
+            val names = mcp.getTools(s).map { it.name }.sorted()
+            names.forEach { n -> sb.append(n).append(',') }
+            sb.append('|')
         }
-        return builder
+        return sb.toString()
+    }
+
+    private fun getMcpToolsCached(): List<Tool> {
+        val mcp = project.service<McpClientService>()
+        return try {
+            val sig = computeMcpSignature(mcp)
+            if (sig != cachedMcpSignature) {
+                val tools = DynamicMcpToolProvider.buildTools(mcp)
+                cachedMcpTools = tools
+                cachedMcpSignature = sig
+            }
+            cachedMcpTools
+        } catch (_: Throwable) { emptyList() }
     }
 
     init {
@@ -174,7 +167,7 @@ class OpenAIService(private val project: Project) : Disposable {
         )
     }
 
-    override fun dispose() {}
+    override fun dispose() { }
 
     private fun userMessage(text: String): ResponseInputItem =
         ResponseInputItem.ofMessage(
@@ -187,8 +180,7 @@ class OpenAIService(private val project: Project) : Disposable {
         )
 
     fun speech(message: String, consumer: (InputStream) -> Unit): CompletableFuture<Void> {
-        val params =
-            SpeechCreateParams.builder().input(message).model(SpeechModel.GPT_4O_MINI_TTS).voice(SpeechCreateParams.Voice.ASH).responseFormat(SpeechCreateParams.ResponseFormat.MP3).build()
+        val params = SpeechCreateParams.builder().input(message).model(SpeechModel.GPT_4O_MINI_TTS).voice(SpeechCreateParams.Voice.ASH).responseFormat(SpeechCreateParams.ResponseFormat.MP3).build()
         return oAI.async().audio().speech().create(params).thenAcceptAsync { response ->
             val inp = BufferedInputStream(response.body())
             consumer(inp)
@@ -196,7 +188,6 @@ class OpenAIService(private val project: Project) : Disposable {
     }
 
     fun inProgress(): Boolean = operationInProgress
-
     fun addPropertyChangeListener(listener: PropertyChangeListener) = pcs.addPropertyChangeListener(listener)
 
     fun stopProcessing() {
@@ -208,11 +199,8 @@ class OpenAIService(private val project: Project) : Disposable {
                 }
             }
         } catch (e: InterruptedException) {
-            Thread.currentThread().interrupt()
-            thisLogger().warn("Interrupted exception: ", e)
-        } catch (e: Exception) {
-            thisLogger().error("Error while stopping processing: ", e)
-        }
+            Thread.currentThread().interrupt(); thisLogger().warn("Interrupted exception: ", e)
+        } catch (e: Exception) { thisLogger().error("Error while stopping processing: ", e) }
     }
 
     private fun buildToolErrorPayload(toolName: String, code: String = "tool_error", hint: String? = null): Map<String, Any> {
@@ -226,18 +214,90 @@ class OpenAIService(private val project: Project) : Disposable {
         val old = currentSessionId
         currentSessionId = UUID.randomUUID().toString()
         lastResponseId = null
-        // Persist main last response id reset
         QuantaAISettingsState.instance.state.mainLastResponseId = null
+        lastCtxHash = null
         pcs.firePropertyChange("session", old, currentSessionId)
         project.service<ToolWindowService>().clear()
         return currentSessionId
     }
 
     fun getCurrentSessionId(): String = currentSessionId
+    fun stopAndClearSession() { stopProcessing(); newSession() }
 
-    fun stopAndClearSession() {
-        stopProcessing()
-        newSession()
+    private fun addSelectedBuiltInTools(
+        builder: StructuredResponseCreateParams.Builder<OpenAIResponse>,
+        allowedBuiltInNames: Set<String>?,
+    ) {
+        val all = toolsFor(project)
+        val filtered =
+            if (allowedBuiltInNames == null || allowedBuiltInNames.isEmpty()) {
+                all.filter { cls -> cls.simpleName == "ListToolsCatalogTool" || cls.simpleName == "SetToolScopeTool" }
+            } else {
+                all.filter { cls -> allowedBuiltInNames.contains(cls.simpleName) || cls.simpleName == "ListToolsCatalogTool" || cls.simpleName == "SetToolScopeTool" }
+            }
+        filtered.forEach { builder.addTool(it) }
+    }
+
+    private fun addSelectedMcpTools(
+        builder: StructuredResponseCreateParams.Builder<OpenAIResponse>,
+        allowedMcpNames: Set<String>?, // server.method
+    ) {
+        if (allowedMcpNames == null || allowedMcpNames.isEmpty()) return
+        val mcp = project.service<McpClientService>()
+        val dyn = DynamicMcpToolProvider
+        val tools = dyn.buildTools(mcp)
+        tools.forEach { t ->
+            try {
+                val fn = t.asFunction().name()
+                val pair = dyn.resolve(fn)
+                if (pair != null) {
+                    val name = pair.first + "." + pair.second
+                    if (allowedMcpNames.contains(name)) builder.addTool(t)
+                }
+            } catch (_: Throwable) {}
+        }
+    }
+
+    fun createParamsBuilder(
+        inputs: MutableList<ResponseInputItem>,
+        previousId: String?,
+        overrideInstructions: String? = null,
+        overrideModel: String? = null,
+        allowedToolClassFilter: ((Class<*>) -> Boolean)? = null,
+        includeMcp: Boolean = true,
+        allowedBuiltInNames: Set<String>? = null,
+        allowedMcpNames: Set<String>? = null,
+    ): StructuredResponseCreateParams.Builder<OpenAIResponse> {
+        val effectiveModel = overrideModel?.let { normalize(it) } ?: getEffectiveModel()
+        val builder = ResponseCreateParams.builder()
+            .instructions(overrideInstructions ?: mergedInstructions())
+            .inputOfResponse(inputs)
+            .reasoning(Reasoning.builder().effort(ReasoningEffort.LOW).build())
+            .maxOutputTokens(QuantaAISettingsState.instance.state.maxTokens)
+            .text(OpenAIResponse::class.java)
+            .model(ChatModel.of(effectiveModel))
+        if (!previousId.isNullOrBlank()) builder.previousResponseId(previousId)
+
+        addSelectedBuiltInTools(builder, allowedBuiltInNames)
+        if (includeMcp) addSelectedMcpTools(builder, allowedMcpNames)
+        return builder
+    }
+
+    private class DelayedSpinner(private val svc: ToolWindowService) {
+        private val shown = AtomicBoolean(false)
+        private var handle: ToolWindowService.SpinnerHandle? = null
+        private var timer: Timer? = null
+        fun startWithDelay(title: String, delayMs: Long = 300) {
+            timer = Timer("delayed-spinner", true).apply {
+                schedule(object : TimerTask() {
+                    override fun run() {
+                        if (shown.compareAndSet(false, true)) handle = svc.startSpinner(title)
+                    }
+                }, delayMs)
+            }
+        }
+        fun stopSuccess() { timer?.cancel(); handle?.stopSuccess() }
+        fun stopError(msg: String) { timer?.cancel(); handle?.stopError(msg) }
     }
 
     fun createResponse(
@@ -247,8 +307,20 @@ class OpenAIService(private val project: Project) : Disposable {
         overrideModel: String? = null,
         allowedToolClassFilter: ((Class<*>) -> Boolean)? = null,
         includeMcp: Boolean = true,
+        allowedBuiltInNames: Set<String>? = null,
+        allowedMcpNames: Set<String>? = null,
     ): Pair<StructuredResponse<OpenAIResponse>, String?> {
-        val createParams = createParamsBuilder(inputs, previousId, overrideInstructions, overrideModel, allowedToolClassFilter, includeMcp).build()
+        val createParams =
+            createParamsBuilder(
+                inputs,
+                previousId,
+                overrideInstructions,
+                overrideModel,
+                allowedToolClassFilter,
+                includeMcp,
+                allowedBuiltInNames,
+                allowedMcpNames,
+            ).build()
         val structResponse = oAI.responses().create(createParams)
         val id = try { structResponse.id() } catch (_: Throwable) { null }
         return structResponse to id
@@ -283,35 +355,22 @@ class OpenAIService(private val project: Project) : Disposable {
                         project.service<ToolWindowService>().addToolingMessage(agentLabel, "Calling tool: ${functionCall.name()}")
                         try {
                             val functionResult = routeFunction(functionCall)
-                            pendingToolOutputs.add(
-                                ResponseInputItem.ofFunctionCallOutput(
-                                    ResponseInputItem.FunctionCallOutput.builder().callId(callId).outputAsJson(functionResult).build(),
-                                ),
-                            )
+                            pendingToolOutputs.add(ResponseInputItem.ofFunctionCallOutput(ResponseInputItem.FunctionCallOutput.builder().callId(callId).outputAsJson(functionResult).build()))
                         } catch (_: Throwable) {
                             val errorPayload = buildToolErrorPayload(functionCall.name(), code = "unhandled_exception")
-                            pendingToolOutputs.add(
-                                ResponseInputItem.ofFunctionCallOutput(
-                                    ResponseInputItem.FunctionCallOutput.builder().callId(callId).outputAsJson(errorPayload).build(),
-                                ),
-                            )
+                            pendingToolOutputs.add(ResponseInputItem.ofFunctionCallOutput(ResponseInputItem.FunctionCallOutput.builder().callId(callId).outputAsJson(errorPayload).build()))
                         }
                     }
                     item.isMessage() -> {
-                        item.message().map { m ->
-                            m.content().forEach { c ->
-                                val txt = c.asOutputText().summaryMessage
-                                if (txt.isNotBlank()) project.service<ToolWindowService>().addToolingMessage(agentLabel, txt)
-                                aggregated.append(txt).append('\n')
-                            }
-                        }
+                        item.message().map { m -> m.content().forEach { c ->
+                            val txt = c.asOutputText().summaryMessage
+                            if (txt.isNotBlank()) project.service<ToolWindowService>().addToolingMessage(agentLabel, txt)
+                            aggregated.append(txt).append('\n')
+                        } }
                     }
                 }
             }
-            if (pendingToolOutputs.isNotEmpty()) {
-                inputs.addAll(pendingToolOutputs)
-                reprocess = true
-            }
+            if (pendingToolOutputs.isNotEmpty()) { inputs.addAll(pendingToolOutputs); reprocess = true }
         }
         return aggregated.toString().trim() to localPrevId
     }
@@ -325,24 +384,28 @@ class OpenAIService(private val project: Project) : Disposable {
         pcs.firePropertyChange("inProgress", false, true)
         processingFuture = ApplicationManager.getApplication().executeOnPooledThread {
             val requestInputs = Collections.synchronizedList(mutableListOf<ResponseInputItem>())
+
             val ctx = CurrentFileContextProvider(project).getCurrent()
             if (ctx != null) {
-                requestInputs.add(systemMessage("Current file open: ${ctx.filePathRelative}, file version: ${ctx.version} - you must always reread file if version changed"))
-                val caretLine = ctx.caretLine
-                val caretCol = ctx.caretColumn
-                val sb = StringBuilder()
-                if (caretLine != null && caretCol != null) sb.append("User Caret position in the file ${ctx.filePathRelative} - Line: $caretLine, Column (Offset): $caretCol") else sb.append("User Caret position in the file ${ctx.filePathRelative} - not available")
+                val header = "Current file open: ${ctx.filePathRelative}, file version: ${ctx.version} - you must always reread file if version changed"
+                val caretLine = ctx.caretLine; val caretCol = ctx.caretColumn
+                val sb = StringBuilder().append(header)
+                if (caretLine != null && caretCol != null) sb.append("\nUser Caret position in the file ${ctx.filePathRelative} - Line: $caretLine, Column (Offset): $caretCol")
                 if (ctx.selectedText != null && ctx.selectionStartLine != null && ctx.selectionStartColumn != null && ctx.selectionEndLine != null && ctx.selectionEndColumn != null) {
                     sb.append("\nSelection starts at line ${ctx.selectionStartLine}, column ${ctx.selectionStartColumn} and ends at line ${ctx.selectionEndLine}, column ${ctx.selectionEndColumn}\n")
                     sb.append("Selected text is: ${ctx.selectedText}")
                 }
-                requestInputs.add(systemMessage(sb.toString()))
+                val payload = sb.toString()
+                val h = payload.hashCode()
+                if (lastCtxHash == null || lastCtxHash != h || lastResponseId == null) {
+                    requestInputs.add(systemMessage(payload))
+                    lastCtxHash = h
+                }
             }
             try {
                 val effectiveForThisCall = getEffectiveModel()
                 requestInputs.add(systemMessage("{\"currentModel\":\"${effectiveForThisCall}\"}"))
             } catch (_: Throwable) {}
-
             requestInputs.add(userMessage(text))
 
             var reprocess = true
@@ -350,16 +413,29 @@ class OpenAIService(private val project: Project) : Disposable {
             val processedCallIds = mutableSetOf<String>()
             var previousIdForThisTurn = lastResponseId
 
+            val tws = project.service<ToolWindowService>()
+            val delayedSpinner = DelayedSpinner(tws)
+            delayedSpinner.startWithDelay("AI is thinking [${getEffectiveModel()}]", 300)
+
             while (reprocess) {
                 reprocess = false
-                var spinner: ToolWindowService.SpinnerHandle? = null
                 try {
-                    val effectiveForThisCall = getEffectiveModel()
-                    spinner = project.service<ToolWindowService>().startSpinner("AI is thinking [$effectiveForThisCall]")
+                    val scopeSvc = project.service<ToolScopeService>()
+                    val (stickyB, stickyM) = scopeSvc.getSticky()
+                    val (turnB, turnM) = scopeSvc.consumeCurrent()
+                    val allowedB = (stickyB + turnB).toSet()
+                    val allowedM = (stickyM + turnM).toSet()
 
-                    val (structResponse, newId) = createResponse(requestInputs, previousIdForThisTurn)
+                    val (structResponse, newId) = createResponse(
+                        requestInputs,
+                        previousIdForThisTurn,
+                        allowedToolClassFilter = null,
+                        includeMcp = allowedM.isNotEmpty(),
+                        allowedBuiltInNames = allowedB,
+                        allowedMcpNames = allowedM,
+                    )
                     previousIdForThisTurn = newId
-                    spinner?.stopSuccess()
+                    delayedSpinner.stopSuccess()
 
                     requestInputs.clear()
                     val pendingToolOutputs = mutableListOf<ResponseInputItem>()
@@ -377,18 +453,10 @@ class OpenAIService(private val project: Project) : Disposable {
                                 project.service<ToolWindowService>().addToolingMessage(managerLabel, "Calling tool: ${functionCall.name()}")
                                 try {
                                     val functionResult = routeFunction(functionCall)
-                                    pendingToolOutputs.add(
-                                        ResponseInputItem.ofFunctionCallOutput(
-                                            ResponseInputItem.FunctionCallOutput.builder().callId(callId).outputAsJson(functionResult).build(),
-                                        ),
-                                    )
+                                    pendingToolOutputs.add(ResponseInputItem.ofFunctionCallOutput(ResponseInputItem.FunctionCallOutput.builder().callId(callId).outputAsJson(functionResult).build()))
                                 } catch (_: Throwable) {
                                     val errorPayload = buildToolErrorPayload(functionCall.name(), code = "unhandled_exception")
-                                    pendingToolOutputs.add(
-                                        ResponseInputItem.ofFunctionCallOutput(
-                                            ResponseInputItem.FunctionCallOutput.builder().callId(callId).outputAsJson(errorPayload).build(),
-                                        ),
-                                    )
+                                    pendingToolOutputs.add(ResponseInputItem.ofFunctionCallOutput(ResponseInputItem.FunctionCallOutput.builder().callId(callId).outputAsJson(errorPayload).build()))
                                 }
                             }
                             item.isMessage() -> {
@@ -410,23 +478,19 @@ class OpenAIService(private val project: Project) : Disposable {
                         }
                     }
 
-                    if (pendingToolOutputs.isNotEmpty()) {
-                        requestInputs.addAll(pendingToolOutputs)
-                        reprocess = true
-                    }
+                    if (pendingToolOutputs.isNotEmpty()) { requestInputs.addAll(pendingToolOutputs); reprocess = true }
                 } catch (e: InterruptedException) {
-                    spinner?.stopError("Cancelled after interruption")
+                    delayedSpinner.stopError("Cancelled after interruption")
                     thisLogger().warn("Execution interrupted: ", e)
                     Thread.currentThread().interrupt()
                     break
                 } catch (e: Throwable) {
-                    spinner?.stopError(e.message ?: "Unexpected error")
+                    delayedSpinner.stopError(e.message ?: "Unexpected error")
                     thisLogger().warn("Unexpected Error: ", e)
                     showNotification(project, e.message.orEmpty(), NotificationType.ERROR)
                     break
                 }
             }
-            // Persist the last response id for the next user turn and restore across restarts
             lastResponseId = previousIdForThisTurn
             QuantaAISettingsState.instance.state.mainLastResponseId = lastResponseId
             operationInProgress = false
@@ -439,7 +503,7 @@ class OpenAIService(private val project: Project) : Disposable {
         DynamicMcpToolProvider.resolve(name)?.let { (server, method) ->
             val argsJson = functionCall.arguments()
             val argsMap: Map<String, Any?> = try {
-                @Suppress("UNCHECKED_CAST") mapper.readValue(argsJson, Map::class.java) as Map<String, Any?>
+                mapper.readValue(argsJson, object : TypeReference<Map<String, Any?>>() {})
             } catch (_: Throwable) { emptyMap() }
             val out = project.service<McpClientService>().invokeTool(server, method, argsMap, null)
             return mapOf("output" to out)
@@ -450,7 +514,7 @@ class OpenAIService(private val project: Project) : Disposable {
             val method = name.substring(idx + 1)
             val argsJson = functionCall.arguments()
             val argsMap: Map<String, Any?> = try {
-                @Suppress("UNCHECKED_CAST") mapper.readValue(argsJson, Map::class.java) as Map<String, Any?>
+                mapper.readValue(argsJson, object : TypeReference<Map<String, Any?>>() {})
             } catch (_: Throwable) { emptyMap() }
             val out = project.service<McpClientService>().invokeTool(server, method, argsMap, null)
             return mapOf("output" to out)
@@ -465,14 +529,9 @@ class OpenAIService(private val project: Project) : Disposable {
     }
 
     fun transcript(inputStream: InputStream): String {
-        return try {
-            transcriptAsync(inputStream).get()
-        } catch (e: InterruptedException) {
-            Thread.currentThread().interrupt()
-            throw RuntimeException("Transcription was interrupted", e)
-        } catch (e: Exception) {
-            throw RuntimeException("Failed to transcribe audio", e)
-        }
+        return try { transcriptAsync(inputStream).get() } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt(); throw RuntimeException("Transcription was interrupted", e)
+        } catch (e: Exception) { throw RuntimeException("Failed to transcribe audio", e) }
     }
 
     fun transcriptAsync(inputStream: InputStream): CompletableFuture<String> {
@@ -498,9 +557,7 @@ class OpenAIService(private val project: Project) : Disposable {
 
     private fun callFunction(functionCall: ResponseFunctionToolCall): Any {
         thisLogger().debug("Calling ${functionCall.name()}")
-        return try {
-            toolInvoker.invoke(project, functionCall)
-        } catch (e: Throwable) {
+        return try { toolInvoker.invoke(project, functionCall) } catch (e: Throwable) {
             thisLogger().error(e.message, e)
             showNotification(project, e.message.orEmpty(), NotificationType.ERROR)
             buildToolErrorPayload(functionCall.name(), code = "unhandled_exception")
