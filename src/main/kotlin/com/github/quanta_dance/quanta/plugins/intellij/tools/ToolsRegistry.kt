@@ -7,9 +7,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettings
 import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentCreateTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentRemoveTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentSendMessageTool
-import com.github.quanta_dance.quanta.plugins.intellij.tools.build.GetTestInfoTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.build.GradleSyncTool
-import com.github.quanta_dance.quanta.plugins.intellij.tools.build.RunGradleTestsTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.catalog.ListToolsCatalogTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.catalog.SetToolScopeTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.go.RunGoTestsTool
@@ -79,8 +77,6 @@ object ToolsRegistry {
             ToolEntry(ValidateClassFileTool::class.java, Group.GENERIC),
             ToolEntry(TerminalCommandTool::class.java, Group.GENERIC),
             ToolEntry(GradleSyncTool::class.java, Group.GRADLE),
-            ToolEntry(RunGradleTestsTool::class.java, Group.GRADLE),
-            ToolEntry(GetTestInfoTool::class.java, Group.GRADLE),
             ToolEntry(OpenFileInEditorTool::class.java, Group.GENERIC),
             ToolEntry(PatchFile::class.java, Group.GENERIC),
             ToolEntry(RunGoTestsTool::class.java, Group.GO),

@@ -5,7 +5,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.tools.media
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
-import com.github.quanta_dance.quanta.plugins.intellij.services.OpenAIService
+import com.github.quanta_dance.quanta.plugins.intellij.services.AIVoiceService
 import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
@@ -44,13 +44,13 @@ class SoundGeneratorTool : ToolInterface<String> {
                 return e.message ?: "Invalid path"
             }
 
-        val openAIService = project.service<OpenAIService>()
+        val voiceService = project.service<AIVoiceService>()
 
         // Use a CompletableFuture to wait for the speech InputStream and write it to disk
         val writeFuture = CompletableFuture<Void>()
 
         try {
-            openAIService.speech(t) { inputStream ->
+            voiceService.speech(t) { inputStream ->
                 // write inputStream to file
                 try {
                     val ioFile = resolved.toFile()

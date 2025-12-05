@@ -22,6 +22,7 @@ object OpenAIClientProvider {
         return OpenAIOkHttpClient.builder()
             .apiKey(state.token)
             .baseUrl(state.host)
+            .maxRetries(2)
             .build()
     }
 }

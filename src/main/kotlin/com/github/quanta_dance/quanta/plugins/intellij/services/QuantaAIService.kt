@@ -41,13 +41,15 @@ class QuantaAIService(private val project: Project) {
     ) {
         val oAI = project.service<OpenAIService>()
 
+        val aiVoice = project.service<AIVoiceService>()
+
         capture =
             AudioCapture(
                 fullBufferCallback = { wavBytes ->
                     // Optional final fallback (block-based), can be removed if not needed
                     CompletableFuture.runAsync {
                         try {
-                            val text = oAI.transcript(wavBytes.inputStream())
+                            val text = aiVoice.transcript(wavBytes.inputStream())
                             if (text.isNotBlank()) {
                                 ApplicationManager.getApplication().invokeLater {
                                     project.service<ToolWindowService>().addUserMessage(text)
@@ -66,7 +68,7 @@ class QuantaAIService(private val project: Project) {
 
                     //  val currentUserMessage = project.service<ToolWindowService>().addUserMessage("")
                     CompletableFuture.runAsync {
-                        oAI.transcriptStreaming(
+                        aiVoice.transcriptStreaming(
                             inputStream,
                             onDelta = { delta ->
                                 onPartial(delta)

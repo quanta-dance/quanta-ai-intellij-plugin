@@ -20,8 +20,6 @@ import com.intellij.psi.PsiErrorElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
 import com.intellij.psi.PsiRecursiveElementWalkingVisitor
-import java.io.File
-import java.nio.file.Paths
 
 @JsonClassDescription("Validate a class file and return any compilation errors.")
 class ValidateClassFileTool : ToolInterface<List<String>> {
@@ -59,10 +57,10 @@ class ValidateClassFileTool : ToolInterface<List<String>> {
         if (basePath.isNullOrBlank()) return listOf("Project base path not found.")
 
         // Refresh and find VFS file by absolute path to avoid stale baseDir-based lookups
-        val absPath = Paths.get(basePath, filePath).toString()
+        val absPath = java.nio.file.Paths.get(basePath, filePath).toString()
         val vFile =
             try {
-                val ioFile = File(absPath)
+                val ioFile = java.io.File(absPath)
                 VfsUtil.markDirtyAndRefresh(true, true, true, ioFile)
                 LocalFileSystem.getInstance().refreshAndFindFileByIoFile(ioFile)
             } catch (t: Throwable) {
