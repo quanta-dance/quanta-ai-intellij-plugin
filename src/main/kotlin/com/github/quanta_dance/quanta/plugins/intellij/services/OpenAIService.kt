@@ -6,12 +6,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.services
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.quanta_dance.quanta.plugins.intellij.models.OpenAIResponse
 import com.github.quanta_dance.quanta.plugins.intellij.project.CurrentFileContextProvider
-import com.github.quanta_dance.quanta.plugins.intellij.services.openai.DefaultToolInvoker
-import com.github.quanta_dance.quanta.plugins.intellij.services.openai.ModelSelector
-import com.github.quanta_dance.quanta.plugins.intellij.services.openai.OpenAIClientProvider
-import com.github.quanta_dance.quanta.plugins.intellij.services.openai.ResponseBuilder
-import com.github.quanta_dance.quanta.plugins.intellij.services.openai.ToolInvoker
-import com.github.quanta_dance.quanta.plugins.intellij.services.openai.ToolRouter
+import com.github.quanta_dance.quanta.plugins.intellij.services.openai.*
 import com.github.quanta_dance.quanta.plugins.intellij.services.ui.DelayedSpinner
 import com.github.quanta_dance.quanta.plugins.intellij.services.ui.Notifications
 import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsListener
@@ -24,17 +19,13 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
 import com.openai.client.OpenAIClient
-import com.openai.core.MultipartField
 import com.openai.models.images.ImageGenerateParams
 import com.openai.models.images.ImageModel
 import com.openai.models.responses.ResponseInputItem
 import com.openai.models.responses.StructuredResponse
 import java.beans.PropertyChangeListener
 import java.beans.PropertyChangeSupport
-import java.io.InputStream
-import java.util.Collections
-import java.util.UUID
-import java.util.concurrent.CompletableFuture
+import java.util.*
 import java.util.concurrent.Future
 
 @Service(Service.Level.PROJECT)
@@ -121,6 +112,8 @@ class OpenAIService(private val project: Project) : Disposable {
         lastResponseId = null
         QuantaAISettingsState.instance.state.mainLastResponseId = null
         lastCtxHash = null
+        // Reset sub-agents conversation state so they start fresh with the new manager thread
+        try { project.service<AgentManagerService>().resetForNewSession() } catch (_: Throwable) {}
         pcs.firePropertyChange("session", old, currentSessionId)
         project.service<ToolWindowService>().clear()
         return currentSessionId
@@ -128,6 +121,23 @@ class OpenAIService(private val project: Project) : Disposable {
 
     fun getCurrentSessionId(): String = currentSessionId
     fun stopAndClearSession() { stopProcessing(); newSession() }
+
+    private fun buildBootstrapContext(): String {
+        val agents = try { project.service<AgentManagerService>().getAgentsSnapshot() } catch (_: Throwable) { emptyList() }
+        val b = StringBuilder()
+        b.append("New session bootstrap context.\n")
+        b.append("Session ID: ").append(currentSessionId).append('\n')
+        b.append("Existing sub-agents: ").append(agents.size).append('\n')
+        agents.forEachIndexed { idx, a ->
+            b.append(idx + 1).append('.').append(' ')
+                .append("id=").append(a.id).append(", role=").append(a.role)
+            a.model?.let { m -> b.append(", model=").append(m) }
+            b.append('\n')
+        }
+        b.append("Use AgentSendMessageTool with agent_id to communicate with any sub-agent.\n")
+        b.append("If needed, create or remove agents via AgentCreateTool / AgentRemoveTool.")
+        return b.toString()
+    }
 
     fun createResponse(
         inputs: MutableList<ResponseInputItem>,
@@ -231,6 +241,10 @@ class OpenAIService(private val project: Project) : Disposable {
                 val effectiveForThisCall = ModelSelector.effectiveModel(currentModel)
                 requestInputs.add(systemMessage("{\"currentModel\":\"${effectiveForThisCall}\"}"))
             } catch (_: Throwable) {}
+            // Inject a bootstrap summary on the first turn of a new session so the manager knows existing agents
+            if (lastResponseId == null) {
+                requestInputs.add(systemMessage(buildBootstrapContext()))
+            }
             requestInputs.add(userMessage(text))
 
             var reprocess = true

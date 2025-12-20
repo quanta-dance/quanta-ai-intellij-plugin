@@ -53,6 +53,8 @@ class QuantaAISettingsComponent {
 
     private var models: Array<String> =
         arrayOf(
+            // ChatModel.GPT_5_2_PRO.toString(),
+            ChatModel.GPT_5_2.toString(),
             AllModels.ResponsesOnlyModel.GPT_5_1_CODEX_MAX.toString(),
             ChatModel.GPT_5_1_CODEX.toString(),
             ChatModel.GPT_5_1.toString(),

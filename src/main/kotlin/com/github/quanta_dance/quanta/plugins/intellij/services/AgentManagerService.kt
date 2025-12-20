@@ -139,6 +139,18 @@ class AgentManagerService(private val project: Project) : Disposable {
         return stopped
     }
 
+    /**
+     * Reset all agents' conversation state (previousId) for a new manager session/thread
+     * without removing the agents themselves. Also persists cleared previousIds.
+     */
+    fun resetForNewSession() {
+        agents.values.forEach { it.previousId = null }
+        val st = QuantaAISettingsState.instance.state
+        st.agents.forEach { it.previousId = null }
+        project.service<ToolWindowService>().addToolingMessage("AgentManager", "Reset agents conversation state for new session")
+        pcs.firePropertyChange("agents_reset", null, null)
+    }
+
     fun sendMessageAsync(agentId: String, message: String): CompletableFuture<AgentTaskResult> { /* unchanged */
         val enabled = QuantaAISettingsState.instance.state.agenticEnabled ?: true
         if (!enabled) return CompletableFuture.completedFuture(AgentTaskResult("", agentId, false, null, "Agentic mode disabled"))

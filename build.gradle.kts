@@ -146,7 +146,7 @@ dependencies {
 
     implementation("org.xerial:sqlite-jdbc:3.41.2.2")
 
-    implementation("com.openai:openai-java:4.9.0")
+    implementation("com.openai:openai-java:4.13.0")
     testRuntimeOnly("junit:junit:4.13.2")
 
     testImplementation("org.opentest4j:opentest4j:1.3.0")
