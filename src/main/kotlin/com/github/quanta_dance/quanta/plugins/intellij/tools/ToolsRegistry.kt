@@ -19,6 +19,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.ListFiles
 import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.OpenFileInEditorTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile
 import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.ReadFileContent
+import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.ReadPsiBlockAtPosition
 import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.ValidateClassFileTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.mcp.McpListServerToolsTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.mcp.McpListServersTool
@@ -57,7 +58,6 @@ object ToolsRegistry {
         val agentic = settings.agenticEnabled ?: true
         val terminalEnabled = settings.terminalToolEnabled == true
         val list = mutableListOf(
-            // Catalog tool should always be present
             ToolEntry(ListToolsCatalogTool::class.java, Group.GENERIC),
             // Core
             ToolEntry(CodeRefactorSuggester::class.java, Group.GENERIC),
@@ -67,6 +67,7 @@ object ToolsRegistry {
             ToolEntry(SearchInFiles::class.java, Group.GENERIC),
             ToolEntry(GetProjectDetails::class.java, Group.GENERIC),
             ToolEntry(ReadFileContent::class.java, Group.GENERIC),
+            ToolEntry(ReadPsiBlockAtPosition::class.java, Group.GENERIC),
             ToolEntry(ListFiles::class.java, Group.GENERIC),
             ToolEntry(GetFileReferencesAndDependencies::class.java, Group.GENERIC),
             ToolEntry(GenerateImage::class.java, Group.GENERIC),
@@ -80,9 +81,7 @@ object ToolsRegistry {
             ToolEntry(McpListServersTool::class.java, Group.GENERIC),
             ToolEntry(McpListServerToolsTool::class.java, Group.GENERIC),
         )
-        // Terminal is powerful and risky: include only when explicitly enabled in settings
         if (terminalEnabled) list.add(ToolEntry(TerminalCommandTool::class.java, Group.GENERIC))
-        // Stack-specific tools
         list.add(ToolEntry(GradleSyncTool::class.java, Group.GRADLE))
         list.add(ToolEntry(RunGoTestsTool::class.java, Group.GO))
         if (agentic) {

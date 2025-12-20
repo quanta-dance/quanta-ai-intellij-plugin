@@ -30,8 +30,8 @@ class ReadFileContent : ToolInterface<ReadFileResult> {
     @field:JsonPropertyDescription("If true, returns content with prefixed line numbers. Default false.")
     var includeLineNumbers: Boolean = false
 
-    @field:JsonPropertyDescription("Maximum characters to return; if exceeded, tool truncates per strategy. Default 20000.")
-    var maxChars: Int = 20_000
+    @field:JsonPropertyDescription("Maximum characters to return; if exceeded, tool truncates per strategy. Default 6000.")
+    var maxChars: Int = 6_000
 
     @field:JsonPropertyDescription("Preferred truncation strategy when file exceeds maxChars: head | tail | window. Default window.")
     var strategy: String = "window"
