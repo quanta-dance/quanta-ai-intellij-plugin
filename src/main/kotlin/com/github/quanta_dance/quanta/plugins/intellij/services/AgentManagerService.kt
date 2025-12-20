@@ -30,6 +30,9 @@ class AgentManagerService(private val project: Project) : Disposable {
         val includeMcp: Boolean = true,
         val allowedBuiltInTools: Boolean = true,
         val allowedMcpServers: List<String>? = null,
+        // New: per-agent explicit allow-lists (if set, these lists restrict tool access)
+        val allowedBuiltInNames: Set<String>? = null,
+        val allowedMcpNames: Set<String>? = null,
     )
 
     data class AgentSession(
@@ -187,6 +190,8 @@ class AgentManagerService(private val project: Project) : Disposable {
                     allowedToolClassFilter = filter,
                     includeMcp = includeMcp,
                     agentLabel = agentLabel,
+                    allowedBuiltInNames = session.config.allowedBuiltInNames,
+                    allowedMcpNames = session.config.allowedMcpNames,
                 )
                 session.previousId = newPrev
                 QuantaAISettingsState.instance.state.agents.find { it.id == agentId }?.previousId = newPrev
@@ -236,6 +241,8 @@ class AgentManagerService(private val project: Project) : Disposable {
                 allowedToolClassFilter = filter,
                 includeMcp = includeMcp,
                 agentLabel = agentLabel,
+                allowedBuiltInNames = session.config.allowedBuiltInNames,
+                allowedMcpNames = session.config.allowedMcpNames,
             )
             session.previousId = newPrev
             QuantaAISettingsState.instance.state.agents.find { it.id == agentId }?.previousId = newPrev

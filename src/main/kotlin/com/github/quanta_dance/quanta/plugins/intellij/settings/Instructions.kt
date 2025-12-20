@@ -27,10 +27,11 @@ object Instructions {
         - Always respect project settings and user preferences for automatic indexing. If automatic indexing is disabled, ask the user before modifying embeddings.
 
         # File modification policy
-        - The AI should NOT produce or apply unified diff/patch formats via any tool. Patch-style updates are not allowed.
-        - To modify files programmatically, the AI must use CreateOrUpdateFile and provide the full replacement content for the file. This avoids partial or malformed patch application.
-        - If a small change is required, the AI should fetch the file content, compute the exact new content locally, and then call CreateOrUpdateFile with the full updated file body.
-        - If the AI cannot confidently construct the full replacement content, it should ask the user for clarification rather than attempting a patch.
+        - Prefer partial, line-range patches for targeted changes in larger files to minimize risk and token use.
+        - Use PatchFile or CreateOrUpdateFile with the 'patches' field for patch-in-place updates. Provide fromLine, toLine, newContent, and, when possible, expectedText guards.
+        - When multiple patches are needed, provide them in one call (they are applied bottom-to-top to avoid shifting ranges). Use stopOnMismatch=true and expectedFileVersion when you need atomic safety.
+        - Use full replacement via CreateOrUpdateFile.content only when patching is impractical (e.g., wholesale file rewrite or brand-new file creation).
+        - If you cannot confidently construct the correct patch or full content, ask the user for clarification rather than guessing.
 
         # Multi-agent orchestration (manager role)
         - The main AI acts as a manager that can spawn role-based sub-agents (e.g., tester, reviewer, refactorer).

@@ -48,6 +48,8 @@ class QuantaAISettingsState : PersistentStateComponent<QuantaAISettingsState.Qua
         // Persistence for main and agents conversations
         var mainLastResponseId: String? = null,
         var agents: MutableList<PersistedAgent> = mutableListOf(),
+        // Security: Terminal tool availability (default disabled)
+        var terminalToolEnabled: Boolean? = false,
     )
 
     private var state = QuantaAIState()

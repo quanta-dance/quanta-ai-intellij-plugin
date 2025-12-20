@@ -55,6 +55,13 @@ class CreateOrUpdateFile : ToolInterface<String> {
     @field:JsonPropertyDescription("If true, force synchronous save/commit/refresh to surface PSI errors immediately (no Gradle run). Default: true")
     var validateBuildAfterUpdate: Boolean = true
 
+    // New: pass-through guards for patch mode
+    @field:JsonPropertyDescription("If true (default), aborts and applies nothing when any patch guard fails.")
+    var stopOnMismatch: Boolean = true
+
+    @field:JsonPropertyDescription("Optional expected file version before patching (PSI/Document/VFS). If differs, no changes are applied.")
+    var expectedFileVersion: Long? = null
+
     companion object { private val logger = Logger.getInstance(CreateOrUpdateFile::class.java) }
 
     private fun flushPsiAndVfs(project: Project, target: VirtualFile?) {
@@ -86,7 +93,8 @@ class CreateOrUpdateFile : ToolInterface<String> {
                 filePath = relToBase
                 patches = patchList.map { p -> PatchFile.Patch(p.fromLine, p.toLine, p.newContent, p.expectedText) }
                 validateAfterUpdate = this@CreateOrUpdateFile.validateAfterUpdate
-                stopOnMismatch = true
+                stopOnMismatch = this@CreateOrUpdateFile.stopOnMismatch
+                expectedFileVersion = this@CreateOrUpdateFile.expectedFileVersion
             }
             val result = pf.execute(project)
             if (validateBuildAfterUpdate) {

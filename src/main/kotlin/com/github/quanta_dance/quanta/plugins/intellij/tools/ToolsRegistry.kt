@@ -7,9 +7,8 @@ import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettings
 import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentCreateTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentRemoveTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentSendMessageTool
-import com.github.quanta_dance.quanta.plugins.intellij.tools.build.GradleSyncTool
+import com.github.quanta_dance.quanta.plugins.intellij.tools.builder.GradleSyncTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.catalog.ListToolsCatalogTool
-import com.github.quanta_dance.quanta.plugins.intellij.tools.catalog.SetToolScopeTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.go.RunGoTestsTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.CopyFileOrDirectoryTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.CreateOrUpdateFile
@@ -56,10 +55,10 @@ object ToolsRegistry {
     private fun baseEntries(project: Project?): List<ToolEntry> {
         val settings = QuantaAISettingsState.instance.state
         val agentic = settings.agenticEnabled ?: true
+        val terminalEnabled = settings.terminalToolEnabled == true
         val list = mutableListOf(
-            // Catalog and scope tools should always be present
+            // Catalog tool should always be present
             ToolEntry(ListToolsCatalogTool::class.java, Group.GENERIC),
-            ToolEntry(SetToolScopeTool::class.java, Group.GENERIC),
             // Core
             ToolEntry(CodeRefactorSuggester::class.java, Group.GENERIC),
             ToolEntry(CreateOrUpdateFile::class.java, Group.GENERIC),
@@ -75,15 +74,17 @@ object ToolsRegistry {
             ToolEntry(DeleteFileTool::class.java, Group.GENERIC),
             ToolEntry(CopyFileOrDirectoryTool::class.java, Group.GENERIC),
             ToolEntry(ValidateClassFileTool::class.java, Group.GENERIC),
-            ToolEntry(TerminalCommandTool::class.java, Group.GENERIC),
-            ToolEntry(GradleSyncTool::class.java, Group.GRADLE),
             ToolEntry(OpenFileInEditorTool::class.java, Group.GENERIC),
             ToolEntry(PatchFile::class.java, Group.GENERIC),
-            ToolEntry(RunGoTestsTool::class.java, Group.GO),
             ToolEntry(RequestModelSwitch::class.java, Group.GENERIC),
             ToolEntry(McpListServersTool::class.java, Group.GENERIC),
             ToolEntry(McpListServerToolsTool::class.java, Group.GENERIC),
         )
+        // Terminal is powerful and risky: include only when explicitly enabled in settings
+        if (terminalEnabled) list.add(ToolEntry(TerminalCommandTool::class.java, Group.GENERIC))
+        // Stack-specific tools
+        list.add(ToolEntry(GradleSyncTool::class.java, Group.GRADLE))
+        list.add(ToolEntry(RunGoTestsTool::class.java, Group.GO))
         if (agentic) {
             list.add(ToolEntry(AgentCreateTool::class.java, Group.GENERIC))
             list.add(ToolEntry(AgentSendMessageTool::class.java, Group.GENERIC))
@@ -105,6 +106,7 @@ object ToolsRegistry {
             append("gradle=").append(gradle).append(';')
             append("go=").append(go).append(';')
             append("javaPsi=").append(javaPsi).append(';')
+            append("terminal=").append(settings.terminalToolEnabled == true).append(';')
             append("base=").append(basePath ?: "<none>")
         }
         val cached = cache[project]

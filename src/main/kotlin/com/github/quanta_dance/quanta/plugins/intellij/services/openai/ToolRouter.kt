@@ -46,7 +46,11 @@ class ToolRouter(
 
     private fun call(functionCall: ResponseFunctionToolCall): Any {
         return try {
-            toolInvoker.invoke(project, functionCall)
+            val result = toolInvoker.invoke(project, functionCall)
+            when (result) {
+                is String -> mapOf("text" to result)
+                else -> result
+            }
         } catch (e: Throwable) {
             log.error("Tool '${functionCall.name()}' failed: ${e.message}", e)
             Notifications.show(project, e.message.orEmpty(), NotificationType.ERROR)

@@ -32,31 +32,49 @@ class ResponseBuilder(private val project: Project) {
     ) {
         val all = toolsFor(project)
         val filtered =
-            if (allowedBuiltInNames == null || allowedBuiltInNames.isEmpty()) {
-                all.filter { cls -> cls.simpleName == "ListToolsCatalogTool" || cls.simpleName == "SetToolScopeTool" }
-            } else {
-                all.filter { cls -> allowedBuiltInNames.contains(cls.simpleName) || cls.simpleName == "ListToolsCatalogTool" || cls.simpleName == "SetToolScopeTool" }
+            when {
+                // null = allow all built-ins
+                allowedBuiltInNames == null -> all
+                // empty set = allow none
+                allowedBuiltInNames.isEmpty() -> emptyList()
+                else -> all.filter { cls -> allowedBuiltInNames.contains(cls.simpleName) }
             }
         filtered.forEach { builder.addTool(it) }
+    }
+
+    private fun addAllMcpTools(builder: StructuredResponseCreateParams.Builder<OpenAIResponse>) {
+        val mcp = project.service<McpClientService>()
+        val dyn = DynamicMcpToolProvider
+        val tools = dyn.buildTools(mcp)
+        tools.forEach { t ->
+            try { builder.addTool(t) } catch (_: Throwable) {}
+        }
     }
 
     private fun addSelectedMcpTools(
         builder: StructuredResponseCreateParams.Builder<OpenAIResponse>,
         allowedMcpNames: Set<String>?, // server.method
     ) {
-        if (allowedMcpNames == null || allowedMcpNames.isEmpty()) return
         val mcp = project.service<McpClientService>()
         val dyn = DynamicMcpToolProvider
         val tools = dyn.buildTools(mcp)
-        tools.forEach { t ->
-            try {
-                val fn = t.asFunction().name()
-                val pair = dyn.resolve(fn)
-                if (pair != null) {
-                    val name = pair.first + "." + pair.second
-                    if (allowedMcpNames.contains(name)) builder.addTool(t)
+        when {
+            // null = allow all MCP tools
+            allowedMcpNames == null -> tools.forEach { t -> try { builder.addTool(t) } catch (_: Throwable) {} }
+            // empty set = allow none
+            allowedMcpNames.isEmpty() -> {}
+            else -> {
+                tools.forEach { t ->
+                    try {
+                        val fn = t.asFunction().name()
+                        val pair = dyn.resolve(fn)
+                        if (pair != null) {
+                            val name = pair.first + "." + pair.second
+                            if (allowedMcpNames.contains(name)) builder.addTool(t)
+                        }
+                    } catch (_: Throwable) {}
                 }
-            } catch (_: Throwable) {}
+            }
         }
     }
 

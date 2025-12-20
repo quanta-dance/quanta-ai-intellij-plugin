@@ -28,7 +28,8 @@ class QuantaAIPluginConfigurable : Configurable {
                 this.aiChatModelValue != settings.aiChatModel ||
                 this.extraInstructionsValue != (settings.extraInstructions ?: "") ||
                 this.dynamicModelEnabled != (settings.dynamicModelEnabled ?: true) ||
-                this.agenticEnabled != (settings.agenticEnabled ?: true)
+                this.agenticEnabled != (settings.agenticEnabled ?: true) ||
+                this.terminalToolEnabled != (settings.terminalToolEnabled ?: false)
         }
     }
 
@@ -45,6 +46,7 @@ class QuantaAIPluginConfigurable : Configurable {
             settings.extraInstructions = this.extraInstructionsValue
             settings.dynamicModelEnabled = this.dynamicModelEnabled
             settings.agenticEnabled = this.agenticEnabled
+            settings.terminalToolEnabled = this.terminalToolEnabled
         }
         val snapshot = settings.copy()
         ApplicationManager.getApplication()
@@ -66,6 +68,7 @@ class QuantaAIPluginConfigurable : Configurable {
             this.extraInstructionsValue = settings.extraInstructions.orEmpty()
             this.dynamicModelEnabled = (settings.dynamicModelEnabled ?: true)
             this.agenticEnabled = (settings.agenticEnabled ?: true)
+            this.terminalToolEnabled = (settings.terminalToolEnabled ?: false)
         }
     }
 }

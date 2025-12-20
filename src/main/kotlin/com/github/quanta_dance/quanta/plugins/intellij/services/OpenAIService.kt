@@ -112,7 +112,6 @@ class OpenAIService(private val project: Project) : Disposable {
         lastResponseId = null
         QuantaAISettingsState.instance.state.mainLastResponseId = null
         lastCtxHash = null
-        // Reset sub-agents conversation state so they start fresh with the new manager thread
         try { project.service<AgentManagerService>().resetForNewSession() } catch (_: Throwable) {}
         pcs.firePropertyChange("session", old, currentSessionId)
         project.service<ToolWindowService>().clear()
@@ -134,8 +133,6 @@ class OpenAIService(private val project: Project) : Disposable {
             a.model?.let { m -> b.append(", model=").append(m) }
             b.append('\n')
         }
-        b.append("Use AgentSendMessageTool with agent_id to communicate with any sub-agent.\n")
-        b.append("If needed, create or remove agents via AgentCreateTool / AgentRemoveTool.")
         return b.toString()
     }
 
@@ -174,6 +171,8 @@ class OpenAIService(private val project: Project) : Disposable {
         allowedToolClassFilter: ((Class<*>) -> Boolean)? = null,
         includeMcp: Boolean = true,
         agentLabel: String = "AI(agent)",
+        allowedBuiltInNames: Set<String>? = null,
+        allowedMcpNames: Set<String>? = null,
     ): Pair<String, String?> {
         var localPrevId = previousId
         val aggregated = StringBuilder()
@@ -181,7 +180,16 @@ class OpenAIService(private val project: Project) : Disposable {
         var reprocess = true
         while (reprocess) {
             reprocess = false
-            val (structResponse, newId) = createResponse(inputs, localPrevId, overrideInstructions, overrideModel, allowedToolClassFilter, includeMcp)
+            val (structResponse, newId) = createResponse(
+                inputs,
+                localPrevId,
+                overrideInstructions,
+                overrideModel,
+                allowedToolClassFilter,
+                includeMcp,
+                allowedBuiltInNames,
+                allowedMcpNames,
+            )
             localPrevId = newId
             inputs.clear()
             val pendingToolOutputs = mutableListOf<ResponseInputItem>()
@@ -241,7 +249,6 @@ class OpenAIService(private val project: Project) : Disposable {
                 val effectiveForThisCall = ModelSelector.effectiveModel(currentModel)
                 requestInputs.add(systemMessage("{\"currentModel\":\"${effectiveForThisCall}\"}"))
             } catch (_: Throwable) {}
-            // Inject a bootstrap summary on the first turn of a new session so the manager knows existing agents
             if (lastResponseId == null) {
                 requestInputs.add(systemMessage(buildBootstrapContext()))
             }
@@ -251,6 +258,7 @@ class OpenAIService(private val project: Project) : Disposable {
             var spokeThisTurn = false
             val processedCallIds = mutableSetOf<String>()
             var previousIdForThisTurn = lastResponseId
+            var aborted = false
 
             val tws = project.service<ToolWindowService>()
             val delayedSpinner = DelayedSpinner(tws)
@@ -259,19 +267,14 @@ class OpenAIService(private val project: Project) : Disposable {
             while (reprocess) {
                 reprocess = false
                 try {
-                    val scopeSvc = project.service<ToolScopeService>()
-                    val (stickyB, stickyM) = scopeSvc.getSticky()
-                    val (turnB, turnM) = scopeSvc.consumeCurrent()
-                    val allowedB = (stickyB + turnB).toSet()
-                    val allowedM = (stickyM + turnM).toSet()
-
+                    // Expose all tools by default: include MCP and no per-turn allow-list restrictions
                     val (structResponse, newId) = createResponse(
                         requestInputs,
                         previousIdForThisTurn,
                         allowedToolClassFilter = null,
-                        includeMcp = allowedM.isNotEmpty(),
-                        allowedBuiltInNames = allowedB,
-                        allowedMcpNames = allowedM,
+                        includeMcp = true,
+                        allowedBuiltInNames = null,
+                        allowedMcpNames = null,
                     )
                     previousIdForThisTurn = newId
                     delayedSpinner.stopSuccess()
@@ -314,19 +317,23 @@ class OpenAIService(private val project: Project) : Disposable {
 
                     if (pendingToolOutputs.isNotEmpty()) { requestInputs.addAll(pendingToolOutputs); reprocess = true }
                 } catch (e: InterruptedException) {
+                    aborted = true
                     delayedSpinner.stopError("Cancelled after interruption")
                     thisLogger().warn("Execution interrupted: ", e)
                     Thread.currentThread().interrupt()
                     break
                 } catch (e: Throwable) {
+                    aborted = true
                     delayedSpinner.stopError(e.message ?: "Unexpected error")
                     thisLogger().warn("Unexpected Error: ", e)
                     Notifications.show(project, e.message.orEmpty(), NotificationType.ERROR)
                     break
                 }
             }
-            lastResponseId = previousIdForThisTurn
-            QuantaAISettingsState.instance.state.mainLastResponseId = lastResponseId
+            if (!aborted) {
+                lastResponseId = previousIdForThisTurn
+                QuantaAISettingsState.instance.state.mainLastResponseId = lastResponseId
+            }
             operationInProgress = false
             pcs.firePropertyChange("inProgress", true, false)
         }

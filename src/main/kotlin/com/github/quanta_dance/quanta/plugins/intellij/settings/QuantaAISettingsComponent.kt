@@ -70,10 +70,16 @@ class QuantaAISettingsComponent {
             toolTipText = "Allow the assistant to switch model tier within the configured cap."
         }
 
-    // New: Agentic mode toggle
+    // Agentic mode toggle
     private var agenticEnabledField =
         JBCheckBox("Enable agentic mode").apply {
             toolTipText = "Allow the manager to create role-based sub-agents and use agent tools."
+        }
+
+    // Terminal tool toggle (dangerous)
+    private var terminalToolEnabledField =
+        JBCheckBox("Enable Terminal tool (dangerous)").apply {
+            toolTipText = "Allows the assistant to run shell commands. Disabled by default."
         }
 
     private var customPromptField = JBTextField()
@@ -161,6 +167,7 @@ class QuantaAISettingsComponent {
             .addLabeledComponent(JBLabel("AI chat model: "), aiChatModelField, 1, false)
             .addComponent(dynamicModelEnabledField)
             .addComponent(agenticEnabledField)
+            .addComponent(terminalToolEnabledField)
             .addSeparator()
             .addLabeledComponent(JBLabel("Custom prompt: "), customPromptField, 1, false)
             .addLabeledComponent(JBLabel("Custom instructions: "), extraInstructionsScroll, 1, false)
@@ -232,5 +239,11 @@ class QuantaAISettingsComponent {
         get() = agenticEnabledField.isSelected
         set(value) {
             agenticEnabledField.isSelected = value
+        }
+
+    var terminalToolEnabled: Boolean
+        get() = terminalToolEnabledField.isSelected
+        set(value) {
+            terminalToolEnabledField.isSelected = value
         }
 }
