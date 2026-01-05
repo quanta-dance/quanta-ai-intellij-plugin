@@ -7,8 +7,9 @@ import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
-import com.github.quanta_dance.quanta.plugins.intellij.tools.ToolInterface
 import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
+import com.github.quanta_dance.quanta.plugins.intellij.tools.ToolInterface
+import com.intellij.codeInsight.actions.OptimizeImportsProcessor
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.components.service
@@ -22,6 +23,7 @@ import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiManager
+import com.intellij.psi.codeStyle.CodeStyleManager
 import java.nio.charset.StandardCharsets
 
 @JsonClassDescription(
@@ -55,12 +57,19 @@ class CreateOrUpdateFile : ToolInterface<String> {
     @field:JsonPropertyDescription("If true, force synchronous save/commit/refresh to surface PSI errors immediately (no Gradle run). Default: true")
     var validateBuildAfterUpdate: Boolean = true
 
-    // New: pass-through guards for patch mode
+    // Pass-through guards for patch mode
     @field:JsonPropertyDescription("If true (default), aborts and applies nothing when any patch guard fails.")
     var stopOnMismatch: Boolean = true
 
     @field:JsonPropertyDescription("Optional expected file version before patching (PSI/Document/VFS). If differs, no changes are applied.")
     var expectedFileVersion: Long? = null
+
+    // PSI post-processing
+    @field:JsonPropertyDescription("If true, reformat the PSI file after update.")
+    var reformatAfterUpdate: Boolean = false
+
+    @field:JsonPropertyDescription("If true, optimize imports after update.")
+    var optimizeImportsAfterUpdate: Boolean = false
 
     companion object { private val logger = Logger.getInstance(CreateOrUpdateFile::class.java) }
 
@@ -95,6 +104,8 @@ class CreateOrUpdateFile : ToolInterface<String> {
                 validateAfterUpdate = this@CreateOrUpdateFile.validateAfterUpdate
                 stopOnMismatch = this@CreateOrUpdateFile.stopOnMismatch
                 expectedFileVersion = this@CreateOrUpdateFile.expectedFileVersion
+                reformatAfterUpdate = this@CreateOrUpdateFile.reformatAfterUpdate
+                optimizeImportsAfterUpdate = this@CreateOrUpdateFile.optimizeImportsAfterUpdate
             }
             val result = pf.execute(project)
             if (validateBuildAfterUpdate) {
@@ -128,9 +139,20 @@ class CreateOrUpdateFile : ToolInterface<String> {
                     } else {
                         try { virtualFile.setBinaryContent((content ?: "").toByteArray(StandardCharsets.UTF_8)) } catch (e: Throwable) { QDLog.debug(logger) { "Failed to set binary content: ${e.message}" } }
                     }
+
+                    // PSI post-processing
+                    val psiFile = PsiManager.getInstance(project).findFile(virtualFile)
+                    if (psiFile != null) {
+                        try {
+                            if (reformatAfterUpdate) CodeStyleManager.getInstance(project).reformat(psiFile)
+                        } catch (_: Throwable) {}
+                        try {
+                            if (optimizeImportsAfterUpdate) OptimizeImportsProcessor(project, psiFile).run()
+                        } catch (_: Throwable) {}
+                    }
+
                     try { FileEditorManager.getInstance(project).openTextEditor(OpenFileDescriptor(project, virtualFile), true) } catch (_: Throwable) {}
                     project.service<ToolWindowService>().addToolingMessage("File updated", relToBase)
-                    val psiFile = PsiManager.getInstance(project).findFile(virtualFile)
                     lastModified = psiFile?.modificationStamp ?: 0
                 } catch (e: Throwable) {
                     QDLog.warn(logger, { "Failed to update file $relToBase" }, e)

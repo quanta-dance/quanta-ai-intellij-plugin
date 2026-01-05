@@ -10,6 +10,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.github.quanta_dance.quanta.plugins.intellij.tools.ToolInterface
 import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
+import com.intellij.codeInsight.actions.OptimizeImportsProcessor
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.components.service
@@ -23,6 +24,7 @@ import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiManager
+import com.intellij.psi.codeStyle.CodeStyleManager
 
 @JsonClassDescription(
     "Apply one or more line-range patches to a specified file. Patches are applied in a single write action, " +
@@ -64,6 +66,13 @@ class PatchFile : ToolInterface<String> {
             "If present and does not match, no changes are applied.",
     )
     var expectedFileVersion: Long? = null
+
+    // PSI post-processing
+    @field:JsonPropertyDescription("If true, reformat the PSI file after update.")
+    var reformatAfterUpdate: Boolean = false
+
+    @field:JsonPropertyDescription("If true, optimize imports after update.")
+    var optimizeImportsAfterUpdate: Boolean = false
 
     companion object {
         private val logger = Logger.getInstance(PatchFile::class.java)
@@ -172,6 +181,18 @@ class PatchFile : ToolInterface<String> {
 
                     try { PsiDocumentManager.getInstance(project).commitDocument(document) } catch (_: Throwable) {}
                     docManager.saveDocument(document)
+
+                    // PSI post-processing
+                    if (reformatAfterUpdate || optimizeImportsAfterUpdate) {
+                        try {
+                            val psi = PsiManager.getInstance(project).findFile(vFile)
+                            if (psi != null) {
+                                if (reformatAfterUpdate) CodeStyleManager.getInstance(project).reformat(psi)
+                                if (optimizeImportsAfterUpdate) OptimizeImportsProcessor(project, psi).run()
+                            }
+                        } catch (_: Throwable) {}
+                    }
+
                     try { FileEditorManager.getInstance(project).openTextEditor(OpenFileDescriptor(project, vFile), true) } catch (_: Throwable) {}
                     lastModified = PsiManager.getInstance(project).findFile(vFile)?.modificationStamp ?: 0
 
