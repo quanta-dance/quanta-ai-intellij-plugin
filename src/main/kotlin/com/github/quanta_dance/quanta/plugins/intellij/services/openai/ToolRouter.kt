@@ -59,5 +59,9 @@ class ToolRouter(
     }
 
     private fun parseArgs(argsJson: String): Map<String, Any?> =
-        try { mapper.readValue(argsJson, object : TypeReference<Map<String, Any?>>() {}) } catch (_: Throwable) { emptyMap() }
+        try {
+            mapper.readValue(argsJson, object : TypeReference<Map<String, Any?>>() {})
+        } catch (_: Throwable) {
+            emptyMap()
+        }
 }

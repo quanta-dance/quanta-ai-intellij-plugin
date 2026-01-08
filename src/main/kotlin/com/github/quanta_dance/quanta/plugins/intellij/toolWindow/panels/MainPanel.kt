@@ -74,22 +74,24 @@ class MainPanel(var project: Project) : JPanel(BorderLayout()) {
             }
         }
 
-    private val agentsBar = JPanel(FlowLayout(FlowLayout.LEFT, 6, 4)).apply {
-        border = BorderFactory.createTitledBorder("Agents")
-        isVisible = QuantaAISettingsState.instance.state.agenticEnabled ?: true
-    }
+    private val agentsBar =
+        JPanel(FlowLayout(FlowLayout.LEFT, 6, 4)).apply {
+            border = BorderFactory.createTitledBorder("Agents")
+            isVisible = QuantaAISettingsState.instance.state.agenticEnabled ?: true
+        }
 
     private val agentLabels = ConcurrentHashMap<String, JLabel>()
     private val busyCounts = ConcurrentHashMap<String, Int>()
 
     private val promptButtonPanel =
         JPanel().apply {
-            val group = DefaultActionGroup().apply {
-                add(MicAction())
-                add(SpeakerAction())
-                add(AgenticModeToggleAction())
-                add(StopAgentsAction())
-            }
+            val group =
+                DefaultActionGroup().apply {
+                    add(MicAction())
+                    add(SpeakerAction())
+                    add(AgenticModeToggleAction())
+                    add(StopAgentsAction())
+                }
             val toolbar: ActionToolbar = ActionManager.getInstance().createActionToolbar("MyToolbar", group, true)
             toolbar.targetComponent = this
             layout = BoxLayout(this, BoxLayout.X_AXIS)
@@ -114,34 +116,36 @@ class MainPanel(var project: Project) : JPanel(BorderLayout()) {
         add(bottom, BorderLayout.SOUTH)
 
         val agentService = project.service<AgentManagerService>()
-        agentService.addPropertyChangeListener(PropertyChangeListener { evt ->
-            when (evt.propertyName) {
-                "agents" -> refreshAgentsBar()
-                "agent_task_started" -> {
-                    val data = evt.newValue as? Map<*, *> ?: return@PropertyChangeListener
-                    val agentId = data["agentId"] as? String ?: return@PropertyChangeListener
-                    val cnt = busyCounts.merge(agentId, 1) { a, _ -> (a ?: 0) + 1 } ?: 1
-                    updateAgentIcon(agentId, cnt)
+        agentService.addPropertyChangeListener(
+            PropertyChangeListener { evt ->
+                when (evt.propertyName) {
+                    "agents" -> refreshAgentsBar()
+                    "agent_task_started" -> {
+                        val data = evt.newValue as? Map<*, *> ?: return@PropertyChangeListener
+                        val agentId = data["agentId"] as? String ?: return@PropertyChangeListener
+                        val cnt = busyCounts.merge(agentId, 1) { a, _ -> (a ?: 0) + 1 } ?: 1
+                        updateAgentIcon(agentId, cnt)
+                    }
+                    "agent_task_finished" -> {
+                        val res = evt.newValue as? AgentManagerService.AgentTaskResult ?: return@PropertyChangeListener
+                        val agentId = res.agentId
+                        val current = busyCounts[agentId] ?: 0
+                        val next = (current - 1).coerceAtLeast(0)
+                        busyCounts[agentId] = next
+                        updateAgentIcon(agentId, next)
+                    }
+                    "agents_stopped" -> {
+                        busyCounts.keys.forEach { k -> busyCounts[k] = 0 }
+                        refreshAgentsBar()
+                    }
+                    "agent_stopped" -> {
+                        val id = evt.newValue as? String ?: return@PropertyChangeListener
+                        busyCounts[id] = 0
+                        updateAgentIcon(id, 0)
+                    }
                 }
-                "agent_task_finished" -> {
-                    val res = evt.newValue as? AgentManagerService.AgentTaskResult ?: return@PropertyChangeListener
-                    val agentId = res.agentId
-                    val current = busyCounts[agentId] ?: 0
-                    val next = (current - 1).coerceAtLeast(0)
-                    busyCounts[agentId] = next
-                    updateAgentIcon(agentId, next)
-                }
-                "agents_stopped" -> {
-                    busyCounts.keys.forEach { k -> busyCounts[k] = 0 }
-                    refreshAgentsBar()
-                }
-                "agent_stopped" -> {
-                    val id = evt.newValue as? String ?: return@PropertyChangeListener
-                    busyCounts[id] = 0
-                    updateAgentIcon(id, 0)
-                }
-            }
-        })
+            },
+        )
 
         project.messageBus.connect().subscribe(
             QuantaAISettingsListener.TOPIC,
@@ -155,7 +159,10 @@ class MainPanel(var project: Project) : JPanel(BorderLayout()) {
         refreshAgentsBar()
     }
 
-    private fun updateAgentIcon(agentId: String, count: Int) {
+    private fun updateAgentIcon(
+        agentId: String,
+        count: Int,
+    ) {
         var label = agentLabels[agentId]
         if (label == null) {
             refreshAgentsBar()
@@ -173,13 +180,17 @@ class MainPanel(var project: Project) : JPanel(BorderLayout()) {
         val agentic = QuantaAISettingsState.instance.state.agenticEnabled ?: true
         agentsBar.isVisible = agentic
         if (!agentic) {
-            agentsBar.removeAll(); agentsBar.revalidate(); agentsBar.repaint()
-            agentLabels.clear(); busyCounts.clear()
+            agentsBar.removeAll()
+            agentsBar.revalidate()
+            agentsBar.repaint()
+            agentLabels.clear()
+            busyCounts.clear()
             return
         }
         val manager = project.service<AgentManagerService>()
         val agents = manager.getAgentsSnapshot()
-        agentsBar.removeAll(); agentLabels.clear()
+        agentsBar.removeAll()
+        agentLabels.clear()
         agents.forEach { a ->
             val label = JLabel()
             val currentBusy = busyCounts[a.id] ?: 0
@@ -187,20 +198,27 @@ class MainPanel(var project: Project) : JPanel(BorderLayout()) {
             label.text = a.role
             label.iconTextGap = 4
             label.toolTipText = buildTooltip(a.role, a.model, a.instructions)
-            label.addMouseListener(object : MouseAdapter() {
-                override fun mouseClicked(e: MouseEvent) {
-                    if (e.clickCount >= 2 && e.button == MouseEvent.BUTTON1) {
-                        project.service<AgentManagerService>().stopAgent(a.id)
+            label.addMouseListener(
+                object : MouseAdapter() {
+                    override fun mouseClicked(e: MouseEvent) {
+                        if (e.clickCount >= 2 && e.button == MouseEvent.BUTTON1) {
+                            project.service<AgentManagerService>().stopAgent(a.id)
+                        }
                     }
-                }
-            })
+                },
+            )
             agentsBar.add(label)
             agentLabels[a.id] = label
         }
-        agentsBar.revalidate(); agentsBar.repaint()
+        agentsBar.revalidate()
+        agentsBar.repaint()
     }
 
-    private fun buildTooltip(role: String, model: String?, instructions: String?): String {
+    private fun buildTooltip(
+        role: String,
+        model: String?,
+        instructions: String?,
+    ): String {
         val safeInstr = (instructions ?: "").trim()
         val safeModel = (model ?: "").trim()
         val html = StringBuilder("<html>")
@@ -232,13 +250,16 @@ class MainPanel(var project: Project) : JPanel(BorderLayout()) {
             lineWrap = true
             wrapStyleWord = true
             rows = 4
-            actionMap.put("submit", object : AbstractAction() {
-                override fun actionPerformed(e: ActionEvent) {
-                    if (submitButton.icon != AllIcons.Actions.Suspend) {
-                        submitButton.doClick()
+            actionMap.put(
+                "submit",
+                object : AbstractAction() {
+                    override fun actionPerformed(e: ActionEvent) {
+                        if (submitButton.icon != AllIcons.Actions.Suspend) {
+                            submitButton.doClick()
+                        }
                     }
-                }
-            })
+                },
+            )
             inputMap.put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, KeyEvent.SHIFT_DOWN_MASK), "insert-break")
             inputMap.put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "submit")
         }

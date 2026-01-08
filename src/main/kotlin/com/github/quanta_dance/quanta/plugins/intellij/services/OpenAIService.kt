@@ -40,9 +40,15 @@ class OpenAIService(private val project: Project) : Disposable {
     private var operationInProgress = false
     private val pcs = PropertyChangeSupport(this)
 
-    @Volatile private var oAI: OpenAIClient = OpenAIClientProvider.get(project)
-    @Volatile private var clientKey: Pair<String, String> = QuantaAISettingsState.instance.state.let { it.host to it.token }
-    @Volatile private var modelKey: Pair<Boolean, String> = QuantaAISettingsState.instance.state.let { (it.dynamicModelEnabled == true) to it.aiChatModel }
+    @Volatile
+    private var oAI: OpenAIClient = OpenAIClientProvider.get(project)
+
+    @Volatile
+    private var clientKey: Pair<String, String> = QuantaAISettingsState.instance.state.let { it.host to it.token }
+
+    @Volatile
+    private var modelKey: Pair<Boolean, String> =
+        QuantaAISettingsState.instance.state.let { (it.dynamicModelEnabled == true) to it.aiChatModel }
 
     private var lastResponseId: String? = QuantaAISettingsState.instance.state.mainLastResponseId
     private var currentSessionId: String = UUID.randomUUID().toString()
@@ -56,7 +62,8 @@ class OpenAIService(private val project: Project) : Disposable {
 
     private val managerLabel: String = "AI(manager)"
 
-    @Volatile private var lastCtxHash: Int? = null
+    @Volatile
+    private var lastCtxHash: Int? = null
 
     init {
         thisLogger().warn("AI Service initialized.")
@@ -77,25 +84,29 @@ class OpenAIService(private val project: Project) : Disposable {
                             currentModel = ModelSelector.initialModel()
                             modelKey = newModelKey
                         }
-                    } catch (_: Throwable) {}
+                    } catch (_: Throwable) {
+                    }
                 }
             },
         )
     }
 
-    override fun dispose() { }
+    override fun dispose() {}
 
     private fun userMessage(text: String): ResponseInputItem =
         com.openai.models.responses.ResponseInputItem.ofMessage(
-            com.openai.models.responses.ResponseInputItem.Message.builder().addInputTextContent(text).role(com.openai.models.responses.ResponseInputItem.Message.Role.USER).build(),
+            com.openai.models.responses.ResponseInputItem.Message.builder().addInputTextContent(text)
+                .role(com.openai.models.responses.ResponseInputItem.Message.Role.USER).build(),
         )
 
     private fun systemMessage(text: String): ResponseInputItem =
         com.openai.models.responses.ResponseInputItem.ofMessage(
-            com.openai.models.responses.ResponseInputItem.Message.builder().addInputTextContent(text).role(com.openai.models.responses.ResponseInputItem.Message.Role.SYSTEM).build(),
+            com.openai.models.responses.ResponseInputItem.Message.builder().addInputTextContent(text)
+                .role(com.openai.models.responses.ResponseInputItem.Message.Role.SYSTEM).build(),
         )
 
     fun inProgress(): Boolean = operationInProgress
+
     fun addPropertyChangeListener(listener: PropertyChangeListener) = pcs.addPropertyChangeListener(listener)
 
     fun stopProcessing() {
@@ -107,8 +118,11 @@ class OpenAIService(private val project: Project) : Disposable {
                 }
             }
         } catch (e: InterruptedException) {
-            Thread.currentThread().interrupt(); thisLogger().warn("Interrupted exception: ", e)
-        } catch (e: Exception) { thisLogger().error("Error while stopping processing: ", e) }
+            Thread.currentThread().interrupt()
+            thisLogger().warn("Interrupted exception: ", e)
+        } catch (e: Exception) {
+            thisLogger().error("Error while stopping processing: ", e)
+        }
     }
 
     fun newSession(): String {
@@ -118,17 +132,29 @@ class OpenAIService(private val project: Project) : Disposable {
         lastResponseId = null
         QuantaAISettingsState.instance.state.mainLastResponseId = null
         lastCtxHash = null
-        try { project.service<AgentManagerService>().resetForNewSession() } catch (_: Throwable) {}
+        try {
+            project.service<AgentManagerService>().resetForNewSession()
+        } catch (_: Throwable) {
+        }
         pcs.firePropertyChange("session", old, currentSessionId)
         project.service<ToolWindowService>().clear()
         return currentSessionId
     }
 
     fun getCurrentSessionId(): String = currentSessionId
-    fun stopAndClearSession() { stopProcessing(); newSession() }
+
+    fun stopAndClearSession() {
+        stopProcessing()
+        newSession()
+    }
 
     private fun buildBootstrapContext(): String {
-        val agents = try { project.service<AgentManagerService>().getAgentsSnapshot() } catch (_: Throwable) { emptyList() }
+        val agents =
+            try {
+                project.service<AgentManagerService>().getAgentsSnapshot()
+            } catch (_: Throwable) {
+                emptyList()
+            }
         val b = StringBuilder()
         b.append("New session bootstrap context.\n")
         b.append("Session ID: ").append(currentSessionId).append('\n')
@@ -165,7 +191,12 @@ class OpenAIService(private val project: Project) : Disposable {
                 allowedMcpNames,
             ).build()
         val structResponse = oAI.responses().create(createParams)
-        val id = try { structResponse.id() } catch (_: Throwable) { null }
+        val id =
+            try {
+                structResponse.id()
+            } catch (_: Throwable) {
+                null
+            }
         return structResponse to id
     }
 
@@ -186,16 +217,17 @@ class OpenAIService(private val project: Project) : Disposable {
         var reprocess = true
         while (reprocess) {
             reprocess = false
-            val (structResponse, newId) = createResponse(
-                inputs,
-                localPrevId,
-                overrideInstructions,
-                overrideModel,
-                allowedToolClassFilter,
-                includeMcp,
-                allowedBuiltInNames,
-                allowedMcpNames,
-            )
+            val (structResponse, newId) =
+                createResponse(
+                    inputs,
+                    localPrevId,
+                    overrideInstructions,
+                    overrideModel,
+                    allowedToolClassFilter,
+                    includeMcp,
+                    allowedBuiltInNames,
+                    allowedMcpNames,
+                )
             localPrevId = newId
             inputs.clear()
             val pendingToolOutputs = mutableListOf<ResponseInputItem>()
@@ -206,16 +238,28 @@ class OpenAIService(private val project: Project) : Disposable {
                         val functionCall: com.openai.models.responses.ResponseFunctionToolCall = item.asFunctionCall()
                         val callId = functionCall.callId()
                         if (!processedCallIds.add(callId)) return@map
-                        project.service<ToolWindowService>().addToolingMessage(agentLabel, "Calling tool: ${functionCall.name()}")
+                        project.service<ToolWindowService>()
+                            .addToolingMessage(agentLabel, "Calling tool: ${functionCall.name()}")
                         val functionResult = toolRouter.route(functionCall)
-                        pendingToolOutputs.add(com.openai.models.responses.ResponseInputItem.ofFunctionCallOutput(com.openai.models.responses.ResponseInputItem.FunctionCallOutput.builder().callId(callId).outputAsJson(functionResult).build()))
+                        pendingToolOutputs.add(
+                            com.openai.models.responses.ResponseInputItem.ofFunctionCallOutput(
+                                com.openai.models.responses.ResponseInputItem.FunctionCallOutput.builder()
+                                    .callId(callId).outputAsJson(functionResult).build(),
+                            ),
+                        )
                     }
+
                     item.isMessage() -> {
-                        item.message().map { m -> m.content().forEach { c ->
-                            val txt = c.asOutputText().summaryMessage
-                            if (txt.isNotBlank()) project.service<ToolWindowService>().addToolingMessage(agentLabel, txt)
-                            aggregated.append(txt).append('\n')
-                        } }
+                        item.message().map { m ->
+                            m.content().forEach { c ->
+                                val txt = c.asOutputText().summaryMessage
+                                if (txt.isNotBlank()) {
+                                    project.service<ToolWindowService>()
+                                        .addToolingMessage(agentLabel, txt)
+                                }
+                                aggregated.append(txt).append('\n')
+                            }
+                        }
                     }
                 }
             }
@@ -233,124 +277,159 @@ class OpenAIService(private val project: Project) : Disposable {
     ) {
         operationInProgress = true
         pcs.firePropertyChange("inProgress", false, true)
-        processingFuture = ApplicationManager.getApplication().executeOnPooledThread {
-            val requestInputs = Collections.synchronizedList(mutableListOf<com.openai.models.responses.ResponseInputItem>())
+        processingFuture =
+            ApplicationManager.getApplication().executeOnPooledThread {
+                val requestInputs =
+                    Collections.synchronizedList(mutableListOf<com.openai.models.responses.ResponseInputItem>())
 
-            val ctx = CurrentFileContextProvider(project).getCurrent()
-            if (ctx != null) {
-                val header = "Current file open: ${ctx.filePathRelative}, file version: ${ctx.version} - you must always reread file if version changed"
-                val caretLine = ctx.caretLine; val caretCol = ctx.caretColumn
-                val sb = StringBuilder().append(header)
-                if (caretLine != null && caretCol != null) sb.append("\nUser Caret position in the file ${ctx.filePathRelative} - Line: $caretLine, Column (Offset): $caretCol")
-                if (ctx.selectedText != null && ctx.selectionStartLine != null && ctx.selectionStartColumn != null && ctx.selectionEndLine != null && ctx.selectionEndColumn != null) {
-                    sb.append("\nSelection starts at line ${ctx.selectionStartLine}, column ${ctx.selectionStartColumn} and ends at line ${ctx.selectionEndLine}, column ${ctx.selectionEndLine}\n")
-                    sb.append("Selected text is: ${ctx.selectedText}")
+                val ctx = CurrentFileContextProvider(project).getCurrent()
+                if (ctx != null) {
+                    val header =
+                        "Current file open: ${ctx.filePathRelative}, file version: ${ctx.version} - " +
+                            "you must always reread file if version changed"
+                    val caretLine = ctx.caretLine
+                    val caretCol = ctx.caretColumn
+                    val sb = StringBuilder().append(header)
+                    if (caretLine != null && caretCol != null) {
+                        sb.append(
+                            """
+                            User Caret position in the file ${ctx.filePathRelative} - Line: ${'$'}caretLine, Column (Offset): ${'$'}caretCol
+                            """.trimIndent(),
+                        )
+                    }
+                    if (ctx.selectedText != null && ctx.selectionStartLine != null && ctx.selectionStartColumn != null &&
+                        ctx.selectionEndLine != null && ctx.selectionEndColumn != null
+                    ) {
+                        sb.append(
+                            "\nSelection starts at line ${ctx.selectionStartLine}, column ${ctx.selectionStartColumn} " +
+                                "and ends at line ${ctx.selectionEndLine}, column ${ctx.selectionEndLine}\n",
+                        )
+                        sb.append("Selected text is: ${ctx.selectedText}")
+                    }
+                    val payload = sb.toString()
+                    val h = payload.hashCode()
+                    if (lastCtxHash == null || lastCtxHash != h || lastResponseId == null) {
+                        requestInputs.add(systemMessage(payload))
+                        lastCtxHash = h
+                    }
                 }
-                val payload = sb.toString()
-                val h = payload.hashCode()
-                if (lastCtxHash == null || lastCtxHash != h || lastResponseId == null) {
-                    requestInputs.add(systemMessage(payload))
-                    lastCtxHash = h
-                }
-            }
-            try {
-                val effectiveForThisCall = ModelSelector.effectiveModel(currentModel)
-                requestInputs.add(systemMessage("{\"currentModel\":\"${effectiveForThisCall}\"}"))
-            } catch (_: Throwable) {}
-            if (lastResponseId == null) {
-                requestInputs.add(systemMessage(buildBootstrapContext()))
-            }
-            requestInputs.add(userMessage(text))
-
-            var reprocess = true
-            var spokeThisTurn = false
-            val processedCallIds = mutableSetOf<String>()
-            var previousIdForThisTurn = lastResponseId
-            var aborted = false
-
-            val tws = project.service<ToolWindowService>()
-            val delayedSpinner = DelayedSpinner(tws)
-            delayedSpinner.startWithDelay("AI is thinking [${ModelSelector.effectiveModel(currentModel)}]", 300)
-
-            while (reprocess) {
-                reprocess = false
                 try {
-                    // Expose all tools by default: include MCP and no per-turn allow-list restrictions
-                    val (structResponse, newId) = createResponse(
-                        requestInputs,
-                        previousIdForThisTurn,
-                        allowedToolClassFilter = null,
-                        includeMcp = true,
-                        allowedBuiltInNames = null,
-                        allowedMcpNames = null,
-                    )
-                    previousIdForThisTurn = newId
-                    delayedSpinner.stopSuccess()
+                    val effectiveForThisCall = ModelSelector.effectiveModel(currentModel)
+                    requestInputs.add(systemMessage("{\"currentModel\":\"${effectiveForThisCall}\"}"))
+                } catch (_: Throwable) {
+                }
+                if (lastResponseId == null) {
+                    requestInputs.add(systemMessage(buildBootstrapContext()))
+                }
+                requestInputs.add(userMessage(text))
 
-                    requestInputs.clear()
-                    val pendingToolOutputs = mutableListOf<com.openai.models.responses.ResponseInputItem>()
+                var reprocess = true
+                var spokeThisTurn = false
+                val processedCallIds = mutableSetOf<String>()
+                var previousIdForThisTurn = lastResponseId
+                var aborted = false
 
-                    structResponse.output().map { item ->
-                        when {
-                            item.isReasoning() -> {
-                                val reasoning = item.asReasoning()
-                                reasoning.summary().forEach { summary -> project.service<ToolWindowService>().addToolingMessage("Reasoning(manager)", summary.text()) }
-                            }
-                            item.isFunctionCall() -> {
-                                val functionCall: com.openai.models.responses.ResponseFunctionToolCall = item.asFunctionCall()
-                                val callId = functionCall.callId()
-                                if (!processedCallIds.add(callId)) return@map
-                                project.service<ToolWindowService>().addToolingMessage(managerLabel, "Calling tool: ${functionCall.name()}")
-                                val functionResult = toolRouter.route(functionCall)
-                                pendingToolOutputs.add(com.openai.models.responses.ResponseInputItem.ofFunctionCallOutput(com.openai.models.responses.ResponseInputItem.FunctionCallOutput.builder().callId(callId).outputAsJson(functionResult).build()))
-                            }
-                            item.isMessage() -> {
-                                item.message().map { m ->
-                                    m.content().forEach { c ->
-                                        val message = c.asOutputText()
-                                        project.service<ToolWindowService>().addToolingMessage(managerLabel, message.summaryMessage)
-                                        message.ttsSummary?.also { summary ->
-                                            if (!spokeThisTurn) {
-                                                project.service<AIVoiceService>().say(summary)
-                                                spokeThisTurn = true
+                val tws = project.service<ToolWindowService>()
+                val delayedSpinner = DelayedSpinner(tws)
+                delayedSpinner.startWithDelay("AI is thinking [${ModelSelector.effectiveModel(currentModel)}]", 300)
+
+                while (reprocess) {
+                    reprocess = false
+                    try {
+                        // Expose all tools by default: include MCP and no per-turn allow-list restrictions
+                        val (structResponse, newId) =
+                            createResponse(
+                                requestInputs,
+                                previousIdForThisTurn,
+                                allowedToolClassFilter = null,
+                                includeMcp = true,
+                                allowedBuiltInNames = null,
+                                allowedMcpNames = null,
+                            )
+                        previousIdForThisTurn = newId
+                        delayedSpinner.stopSuccess()
+
+                        requestInputs.clear()
+                        val pendingToolOutputs = mutableListOf<com.openai.models.responses.ResponseInputItem>()
+
+                        structResponse.output().map { item ->
+                            when {
+                                item.isReasoning() -> {
+                                    val reasoning = item.asReasoning()
+                                    reasoning.summary().forEach { summary ->
+                                        project.service<ToolWindowService>()
+                                            .addToolingMessage("Reasoning(manager)", summary.text())
+                                    }
+                                }
+
+                                item.isFunctionCall() -> {
+                                    val functionCall: com.openai.models.responses.ResponseFunctionToolCall =
+                                        item.asFunctionCall()
+                                    val callId = functionCall.callId()
+                                    if (!processedCallIds.add(callId)) return@map
+                                    project.service<ToolWindowService>()
+                                        .addToolingMessage(managerLabel, "Calling tool: ${functionCall.name()}")
+                                    val functionResult = toolRouter.route(functionCall)
+                                    pendingToolOutputs.add(
+                                        com.openai.models.responses.ResponseInputItem.ofFunctionCallOutput(
+                                            com.openai.models.responses.ResponseInputItem.FunctionCallOutput.builder()
+                                                .callId(callId).outputAsJson(functionResult).build(),
+                                        ),
+                                    )
+                                }
+
+                                item.isMessage() -> {
+                                    item.message().map { m ->
+                                        m.content().forEach { c ->
+                                            val message = c.asOutputText()
+                                            project.service<ToolWindowService>()
+                                                .addToolingMessage(managerLabel, message.summaryMessage)
+                                            message.ttsSummary?.also { summary ->
+                                                if (!spokeThisTurn) {
+                                                    project.service<AIVoiceService>().say(summary)
+                                                    spokeThisTurn = true
+                                                }
                                             }
                                         }
                                     }
                                 }
-                            }
-                            item.isImageGenerationCall() -> { }
-                            else -> thisLogger().warn("Unknown item type received.")
-                        }
-                    }
 
-                    val hasPending = pendingToolOutputs.isNotEmpty()
-                    if (hasPending) requestInputs.addAll(pendingToolOutputs)
-                    if (hasPending) reprocess = true
-                } catch (e: InterruptedException) {
-                    aborted = true
-                    delayedSpinner.stopError("Cancelled after interruption")
-                    thisLogger().warn("Execution interrupted: ", e)
-                    Thread.currentThread().interrupt()
-                    break
-                } catch (e: Throwable) {
-                    aborted = true
-                    delayedSpinner.stopError(e.message ?: "Unexpected error")
-                    thisLogger().warn("Unexpected Error: ", e)
-                    Notifications.show(project, e.message.orEmpty(), NotificationType.ERROR)
-                    break
+                                item.isImageGenerationCall() -> {}
+                                else -> thisLogger().warn("Unknown item type received.")
+                            }
+                        }
+
+                        val hasPending = pendingToolOutputs.isNotEmpty()
+                        if (hasPending) requestInputs.addAll(pendingToolOutputs)
+                        if (hasPending) reprocess = true
+                    } catch (e: InterruptedException) {
+                        aborted = true
+                        delayedSpinner.stopError("Cancelled after interruption")
+                        thisLogger().warn("Execution interrupted: ", e)
+                        Thread.currentThread().interrupt()
+                        break
+                    } catch (e: Throwable) {
+                        aborted = true
+                        delayedSpinner.stopError(e.message ?: "Unexpected error")
+                        thisLogger().warn("Unexpected Error: ", e)
+                        Notifications.show(project, e.message.orEmpty(), NotificationType.ERROR)
+                        break
+                    }
                 }
+                if (!aborted) {
+                    lastResponseId = previousIdForThisTurn
+                    QuantaAISettingsState.instance.state.mainLastResponseId = lastResponseId
+                }
+                operationInProgress = false
+                pcs.firePropertyChange("inProgress", true, false)
             }
-            if (!aborted) {
-                lastResponseId = previousIdForThisTurn
-                QuantaAISettingsState.instance.state.mainLastResponseId = lastResponseId
-            }
-            operationInProgress = false
-            pcs.firePropertyChange("inProgress", true, false)
-        }
     }
 
     fun generateImage(promptText: String): String {
-        val params = ImageGenerateParams.builder().prompt(promptText).size(ImageGenerateParams.Size._1024X1024).model(ImageModel.DALL_E_3).build()
-        return oAI.images().generate(params).data().orElseThrow().stream().flatMap { image -> image.url().stream() }.findFirst().orElseThrow()
+        val params =
+            ImageGenerateParams.builder().prompt(promptText).size(ImageGenerateParams.Size._1024X1024)
+                .model(ImageModel.DALL_E_3).build()
+        return oAI.images().generate(params).data().orElseThrow().stream().flatMap { image -> image.url().stream() }
+            .findFirst().orElseThrow()
     }
 }

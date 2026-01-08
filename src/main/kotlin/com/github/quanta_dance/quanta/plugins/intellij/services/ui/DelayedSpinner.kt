@@ -13,16 +13,30 @@ class DelayedSpinner(private val svc: ToolWindowService) {
     private var handle: ToolWindowService.SpinnerHandle? = null
     private var timer: Timer? = null
 
-    fun startWithDelay(title: String, delayMs: Long = 300) {
-        timer = Timer("delayed-spinner", true).apply {
-            schedule(object : TimerTask() {
-                override fun run() {
-                    if (shown.compareAndSet(false, true)) handle = svc.startSpinner(title)
-                }
-            }, delayMs)
-        }
+    fun startWithDelay(
+        title: String,
+        delayMs: Long = 300,
+    ) {
+        timer =
+            Timer("delayed-spinner", true).apply {
+                schedule(
+                    object : TimerTask() {
+                        override fun run() {
+                            if (shown.compareAndSet(false, true)) handle = svc.startSpinner(title)
+                        }
+                    },
+                    delayMs,
+                )
+            }
     }
 
-    fun stopSuccess() { timer?.cancel(); handle?.stopSuccess() }
-    fun stopError(msg: String) { timer?.cancel(); handle?.stopError(msg) }
+    fun stopSuccess() {
+        timer?.cancel()
+        handle?.stopSuccess()
+    }
+
+    fun stopError(msg: String) {
+        timer?.cancel()
+        handle?.stopError(msg)
+    }
 }

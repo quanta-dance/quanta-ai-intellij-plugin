@@ -6,7 +6,6 @@ package com.github.quanta_dance.quanta.plugins.intellij.tools.ide
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.project.CurrentFileContextProvider
-import com.github.quanta_dance.quanta.plugins.intellij.project.VersionUtil
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
 import com.github.quanta_dance.quanta.plugins.intellij.tools.ToolInterface
@@ -25,8 +24,11 @@ import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.util.PsiTreeUtil
 import java.io.File
 
-@JsonClassDescription("Read the enclosing PSI block (function/method/class/field/object) at a position in a file and return structured metadata and text.")
-class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any>> {
+@JsonClassDescription(
+    "Read the enclosing PSI block (function/method/class/field/object) " +
+        "at a position in a file and return structured metadata and text.",
+)
+class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
     @field:JsonPropertyDescription("Relative to the project root path. If omitted, uses current editor file.")
     var filePath: String? = null
 
@@ -50,87 +52,103 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any>> {
 
     private val log = Logger.getInstance(ReadPsiBlockAtPosition::class.java)
 
-    override fun execute(project: Project): Map<String, Any> {
+    override fun execute(project: Project): Map<String, Any?> {
         val base = project.basePath ?: return err("Project base path not found.")
-        val ctx = try { CurrentFileContextProvider(project).getCurrent() } catch (_: Throwable) { null }
+        val ctx =
+            try {
+                CurrentFileContextProvider(project).getCurrent()
+            } catch (_: Throwable) {
+                null
+            }
 
-        val rel = (filePath?.trim().takeUnless { it.isNullOrEmpty() } ?: ctx?.filePathRelative)
-            ?: return err("filePath is required and no current editor file is available")
+        val rel =
+            (filePath?.trim().takeUnless { it.isNullOrEmpty() } ?: ctx?.filePathRelative)
+                ?: return err("filePath is required and no current editor file is available")
 
-        val io = try { PathUtils.resolveWithinProject(base, rel).toFile() } catch (e: IllegalArgumentException) {
-            project.service<ToolWindowService>().addToolingMessage("ReadPsiBlockAtPosition - invalid path", e.message ?: "Invalid path")
-            return err(e.message ?: "Invalid path")
-        }
-        val vFile = LocalFileSystem.getInstance().refreshAndFindFileByIoFile(io)
-            ?: run {
+        val io =
+            try {
+                PathUtils.resolveWithinProject(base, rel).toFile()
+            } catch (e: IllegalArgumentException) {
+                project.service<ToolWindowService>()
+                    .addToolingMessage("ReadPsiBlockAtPosition - invalid path", e.message ?: "Invalid path")
+                return err(e.message ?: "Invalid path")
+            }
+        val vFile =
+            LocalFileSystem.getInstance().refreshAndFindFileByIoFile(io) ?: run {
                 VfsUtil.markDirtyAndRefresh(true, true, true, File(base))
                 LocalFileSystem.getInstance().refreshAndFindFileByIoFile(io)
-            }
-            ?: return err("File not found: $rel")
+            } ?: return err("File not found: $rel")
 
-        return ApplicationManager.getApplication().runReadAction<Map<String, Any>> {
-            val psiFile = PsiManager.getInstance(project).findFile(vFile)
-                ?: return@runReadAction err("PSI file not found: $rel")
-            val doc = FileDocumentManager.getInstance().getDocument(vFile)
-                ?: return@runReadAction err("Document not found for: $rel")
+        return ApplicationManager.getApplication().runReadAction<Map<String, Any?>> {
+            val psiFile =
+                PsiManager.getInstance(project).findFile(vFile)
+                    ?: return@runReadAction err("PSI file not found: $rel")
+            val doc =
+                FileDocumentManager.getInstance().getDocument(vFile)
+                    ?: return@runReadAction err("Document not found for: $rel")
 
-            // Commit document if needed under a write-intent read action to satisfy threading constraints
             val psiDocMgr = PsiDocumentManager.getInstance(project)
             if (!psiDocMgr.isCommitted(doc)) {
                 WriteIntentReadAction.run<RuntimeException> {
-                    try { psiDocMgr.commitDocument(doc) } catch (_: Throwable) {}
+                    try {
+                        psiDocMgr.commitDocument(doc)
+                    } catch (_: Throwable) {
+                    }
                 }
             }
 
-            val effectiveOffset = computeOffset(doc.text, line, column, offset, ctx)
-                ?: return@runReadAction err("Unable to determine position (provide line/column or offset, or ensure caret is available)")
+            val effectiveOffset =
+                computeOffset(doc.text, line, column, offset, ctx)
+                    ?: return@runReadAction err("Need position: provide line/column or offset, or ensure caret is available")
 
             val leaf = psiFile.findElementAt(effectiveOffset)
             val chosen = chooseElementByScope(leaf, scope)
             if (chosen == null) {
                 val window = windowAroundOffset(doc.text, effectiveOffset, maxChars)
-                val version = VersionUtil.computeVersion(0L, doc.modificationStamp, VersionUtil.safeVfsStamp(vFile))
                 return@runReadAction mapOf(
                     "status" to "ok",
                     "file" to rel,
-                    "version" to version,
                     "elementKind" to "window",
                     "name" to null,
                     "offset" to effectiveOffset,
                     "startLine" to window.firstLine,
                     "endLine" to window.lastLine,
-                    "text" to withOptionalLineNumbers(window.text, window.firstLine)
-                ) as Map<String, Any>?
+                    "text" to withOptionalLineNumbers(window.text, window.firstLine),
+                )
             }
             val (element, kind) = chosen
 
             val range = element.textRange
             val startLine = doc.getLineNumber(range.startOffset) + 1
             val endLine = doc.getLineNumber(range.endOffset.coerceAtLeast(range.startOffset)) + 1
-            val version = VersionUtil.computeVersion(0L, doc.modificationStamp, VersionUtil.safeVfsStamp(vFile))
             val name = (element as? PsiNamedElement)?.name ?: element.javaClass.simpleName
             var text = element.text
             if (text.length > maxChars) text = text.take(maxChars)
 
-            project.service<ToolWindowService>().addToolingMessage("Read PSI block", "$rel:$startLine-$endLine ($kind ${name})")
+            project.service<ToolWindowService>().addToolingMessage(
+                "Read PSI block",
+                "$rel:$startLine-$endLine ($kind $name)",
+            )
 
             mapOf(
                 "status" to "ok",
                 "file" to rel,
-                "version" to version,
                 "elementKind" to kind,
                 "name" to name,
                 "offset" to effectiveOffset,
                 "startLine" to startLine,
                 "endLine" to endLine,
-                "text" to withOptionalLineNumbers(text, startLine)
+                "text" to withOptionalLineNumbers(text, startLine),
             )
         }
     }
 
-    private fun err(msg: String): Map<String, Any> = mapOf("status" to "error", "message" to msg)
+    private fun err(msg: String): Map<String, Any?> = mapOf("status" to "error", "message" to msg)
 
-    private fun withOptionalLineNumbers(text: String, startLine: Int): String {
+    private fun withOptionalLineNumbers(
+        text: String,
+        startLine: Int,
+    ): String {
         if (!includeLineNumbers) return text
         val base = startLine.coerceAtLeast(1)
         return text.lines().mapIndexed { i, line -> "%05d %s".format(base + i, line) }.joinToString("\n")
@@ -138,7 +156,11 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any>> {
 
     private data class Window(val text: String, val firstLine: Int, val lastLine: Int)
 
-    private fun windowAroundOffset(raw: String, offset: Int, maxChars: Int): Window {
+    private fun windowAroundOffset(
+        raw: String,
+        offset: Int,
+        maxChars: Int,
+    ): Window {
         val lines = raw.lines()
         val safeOffset = offset.coerceIn(0, raw.length)
         var lineIdx = 0
@@ -166,7 +188,8 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any>> {
         val l = line
         val c = column
         if (l != null && c != null && l >= 1 && c >= 0) {
-            var idx = 0; var ln = 1
+            var idx = 0
+            var ln = 1
             while (idx < raw.length && ln < l) {
                 if (raw[idx] == '\n') ln++
                 idx++
@@ -176,7 +199,10 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any>> {
         return ctx?.caretLine
     }
 
-    private fun chooseElementByScope(leaf: PsiElement?, scope: String): Pair<PsiElement, String>? {
+    private fun chooseElementByScope(
+        leaf: PsiElement?,
+        scope: String,
+    ): Pair<PsiElement, String>? {
         if (leaf == null) return null
         val prefer = scope.lowercase()
         val ktFunction = tryLoadPsi("org.jetbrains.kotlin.psi.KtNamedFunction")
@@ -211,14 +237,25 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any>> {
             "function" -> ktFunction?.let { parentOfType(it) }?.let { it to "function" } ?: firstMatchAuto()
             "method" -> psiMethod?.let { parentOfType(it) }?.let { it to "method" } ?: firstMatchAuto()
             "class" -> (ktClass?.let { parentOfType(it) } ?: psiClass?.let { parentOfType(it) })?.let { it to "class" } ?: firstMatchAuto()
-            "field" -> (ktProperty?.let { parentOfType(it) } ?: psiField?.let { parentOfType(it) })?.let { it to "field" } ?: firstMatchAuto()
+            "field" ->
+                (
+                    ktProperty?.let {
+                        parentOfType(
+                            it,
+                        )
+                    } ?: psiField?.let { parentOfType(it) }
+                )?.let { it to "field" } ?: firstMatchAuto()
             "object" -> ktObject?.let { parentOfType(it) }?.let { it to "object" } ?: firstMatchAuto()
             else -> firstMatchAuto()
         }
     }
 
-    private fun tryLoadPsi(name: String): Class<out PsiElement>? = try {
-        @Suppress("UNCHECKED_CAST")
-        Class.forName(name) as Class<out PsiElement>
-    } catch (_: Throwable) { null }
+    private fun tryLoadPsi(name: String): Class<out PsiElement>? =
+        try {
+            @Suppress("UNCHECKED_CAST")
+            Class.forName(name)
+                as Class<out PsiElement>
+        } catch (_: Throwable) {
+            null
+        }
 }

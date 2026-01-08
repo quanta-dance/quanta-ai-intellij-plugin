@@ -8,7 +8,11 @@ import com.intellij.notification.NotificationType
 import com.intellij.openapi.project.Project
 
 object Notifications {
-    fun show(project: Project?, content: String, type: NotificationType = NotificationType.INFORMATION) {
+    fun show(
+        project: Project?,
+        content: String,
+        type: NotificationType = NotificationType.INFORMATION,
+    ) {
         val notificationGroup = NotificationGroupManager.getInstance().getNotificationGroup("Plugin Notifications")
         val notification = notificationGroup.createNotification(content, type)
         notification.notify(project)

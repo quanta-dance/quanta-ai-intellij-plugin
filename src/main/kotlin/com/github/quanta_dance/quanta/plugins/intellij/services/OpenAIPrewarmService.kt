@@ -3,8 +3,8 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.services
 
-import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState
 import com.github.quanta_dance.quanta.plugins.intellij.services.openai.OpenAIClientProvider
+import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
@@ -24,10 +24,23 @@ class OpenAIPrewarmService(private val project: Project) {
         executor.submit {
             try {
                 val hostUrl = QuantaAISettingsState.instance.state.host
-                val uri = try { URI(hostUrl) } catch (_: Throwable) { null }
-                val host = uri?.host ?: try { URL(hostUrl).host } catch (_: Throwable) { null }
+                val uri =
+                    try {
+                        URI(hostUrl)
+                    } catch (_: Throwable) {
+                        null
+                    }
+                val host =
+                    uri?.host ?: try {
+                        URL(hostUrl).host
+                    } catch (_: Throwable) {
+                        null
+                    }
                 if (!host.isNullOrBlank()) {
-                    try { java.net.InetAddress.getAllByName(host) } catch (_: Throwable) {}
+                    try {
+                        java.net.InetAddress.getAllByName(host)
+                    } catch (_: Throwable) {
+                    }
                 }
                 // Ensure client is constructed (connection pool established)
                 val cli: OpenAIClient = OpenAIClientProvider.get(project)

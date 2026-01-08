@@ -79,14 +79,18 @@ class AIVoiceService(private val project: Project) {
     }
 
     // TTS
-    fun speech(message: String, consumer: (InputStream) -> Unit): CompletableFuture<Void> {
+    fun speech(
+        message: String,
+        consumer: (InputStream) -> Unit,
+    ): CompletableFuture<Void> {
         val client = OpenAIClientProvider.get(project)
-        val params = SpeechCreateParams.builder()
-            .input(message)
-            .model(SpeechModel.GPT_4O_MINI_TTS)
-            .voice(SpeechCreateParams.Voice.ASH)
-            .responseFormat(SpeechCreateParams.ResponseFormat.MP3)
-            .build()
+        val params =
+            SpeechCreateParams.builder()
+                .input(message)
+                .model(SpeechModel.GPT_4O_MINI_TTS)
+                .voice(SpeechCreateParams.Voice.ASH)
+                .responseFormat(SpeechCreateParams.ResponseFormat.MP3)
+                .build()
         return client.async().audio().speech().create(params).thenAcceptAsync { response ->
             val inp = BufferedInputStream(response.body())
             consumer(inp)
@@ -95,23 +99,30 @@ class AIVoiceService(private val project: Project) {
 
     // ASR: synchronous helper
     fun transcript(inputStream: InputStream): String {
-        return try { transcriptAsync(inputStream).get() } catch (e: InterruptedException) {
-            Thread.currentThread().interrupt(); throw RuntimeException("Transcription was interrupted", e)
-        } catch (e: Exception) { throw RuntimeException("Failed to transcribe audio", e) }
+        return try {
+            transcriptAsync(inputStream).get()
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw RuntimeException("Transcription was interrupted", e)
+        } catch (e: Exception) {
+            throw RuntimeException("Failed to transcribe audio", e)
+        }
     }
 
     // ASR: async complete result
     fun transcriptAsync(inputStream: InputStream): CompletableFuture<String> {
         val client = OpenAIClientProvider.get(project)
-        val mf = MultipartField.builder<InputStream>()
-            .value(inputStream)
-            .contentType("audio/wav")
-            .filename("audio.wav")
-            .build()
-        val params = TranscriptionCreateParams.builder()
-            .file(mf)
-            .model(AudioModel.WHISPER_1)
-            .build()
+        val mf =
+            MultipartField.builder<InputStream>()
+                .value(inputStream)
+                .contentType("audio/wav")
+                .filename("audio.wav")
+                .build()
+        val params =
+            TranscriptionCreateParams.builder()
+                .file(mf)
+                .model(AudioModel.WHISPER_1)
+                .build()
         return client.async().audio().transcriptions().create(params)
             .thenApply { response -> response.asTranscription().text() }
     }
@@ -123,16 +134,20 @@ class AIVoiceService(private val project: Project) {
         onDone: (String) -> Unit,
     ): CompletableFuture<Void?> {
         val client = OpenAIClientProvider.get(project)
-        val mf = MultipartField.builder<InputStream>()
-            .value(inputStream)
-            .contentType("audio/wav")
-            .filename("audio.wav")
-            .build()
+        val mf =
+            MultipartField.builder<InputStream>()
+                .value(inputStream)
+                .contentType("audio/wav")
+                .filename("audio.wav")
+                .build()
         val params = TranscriptionCreateParams.builder().file(mf).model(AudioModel.WHISPER_1).build()
         val response = client.async().audio().transcriptions().createStreaming(params)
         response.subscribe { event ->
-            if (event.isTranscriptTextDelta()) onDelta(event.asTranscriptTextDelta().delta())
-            else if (event.isTranscriptTextDone()) onDone(event.asTranscriptTextDone().text())
+            if (event.isTranscriptTextDelta()) {
+                onDelta(event.asTranscriptTextDelta().delta())
+            } else if (event.isTranscriptTextDone()) {
+                onDone(event.asTranscriptTextDone().text())
+            }
         }
         return response.onCompleteFuture()
     }

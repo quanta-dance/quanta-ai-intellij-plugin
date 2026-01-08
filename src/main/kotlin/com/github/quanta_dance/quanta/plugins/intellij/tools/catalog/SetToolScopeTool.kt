@@ -11,7 +11,9 @@ import com.github.quanta_dance.quanta.plugins.intellij.tools.ToolInterface
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 
-@JsonClassDescription("Request tool scope for current or future turns (sticky). Names use built-in class simple names and MCP 'server.method'.")
+@JsonClassDescription(
+    "Request tool scope for current or future turns (sticky). Names use built-in class simple names and MCP 'server.method'.",
+)
 class SetToolScopeTool : ToolInterface<Map<String, Any>> {
     @field:JsonPropertyDescription("Built-in tool simple names to enable")
     var currentTurnBuiltIns: List<String>? = null

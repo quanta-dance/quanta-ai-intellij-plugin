@@ -5,11 +5,10 @@ package com.github.quanta_dance.quanta.plugins.intellij.tools.ide
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
-import com.github.quanta_dance.quanta.plugins.intellij.project.VersionUtil
 import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
-import com.github.quanta_dance.quanta.plugins.intellij.tools.ToolInterface
 import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
+import com.github.quanta_dance.quanta.plugins.intellij.tools.ToolInterface
 import com.intellij.codeInsight.actions.OptimizeImportsProcessor
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.command.WriteCommandAction
@@ -69,11 +68,15 @@ class PatchFile : ToolInterface<String> {
     var expectedFileVersion: Long? = null
 
     @field:JsonPropertyDescription(
-        "Optional expected SHA-256 hash of normalized file content (\\r\\n/\\r -> \\n). If provided and matches current, patches can proceed.",
+        "Optional expected SHA-256 hash of normalized file content (\\r\\n/\\r -> \\n)." +
+            " If provided and matches current, patches can proceed.",
     )
     var expectedFileHashSha256: String? = null
 
-    @field:JsonPropertyDescription("If true, proceed when all patches' expectedText guards match even if content hash mismatches. Default: true")
+    @field:JsonPropertyDescription(
+        "If true, proceed when all patches' expectedText guards match even if content hash mismatches. " +
+            "Default: true",
+    )
     var allowProceedIfGuardsMatch: Boolean = true
 
     // Overlap guard
@@ -172,8 +175,12 @@ class PatchFile : ToolInterface<String> {
                         val ranges = patchList.mapIndexed { idx, p -> Range(p.fromLine, p.toLine, idx + 1) }
                         val overlaps = findOverlaps(ranges)
                         if (overlaps.isNotEmpty()) {
-                            val details = overlaps.joinToString("\n") { (a, b) -> "Patch ${a.index} (${a.from}-${a.to}) overlaps with Patch ${b.index} (${b.from}-${b.to})" }
-                            result.append("Patched 0 range(s) in ").append(relToBase).append(" due to overlapping patch ranges. Details: \n").append(details)
+                            val details =
+                                overlaps.joinToString("\n") { (a, b) ->
+                                    "Patch ${a.index} (${a.from}-${a.to}) overlaps with Patch ${b.index} (${b.from}-${b.to})"
+                                }
+                            result.append("Patched 0 range(s) in ").append(relToBase)
+                                .append(" due to overlapping patch ranges. Details: \n").append(details)
                             return@runWriteCommandAction
                         }
                     }
@@ -186,7 +193,9 @@ class PatchFile : ToolInterface<String> {
                             val startLine = (p.fromLine - 1).coerceAtLeast(0)
                             val endLine = (p.toLine - 1).coerceAtLeast(startLine)
                             if (startLine >= document.lineCount) {
-                                mismatches.add("Patch ${index + 1}: start line ${p.fromLine} beyond document line count ${document.lineCount}")
+                                mismatches.add(
+                                    "Patch ${index + 1}: start line ${p.fromLine} beyond document line count ${document.lineCount}",
+                                )
                                 continue
                             }
                             val startOffset = document.getLineStartOffset(startLine)
@@ -195,16 +204,21 @@ class PatchFile : ToolInterface<String> {
                             p.expectedText?.let { exp0 ->
                                 val exp = normalizeForCompare(exp0)
                                 val cur = normalizeForCompare(currentSlice)
-                                if (exp != cur) mismatches.add("Patch ${index + 1}: expectedText mismatch at lines ${p.fromLine}-${p.toLine}")
+                                if (exp != cur) {
+                                    mismatches.add("Patch ${index + 1}: expectedText mismatch at lines ${p.fromLine}-${p.toLine}")
+                                }
                             }
                         }
                         if (mismatches.isNotEmpty() && stopOnMismatch) {
-                            result.append("Patched 0 range(s) in ").append(relToBase).append(" with ").append(mismatches.size).append(" mismatch(es). Aborted due to stopOnMismatch=true. ")
+                            result.append("Patched 0 range(s) in ").append(relToBase).append(" with ").append(mismatches.size)
+                                .append(" mismatch(es). Aborted due to stopOnMismatch=true. ")
                                 .append("Details: \n").append(mismatches.joinToString("\n"))
                             return@runWriteCommandAction
                         }
                         if (mismatches.isNotEmpty() && hashProvided && !hashMatched && allowProceedIfGuardsMatch) {
-                            result.append("Patched 0 range(s) in ").append(relToBase).append(" because guards mismatched under content hash mismatch. Details: \n").append(mismatches.joinToString("\n"))
+                            result.append("Patched 0 range(s) in ").append(relToBase)
+                                .append(" because guards mismatched under content hash mismatch. Details: \n")
+                                .append(mismatches.joinToString("\n"))
                             return@runWriteCommandAction
                         }
                     }
@@ -226,14 +240,21 @@ class PatchFile : ToolInterface<String> {
                             val cur = normalizeForCompare(currentSlice)
                             if (exp != cur) {
                                 mismatches.add("Patch ${index + 1}: expectedText mismatch at lines ${p.fromLine}-${p.toLine}")
-                                if (stopOnMismatch) continue else { continue }
+                                if (stopOnMismatch) {
+                                    continue
+                                } else {
+                                    continue
+                                }
                             }
                         }
                         document.replaceString(startOffset, endOffset, p.newContent)
                         applied++
                     }
 
-                    try { PsiDocumentManager.getInstance(project).commitDocument(document) } catch (_: Throwable) {}
+                    try {
+                        PsiDocumentManager.getInstance(project).commitDocument(document)
+                    } catch (_: Throwable) {
+                    }
                     docManager.saveDocument(document)
 
                     if (reformatAfterUpdate || optimizeImportsAfterUpdate) {
@@ -243,16 +264,21 @@ class PatchFile : ToolInterface<String> {
                                 if (reformatAfterUpdate) CodeStyleManager.getInstance(project).reformat(psi)
                                 if (optimizeImportsAfterUpdate) OptimizeImportsProcessor(project, psi).run()
                             }
-                        } catch (_: Throwable) {}
+                        } catch (_: Throwable) {
+                        }
                     }
 
-                    try { FileEditorManager.getInstance(project).openTextEditor(OpenFileDescriptor(project, vFile), true) } catch (_: Throwable) {}
+                    try {
+                        FileEditorManager.getInstance(project).openTextEditor(OpenFileDescriptor(project, vFile), true)
+                    } catch (_: Throwable) {
+                    }
                     lastModified = PsiManager.getInstance(project).findFile(vFile)?.modificationStamp ?: 0
 
                     if (mismatches.isEmpty()) {
                         result.append("Patched ").append(applied).append(" range(s) in ").append(relToBase)
                     } else {
-                        result.append("Patched ").append(applied).append(" range(s) in ").append(relToBase).append(" with ").append(mismatches.size).append(" mismatch(es). Details: \n").append(mismatches.joinToString("\n"))
+                        result.append("Patched ").append(applied).append(" range(s) in ").append(relToBase).append(" with ")
+                            .append(mismatches.size).append(" mismatch(es). Details: \n").append(mismatches.joinToString("\n"))
                     }
                 }
             }
@@ -264,21 +290,26 @@ class PatchFile : ToolInterface<String> {
             val vFile = LocalFileSystem.getInstance().refreshAndFindFileByIoFile(ioFile)
             if (vFile != null) {
                 VfsUtil.markDirtyAndRefresh(true, true, true, vFile)
-                try { PsiDocumentManager.getInstance(project).commitAllDocuments() } catch (_: Throwable) {}
+                try {
+                    PsiDocumentManager.getInstance(project).commitAllDocuments()
+                } catch (_: Throwable) {
+                }
             }
-        } catch (_: Throwable) {}
+        } catch (_: Throwable) {
+        }
 
         if (validateAfterUpdate) {
             try {
                 val validator = ValidateClassFileTool().apply { filePath = relToBase }
                 val errors = ApplicationManager.getApplication().runReadAction<List<String>> { validator.findErrors(project) }
-                val summary = if (errors.size == 1 && errors.first().equals("No compilation errors found.", true)) {
-                    "No compilation errors found."
-                } else if (errors.isEmpty()) {
-                    "Validation completed, no errors reported."
-                } else {
-                    errors.joinToString("\n").let { if (it.length > 2000) it.take(2000) + "\n..." else it }
-                }
+                val summary =
+                    if (errors.size == 1 && errors.first().equals("No compilation errors found.", true)) {
+                        "No compilation errors found."
+                    } else if (errors.isEmpty()) {
+                        "Validation completed, no errors reported."
+                    } else {
+                        errors.joinToString("\n").let { if (it.length > 2000) it.take(2000) + "\n..." else it }
+                    }
                 result.append("\nValidation: ").append(summary.lines().first())
             } catch (e: Throwable) {
                 result.append("\nValidation: skipped (").append(e.message).append(")")

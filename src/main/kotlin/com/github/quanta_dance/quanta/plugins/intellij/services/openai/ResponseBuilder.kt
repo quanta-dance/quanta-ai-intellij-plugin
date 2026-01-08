@@ -19,7 +19,6 @@ import com.openai.models.responses.ResponseInputItem
 import com.openai.models.responses.StructuredResponseCreateParams
 
 class ResponseBuilder(private val project: Project) {
-
     private fun mergedInstructions(): String {
         val base = Instructions.instructions
         val extra = QuantaAISettingsState.instance.state.extraInstructions?.trim().orEmpty()
@@ -47,20 +46,30 @@ class ResponseBuilder(private val project: Project) {
         val dyn = DynamicMcpToolProvider
         val tools = dyn.buildTools(mcp)
         tools.forEach { t ->
-            try { builder.addTool(t) } catch (_: Throwable) {}
+            try {
+                builder.addTool(t)
+            } catch (_: Throwable) {
+            }
         }
     }
 
     private fun addSelectedMcpTools(
         builder: StructuredResponseCreateParams.Builder<OpenAIResponse>,
-        allowedMcpNames: Set<String>?, // server.method
+        allowedMcpNames: Set<String>?,
+        // server.method
     ) {
         val mcp = project.service<McpClientService>()
         val dyn = DynamicMcpToolProvider
         val tools = dyn.buildTools(mcp)
         when {
             // null = allow all MCP tools
-            allowedMcpNames == null -> tools.forEach { t -> try { builder.addTool(t) } catch (_: Throwable) {} }
+            allowedMcpNames == null ->
+                tools.forEach { t ->
+                    try {
+                        builder.addTool(t)
+                    } catch (_: Throwable) {
+                    }
+                }
             // empty set = allow none
             allowedMcpNames.isEmpty() -> {}
             else -> {
@@ -72,7 +81,8 @@ class ResponseBuilder(private val project: Project) {
                             val name = pair.first + "." + pair.second
                             if (allowedMcpNames.contains(name)) builder.addTool(t)
                         }
-                    } catch (_: Throwable) {}
+                    } catch (_: Throwable) {
+                    }
                 }
             }
         }
@@ -90,13 +100,14 @@ class ResponseBuilder(private val project: Project) {
         allowedMcpNames: Set<String>? = null,
     ): StructuredResponseCreateParams.Builder<OpenAIResponse> {
         val effectiveModel = overrideModel?.let { ModelSelector.normalize(it) } ?: ModelSelector.effectiveModel(currentModel)
-        val builder = ResponseCreateParams.builder()
-            .instructions(overrideInstructions ?: mergedInstructions())
-            .inputOfResponse(inputs)
-            .reasoning(Reasoning.builder().effort(ReasoningEffort.LOW).build())
-            .maxOutputTokens(QuantaAISettingsState.instance.state.maxTokens)
-            .text(OpenAIResponse::class.java)
-            .model(ChatModel.of(effectiveModel))
+        val builder =
+            ResponseCreateParams.builder()
+                .instructions(overrideInstructions ?: mergedInstructions())
+                .inputOfResponse(inputs)
+                .reasoning(Reasoning.builder().effort(ReasoningEffort.LOW).build())
+                .maxOutputTokens(QuantaAISettingsState.instance.state.maxTokens)
+                .text(OpenAIResponse::class.java)
+                .model(ChatModel.of(effectiveModel))
         if (!previousId.isNullOrBlank()) builder.previousResponseId(previousId)
 
         addSelectedBuiltInTools(builder, allowedBuiltInNames)

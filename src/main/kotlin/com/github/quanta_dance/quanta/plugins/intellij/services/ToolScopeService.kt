@@ -17,15 +17,19 @@ class ToolScopeService(private val project: Project) {
     private val stickyMcpMethods = ConcurrentHashMap.newKeySet<String>() // format: server.method
 
     // Current turn scope (cleared after consumption)
-    @Volatile private var currentBuiltIns: Set<String> = emptySet()
-    @Volatile private var currentMcpMethods: Set<String> = emptySet()
+    @Volatile
+    private var currentBuiltIns: Set<String> = emptySet()
+
+    @Volatile
+    private var currentMcpMethods: Set<String> = emptySet()
 
     fun setScope(
         builtIns: Collection<String>?,
         mcpMethods: Collection<String>?,
         mcpServersAllMethods: Collection<String>?,
         sticky: Boolean,
-        mcpResolver: (String) -> Collection<String>, // server -> [server.method]
+        mcpResolver: (String) -> Collection<String>,
+        // server -> [server.method]
     ): Map<String, Any> {
         val acceptedBuiltIns = (builtIns ?: emptyList()).map { it.trim() }.filter { it.isNotEmpty() }.toSet()
         val mcpFromMethods = (mcpMethods ?: emptyList()).map { it.trim() }.filter { it.contains('.') }.toSet()
@@ -57,6 +61,7 @@ class ToolScopeService(private val project: Project) {
     fun getSticky(): Pair<Set<String>, Set<String>> = stickyBuiltIns.toSet() to stickyMcpMethods.toSet()
 
     fun clearSticky() {
-        stickyBuiltIns.clear(); stickyMcpMethods.clear()
+        stickyBuiltIns.clear()
+        stickyMcpMethods.clear()
     }
 }

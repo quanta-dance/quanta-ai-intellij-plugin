@@ -9,7 +9,12 @@ import com.openai.models.ChatModel
 object ModelSelector {
     fun normalize(id: String): String {
         val cm = ChatModel.of(id)
-        return try { cm.validate(); cm.toString() } catch (_: Throwable) { ChatModel.GPT_5_MINI.toString() }
+        return try {
+            cm.validate()
+            cm.toString()
+        } catch (_: Throwable) {
+            ChatModel.GPT_5_MINI.toString()
+        }
     }
 
     private fun rank(id: String): Int {
@@ -22,7 +27,10 @@ object ModelSelector {
         }
     }
 
-    fun clampToMax(requested: String, max: String): String {
+    fun clampToMax(
+        requested: String,
+        max: String,
+    ): String {
         val r = normalize(requested)
         val m = normalize(max)
         return if (rank(r) <= rank(m)) r else m

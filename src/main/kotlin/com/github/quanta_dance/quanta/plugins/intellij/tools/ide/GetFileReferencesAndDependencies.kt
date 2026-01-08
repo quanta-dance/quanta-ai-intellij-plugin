@@ -22,7 +22,9 @@ import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.psi.PsiManager
 import java.io.File
 
-@JsonClassDescription("Get file dependencies (imports resolved to libraries with versions) and PSI-based references/definitions for a given file.")
+@JsonClassDescription(
+    "Get file dependencies (imports resolved to libraries with versions) and PSI-based references/definitions for a given file.",
+)
 class GetFileReferencesAndDependencies : ToolInterface<Map<String, Any>> {
     @field:JsonPropertyDescription("Relative to the project root path to the requested file.")
     var filePath: String? = null
@@ -33,30 +35,51 @@ class GetFileReferencesAndDependencies : ToolInterface<Map<String, Any>> {
         val rel = filePath?.trim().orEmpty()
         if (rel.isEmpty()) return mapOf("status" to "error", "message" to "filePath is required")
         val base = project.basePath ?: return mapOf("status" to "error", "message" to "Project base path not found.")
-        val resolved: File = try { PathUtils.resolveWithinProject(base, rel).toFile() } catch (e: IllegalArgumentException) {
-            project.service<ToolWindowService>().addToolingMessage("Get file references - invalid path", e.message ?: "Invalid path")
-            return mapOf("status" to "error", "message" to (e.message ?: "Invalid path"))
-        }
-        val vFile = LocalFileSystem.getInstance().refreshAndFindFileByIoFile(resolved)
-            ?: run {
-                VfsUtil.markDirtyAndRefresh(true, true, true, File(base))
-                LocalFileSystem.getInstance().refreshAndFindFileByIoFile(resolved)
+        val resolved: File =
+            try {
+                PathUtils.resolveWithinProject(base, rel).toFile()
+            } catch (e: IllegalArgumentException) {
+                project.service<ToolWindowService>().addToolingMessage("Get file references - invalid path", e.message ?: "Invalid path")
+                return mapOf("status" to "error", "message" to (e.message ?: "Invalid path"))
             }
-            ?: return mapOf("status" to "error", "message" to "File not found: $rel")
+        val vFile =
+            LocalFileSystem.getInstance().refreshAndFindFileByIoFile(resolved)
+                ?: run {
+                    VfsUtil.markDirtyAndRefresh(true, true, true, File(base))
+                    LocalFileSystem.getInstance().refreshAndFindFileByIoFile(resolved)
+                }
+                ?: return mapOf("status" to "error", "message" to "File not found: $rel")
 
         return ApplicationManager.getApplication().runReadAction<Map<String, Any>> {
             try {
-                val psiFile = PsiManager.getInstance(project).findFile(vFile)
-                    ?: return@runReadAction mapOf("status" to "error", "message" to "PSI file not found: $rel")
+                val psiFile =
+                    PsiManager.getInstance(project).findFile(vFile)
+                        ?: return@runReadAction mapOf("status" to "error", "message" to "PSI file not found: $rel")
 
                 val dependencies: Set<String> =
-                    try { resolveImportsToDependencies(project, psiFile) } catch (_: Throwable) { emptySet() }
+                    try {
+                        resolveImportsToDependencies(project, psiFile)
+                    } catch (_: Throwable) {
+                        emptySet()
+                    }
                 val allRefs: List<String> =
-                    try { getAllReferencesAndDefinitions(psiFile, project) } catch (_: Throwable) { emptyList() }
+                    try {
+                        getAllReferencesAndDefinitions(psiFile, project)
+                    } catch (_: Throwable) {
+                        emptyList()
+                    }
                 val sdkVersion: String =
-                    try { getProjectCompileVersion(project) } catch (_: Throwable) { "" }
+                    try {
+                        getProjectCompileVersion(project)
+                    } catch (_: Throwable) {
+                        ""
+                    }
                 val buildFiles: List<String> =
-                    try { getProjectBuildFiles(project) } catch (_: Throwable) { emptyList() }
+                    try {
+                        getProjectBuildFiles(project)
+                    } catch (_: Throwable) {
+                        emptyList()
+                    }
 
                 project.service<ToolWindowService>().addToolingMessage("Get file references", rel)
 

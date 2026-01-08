@@ -13,7 +13,6 @@ import org.jetbrains.plugins.gradle.util.GradleConstants
 
 @JsonClassDescription("Synchronize linked Gradle projects with the current IntelliJ project (runs in background).")
 class GradleSyncTool : ToolInterface<String> {
-
     @field:JsonPropertyDescription("Optional Gradle project path to sync. If omitted, all linked Gradle projects are synced.")
     var projectPath: String? = null
 

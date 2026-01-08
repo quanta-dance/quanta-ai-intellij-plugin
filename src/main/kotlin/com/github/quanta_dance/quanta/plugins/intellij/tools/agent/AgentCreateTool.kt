@@ -31,7 +31,9 @@ class AgentCreateTool : ToolInterface<Map<String, Any>> {
     var allowedMcpServers: List<String>? = null
 
     // New: explicit allow-lists for fine-grained control
-    @field:JsonPropertyDescription("Explicit allow-list of built-in tool class simple names for this agent. If set, agent can only use these.")
+    @field:JsonPropertyDescription(
+        "Explicit allow-list of built-in tool class simple names for this agent. If set, agent can only use these.",
+    )
     var allowedBuiltInNames: Set<String>? = null
 
     @field:JsonPropertyDescription("Explicit allow-list of MCP tools in 'server.tool' form. If set, agent can only use these.")
@@ -39,18 +41,19 @@ class AgentCreateTool : ToolInterface<Map<String, Any>> {
 
     override fun execute(project: Project): Map<String, Any> {
         val svc = project.service<AgentManagerService>()
-        val id = svc.createAgent(
-            AgentManagerService.AgentConfig(
-                role = role,
-                model = model,
-                instructions = instructions,
-                includeMcp = includeMcp,
-                allowedBuiltInTools = allowBuiltInTools,
-                allowedMcpServers = allowedMcpServers,
-                allowedBuiltInNames = allowedBuiltInNames,
-                allowedMcpNames = allowedMcpNames,
-            ),
-        )
+        val id =
+            svc.createAgent(
+                AgentManagerService.AgentConfig(
+                    role = role,
+                    model = model,
+                    instructions = instructions,
+                    includeMcp = includeMcp,
+                    allowedBuiltInTools = allowBuiltInTools,
+                    allowedMcpServers = allowedMcpServers,
+                    allowedBuiltInNames = allowedBuiltInNames,
+                    allowedMcpNames = allowedMcpNames,
+                ),
+            )
         return mapOf("agent_id" to id, "role" to role)
     }
 }

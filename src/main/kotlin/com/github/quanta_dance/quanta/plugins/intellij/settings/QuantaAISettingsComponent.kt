@@ -19,7 +19,6 @@ import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.FormBuilder
 import com.openai.models.AllModels
 import com.openai.models.ChatModel
-import com.openai.models.ResponsesModel
 import java.awt.Color
 import java.awt.Cursor
 import java.awt.event.MouseAdapter
@@ -117,8 +116,8 @@ class QuantaAISettingsComponent {
                             """
                             {
                             """.trimIndent() +
-                                    "\"mcpServers\": { }\n" +
-                                    "}".trimIndent(),
+                                "\"mcpServers\": { }\n" +
+                                "}".trimIndent(),
                         )
                     }
                     LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)?.let { vFile ->
@@ -141,7 +140,7 @@ class QuantaAISettingsComponent {
     val linkLabel =
         JBLabel(
             "<html>Model Pricing details available at <a href=\"https://platform.openai.com/docs/pricing\">" +
-                    "https://platform.openai.com/docs/pricing</a></html>",
+                "https://platform.openai.com/docs/pricing</a></html>",
         ).apply {
             cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
             foreground = Color(42, 122, 255)

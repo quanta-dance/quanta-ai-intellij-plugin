@@ -26,7 +26,9 @@ class InspectDependencies : ToolInterface<InspectDependencies.Result> {
     )
     var methodNameContains: String? = null
 
-    @field:JsonPropertyDescription("Interpret methodNameContains as a regex (default false). If false, treats 'a|b|c' as OR list of substrings.")
+    @field:JsonPropertyDescription(
+        "Interpret methodNameContains as a regex (default false). If false, treats 'a|b|c' as OR list of substrings.",
+    )
     var useRegexForMethodFilter: Boolean = false
 
     @field:JsonPropertyDescription("Maximum number of classes to return. Default 200.")

@@ -18,12 +18,14 @@ class QuantaAIApplicationActivationListener : ProjectActivity {
         // Start a new AI session on project open to avoid stale threads and keep manager/sub-agents in sync
         try {
             project.service<OpenAIService>().newSession()
-        } catch (_: Throwable) { }
+        } catch (_: Throwable) {
+        }
 
         // Ensure MCP services are initialized; discovery continues in background
         try {
             project.service<McpClientService>()
-        } catch (_: Throwable) { }
+        } catch (_: Throwable) {
+        }
         // Note: intentionally no Tool Window messages here to avoid startup noise.
         // Manager receives bootstrap context on its first turn.
     }

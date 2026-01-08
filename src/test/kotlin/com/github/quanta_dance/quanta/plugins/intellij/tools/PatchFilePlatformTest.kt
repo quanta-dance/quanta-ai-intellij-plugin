@@ -59,7 +59,12 @@ class PatchFilePlatformTest : BasePlatformTestCase() {
                 filePath = "src/A.kt"
                 patches =
                     listOf(
-                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(fromLine = 2, toLine = 2, newContent = "LINE2", expectedText = "line2"),
+                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                            fromLine = 2,
+                            toLine = 2,
+                            newContent = "LINE2",
+                            expectedText = "line2",
+                        ),
                     )
                 expectedFileHashSha256 = normalizedSha256(doc.text)
                 validateAfterUpdate = false
@@ -87,8 +92,17 @@ class PatchFilePlatformTest : BasePlatformTestCase() {
                 filePath = "src/B.kt"
                 patches =
                     listOf(
-                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(fromLine = 2, toLine = 2, newContent = "B", expectedText = "MISMATCH"),
-                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(fromLine = 3, toLine = 3, newContent = "C"),
+                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                            fromLine = 2,
+                            toLine = 2,
+                            newContent = "B",
+                            expectedText = "MISMATCH",
+                        ),
+                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                            fromLine = 3,
+                            toLine = 3,
+                            newContent = "C",
+                        ),
                     )
                 expectedFileHashSha256 = normalizedSha256(doc.text)
                 stopOnMismatch = true
@@ -116,7 +130,12 @@ class PatchFilePlatformTest : BasePlatformTestCase() {
                 filePath = "src/C.kt"
                 patches =
                     listOf(
-                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(fromLine = 1, toLine = 1, newContent = "X", expectedText = "x"),
+                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                            fromLine = 1,
+                            toLine = 1,
+                            newContent = "X",
+                            expectedText = "x",
+                        ),
                     )
                 expectedFileHashSha256 = normalizedSha256("different content to force mismatch")
                 allowProceedIfGuardsMatch = false
@@ -146,9 +165,19 @@ class PatchFilePlatformTest : BasePlatformTestCase() {
                 patches =
                     listOf(
                         // mismatch
-                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(fromLine = 2, toLine = 2, newContent = "TWO", expectedText = "MIS"),
+                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                            fromLine = 2,
+                            toLine = 2,
+                            newContent = "TWO",
+                            expectedText = "MIS",
+                        ),
                         // ok
-                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(fromLine = 4, toLine = 4, newContent = "FOUR", expectedText = "four"),
+                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                            fromLine = 4,
+                            toLine = 4,
+                            newContent = "FOUR",
+                            expectedText = "four",
+                        ),
                     )
                 expectedFileHashSha256 = normalizedSha256(doc.text)
                 stopOnMismatch = false
@@ -179,8 +208,18 @@ class PatchFilePlatformTest : BasePlatformTestCase() {
                 filePath = "src/E.kt"
                 patches =
                     listOf(
-                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(fromLine = 3, toLine = 4, newContent = "CC\nDD", expectedText = "c\nd"),
-                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(fromLine = 1, toLine = 1, newContent = "AA", expectedText = "a"),
+                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                            fromLine = 3,
+                            toLine = 4,
+                            newContent = "CC\nDD",
+                            expectedText = "c\nd",
+                        ),
+                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                            fromLine = 1,
+                            toLine = 1,
+                            newContent = "AA",
+                            expectedText = "a",
+                        ),
                     )
                 expectedFileHashSha256 = normalizedSha256(doc.text)
                 stopOnMismatch = true
@@ -209,8 +248,17 @@ class PatchFilePlatformTest : BasePlatformTestCase() {
                 patches =
                     listOf(
                         // beyond doc
-                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(fromLine = 10, toLine = 10, newContent = "TEN"),
-                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(fromLine = 2, toLine = 2, newContent = "Y", expectedText = "y"),
+                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                            fromLine = 10,
+                            toLine = 10,
+                            newContent = "TEN",
+                        ),
+                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                            fromLine = 2,
+                            toLine = 2,
+                            newContent = "Y",
+                            expectedText = "y",
+                        ),
                     )
                 expectedFileHashSha256 = normalizedSha256(doc.text)
                 stopOnMismatch = false

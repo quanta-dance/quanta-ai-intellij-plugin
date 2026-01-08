@@ -43,44 +43,56 @@ object ToolsRegistry {
     data class ToolEntry(val clazz: Class<out ToolInterface<out Any>>, val group: Group = Group.GENERIC)
 
     private data class CacheEntry(val signature: String, val tools: List<Class<out ToolInterface<out Any>>>)
+
     private val cache = ConcurrentHashMap<Project, CacheEntry>()
 
     private fun javaPsiAvailable(project: Project?): Boolean {
         fun tryLoad(loader: ClassLoader?): Boolean =
-            try { loader?.loadClass("com.intellij.psi.JavaPsiFacade"); true } catch (_: Throwable) { false }
+            try {
+                loader?.loadClass("com.intellij.psi.JavaPsiFacade")
+                true
+            } catch (_: Throwable) {
+                false
+            }
         if (tryLoad(this::class.java.classLoader)) return true
         if (project != null && tryLoad(project::class.java.classLoader)) return true
-        return try { Class.forName("com.intellij.psi.JavaPsiFacade"); true } catch (_: Throwable) { false }
+        return try {
+            Class.forName("com.intellij.psi.JavaPsiFacade")
+            true
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     private fun baseEntries(project: Project?): List<ToolEntry> {
         val settings = QuantaAISettingsState.instance.state
         val agentic = settings.agenticEnabled ?: true
         val terminalEnabled = settings.terminalToolEnabled == true
-        val list = mutableListOf(
-            ToolEntry(ListToolsCatalogTool::class.java, Group.GENERIC),
-            // Core
-            ToolEntry(CodeRefactorSuggester::class.java, Group.GENERIC),
-            ToolEntry(CreateOrUpdateFile::class.java, Group.GENERIC),
-            ToolEntry(SearchProjectEmbeddings::class.java, Group.GENERIC),
-            ToolEntry(UpsertProjectEmbedding::class.java, Group.GENERIC),
-            ToolEntry(SearchInFiles::class.java, Group.GENERIC),
-            ToolEntry(GetProjectDetails::class.java, Group.GENERIC),
-            ToolEntry(ReadFileContent::class.java, Group.GENERIC),
-            ToolEntry(ReadPsiBlockAtPosition::class.java, Group.GENERIC),
-            ToolEntry(ListFiles::class.java, Group.GENERIC),
-            ToolEntry(GetFileReferencesAndDependencies::class.java, Group.GENERIC),
-            ToolEntry(GenerateImage::class.java, Group.GENERIC),
-            ToolEntry(SoundGeneratorTool::class.java, Group.GENERIC),
-            ToolEntry(DeleteFileTool::class.java, Group.GENERIC),
-            ToolEntry(CopyFileOrDirectoryTool::class.java, Group.GENERIC),
-            ToolEntry(ValidateClassFileTool::class.java, Group.GENERIC),
-            ToolEntry(OpenFileInEditorTool::class.java, Group.GENERIC),
-            ToolEntry(PatchFile::class.java, Group.GENERIC),
-            ToolEntry(RequestModelSwitch::class.java, Group.GENERIC),
-            ToolEntry(McpListServersTool::class.java, Group.GENERIC),
-            ToolEntry(McpListServerToolsTool::class.java, Group.GENERIC),
-        )
+        val list =
+            mutableListOf(
+                ToolEntry(ListToolsCatalogTool::class.java, Group.GENERIC),
+                // Core
+                ToolEntry(CodeRefactorSuggester::class.java, Group.GENERIC),
+                ToolEntry(CreateOrUpdateFile::class.java, Group.GENERIC),
+                ToolEntry(SearchProjectEmbeddings::class.java, Group.GENERIC),
+                ToolEntry(UpsertProjectEmbedding::class.java, Group.GENERIC),
+                ToolEntry(SearchInFiles::class.java, Group.GENERIC),
+                ToolEntry(GetProjectDetails::class.java, Group.GENERIC),
+                ToolEntry(ReadFileContent::class.java, Group.GENERIC),
+                ToolEntry(ReadPsiBlockAtPosition::class.java, Group.GENERIC),
+                ToolEntry(ListFiles::class.java, Group.GENERIC),
+                ToolEntry(GetFileReferencesAndDependencies::class.java, Group.GENERIC),
+                ToolEntry(GenerateImage::class.java, Group.GENERIC),
+                ToolEntry(SoundGeneratorTool::class.java, Group.GENERIC),
+                ToolEntry(DeleteFileTool::class.java, Group.GENERIC),
+                ToolEntry(CopyFileOrDirectoryTool::class.java, Group.GENERIC),
+                ToolEntry(ValidateClassFileTool::class.java, Group.GENERIC),
+                ToolEntry(OpenFileInEditorTool::class.java, Group.GENERIC),
+                ToolEntry(PatchFile::class.java, Group.GENERIC),
+                ToolEntry(RequestModelSwitch::class.java, Group.GENERIC),
+                ToolEntry(McpListServersTool::class.java, Group.GENERIC),
+                ToolEntry(McpListServerToolsTool::class.java, Group.GENERIC),
+            )
         if (terminalEnabled) list.add(ToolEntry(TerminalCommandTool::class.java, Group.GENERIC))
         list.add(ToolEntry(GradleSyncTool::class.java, Group.GRADLE))
         list.add(ToolEntry(RunGoTestsTool::class.java, Group.GO))
@@ -100,25 +112,31 @@ object ToolsRegistry {
         val gradle = basePath?.let { detectGradle(File(it)) } ?: false
         val go = basePath?.let { detectGo(File(it)) } ?: false
         val javaPsi = javaPsiAvailable(project)
-        val signature = buildString {
-            append("agentic=").append(agentic).append(';')
-            append("gradle=").append(gradle).append(';')
-            append("go=").append(go).append(';')
-            append("javaPsi=").append(javaPsi).append(';')
-            append("terminal=").append(settings.terminalToolEnabled == true).append(';')
-            append("base=").append(basePath ?: "<none>")
-        }
+        val signature =
+            buildString {
+                append("agentic=").append(agentic).append(';')
+                append("gradle=").append(gradle).append(';')
+                append("go=").append(go).append(';')
+                append("javaPsi=").append(javaPsi).append(';')
+                append("terminal=").append(settings.terminalToolEnabled == true).append(';')
+                append("base=").append(basePath ?: "<none>")
+            }
         val cached = cache[project]
         if (cached != null && cached.signature == signature) return cached.tools
 
         val entries = baseEntries(project)
-        val tools = if (basePath == null) entries.map { it.clazz } else entries.filter { e ->
-            when (e.group) {
-                Group.GENERIC -> true
-                Group.GRADLE -> gradle
-                Group.GO -> go
+        val tools =
+            if (basePath == null) {
+                entries.map { it.clazz }
+            } else {
+                entries.filter { e ->
+                    when (e.group) {
+                        Group.GENERIC -> true
+                        Group.GRADLE -> gradle
+                        Group.GO -> go
+                    }
+                }.map { it.clazz }
             }
-        }.map { it.clazz }
         cache[project] = CacheEntry(signature, tools)
         return tools
     }
@@ -150,6 +168,9 @@ object ToolsRegistry {
             }
         }
         val dirs = listOf(root, File(root, "cmd"), File(root, "pkg"), File(root, "internal"))
-        return dirs.any { dir -> dir.exists() && dir.isDirectory && dir.listFiles()?.any { it.isFile && it.extension.equals("go", true) } == true }
+        return dirs.any {
+                dir ->
+            dir.exists() && dir.isDirectory && dir.listFiles()?.any { it.isFile && it.extension.equals("go", true) } == true
+        }
     }
 }

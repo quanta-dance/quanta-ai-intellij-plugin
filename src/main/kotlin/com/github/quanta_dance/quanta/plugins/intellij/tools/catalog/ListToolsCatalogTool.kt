@@ -6,8 +6,8 @@ package com.github.quanta_dance.quanta.plugins.intellij.tools.catalog
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.mcp.McpClientService
-import com.github.quanta_dance.quanta.plugins.intellij.tools.ToolsRegistry.toolsFor
 import com.github.quanta_dance.quanta.plugins.intellij.tools.ToolInterface
+import com.github.quanta_dance.quanta.plugins.intellij.tools.ToolsRegistry.toolsFor
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 
@@ -23,10 +23,11 @@ class ListToolsCatalogTool : ToolInterface<Map<String, Any>> {
         val toolsByServer = if (includeMcpDetails) servers.associateWith { s -> mcp.getTools(s).map { it.name }.sorted() } else emptyMap()
         return mapOf(
             "builtIns" to builtInNames,
-            "mcp" to mapOf(
-                "servers" to servers,
-                "toolsByServer" to toolsByServer,
-            ),
+            "mcp" to
+                mapOf(
+                    "servers" to servers,
+                    "toolsByServer" to toolsByServer,
+                ),
         )
     }
 }

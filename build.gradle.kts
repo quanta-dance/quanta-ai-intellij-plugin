@@ -195,5 +195,7 @@ spotless {
             rootProject.file("config/license/HEADER")
         )
         ktlint()
+        trimTrailingWhitespace()
+        endWithNewline()
     }
 }

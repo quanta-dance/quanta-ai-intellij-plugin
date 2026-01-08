@@ -36,9 +36,16 @@ class RunGradleBuildTool : ToolInterface<String> {
         // Prefer warnings visible
         args += listOf("--warning-mode", "all", "--stacktrace")
 
-        val tool = try { project.service<ToolWindowService>().startToolingMessage("Gradle build", "tasks=${args.joinToString(" ")}") } catch (_: Throwable) { null }
+        val tool =
+            try {
+                project.service<ToolWindowService>().startToolingMessage("Gradle build", "tasks=${args.joinToString(" ")}")
+            } catch (_: Throwable) {
+                null
+            }
         val proc =
-            try { ProcessBuilder(args).directory(File(basePath)).redirectErrorStream(true).start() } catch (e: Exception) {
+            try {
+                ProcessBuilder(args).directory(File(basePath)).redirectErrorStream(true).start()
+            } catch (e: Exception) {
                 tool?.setText("Failed to start gradle: ${e.message}")
                 return "Failed to start gradle: ${e.message}"
             }

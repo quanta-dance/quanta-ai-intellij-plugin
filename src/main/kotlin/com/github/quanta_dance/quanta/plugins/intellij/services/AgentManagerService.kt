@@ -3,8 +3,6 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.services
 
-import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
-import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.github.quanta_dance.quanta.plugins.intellij.settings.Instructions
 import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState
 import com.intellij.openapi.Disposable
@@ -82,14 +80,15 @@ class AgentManagerService(private val project: Project) : Disposable {
         val enabled = QuantaAISettingsState.instance.state.agenticEnabled ?: true
         if (!enabled) throw IllegalStateException("Agentic mode is disabled in settings")
         val id = UUID.randomUUID().toString()
-        val baseInstr = buildString {
-            append("You are an assistant agent with the role '").append(config.role).append("'. ")
-            append("Follow the global development instructions. Communicate in plain text.\n\n")
-            append(Instructions.instructions)
-            if (!config.instructions.isNullOrBlank()) {
-                append("\n\n# Role-specific instructions\n").append(config.instructions)
+        val baseInstr =
+            buildString {
+                append("You are an assistant agent with the role '").append(config.role).append("'. ")
+                append("Follow the global development instructions. Communicate in plain text.\n\n")
+                append(Instructions.instructions)
+                if (!config.instructions.isNullOrBlank()) {
+                    append("\n\n# Role-specific instructions\n").append(config.instructions)
+                }
             }
-        }
         val session = AgentSession(id = id, config = config.copy(instructions = baseInstr))
         agents[id] = session
         ensureExecutor(id)
@@ -97,7 +96,11 @@ class AgentManagerService(private val project: Project) : Disposable {
         val st = QuantaAISettingsState.instance.state
         st.agents.add(
             QuantaAISettingsState.PersistedAgent(
-                id = id, role = session.config.role, model = session.config.model, instructions = session.config.instructions, previousId = session.previousId,
+                id = id,
+                role = session.config.role,
+                model = session.config.model,
+                instructions = session.config.instructions,
+                previousId = session.previousId,
             ),
         )
         pcs.firePropertyChange("agents", null, id)
@@ -107,7 +110,10 @@ class AgentManagerService(private val project: Project) : Disposable {
     fun removeAgent(agentId: String): Boolean {
         val removed = agents.remove(agentId) ?: return false
         executors.remove(agentId)?.let { exec ->
-            try { exec.shutdownNow() } catch (_: Throwable) {}
+            try {
+                exec.shutdownNow()
+            } catch (_: Throwable) {
+            }
         }
         val st = QuantaAISettingsState.instance.state
         st.agents.removeIf { it.id == agentId }
@@ -121,7 +127,10 @@ class AgentManagerService(private val project: Project) : Disposable {
     fun stopAgent(agentId: String): Boolean {
         if (!agents.containsKey(agentId)) return false
         executors.remove(agentId)?.let { exec ->
-            try { exec.shutdownNow() } catch (_: Throwable) {}
+            try {
+                exec.shutdownNow()
+            } catch (_: Throwable) {
+            }
         }
         executors[agentId] = Executors.newSingleThreadExecutor { r -> Thread(r, "agent-$agentId") }
         project.service<ToolWindowService>().addToolingMessage("AgentManager", "Stopped agent [$agentId]")
@@ -133,7 +142,11 @@ class AgentManagerService(private val project: Project) : Disposable {
         var stopped = 0
         executors.keys.toList().forEach { id ->
             executors.remove(id)?.let { exec ->
-                try { exec.shutdownNow(); stopped++ } catch (_: Throwable) {}
+                try {
+                    exec.shutdownNow()
+                    stopped++
+                } catch (_: Throwable) {
+                }
                 executors[id] = Executors.newSingleThreadExecutor { r -> Thread(r, "agent-$id") }
             }
         }
@@ -154,11 +167,15 @@ class AgentManagerService(private val project: Project) : Disposable {
         pcs.firePropertyChange("agents_reset", null, null)
     }
 
-    fun sendMessageAsync(agentId: String, message: String): CompletableFuture<AgentTaskResult> { /* unchanged */
+    fun sendMessageAsync(
+        agentId: String,
+        message: String,
+    ): CompletableFuture<AgentTaskResult> { // unchanged
         val enabled = QuantaAISettingsState.instance.state.agenticEnabled ?: true
         if (!enabled) return CompletableFuture.completedFuture(AgentTaskResult("", agentId, false, null, "Agentic mode disabled"))
-        val session = agents[agentId]
-            ?: return CompletableFuture.completedFuture(AgentTaskResult("", agentId, false, null, "Agent not found"))
+        val session =
+            agents[agentId]
+                ?: return CompletableFuture.completedFuture(AgentTaskResult("", agentId, false, null, "Agent not found"))
         val requestId = UUID.randomUUID().toString()
         pcs.firePropertyChange("agent_task_started", null, mapOf("requestId" to requestId, "agentId" to agentId))
 
@@ -170,7 +187,9 @@ class AgentManagerService(private val project: Project) : Disposable {
                 if (session.previousId == null) {
                     inputs.add(
                         ResponseInputItem.ofMessage(
-                            ResponseInputItem.Message.builder().addInputTextContent("Agent Role: ${session.config.role}").role(ResponseInputItem.Message.Role.SYSTEM).build(),
+                            ResponseInputItem.Message.builder().addInputTextContent(
+                                "Agent Role: ${session.config.role}",
+                            ).role(ResponseInputItem.Message.Role.SYSTEM).build(),
                         ),
                     )
                 }
@@ -182,17 +201,18 @@ class AgentManagerService(private val project: Project) : Disposable {
                 val filter: ((Class<*>) -> Boolean)? = if (session.config.allowedBuiltInTools) null else { _ -> false }
                 val includeMcp = session.config.includeMcp
                 val agentLabel = "AI(${session.config.role})"
-                val (reply, newPrev) = openAI.agentTurn(
-                    inputs = inputs,
-                    previousId = session.previousId,
-                    overrideInstructions = session.config.instructions,
-                    overrideModel = session.config.model,
-                    allowedToolClassFilter = filter,
-                    includeMcp = includeMcp,
-                    agentLabel = agentLabel,
-                    allowedBuiltInNames = session.config.allowedBuiltInNames,
-                    allowedMcpNames = session.config.allowedMcpNames,
-                )
+                val (reply, newPrev) =
+                    openAI.agentTurn(
+                        inputs = inputs,
+                        previousId = session.previousId,
+                        overrideInstructions = session.config.instructions,
+                        overrideModel = session.config.model,
+                        allowedToolClassFilter = filter,
+                        includeMcp = includeMcp,
+                        agentLabel = agentLabel,
+                        allowedBuiltInNames = session.config.allowedBuiltInNames,
+                        allowedMcpNames = session.config.allowedMcpNames,
+                    )
                 session.previousId = newPrev
                 QuantaAISettingsState.instance.state.agents.find { it.id == agentId }?.previousId = newPrev
                 QDLog.info(logger) { "Agent[$agentId][$requestId] reply length=${reply.length}" }
@@ -209,7 +229,10 @@ class AgentManagerService(private val project: Project) : Disposable {
         return fut
     }
 
-    fun sendMessage(agentId: String, message: String): String { /* unchanged */
+    fun sendMessage(
+        agentId: String,
+        message: String,
+    ): String { // unchanged
         val enabled = QuantaAISettingsState.instance.state.agenticEnabled ?: true
         if (!enabled) throw IllegalStateException("Agentic mode is disabled in settings")
         val session = agents[agentId] ?: return "Agent not found: $agentId"
@@ -221,7 +244,9 @@ class AgentManagerService(private val project: Project) : Disposable {
             if (session.previousId == null) {
                 inputs.add(
                     ResponseInputItem.ofMessage(
-                        ResponseInputItem.Message.builder().addInputTextContent("Agent Role: ${session.config.role}").role(ResponseInputItem.Message.Role.SYSTEM).build(),
+                        ResponseInputItem.Message.builder().addInputTextContent(
+                            "Agent Role: ${session.config.role}",
+                        ).role(ResponseInputItem.Message.Role.SYSTEM).build(),
                     ),
                 )
             }
@@ -233,17 +258,18 @@ class AgentManagerService(private val project: Project) : Disposable {
             val filter: ((Class<*>) -> Boolean)? = if (session.config.allowedBuiltInTools) null else { _ -> false }
             val includeMcp = session.config.includeMcp
             val agentLabel = "AI(${session.config.role})"
-            val (reply, newPrev) = openAI.agentTurn(
-                inputs = inputs,
-                previousId = session.previousId,
-                overrideInstructions = session.config.instructions,
-                overrideModel = session.config.model,
-                allowedToolClassFilter = filter,
-                includeMcp = includeMcp,
-                agentLabel = agentLabel,
-                allowedBuiltInNames = session.config.allowedBuiltInNames,
-                allowedMcpNames = session.config.allowedMcpNames,
-            )
+            val (reply, newPrev) =
+                openAI.agentTurn(
+                    inputs = inputs,
+                    previousId = session.previousId,
+                    overrideInstructions = session.config.instructions,
+                    overrideModel = session.config.model,
+                    allowedToolClassFilter = filter,
+                    includeMcp = includeMcp,
+                    agentLabel = agentLabel,
+                    allowedBuiltInNames = session.config.allowedBuiltInNames,
+                    allowedMcpNames = session.config.allowedMcpNames,
+                )
             session.previousId = newPrev
             QuantaAISettingsState.instance.state.agents.find { it.id == agentId }?.previousId = newPrev
             QDLog.info(logger) { "Agent[$agentId] reply length=${reply.length}" }
@@ -261,7 +287,10 @@ class AgentManagerService(private val project: Project) : Disposable {
 
     override fun dispose() {
         executors.values.forEach { e ->
-            try { e.shutdownNow() } catch (_: Throwable) {}
+            try {
+                e.shutdownNow()
+            } catch (_: Throwable) {
+            }
         }
         executors.clear()
     }

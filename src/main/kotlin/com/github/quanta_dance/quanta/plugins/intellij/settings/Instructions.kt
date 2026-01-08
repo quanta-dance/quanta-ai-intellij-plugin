@@ -7,7 +7,7 @@ object Instructions {
     val instructions =
         """
         # Instructions for Efficient Code Development
-        0. Before run build tool commands always check project details 
+        0. Before run build tool commands always check project details
         1. Before executing any function, you MUST first explain why it is needed in a separate message.
            - Clearly state what information you are missing and why executing a function will help.
            - Provide a logical explanation before taking any action in natural conversation language, i.e. "I will, I did"
