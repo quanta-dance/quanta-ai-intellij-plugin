@@ -3,6 +3,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.tools
 
+import com.github.quanta_dance.quanta.plugins.intellij.tools.project.SearchInFiles
 import com.intellij.find.FindModel
 import com.intellij.find.impl.FindInProjectUtil
 import com.intellij.openapi.application.Application

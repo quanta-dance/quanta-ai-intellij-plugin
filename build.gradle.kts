@@ -95,6 +95,7 @@ tasks {
         jvmArgs(
             "-Didea.is.internal=true",
             "-Didea.log.debug.categories=com.github.quanta_dance.quanta.plugins.intellij.*",
+            "-Djava.net.preferIPv4Stack=true"
         )
     }
 
@@ -145,7 +146,7 @@ dependencies {
 
     implementation("org.xerial:sqlite-jdbc:3.41.2.2")
 
-    implementation("com.openai:openai-java:4.8.0")
+    implementation("com.openai:openai-java:4.14.0")
     testRuntimeOnly("junit:junit:4.13.2")
 
     testImplementation("org.opentest4j:opentest4j:1.3.0")
@@ -194,5 +195,7 @@ spotless {
             rootProject.file("config/license/HEADER")
         )
         ktlint()
+        trimTrailingWhitespace()
+        endWithNewline()
     }
 }

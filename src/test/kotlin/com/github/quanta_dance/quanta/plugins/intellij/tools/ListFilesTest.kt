@@ -3,6 +3,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.tools
 
+import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.ListFiles
 import com.intellij.openapi.project.Project
 import org.mockito.Mockito
 import java.nio.file.Files

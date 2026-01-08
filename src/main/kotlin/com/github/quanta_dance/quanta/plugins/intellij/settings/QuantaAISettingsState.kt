@@ -22,6 +22,14 @@ class QuantaAISettingsState : PersistentStateComponent<QuantaAISettingsState.Qua
         const val DEFAULT_HOST = "https://api.openai.com/v1/"
     }
 
+    data class PersistedAgent(
+        var id: String = "",
+        var role: String = "",
+        var model: String? = null,
+        var instructions: String? = null,
+        var previousId: String? = null,
+    )
+
     // default configuration
     data class QuantaAIState(
         var host: String = DEFAULT_HOST,
@@ -33,8 +41,15 @@ class QuantaAISettingsState : PersistentStateComponent<QuantaAISettingsState.Qua
         var aiChatModel: String = ChatModel.GPT_5_NANO.toString(),
         // Dynamic model switching
         var dynamicModelEnabled: Boolean? = false,
+        // Agentic mode toggle (manager can spawn agents and use agent tools)
+        var agenticEnabled: Boolean? = true,
         // Optional: user-customizable extra system instructions appended to defaults
         var extraInstructions: String? = "",
+        // Persistence for main and agents conversations
+        var mainLastResponseId: String? = null,
+        var agents: MutableList<PersistedAgent> = mutableListOf(),
+        // Security: Terminal tool availability (default disabled)
+        var terminalToolEnabled: Boolean? = false,
     )
 
     private var state = QuantaAIState()

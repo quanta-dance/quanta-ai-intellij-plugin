@@ -8,12 +8,12 @@ import com.fasterxml.jackson.annotation.JsonPropertyDescription
 
 @JsonClassDescription("ReadFileContent operation result.")
 data class ReadFileResult(
-    @JsonPropertyDescription("File content format to understand how to parse it.")
+    @field:JsonPropertyDescription("File content format to understand how to parse it.")
     val format: String,
-    @JsonPropertyDescription("File content when operation was successful.")
+    @field:JsonPropertyDescription("File content when operation was successful.")
     val content: String,
-    @JsonPropertyDescription("Error message if operation was not successful.")
+    @field:JsonPropertyDescription("Error message if operation was not successful.")
     val error: String = "",
-    @JsonPropertyDescription("File Version")
-    val fileVersion: Long? = null,
+    @field:JsonPropertyDescription("SHA-256 of normalized file content (\r\n/\r -> \n). Useful for patch guards.")
+    val fileHashSha256: String? = null,
 )

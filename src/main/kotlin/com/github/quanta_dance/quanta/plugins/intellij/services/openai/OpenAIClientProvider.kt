@@ -10,19 +10,19 @@ import com.openai.client.okhttp.OpenAIOkHttpClient
 
 /**
  * Provider for obtaining OpenAIClient instances configured from the plugin state.
+ * Note: Current SDK version does not expose custom OkHttp injection; rely on default transport.
  */
 object OpenAIClientProvider {
     /**
      * Returns a new OpenAIClient instance configured with API key and base URL
      * derived from the current plugin settings.
-     *
-     * @param project current IntelliJ project (not directly used here, reserved for future per-project settings)
      */
     fun get(project: Project): OpenAIClient {
         val state = QuantaAISettingsState.instance.state
         return OpenAIOkHttpClient.builder()
             .apiKey(state.token)
             .baseUrl(state.host)
+            .maxRetries(2)
             .build()
     }
 }

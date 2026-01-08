@@ -4,84 +4,81 @@ This roadmap lists areas of improvement and future directions for the QuantaDanc
 
 Contributions welcome: If you want to pick up an item, please open/claim an issue. When you have a new idea, open an issue or PR to propose and discuss.
 
+## Recently Completed (Highlights)
+
+- Tooling and Safety
+  - Switched to SHA‑only guards for patching with per‑patch expectedText (no version/timestamp gating).
+  - PatchFile: bottom‑to‑top range application; optional reformatAfterUpdate and optimizeImportsAfterUpdate; overlap detection (rejectOverlappingPatches=true by default).
+  - CreateOrUpdateFile: supports patches; forwards SHA guard and PSI post‑processing flags to PatchFile.
+  - ReadFileContent: returns normalized SHA‑256 (fileHashSha256) and content; default maxChars lowered to 6k; caret‑aware windowing retained.
+  - ReadPsiBlockAtPosition: new tool to read enclosing PSI block (function/method/class/field/object) at a given position with structured metadata, caret‑aware, thread‑safe commits.
+  - GradleSyncTool: added schema properties and background refresh.
+
+- Agent/Manager UX
+  - New session triggers agent session reset (previousId cleared).
+  - On first turn, bootstrap includes sub‑agents list; startup UI noise removed.
+  - All tools are exposed by default (scoping tool removed from registry); Terminal remains disabled by default via setting.
+  - Per‑agent allow‑lists (built‑ins/MCP) so manager can assign tools to sub‑agents.
+
+- Serialization/Display
+  - ToolRouter wraps String results into structured objects ({"text": ...}) to avoid escape noise.
+
+- Instructions
+  - Updated to prefer patch‑in‑place with SHA guard + expectedText; optional PSI reformat/imports; removed version/timestamp guidance.
+
+- Tests
+  - PatchFile platform tests updated for SHA‑only guards; added commit/save after tool exec for consistent assertions.
+
 ## Near‑Term Improvements (Good First / Low Risk)
 
 - Logging & Debugging
-  - [x] Replace println/System.out with IntelliJ Logger/QDLog across modules.
-  - [x] Echo QDLog.info to console in internal mode (runIde) for easier dev.
-  - [x] Add runIde JVM args for internal mode and debug categories.
   - [ ] Add a “Verbose logging” toggle in plugin settings to surface debug logs without internal mode.
-  - [x] Document logger categories for Help > Diagnostic Tools > Debug Log Settings.
+  - [ ] Document typical failure patterns for patch guards (hash mismatch, expectedText mismatch, overlaps) and suggested recovery.
 
 - Audio/Voice Stability
-  - [x] Enforce single playback (Player.stop/one active thread) and wire VoiceService to stop previous playback/process.
-  - [x] AudioCapture: AtomicBoolean capture state; interrupt/join; stop/flush/close in finally; write only bytesRead; no copy in detector; detailed KDoc.
   - [ ] Make thresholds/durations configurable via plugin settings.
   - [ ] Optional RMS detection (instead of avg abs amplitude) toggle.
   - [ ] Cap maximum phrase duration to avoid unbounded buffers on noisy inputs.
 
 - Tooling UX
-  - [x] Maintain single ToolingMessage per long task (e.g., Gradle tests) with streaming progress and elapsed counters.
-  - [x] Spinner card without duplicate “(spinner)” text; progress debounced.
-  - [x] Add startToolingMessage handle to update one card in place.
-  - [x] OpenFileInEditorTool implemented (caret + optional selection support).
-  - [ ] PatchFile: decide fate—register with guardrails (validate patches) or remove.
+  - [ ] Add a ReadFileHeadTail tool (head N / tail N) for very large files.
+  - [ ] Optional “reject overlapping patches” preflight command to preview conflicts without applying.
 
 - Validation Flow
-  - [x] ValidateClassFileTool.findErrors() exposed for programmatic use; execute() for single Tool Window message.
-  - [x] CreateOrUpdateFile calls findErrors() and avoids duplicate ToolWindow messages.
-
-- Testing Basics
-  - [ ] Unit tests for VersionUtil and CurrentFileContextProvider.
-  - [ ] Unit tests for ReadFileContent version logic.
-  - [ ] Tests for Player/VoiceService interaction (stop interrupts previous playback).
-  - [ ] CI to run tests on PRs (e.g., GitHub Actions).
+  - [ ] Add tests for ReadPsiBlockAtPosition, including caret/line/column coverage and fallback window behavior.
+  - [ ] Improve validation summaries (diff‑like snippets around errors).
 
 ## Core Enhancements
 
-- Direct Audio to Responses (model/SDK upgrade)
-  - [x] Add sendAudioMessage(wavBytes) scaffolding with safe fallback to transcript()+sendMessage.
-  - [ ] Upgrade com.openai:openai-java to a version that supports audio content (input_audio) for multimodal models (e.g., gpt‑4.1/gpt‑5 family).
-  - [ ] Implement real input_audio builders (remove fallback) once SDK/API supports it.
-  - [ ] Settings: user can choose “Send audio directly” vs “Transcribe then text”.
+- PSI‑powered edits
+  - [ ] Add PSI element‑level tools (insert/replace method/class/property) using Psi/Kt factories with formatting/imports.
+  - [ ] Safe delete (PSI) with preview (RefactoringFactory.createSafeDelete); fall back to VFS only when necessary.
+  - [ ] Move/Copy via refactoring processors (MoveFilesOrDirectoriesProcessor, RefactoringFactory.copy) with reference updates.
 
-- Realtime API Path (optional voice streaming)
-  - [ ] Add a Realtime client (WebSocket) to stream mic audio and receive partial tokens/audio.
-  - [ ] Seed session with instructions + recent context; append final replies back into stored conversation.
-  - [ ] Provide cancellation/barge‑in controls in UI.
-
-- Tool Window & Interaction
-  - [ ] Rich “Current file context” card (path + caret/selection + version) with open/navigate actions.
-  - [x] Unified job cards with progress heartbeat and a recent lines buffer for Gradle tests.
-  - [ ] Add pause/cancel to long-running jobs where feasible.
-
-- Embeddings & Indexing
-  - [ ] Improve chunking (sliding window + semantic boundaries), byte-size guard, and max chunk count.
-  - [ ] Track per-file embedding freshness; background re-index on save/idle; “Re-index project” command with progress.
+- Realtime/Multimodal (pending SDK support)
+  - [ ] Upgrade com.openai:openai‑java to versions supporting input_audio for multimodal turns when available.
+  - [ ] Realtime client path; streaming mic and partial tokens.
 
 - Search & Navigation
-  - [ ] Enhance SearchInFiles: case sensitivity toggle, literal mode, filename-only search, better grouping/previews.
-  - [ ] Add ReadFileHeadTail tool (head N / tail N) for large files.
+  - [ ] Enhance SearchInFiles: case sensitivity toggle, literal mode, filename‑only search, better grouping/previews.
 
-- Developer Tools
-  - [ ] RenameFileTool: atomic rename with validations.
-  - [ ] MoveFileOrDirectoryTool: safe move within project (directory trees included).
-  - [ ] CreateDirectoryTool: nested dir creation with clear errors.
-  - [ ] RunGradleTasksTool: generic Gradle runner reusing the single-message streaming UI.
+- Embeddings & Indexing
+  - [ ] Improve chunking (sliding window + semantic boundaries), byte‑size guard, and max chunk count.
+  - [ ] Track per‑file embedding freshness; background re‑index on save/idle; “Re‑index project” command with progress.
 
 - Settings & Preferences
   - [ ] Expose audio thresholds/durations and capture buffer size in settings.
-  - [ ] Add verbosity toggles and controls for tool behaviors (e.g., auto-open updated files).
+  - [ ] Add verbosity toggles and controls for tool behaviors (e.g., auto‑open updated files, default patch formatting/imports flags, overlap rejection).
 
 ## Longer‑Term Directions
 
 - Multimodal Enhancements
-  - [ ] Full multimodal turns in Responses: input_text + input_image + (when available) input_audio in one message.
+  - [ ] Full multimodal turns: input_text + input_image + (when available) input_audio in one message.
   - [ ] Output audio (when supported) for short synthesized replies.
 
 - Realtime UX
   - [ ] Adaptive latency tuning, chunk sizing, and better interruption handling.
-  - [ ] Unified voice+text conversation transcript with timestamps in the Tool Window.
+  - [ ] Unified voice+text transcript with timestamps in the Tool Window.
 
 - AI‑Assisted Refactor/Review
   - [ ] “Propose & apply” diffs: show diffs for user review and apply accepted changes in one write action.
@@ -102,16 +99,13 @@ Contributions welcome: If you want to pick up an item, please open/claim an issu
   - [x] Use com.intellij.openapi.diagnostic.Logger via QDLog.
   - [x] In internal mode (runIde), QDLog.info echoes to console; otherwise, logs go to idea.log.
 
-- Versioning & File Context
-  - [x] Prefer VersionUtil.computeVersion (PSI > Document > VFS) and avoid timeStamp fallback.
-  - [x] Use CurrentFileContextProvider for canonical current file path/version/caret/selection.
+- File guards & Patching
+  - [x] Single precondition: expectedFileHashSha256 (normalized SHA‑256) from ReadFileContent.
+  - [x] Per‑patch expectedText guards; bottom‑to‑top application; stopOnMismatch recommended for atomicity.
+  - [x] Overlap detection (rejectOverlappingPatches=true by default) to avoid ambiguous edits.
 
-- Validation
-  - [x] Use findErrors() (no UI) vs execute() (single Tool Window message) appropriately; avoid duplicates.
-
-- Audio
-  - [x] Capture: 16 kHz mono PCM, amplitude-based detection, minimum speech/pause durations.
-  - [x] Playback: Player enforces one active playback; VoiceService stops current before new.
+- Threading
+  - [x] Respect IntelliJ read/write action rules; commit documents safely (WriteIntentReadAction when required).
 
 ## How to Contribute
 

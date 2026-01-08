@@ -3,11 +3,30 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.listeners
 
-import com.intellij.openapi.application.ApplicationActivationListener
-import com.intellij.openapi.wm.IdeFrame
+import com.github.quanta_dance.quanta.plugins.intellij.mcp.McpClientService
+import com.github.quanta_dance.quanta.plugins.intellij.services.OpenAIPrewarmService
+import com.github.quanta_dance.quanta.plugins.intellij.services.OpenAIService
+import com.intellij.openapi.components.service
+import com.intellij.openapi.project.Project
+import com.intellij.openapi.startup.ProjectActivity
 
-internal class QuantaAIApplicationActivationListener : ApplicationActivationListener {
-    override fun applicationActivated(ideFrame: IdeFrame) {
-        // thisLogger().warn("Don't forget to remove all non-needed sample code files with their corresponding registration entries in `plugin.xml`.")
+class QuantaAIApplicationActivationListener : ProjectActivity {
+    override suspend fun execute(project: Project) {
+        // Prewarm OpenAI client and DNS on project open to reduce first-turn latency
+        project.service<OpenAIPrewarmService>().prewarm()
+
+        // Start a new AI session on project open to avoid stale threads and keep manager/sub-agents in sync
+        try {
+            project.service<OpenAIService>().newSession()
+        } catch (_: Throwable) {
+        }
+
+        // Ensure MCP services are initialized; discovery continues in background
+        try {
+            project.service<McpClientService>()
+        } catch (_: Throwable) {
+        }
+        // Note: intentionally no Tool Window messages here to avoid startup noise.
+        // Manager receives bootstrap context on its first turn.
     }
 }

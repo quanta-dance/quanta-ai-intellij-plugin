@@ -17,6 +17,7 @@ import com.intellij.ui.components.JBPasswordField
 import com.intellij.ui.components.JBTextArea
 import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.FormBuilder
+import com.openai.models.AllModels
 import com.openai.models.ChatModel
 import java.awt.Color
 import java.awt.Cursor
@@ -49,26 +50,39 @@ class QuantaAISettingsComponent {
 
     private var maxOutputTokensField = JBTextField("Max output tokens")
 
-    private var models =
+    private var models: Array<String> =
         arrayOf(
-            ChatModel.GPT_5_1_CODEX,
-            ChatModel.GPT_5_1,
-            ChatModel.GPT_5,
-            ChatModel.GPT_5_MINI,
-            ChatModel.GPT_5_NANO,
-        ).map { i -> i.toString() }.toTypedArray()
+            // ChatModel.GPT_5_2_PRO.toString(),
+            ChatModel.GPT_5_2.toString(),
+            AllModels.ResponsesOnlyModel.GPT_5_1_CODEX_MAX.toString(),
+            ChatModel.GPT_5_1_CODEX.toString(),
+            ChatModel.GPT_5_1.toString(),
+            ChatModel.GPT_5.toString(),
+            ChatModel.GPT_5_MINI.toString(),
+            ChatModel.GPT_5_NANO.toString(),
+        )
 
     private var aiChatModelField = ComboBox(models)
 
-    // Dynamic model controls
     private var dynamicModelEnabledField =
         JBCheckBox("Enable dynamic model switching").apply {
             toolTipText = "Allow the assistant to switch model tier within the configured cap."
         }
 
+    // Agentic mode toggle
+    private var agenticEnabledField =
+        JBCheckBox("Enable agentic mode").apply {
+            toolTipText = "Allow the manager to create role-based sub-agents and use agent tools."
+        }
+
+    // Terminal tool toggle (dangerous)
+    private var terminalToolEnabledField =
+        JBCheckBox("Enable Terminal tool (dangerous)").apply {
+            toolTipText = "Allows the assistant to run shell commands. Disabled by default."
+        }
+
     private var customPromptField = JBTextField()
 
-    // New: Custom Instructions (multiline)
     private var extraInstructionsArea =
         JBTextArea(8, 60).apply {
             lineWrap = true
@@ -77,7 +91,6 @@ class QuantaAISettingsComponent {
         }
     private var extraInstructionsScroll = JScrollPane(extraInstructionsArea)
 
-    // New: Edit MCP servers.json button
     private val editMcpButton =
         JButton("Edit MCP Servers…").apply {
             toolTipText = "Open or create .quantadance/mcp-servers.json in the current project"
@@ -130,7 +143,7 @@ class QuantaAISettingsComponent {
                 "https://platform.openai.com/docs/pricing</a></html>",
         ).apply {
             cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-            foreground = Color(42, 122, 255) // IntelliJ blue
+            foreground = Color(42, 122, 255)
             addMouseListener(
                 object : MouseAdapter() {
                     override fun mouseClicked(e: MouseEvent?) {
@@ -152,6 +165,8 @@ class QuantaAISettingsComponent {
             .addSeparator()
             .addLabeledComponent(JBLabel("AI chat model: "), aiChatModelField, 1, false)
             .addComponent(dynamicModelEnabledField)
+            .addComponent(agenticEnabledField)
+            .addComponent(terminalToolEnabledField)
             .addSeparator()
             .addLabeledComponent(JBLabel("Custom prompt: "), customPromptField, 1, false)
             .addLabeledComponent(JBLabel("Custom instructions: "), extraInstructionsScroll, 1, false)
@@ -213,10 +228,21 @@ class QuantaAISettingsComponent {
             maxOutputTokensField.text = value.toString()
         }
 
-    // Dynamic model settings bindings (only enabled flag kept)
     var dynamicModelEnabled: Boolean
         get() = dynamicModelEnabledField.isSelected
         set(value) {
             dynamicModelEnabledField.isSelected = value
+        }
+
+    var agenticEnabled: Boolean
+        get() = agenticEnabledField.isSelected
+        set(value) {
+            agenticEnabledField.isSelected = value
+        }
+
+    var terminalToolEnabled: Boolean
+        get() = terminalToolEnabledField.isSelected
+        set(value) {
+            terminalToolEnabledField.isSelected = value
         }
 }
