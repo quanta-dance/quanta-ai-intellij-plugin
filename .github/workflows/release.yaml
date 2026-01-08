@@ -47,7 +47,7 @@ jobs:
         run: ./gradlew buildPlugin --no-daemon
 
       - name: Run IntelliJ Plugin Verifier
-        run: ./gradlew runPluginVerifier --no-daemon
+        run: ./gradlew verifyPlugin --no-daemon
 
       - name: Locate plugin artifact
         id: plugin_zip
