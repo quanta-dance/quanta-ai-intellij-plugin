@@ -6,7 +6,12 @@ package com.github.quanta_dance.quanta.plugins.intellij.services
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.quanta_dance.quanta.plugins.intellij.models.OpenAIResponse
 import com.github.quanta_dance.quanta.plugins.intellij.project.CurrentFileContextProvider
-import com.github.quanta_dance.quanta.plugins.intellij.services.openai.*
+import com.github.quanta_dance.quanta.plugins.intellij.services.openai.DefaultToolInvoker
+import com.github.quanta_dance.quanta.plugins.intellij.services.openai.ModelSelector
+import com.github.quanta_dance.quanta.plugins.intellij.services.openai.OpenAIClientProvider
+import com.github.quanta_dance.quanta.plugins.intellij.services.openai.ResponseBuilder
+import com.github.quanta_dance.quanta.plugins.intellij.services.openai.ToolInvoker
+import com.github.quanta_dance.quanta.plugins.intellij.services.openai.ToolRouter
 import com.github.quanta_dance.quanta.plugins.intellij.services.ui.DelayedSpinner
 import com.github.quanta_dance.quanta.plugins.intellij.services.ui.Notifications
 import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsListener
@@ -25,7 +30,8 @@ import com.openai.models.responses.ResponseInputItem
 import com.openai.models.responses.StructuredResponse
 import java.beans.PropertyChangeListener
 import java.beans.PropertyChangeSupport
-import java.util.*
+import java.util.Collections
+import java.util.UUID
 import java.util.concurrent.Future
 
 @Service(Service.Level.PROJECT)
