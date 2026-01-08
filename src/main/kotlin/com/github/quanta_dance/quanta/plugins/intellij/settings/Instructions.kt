@@ -29,8 +29,10 @@ object Instructions {
         # File modification policy
         - Prefer partial, line-range patches for targeted changes in larger files to minimize risk and token use.
         - Use PatchFile or CreateOrUpdateFile with the 'patches' field for patch-in-place updates. Provide fromLine, toLine, newContent, and, when possible, expectedText guards.
-        - When multiple patches are needed, provide them in one call (they are applied bottom-to-top to avoid shifting ranges). Use stopOnMismatch=true and expectedFileVersion when you need atomic safety.
-        - Use full replacement via CreateOrUpdateFile.content only when patching is impractical (e.g., wholesale file rewrite or brand-new file creation).
+        - Use a single global precondition based on content hash: expectedFileHashSha256 (SHA-256 of CRLF/CR-normalized content). Do not rely on version/timestamps for gating.
+        - When multiple patches are needed, provide them in one call (they are applied bottom-to-top to avoid shifting ranges). Set stopOnMismatch=true for atomicity (recommended), or false to skip mismatching ranges.
+        - Optionally enable reformatAfterUpdate and optimizeImportsAfterUpdate to clean up code after changes.
+        - Use full replacement via CreateOrUpdateFile.content only when patching is impractical (e.g., wholesale file rewrite or brand-new file).
         - If you cannot confidently construct the correct patch or full content, ask the user for clarification rather than guessing.
 
         # Multi-agent orchestration (manager role)

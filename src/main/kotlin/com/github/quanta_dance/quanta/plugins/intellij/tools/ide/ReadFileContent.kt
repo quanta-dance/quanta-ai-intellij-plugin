@@ -6,7 +6,6 @@ package com.github.quanta_dance.quanta.plugins.intellij.tools.ide
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.project.CurrentFileContextProvider
-import com.github.quanta_dance.quanta.plugins.intellij.project.VersionUtil
 import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
@@ -19,6 +18,7 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.isFile
+import java.security.MessageDigest
 
 @JsonClassDescription(
     "Read the content of requested file. Supports optional truncation and windowed reading around caret/selection for the current file.",
@@ -83,6 +83,13 @@ class ReadFileContent : ToolInterface<ReadFileResult> {
         val start0 = lines.size - count; return Pair(stack.joinToString("\n"), start0.coerceAtLeast(0))
     }
 
+    private fun sha256Normalized(raw: String): String {
+        val norm = raw.replace("\r\n", "\n").replace("\r", "\n")
+        val md = MessageDigest.getInstance("SHA-256")
+        val bytes = md.digest(norm.toByteArray())
+        return bytes.joinToString("") { b -> "%02x".format(b) }
+    }
+
     override fun execute(project: Project): ReadFileResult {
         val basePath = project.basePath ?: return ReadFileResult("", "", "Project base path not found.")
         val resolved = try { PathUtils.resolveWithinProject(basePath, filePath) } catch (e: IllegalArgumentException) {
@@ -97,10 +104,6 @@ class ReadFileContent : ToolInterface<ReadFileResult> {
             if (!virtualFile.isFile) return@runReadAction ReadFileResult("", "", "It is not a file")
 
             val doc = FileDocumentManager.getInstance().getDocument(virtualFile)
-            val docStamp = doc?.modificationStamp ?: 0L
-            val vfsStamp = VersionUtil.safeVfsStamp(virtualFile)
-            val version = VersionUtil.computeVersion(0L, docStamp, vfsStamp)
-
             val rawContent = try { doc?.text ?: VfsUtilCore.loadText(virtualFile) } catch (t: Throwable) {
                 return@runReadAction ReadFileResult("", "", "Unable to read file: ${t.message}")
             }
@@ -135,9 +138,10 @@ class ReadFileContent : ToolInterface<ReadFileResult> {
             }
 
             val (format, content) = if (includeLineNumbers) "00001 line_content" to withLineNumbers(finalContent, firstLineNumber) else "plain" to finalContent
-            if (truncated) addMsg(project, "Read file content - truncated", "strategy=$strategy maxChars=$maxChars windowRadiusLines=$windowRadiusLines current=$isCurrentTarget startLine=$firstLineNumber") else addMsg(project, "Read file content - success", "version=$version lineNumbers=$includeLineNumbers")
-            QDLog.debug(logger) { "Read file content: $relToBase, file version: $version, lineNumbers=$includeLineNumbers, truncated=$truncated, startLine=$firstLineNumber" }
-            ReadFileResult(format, content, "", version)
+            val hash = sha256Normalized(rawContent)
+            if (truncated) addMsg(project, "Read file content - truncated", "strategy=$strategy maxChars=$maxChars windowRadiusLines=$windowRadiusLines current=$isCurrentTarget startLine=$firstLineNumber") else addMsg(project, "Read file content - success", "lineNumbers=$includeLineNumbers")
+            QDLog.debug(logger) { "Read file content: $relToBase, lineNumbers=$includeLineNumbers, truncated=$truncated, startLine=$firstLineNumber" }
+            ReadFileResult(format, content, "", hash)
         }
     }
 }

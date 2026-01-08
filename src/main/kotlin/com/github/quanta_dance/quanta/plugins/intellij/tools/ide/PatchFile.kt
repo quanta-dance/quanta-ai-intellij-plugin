@@ -25,6 +25,7 @@ import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiManager
 import com.intellij.psi.codeStyle.CodeStyleManager
+import java.security.MessageDigest
 
 @JsonClassDescription(
     "Apply one or more line-range patches to a specified file. Patches are applied in a single write action, " +
@@ -61,11 +62,19 @@ class PatchFile : ToolInterface<String> {
     )
     var stopOnMismatch: Boolean = true
 
+    @Deprecated("Use expectedFileHashSha256 for content-stable preconditions.")
     @field:JsonPropertyDescription(
-        "Optional expected file version (PSI/Document/VFS) before patching. " +
-            "If present and does not match, no changes are applied.",
+        "Deprecated: expected file version before patching. Use expectedFileHashSha256 instead.",
     )
     var expectedFileVersion: Long? = null
+
+    @field:JsonPropertyDescription(
+        "Optional expected SHA-256 hash of normalized file content (\\r\\n/\\r -> \\n). If provided and matches current, patches can proceed.",
+    )
+    var expectedFileHashSha256: String? = null
+
+    @field:JsonPropertyDescription("If true, proceed when all patches' expectedText guards match even if content hash mismatches. Default: true")
+    var allowProceedIfGuardsMatch: Boolean = true
 
     // PSI post-processing
     @field:JsonPropertyDescription("If true, reformat the PSI file after update.")
@@ -81,6 +90,12 @@ class PatchFile : ToolInterface<String> {
     private fun normalizeForCompare(text: String): String {
         val lf = text.replace("\r\n", "\n").replace("\r", "\n")
         return if (lf.endsWith("\n")) lf.dropLast(1) else lf
+    }
+
+    private fun sha256Normalized(text: String): String {
+        val norm = text.replace("\r\n", "\n").replace("\r", "\n")
+        val md = MessageDigest.getInstance("SHA-256")
+        return md.digest(norm.toByteArray()).joinToString("") { b -> "%02x".format(b) }
     }
 
     override fun execute(project: Project): String {
@@ -118,19 +133,19 @@ class PatchFile : ToolInterface<String> {
                     result.append("Document not found; cannot apply line-range patches.")
                     project.service<ToolWindowService>().addToolingMessage("Patch File - failed", "$relToBase (no document)")
                 } else {
-                    val psiFile = PsiManager.getInstance(project).findFile(vFile)
-                    val psiStamp = psiFile?.modificationStamp ?: 0L
-                    val docStamp = docManager.getDocument(vFile)?.modificationStamp ?: 0L
-                    val vfsStamp = try { vFile.modificationStamp } catch (_: Throwable) { 0L }
-                    val currentVersion = VersionUtil.computeVersion(psiStamp, docStamp, vfsStamp)
-                    if (expectedFileVersion != null && expectedFileVersion!! != currentVersion) {
-                        result.append("Version mismatch: expected=").append(expectedFileVersion).append(", actual=").append(currentVersion).append(". No changes applied.")
+                    // Global precondition via content hash if provided
+                    val curHash = sha256Normalized(document.text)
+                    val hashProvided = expectedFileHashSha256 != null
+                    val hashMatched = !hashProvided || expectedFileHashSha256 == curHash
+
+                    if (hashProvided && !hashMatched && !allowProceedIfGuardsMatch) {
+                        result.append("Content hash mismatch. No changes applied.")
                         return@runWriteCommandAction
                     }
 
                     val sorted = patchList.sortedWith(compareByDescending<Patch> { it.fromLine }.thenByDescending { it.toLine })
 
-                    if (stopOnMismatch) {
+                    if (stopOnMismatch || (hashProvided && !hashMatched && allowProceedIfGuardsMatch)) {
                         val mismatches = mutableListOf<String>()
                         for ((index, p) in sorted.withIndex()) {
                             val startLine = (p.fromLine - 1).coerceAtLeast(0)
@@ -148,9 +163,13 @@ class PatchFile : ToolInterface<String> {
                                 if (exp != cur) mismatches.add("Patch ${index + 1}: expectedText mismatch at lines ${p.fromLine}-${p.toLine}")
                             }
                         }
-                        if (mismatches.isNotEmpty()) {
+                        if (mismatches.isNotEmpty() && stopOnMismatch) {
                             result.append("Patched 0 range(s) in ").append(relToBase).append(" with ").append(mismatches.size).append(" mismatch(es). Aborted due to stopOnMismatch=true. ")
                                 .append("Details: \n").append(mismatches.joinToString("\n"))
+                            return@runWriteCommandAction
+                        }
+                        if (mismatches.isNotEmpty() && hashProvided && !hashMatched && allowProceedIfGuardsMatch) {
+                            result.append("Patched 0 range(s) in ").append(relToBase).append(" because guards mismatched under content hash mismatch. Details: \n").append(mismatches.joinToString("\n"))
                             return@runWriteCommandAction
                         }
                     }
@@ -172,7 +191,7 @@ class PatchFile : ToolInterface<String> {
                             val cur = normalizeForCompare(currentSlice)
                             if (exp != cur) {
                                 mismatches.add("Patch ${index + 1}: expectedText mismatch at lines ${p.fromLine}-${p.toLine}")
-                                continue
+                                if (stopOnMismatch) continue else { applied += 0; continue }
                             }
                         }
                         document.replaceString(startOffset, endOffset, p.newContent)
@@ -182,7 +201,6 @@ class PatchFile : ToolInterface<String> {
                     try { PsiDocumentManager.getInstance(project).commitDocument(document) } catch (_: Throwable) {}
                     docManager.saveDocument(document)
 
-                    // PSI post-processing
                     if (reformatAfterUpdate || optimizeImportsAfterUpdate) {
                         try {
                             val psi = PsiManager.getInstance(project).findFile(vFile)

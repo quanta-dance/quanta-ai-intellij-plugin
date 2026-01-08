@@ -14,6 +14,6 @@ data class ReadFileResult(
     val content: String,
     @field:JsonPropertyDescription("Error message if operation was not successful.")
     val error: String = "",
-    @field:JsonPropertyDescription("File Version")
-    val fileVersion: Long? = null,
+    @field:JsonPropertyDescription("SHA-256 of normalized file content (\r\n/\r -> \n). Useful for patch guards.")
+    val fileHashSha256: String? = null,
 )
