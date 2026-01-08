@@ -135,8 +135,8 @@ dependencies {
     implementation("net.java.dev.jna:jna-platform:5.13.0")
 
     // MCP SDK (use its BOM to keep modules aligned)
-    implementation(platform("io.modelcontextprotocol.sdk:mcp-bom:0.17.0"))
-    implementation("io.modelcontextprotocol:kotlin-sdk:0.8.1")
+    implementation(platform("io.modelcontextprotocol.sdk:mcp-bom:0.14.0"))
+    implementation("io.modelcontextprotocol:kotlin-sdk:0.7.2")
 
     // Ktor: manage versions via BOM (3.x)
     implementation(platform("io.ktor:ktor-bom:3.3.0"))
