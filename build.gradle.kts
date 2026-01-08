@@ -135,8 +135,8 @@ dependencies {
     implementation("net.java.dev.jna:jna-platform:5.13.0")
 
     // MCP SDK (use its BOM to keep modules aligned)
-    implementation(platform("io.modelcontextprotocol.sdk:mcp-bom:0.14.0"))
-    implementation("io.modelcontextprotocol:kotlin-sdk:0.7.2")
+    implementation(platform("io.modelcontextprotocol.sdk:mcp-bom:0.17.0"))
+    implementation("io.modelcontextprotocol:kotlin-sdk:0.8.1")
 
     // Ktor: manage versions via BOM (3.x)
     implementation(platform("io.ktor:ktor-bom:3.3.0"))
@@ -146,7 +146,7 @@ dependencies {
 
     implementation("org.xerial:sqlite-jdbc:3.41.2.2")
 
-    implementation("com.openai:openai-java:4.13.0")
+    implementation("com.openai:openai-java:4.14.0")
     testRuntimeOnly("junit:junit:4.13.2")
 
     testImplementation("org.opentest4j:opentest4j:1.3.0")

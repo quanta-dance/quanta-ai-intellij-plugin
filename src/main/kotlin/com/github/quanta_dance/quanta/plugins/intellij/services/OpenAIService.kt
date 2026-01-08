@@ -219,7 +219,9 @@ class OpenAIService(private val project: Project) : Disposable {
                     }
                 }
             }
-            if (pendingToolOutputs.isNotEmpty()) { inputs.addAll(pendingToolOutputs); reprocess = true }
+            val hasPending = pendingToolOutputs.isNotEmpty()
+            if (hasPending) inputs.addAll(pendingToolOutputs)
+            if (hasPending) reprocess = true
         }
         return aggregated.toString().trim() to localPrevId
     }
@@ -321,7 +323,9 @@ class OpenAIService(private val project: Project) : Disposable {
                         }
                     }
 
-                    if (pendingToolOutputs.isNotEmpty()) { requestInputs.addAll(pendingToolOutputs); reprocess = true }
+                    val hasPending = pendingToolOutputs.isNotEmpty()
+                    if (hasPending) requestInputs.addAll(pendingToolOutputs)
+                    if (hasPending) reprocess = true
                 } catch (e: InterruptedException) {
                     aborted = true
                     delayedSpinner.stopError("Cancelled after interruption")
