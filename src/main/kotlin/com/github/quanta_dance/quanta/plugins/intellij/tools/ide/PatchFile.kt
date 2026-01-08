@@ -76,6 +76,10 @@ class PatchFile : ToolInterface<String> {
     @field:JsonPropertyDescription("If true, proceed when all patches' expectedText guards match even if content hash mismatches. Default: true")
     var allowProceedIfGuardsMatch: Boolean = true
 
+    // Overlap guard
+    @field:JsonPropertyDescription("If true (default), abort when any two patches overlap in line range. Helps avoid ambiguous edits.")
+    var rejectOverlappingPatches: Boolean = true
+
     // PSI post-processing
     @field:JsonPropertyDescription("If true, reformat the PSI file after update.")
     var reformatAfterUpdate: Boolean = false
@@ -96,6 +100,26 @@ class PatchFile : ToolInterface<String> {
         val norm = text.replace("\r\n", "\n").replace("\r", "\n")
         val md = MessageDigest.getInstance("SHA-256")
         return md.digest(norm.toByteArray()).joinToString("") { b -> "%02x".format(b) }
+    }
+
+    private data class Range(val from: Int, val to: Int, val index: Int)
+
+    private fun findOverlaps(ranges: List<Range>): List<Pair<Range, Range>> {
+        if (ranges.size < 2) return emptyList()
+        val sorted = ranges.sortedWith(compareBy<Range> { it.from }.thenBy { it.to })
+        val overlaps = mutableListOf<Pair<Range, Range>>()
+        var prev: Range? = null
+        for (r in sorted) {
+            val p = prev
+            if (p != null) {
+                // Overlap if r.from <= p.to (inclusive ranges)
+                if (r.from <= p.to) overlaps.add(p to r)
+                if (r.to > (p.to)) prev = if (r.to >= p.to) r else p else prev = r
+            } else {
+                prev = r
+            }
+        }
+        return overlaps
     }
 
     override fun execute(project: Project): String {
@@ -141,6 +165,17 @@ class PatchFile : ToolInterface<String> {
                     if (hashProvided && !hashMatched && !allowProceedIfGuardsMatch) {
                         result.append("Content hash mismatch. No changes applied.")
                         return@runWriteCommandAction
+                    }
+
+                    // Overlap detection
+                    if (rejectOverlappingPatches) {
+                        val ranges = patchList.mapIndexed { idx, p -> Range(p.fromLine, p.toLine, idx + 1) }
+                        val overlaps = findOverlaps(ranges)
+                        if (overlaps.isNotEmpty()) {
+                            val details = overlaps.joinToString("\n") { (a, b) -> "Patch ${a.index} (${a.from}-${a.to}) overlaps with Patch ${b.index} (${b.from}-${b.to})" }
+                            result.append("Patched 0 range(s) in ").append(relToBase).append(" due to overlapping patch ranges. Details: \n").append(details)
+                            return@runWriteCommandAction
+                        }
                     }
 
                     val sorted = patchList.sortedWith(compareByDescending<Patch> { it.fromLine }.thenByDescending { it.toLine })
@@ -191,7 +226,7 @@ class PatchFile : ToolInterface<String> {
                             val cur = normalizeForCompare(currentSlice)
                             if (exp != cur) {
                                 mismatches.add("Patch ${index + 1}: expectedText mismatch at lines ${p.fromLine}-${p.toLine}")
-                                if (stopOnMismatch) continue else { applied += 0; continue }
+                                if (stopOnMismatch) continue else { continue }
                             }
                         }
                         document.replaceString(startOffset, endOffset, p.newContent)
