@@ -41,9 +41,18 @@
     <p>For documentation and support, visit <a href="https://github.com/quanta-dance">https://github.com/quanta-dance/quanta-ai-intellij-plugin</a>.</p>
   ]]></description>
 
-    <change-notes>
-        Fix model selection for gpt-5.1 and gpt-5.1-codex
-    </change-notes>
+    <change-notes><![CDATA[
+      <ul>
+        <li>Switched patch guards to SHA‑only (normalized) with per‑patch expectedText; removed version/timestamp gating.</li>
+        <li>PatchFile: bottom‑to‑top application; overlap detection (default on); optional reformat/optimize imports after updates.</li>
+        <li>CreateOrUpdateFile: supports patches with SHA guard and PSI post‑processing flags.</li>
+        <li>ReadFileContent: returns normalized SHA‑256 (fileHashSha256) and content; default maxChars lowered to 6k.</li>
+        <li>New tool ReadPsiBlockAtPosition: returns enclosing function/method/class/field/object at a position with structured metadata.</li>
+        <li>Agent/session: new session resets agent context; startup noise removed; all tools exposed by default (Terminal gated by setting).</li>
+        <li>Per‑agent tool allow‑lists for finer control; string tool outputs wrapped for cleaner logs.</li>
+        <li>GradleSyncTool: background sync and proper schema properties.</li>
+      </ul>
+    ]]></change-notes>
 
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.vcs</depends>
