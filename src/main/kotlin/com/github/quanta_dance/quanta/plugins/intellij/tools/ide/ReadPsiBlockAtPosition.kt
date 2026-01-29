@@ -25,7 +25,7 @@ import java.io.File
 
 @JsonClassDescription(
     "Read the enclosing PSI block (function/method/class/field/object) " +
-            "at a position in a file and return structured metadata and text.",
+        "at a position in a file and return structured metadata and text.",
 )
 class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
     @field:JsonPropertyDescription("Relative to the project root path. If omitted, uses current editor file.")
@@ -238,12 +238,12 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
             "class" -> (ktClass?.let { parentOfType(it) } ?: psiClass?.let { parentOfType(it) })?.let { it to "class" } ?: firstMatchAuto()
             "field" ->
                 (
-                        ktProperty?.let {
-                            parentOfType(
-                                it,
-                            )
-                        } ?: psiField?.let { parentOfType(it) }
-                        )?.let { it to "field" } ?: firstMatchAuto()
+                    ktProperty?.let {
+                        parentOfType(
+                            it,
+                        )
+                    } ?: psiField?.let { parentOfType(it) }
+                )?.let { it to "field" } ?: firstMatchAuto()
 
             "object" -> ktObject?.let { parentOfType(it) }?.let { it to "object" } ?: firstMatchAuto()
             else -> firstMatchAuto()
@@ -254,7 +254,7 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
         try {
             @Suppress("UNCHECKED_CAST")
             Class.forName(name)
-                    as Class<out PsiElement>
+                as Class<out PsiElement>
         } catch (_: Throwable) {
             null
         }

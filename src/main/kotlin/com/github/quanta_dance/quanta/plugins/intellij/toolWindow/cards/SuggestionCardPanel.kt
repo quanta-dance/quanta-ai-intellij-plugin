@@ -4,6 +4,7 @@
 package com.github.quanta_dance.quanta.plugins.intellij.toolWindow.cards
 
 import com.github.quanta_dance.quanta.plugins.intellij.models.Suggestion
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.editor.Editor
@@ -20,6 +21,7 @@ import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
+import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.io.FileUtilRt
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
@@ -59,6 +61,7 @@ class SuggestionCardPanel(
     private var actionsPanel: JBPanel<Nothing>? = null
     private var centerPanel: JBPanel<Nothing>? = null
     private var docListener: DocumentListener? = null
+    private var docListenerDisposable: Disposable? = null
 
     init {
         initializeUI()
@@ -66,6 +69,9 @@ class SuggestionCardPanel(
 
     override fun addNotify() {
         super.addNotify()
+        if (docListenerDisposable == null) {
+            docListenerDisposable = Disposer.newDisposable("SuggestionCardPanel.docListener")
+        }
         ProjectManager.getInstance().openProjects.firstOrNull()?.let { attachDocumentListener(it) }
     }
 
@@ -87,7 +93,14 @@ class SuggestionCardPanel(
                     }
                 }
             }
-        doc.addDocumentListener(docListener!!)
+        val disposable = docListenerDisposable
+        if (disposable != null) {
+            doc.addDocumentListener(docListener!!, disposable)
+        } else {
+            // Fallback (should not happen): keep old behavior
+            @Suppress("DEPRECATION")
+            doc.addDocumentListener(docListener!!)
+        }
     }
 
     private fun detachDocumentListener() {
@@ -99,6 +112,10 @@ class SuggestionCardPanel(
                 docListener = null
             }
         }
+        docListenerDisposable?.let {
+            Disposer.dispose(it)
+        }
+        docListenerDisposable = null
     }
 
     private fun scrollToOffsetAndSelect(

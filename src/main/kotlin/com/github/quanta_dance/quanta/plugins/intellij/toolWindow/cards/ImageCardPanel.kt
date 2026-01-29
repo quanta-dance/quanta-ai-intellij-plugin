@@ -6,7 +6,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.toolWindow.cards
 import com.intellij.ui.components.JBPanel
 import java.awt.BorderLayout
 import java.awt.image.BufferedImage
-import java.net.URL
+import java.net.URI
 import javax.imageio.ImageIO
 import javax.swing.BorderFactory
 import javax.swing.ImageIcon
@@ -26,7 +26,7 @@ class ImageCardPanel(
         this.border = BorderFactory.createTitledBorder(title)
         maximumSize = this.preferredSize // Set maximum size to preferred size
 
-        val imageUrl: URL = URL(url)
+        val imageUrl = URI(url).toURL()
         val image: BufferedImage? = ImageIO.read(imageUrl)
         val label = JLabel(ImageIcon(image))
 
