@@ -25,7 +25,7 @@ import java.io.File
 
 @JsonClassDescription(
     "Read the enclosing PSI block (function/method/class/field/object) " +
-        "at a position in a file and return structured metadata and text.",
+            "at a position in a file and return structured metadata and text.",
 )
 class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
     @field:JsonPropertyDescription("Relative to the project root path. If omitted, uses current editor file.")
@@ -68,8 +68,7 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
             try {
                 PathUtils.resolveWithinProject(base, rel).toFile()
             } catch (e: IllegalArgumentException) {
-                project
-                    .service<ToolWindowService>()
+                project.service<ToolWindowService>()
                     .addToolingMessage("ReadPsiBlockAtPosition - invalid path", e.message ?: "Invalid path")
                 return err(e.message ?: "Invalid path")
             }
@@ -154,11 +153,7 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
         return text.lines().mapIndexed { i, line -> "%05d %s".format(base + i, line) }.joinToString("\n")
     }
 
-    private data class Window(
-        val text: String,
-        val firstLine: Int,
-        val lastLine: Int,
-    )
+    private data class Window(val text: String, val firstLine: Int, val lastLine: Int)
 
     private fun windowAroundOffset(
         raw: String,
@@ -238,35 +233,20 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
         }
 
         return when (prefer) {
-            "function" -> {
-                ktFunction?.let { parentOfType(it) }?.let { it to "function" } ?: firstMatchAuto()
-            }
-
-            "method" -> {
-                psiMethod?.let { parentOfType(it) }?.let { it to "method" } ?: firstMatchAuto()
-            }
-
-            "class" -> {
-                (ktClass?.let { parentOfType(it) } ?: psiClass?.let { parentOfType(it) })?.let { it to "class" } ?: firstMatchAuto()
-            }
-
-            "field" -> {
+            "function" -> ktFunction?.let { parentOfType(it) }?.let { it to "function" } ?: firstMatchAuto()
+            "method" -> psiMethod?.let { parentOfType(it) }?.let { it to "method" } ?: firstMatchAuto()
+            "class" -> (ktClass?.let { parentOfType(it) } ?: psiClass?.let { parentOfType(it) })?.let { it to "class" } ?: firstMatchAuto()
+            "field" ->
                 (
-                    ktProperty?.let {
-                        parentOfType(
-                            it,
-                        )
-                    } ?: psiField?.let { parentOfType(it) }
-                )?.let { it to "field" } ?: firstMatchAuto()
-            }
+                        ktProperty?.let {
+                            parentOfType(
+                                it,
+                            )
+                        } ?: psiField?.let { parentOfType(it) }
+                        )?.let { it to "field" } ?: firstMatchAuto()
 
-            "object" -> {
-                ktObject?.let { parentOfType(it) }?.let { it to "object" } ?: firstMatchAuto()
-            }
-
-            else -> {
-                firstMatchAuto()
-            }
+            "object" -> ktObject?.let { parentOfType(it) }?.let { it to "object" } ?: firstMatchAuto()
+            else -> firstMatchAuto()
         }
     }
 
@@ -274,7 +254,7 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
         try {
             @Suppress("UNCHECKED_CAST")
             Class.forName(name)
-                as Class<out PsiElement>
+                    as Class<out PsiElement>
         } catch (_: Throwable) {
             null
         }
