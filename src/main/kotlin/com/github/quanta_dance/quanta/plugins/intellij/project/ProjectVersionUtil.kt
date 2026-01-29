@@ -53,7 +53,8 @@ object ProjectVersionUtil {
     }
 
     fun getProjectTreeAsString(project: Project): String {
-        val baseDir = project.baseDir
+        val basePath = project.basePath ?: return ""
+        val baseDir = LocalFileSystem.getInstance().findFileByPath(basePath) ?: return ""
         val fileIndex = ProjectRootManager.getInstance(project).fileIndex
         return ApplicationManager.getApplication().runReadAction<String> {
             buildProjectFileTree(baseDir, baseDir, fileIndex).toString()

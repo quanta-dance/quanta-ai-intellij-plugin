@@ -10,7 +10,6 @@ import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowServic
 import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
 import com.github.quanta_dance.quanta.plugins.intellij.tools.ToolInterface
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.application.WriteIntentReadAction
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileEditor.FileDocumentManager
@@ -89,7 +88,7 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
 
             val psiDocMgr = PsiDocumentManager.getInstance(project)
             if (!psiDocMgr.isCommitted(doc)) {
-                WriteIntentReadAction.run<RuntimeException> {
+                ApplicationManager.getApplication().runWriteAction {
                     try {
                         psiDocMgr.commitDocument(doc)
                     } catch (_: Throwable) {
@@ -245,6 +244,7 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
                         )
                     } ?: psiField?.let { parentOfType(it) }
                 )?.let { it to "field" } ?: firstMatchAuto()
+
             "object" -> ktObject?.let { parentOfType(it) }?.let { it to "object" } ?: firstMatchAuto()
             else -> firstMatchAuto()
         }

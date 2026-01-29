@@ -16,6 +16,7 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.isFile
 import java.security.MessageDigest
@@ -151,13 +152,13 @@ class ReadFileContent : ToolInterface<ReadFileResult> {
         addMsg(project, "Read file content", relToBase)
 
         return ApplicationManager.getApplication().runReadAction<ReadFileResult> {
-            val baseDir = project.baseDir
             val virtualFile =
-                baseDir?.findFileByRelativePath(relToBase) ?: return@runReadAction ReadFileResult(
-                    "",
-                    "",
-                    "File not found.",
-                )
+                LocalFileSystem.getInstance().refreshAndFindFileByPath(resolved.toString())
+                    ?: return@runReadAction ReadFileResult(
+                        "",
+                        "",
+                        "File not found.",
+                    )
             if (!virtualFile.isFile) return@runReadAction ReadFileResult("", "", "It is not a file")
 
             val doc = FileDocumentManager.getInstance().getDocument(virtualFile)
