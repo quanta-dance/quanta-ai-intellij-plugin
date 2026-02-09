@@ -104,7 +104,7 @@ tasks {
         jvmArgs(
             "-Didea.is.internal=true",
             "-Didea.log.debug.categories=com.github.quanta_dance.quanta.plugins.intellij.*",
-            "-Djava.net.preferIPv4Stack=true",
+            "-Djava.net.preferIPv4Stack=true"
         )
     }
 
@@ -126,7 +126,7 @@ dependencies {
             listOf(
                 "com.intellij.java",
                 "com.intellij.gradle",
-                //   "Git4Idea",
+                "Git4Idea",
             ),
         )
         pluginVerifier()
@@ -155,9 +155,7 @@ dependencies {
 
     implementation("org.xerial:sqlite-jdbc:3.41.2.2")
 
-    implementation("org.eclipse.jgit:org.eclipse.jgit:6.10.0.202406032230-r")
-
-    implementation("com.openai:openai-java:4.32.0")
+    implementation("com.openai:openai-java:4.18.0")
     testRuntimeOnly("junit:junit:4.13.2")
 
     testImplementation("org.opentest4j:opentest4j:1.3.0")
@@ -173,11 +171,7 @@ dependencies {
 // ensure sqlite-jdbc is available in the plugin sandbox at runtime
 tasks.register<Task>("copyRuntimeLibsToSandbox") {
     doLast {
-        val sandboxLib =
-            layout.buildDirectory
-                .dir("idea-sandbox/plugins/${project.name}/lib")
-                .get()
-                .asFile
+        val sandboxLib = layout.buildDirectory.dir("idea-sandbox/plugins/${project.name}/lib").get().asFile
         sandboxLib.mkdirs()
         configurations.runtimeClasspath.get().forEach { file ->
             if (file.name.contains("sqlite-jdbc") || file.name.contains("sqlite")) {
@@ -207,7 +201,7 @@ tasks.named("runIde") {
 spotless {
     kotlin {
         licenseHeaderFile(
-            rootProject.file("config/license/HEADER"),
+            rootProject.file("config/license/HEADER")
         )
         ktlint()
         trimTrailingWhitespace()
