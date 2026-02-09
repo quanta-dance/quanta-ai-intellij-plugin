@@ -328,6 +328,8 @@ class OpenAIService(private val project: Project) : Disposable {
                 val processedCallIds = mutableSetOf<String>()
                 var previousIdForThisTurn = lastResponseId
                 var aborted = false
+                var continuationCount = 0
+                val maxContinuations = 5 // safety limit
 
                 val tws = project.service<ToolWindowService>()
                 val delayedSpinner = DelayedSpinner(tws)
@@ -388,6 +390,25 @@ class OpenAIService(private val project: Project) : Disposable {
                                                 if (!spokeThisTurn) {
                                                     project.service<AIVoiceService>().say(summary)
                                                     spokeThisTurn = true
+                                                }
+                                            }
+
+                                            // Model-signaled continuation: request another turn if not finished.
+                                            if (!message.isFinished) {
+                                                if (continuationCount < maxContinuations) {
+                                                    continuationCount++
+                                                    reprocess = true
+                                                    // Add an explicit continuation nudge so the next call continues immediately.
+                                                    requestInputs.add(systemMessage("Continue."))
+                                                    project.service<ToolWindowService>().addToolingMessage(
+                                                        managerLabel,
+                                                        "Response incomplete; requesting continuation (#$continuationCount)",
+                                                    )
+                                                } else {
+                                                    project.service<ToolWindowService>().addToolingMessage(
+                                                        managerLabel,
+                                                        "Response incomplete but maxContinuations=$maxContinuations reached; stopping",
+                                                    )
                                                 }
                                             }
                                         }
