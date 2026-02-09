@@ -28,8 +28,8 @@ import java.security.MessageDigest
 
 @JsonClassDescription(
     "Apply one or more line-range patches to a specified file. Patches are applied in a single write action, " +
-        "from bottom to top (descending start line), so earlier replacements do not shift later ranges. " +
-        "Lines are 1-based inclusive; offsets are computed from the current Document. Supports optional guards.",
+            "from bottom to top (descending start line), so earlier replacements do not shift later ranges. " +
+            "Lines are 1-based inclusive; offsets are computed from the current Document. Supports optional guards.",
 )
 class PatchFile : ToolInterface<String> {
     data class Patch(
@@ -41,7 +41,7 @@ class PatchFile : ToolInterface<String> {
         var newContent: String = "",
         @field:JsonPropertyDescription(
             "Optional expected current text for the specified line range. " +
-                "If provided and does not match, patch is skipped or triggers failure depending on stopOnMismatch.",
+                    "If provided and does not match, patch is skipped or triggers failure depending on stopOnMismatch.",
         )
         var expectedText: String? = null,
     )
@@ -57,7 +57,7 @@ class PatchFile : ToolInterface<String> {
 
     @field:JsonPropertyDescription(
         "If true (default), aborts and applies nothing when any patch guard fails. " +
-            "If false, skips only mismatched patches and applies the rest.",
+                "If false, skips only mismatched patches and applies the rest.",
     )
     var stopOnMismatch: Boolean = true
 
@@ -69,13 +69,13 @@ class PatchFile : ToolInterface<String> {
 
     @field:JsonPropertyDescription(
         "Optional expected SHA-256 hash of normalized file content (\\r\\n/\\r -> \\n)." +
-            " If provided and matches current, patches can proceed.",
+                " If provided and matches current, patches can proceed.",
     )
     var expectedFileHashSha256: String? = null
 
     @field:JsonPropertyDescription(
         "If true, proceed when all patches' expectedText guards match even if content hash mismatches. " +
-            "Default: true",
+                "Default: true",
     )
     var allowProceedIfGuardsMatch: Boolean = true
 
@@ -95,8 +95,15 @@ class PatchFile : ToolInterface<String> {
     }
 
     private fun normalizeForCompare(text: String): String {
-        val lf = text.replace("\r\n", "\n").replace("\r", "\n")
-        return if (lf.endsWith("\n")) lf.dropLast(1) else lf
+        // Guard normalization should be stable across platforms and resilient to trivial formatting.
+        // We intentionally keep it conservative: normalize line endings and trim trailing whitespace per line.
+        var lf = text.replace("\r\n", "\n").replace("\r", "\n")
+        if (lf.endsWith("\n")) lf = lf.dropLast(1)
+
+        // Remove trailing spaces/tabs at end of each line to avoid frequent false mismatches.
+        // Do NOT trim leading whitespace or collapse internal spaces (that could hide real code changes).
+        return lf.split("\n")
+            .joinToString("\n") { line -> line.replace(Regex("[\\t ]+$"), "") }
     }
 
     private fun sha256Normalized(text: String): String {
