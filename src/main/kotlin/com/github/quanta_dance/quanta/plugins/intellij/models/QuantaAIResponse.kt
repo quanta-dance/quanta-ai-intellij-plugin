@@ -13,6 +13,11 @@ data class OpenAIResponse(
     val summaryMessage: String,
     @field:JsonPropertyDescription("Required Audio summary suitable for TTS. This MUST be short, catchy and natural.")
     val ttsSummary: String,
+    @field:JsonPropertyDescription(
+        "True if this response is complete and the agent should stop. " +
+            "False if the agent must continue in a follow-up turn (the main loop will automatically request the next response).",
+    )
+    val isFinished: Boolean,
 )
 
 @JsonClassDescription("Actionable or informational refactor suggestion.")
