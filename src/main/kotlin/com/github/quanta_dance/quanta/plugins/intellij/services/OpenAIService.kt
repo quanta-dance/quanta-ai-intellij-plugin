@@ -215,6 +215,8 @@ class OpenAIService(private val project: Project) : Disposable {
         val aggregated = StringBuilder()
         val processedCallIds = mutableSetOf<String>()
         var reprocess = true
+        var continuationCount = 0
+        val maxContinuations = 5 // safety limit
         while (reprocess) {
             reprocess = false
             val (structResponse, newId) =
@@ -252,12 +254,32 @@ class OpenAIService(private val project: Project) : Disposable {
                     item.isMessage() -> {
                         item.message().map { m ->
                             m.content().forEach { c ->
-                                val txt = c.asOutputText().summaryMessage
+                                val message = c.asOutputText()
+                                val txt = message.summaryMessage
                                 if (txt.isNotBlank()) {
                                     project.service<ToolWindowService>()
                                         .addToolingMessage(agentLabel, txt)
                                 }
                                 aggregated.append(txt).append('\n')
+
+                                // Option 3: 3-state conversation control
+                                if (message.nextStep?.uppercase() == "CONTINUE") {
+                                    if (continuationCount < maxContinuations) {
+                                        continuationCount++
+                                        // Nudge follow-up (no tools pending)
+                                        inputs.add(systemMessage("Continue."))
+                                        reprocess = true
+                                        project.service<ToolWindowService>().addToolingMessage(
+                                            agentLabel,
+                                            "Continuation requested by model (nextStep=CONTINUE) #$continuationCount",
+                                        )
+                                    } else {
+                                        project.service<ToolWindowService>().addToolingMessage(
+                                            agentLabel,
+                                            "nextStep=CONTINUE requested but maxContinuations=$maxContinuations reached; stopping",
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -286,7 +308,7 @@ class OpenAIService(private val project: Project) : Disposable {
                 if (ctx != null) {
                     val header =
                         "Current file open: ${ctx.filePathRelative}, file version: ${ctx.version} - " +
-                            "you must always reread file if version changed"
+                                "you must always reread file if version changed"
                     val caretLine = ctx.caretLine
                     val caretCol = ctx.caretColumn
                     val sb = StringBuilder().append(header)
@@ -302,7 +324,7 @@ class OpenAIService(private val project: Project) : Disposable {
                     ) {
                         sb.append(
                             "\nSelection starts at line ${ctx.selectionStartLine}, column ${ctx.selectionStartColumn} " +
-                                "and ends at line ${ctx.selectionEndLine}, column ${ctx.selectionEndLine}\n",
+                                    "and ends at line ${ctx.selectionEndLine}, column ${ctx.selectionEndLine}\n",
                         )
                         sb.append("Selected text is: ${ctx.selectedText}")
                     }
@@ -321,6 +343,11 @@ class OpenAIService(private val project: Project) : Disposable {
                 if (lastResponseId == null) {
                     requestInputs.add(systemMessage(buildBootstrapContext()))
                 }
+
+                // Reset continuation counter at the start of a user-initiated turn so continuations don't carry over from prior turns
+                var continuationCount = 0
+                val maxContinuations = 5 // safety limit
+
                 requestInputs.add(userMessage(text))
 
                 var reprocess = true
@@ -328,8 +355,6 @@ class OpenAIService(private val project: Project) : Disposable {
                 val processedCallIds = mutableSetOf<String>()
                 var previousIdForThisTurn = lastResponseId
                 var aborted = false
-                var continuationCount = 0
-                val maxContinuations = 5 // safety limit
 
                 val tws = project.service<ToolWindowService>()
                 val delayedSpinner = DelayedSpinner(tws)
@@ -386,6 +411,12 @@ class OpenAIService(private val project: Project) : Disposable {
                                             val message = c.asOutputText()
                                             project.service<ToolWindowService>()
                                                 .addToolingMessage(managerLabel, message.summaryMessage)
+
+                                            // Debug: surface nextStep value
+                                            project.service<ToolWindowService>().addToolingMessage(
+                                                "AI(debug)",
+                                                "nextStep=${message.nextStep} continuationCount=$continuationCount/$maxContinuations",
+                                            )
                                             message.ttsSummary?.also { summary ->
                                                 if (!spokeThisTurn) {
                                                     project.service<AIVoiceService>().say(summary)
@@ -393,8 +424,8 @@ class OpenAIService(private val project: Project) : Disposable {
                                                 }
                                             }
 
-                                            // Model-signaled continuation: request another turn if not finished.
-                                            if (!message.isFinished) {
+                                            // Option 3: 3-state conversation control
+                                            if (message.nextStep?.uppercase() == "CONTINUE") {
                                                 if (continuationCount < maxContinuations) {
                                                     continuationCount++
                                                     reprocess = true

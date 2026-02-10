@@ -25,10 +25,11 @@ import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiManager
 import com.intellij.psi.codeStyle.CodeStyleManager
 import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 
 @JsonClassDescription(
     "Create or Update specified file. Supports full replacement via 'content' or partial line-range updates via 'patches'. " +
-        "Before modifying methods in the file you may need to check for method references as they might need updates.",
+            "Before modifying methods in the file you may need to check for method references as they might need updates.",
 )
 class CreateOrUpdateFile : ToolInterface<String> {
     data class Patch(
@@ -47,7 +48,7 @@ class CreateOrUpdateFile : ToolInterface<String> {
 
     @field:JsonPropertyDescription(
         "New content for the file to be modified. If provided and 'patches' is empty, " +
-            "this fully replaces file content.",
+                "this fully replaces file content.",
     )
     var content: String? = null
 
@@ -56,13 +57,13 @@ class CreateOrUpdateFile : ToolInterface<String> {
 
     @field:JsonPropertyDescription(
         "Optional list of line-range patches to apply (1-based inclusive lines). If non-empty, " +
-            "patches are applied instead of full replace.",
+                "patches are applied instead of full replace.",
     )
     var patches: List<Patch>? = null
 
     @field:JsonPropertyDescription(
         "If true, force synchronous save/commit/refresh " +
-            "to surface PSI errors immediately (no Gradle run). Default: true",
+                "to surface PSI errors immediately (no Gradle run). Default: true",
     )
     var validateBuildAfterUpdate: Boolean = true
 
@@ -72,7 +73,7 @@ class CreateOrUpdateFile : ToolInterface<String> {
 
     @field:JsonPropertyDescription(
         "Optional expected file version before patching (PSI/Document/VFS). " +
-            "If differs, no changes are applied.",
+                "If differs, no changes are applied.",
     )
     var expectedFileVersion: Long? = null
 
@@ -85,6 +86,12 @@ class CreateOrUpdateFile : ToolInterface<String> {
 
     companion object {
         private val logger = Logger.getInstance(CreateOrUpdateFile::class.java)
+    }
+
+    private fun sha256Normalized(text: String): String {
+        val norm = text.replace("\r\n", "\n").replace("\r", "\n")
+        val md = MessageDigest.getInstance("SHA-256")
+        return md.digest(norm.toByteArray()).joinToString("") { b -> "%02x".format(b) }
     }
 
     private fun flushPsiAndVfs(
@@ -154,7 +161,7 @@ class CreateOrUpdateFile : ToolInterface<String> {
         }
 
         var result: String = "File successfully updated"
-        var lastModified: Long = 0
+        var fileHashSha256: String? = null
         var updatedVirtualFile: VirtualFile? = null
 
         ApplicationManager.getApplication().invokeAndWait {
@@ -210,7 +217,13 @@ class CreateOrUpdateFile : ToolInterface<String> {
                     } catch (_: Throwable) {
                     }
                     project.service<ToolWindowService>().addToolingMessage("File updated", relToBase)
-                    lastModified = psiFile?.modificationStamp ?: 0
+                    try {
+                        val currentText =
+                            FileDocumentManager.getInstance().getDocument(virtualFile)?.text
+                                ?: virtualFile.inputStream.use { it.readBytes().toString(StandardCharsets.UTF_8) }
+                        fileHashSha256 = sha256Normalized(currentText)
+                    } catch (_: Throwable) {
+                    }
                 } catch (e: Throwable) {
                     QDLog.warn(logger, { "Failed to update file $relToBase" }, e)
                     project.service<ToolWindowService>()
@@ -248,7 +261,12 @@ class CreateOrUpdateFile : ToolInterface<String> {
         if (validateAfterUpdate) {
             result += "\n" + runPsiValidation(project, relToBase)
         }
-        QDLog.info(logger) { "Update file $relToBase: $result, file version: $lastModified" }
+        if (!fileHashSha256.isNullOrBlank()) {
+            result += "\nfileHashSha256=$fileHashSha256"
+        }
+        QDLog.info(logger) {
+            "Update file $relToBase: $result, fileHashSha256=${fileHashSha256 ?: ""}"
+        }
         return result
     }
 

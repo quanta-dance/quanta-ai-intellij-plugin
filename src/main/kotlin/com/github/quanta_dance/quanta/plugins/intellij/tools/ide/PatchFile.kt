@@ -90,6 +90,30 @@ class PatchFile : ToolInterface<String> {
     @field:JsonPropertyDescription("If true, optimize imports after update.")
     var optimizeImportsAfterUpdate: Boolean = false
 
+    @field:JsonPropertyDescription(
+        "Soft window radius in lines for expectedText matching. If expectedText does not match exactly at fromLine..toLine, " +
+                "the tool will search within +/- this many lines for a unique match and apply the patch there (if allowed). Default: 50.",
+    )
+    var softWindowRadiusLines: Int = 50
+
+    @field:JsonPropertyDescription(
+        "If true (default), include a truncated copy of the current text at fromLine..toLine in mismatch feedback to help recovery.",
+    )
+    var includeActualSliceOnMismatch: Boolean = true
+
+    @field:JsonPropertyDescription("Maximum characters of actual slice to include in mismatch feedback. Default: 2000")
+    var actualSliceMaxChars: Int = 2000
+
+    @field:JsonPropertyDescription(
+        "Minimum normalized expectedText length required to allow soft-window relocation. Default: 80.",
+    )
+    var minExpectedTextCharsForRelocation: Int = 80
+
+    @field:JsonPropertyDescription(
+        "If true (default), require expectedText to span at least 2 lines to allow relocation. Helps prevent wrong matches.",
+    )
+    var requireMultilineExpectedTextForRelocation: Boolean = true
+
     companion object {
         private val logger = Logger.getInstance(PatchFile::class.java)
     }
@@ -106,10 +130,165 @@ class PatchFile : ToolInterface<String> {
             .joinToString("\n") { line -> line.replace(Regex("[\\t ]+$"), "") }
     }
 
+    private fun preview(text: String, maxChars: Int = 200): String {
+        val oneLine = normalizeForCompare(text).replace("\n", "\\n")
+        return if (oneLine.length <= maxChars) oneLine else oneLine.take(maxChars) + "…"
+    }
+
     private fun sha256Normalized(text: String): String {
         val norm = text.replace("\r\n", "\n").replace("\r", "\n")
         val md = MessageDigest.getInstance("SHA-256")
         return md.digest(norm.toByteArray()).joinToString("") { b -> "%02x".format(b) }
+    }
+
+    private data class ResolvedRange(
+        val startLine0: Int,
+        val endLine0: Int,
+        val startOffset: Int,
+        val endOffset: Int,
+        val relocated: Boolean,
+        val note: String? = null,
+    )
+
+    private fun lineEndOffsetOrEof(document: com.intellij.openapi.editor.Document, line0: Int): Int {
+        return if (line0 < document.lineCount) document.getLineEndOffset(line0) else document.textLength
+    }
+
+    private fun sliceForLines(
+        document: com.intellij.openapi.editor.Document,
+        startLine0: Int,
+        endLine0: Int,
+    ): Pair<TextRange, String> {
+        val startOffset = document.getLineStartOffset(startLine0)
+        val endOffset = lineEndOffsetOrEof(document, endLine0)
+        val range = TextRange(startOffset, endOffset)
+        return range to document.getText(range)
+    }
+
+    private fun resolveRange(
+        document: com.intellij.openapi.editor.Document,
+        patch: Patch,
+        patchIndex1: Int,
+        mismatchesOut: MutableList<String>?,
+        relocationNotesOut: MutableList<String>?,
+    ): ResolvedRange? {
+        val baseStartLine0 = (patch.fromLine - 1).coerceAtLeast(0)
+        val baseEndLine0 = (patch.toLine - 1).coerceAtLeast(baseStartLine0)
+
+        if (baseStartLine0 >= document.lineCount) {
+            mismatchesOut?.add(
+                "Patch $patchIndex1: start line ${patch.fromLine} beyond document line count ${document.lineCount}",
+            )
+            return null
+        }
+
+        val expectedRaw = patch.expectedText?.takeIf { it.isNotBlank() }
+        val (baseRange, baseSlice) = sliceForLines(document, baseStartLine0, baseEndLine0)
+
+        if (expectedRaw == null) {
+            return ResolvedRange(
+                startLine0 = baseStartLine0,
+                endLine0 = baseEndLine0,
+                startOffset = baseRange.startOffset,
+                endOffset = baseRange.endOffset,
+                relocated = false,
+            )
+        }
+
+        val expNorm = normalizeForCompare(expectedRaw)
+        val baseNorm = normalizeForCompare(baseSlice)
+        if (expNorm == baseNorm) {
+            return ResolvedRange(
+                startLine0 = baseStartLine0,
+                endLine0 = baseEndLine0,
+                startOffset = baseRange.startOffset,
+                endOffset = baseRange.endOffset,
+                relocated = false,
+            )
+        }
+
+        // Soft-window relocation: find a unique match of expectedText nearby.
+        val expLines = expNorm.split("\n")
+        val expLineCount = expLines.size
+        val expChars = expNorm.length
+        val radius = softWindowRadiusLines.coerceAtLeast(0)
+
+        val relocationAllowed =
+            (!requireMultilineExpectedTextForRelocation || expLineCount >= 2) &&
+                    (expChars >= minExpectedTextCharsForRelocation || expLineCount >= 2)
+
+        if (!relocationAllowed) {
+            val reason =
+                "relocation disabled (expectedText not specific enough: lines=$expLineCount chars=$expChars; " +
+                        "requireMultiline=$requireMultilineExpectedTextForRelocation minChars=$minExpectedTextCharsForRelocation)"
+            val actualExtra =
+                if (includeActualSliceOnMismatch) {
+                    val raw = baseSlice
+                    val clipped = if (raw.length <= actualSliceMaxChars) raw else raw.take(actualSliceMaxChars) + "…"
+                    " actualSlice='" + clipped.replace("\n", "\\n") + "'"
+                } else {
+                    ""
+                }
+            mismatchesOut?.add(
+                "Patch $patchIndex1: expectedText mismatch at lines ${patch.fromLine}-${patch.toLine} ($reason). " +
+                        "expected='${preview(expectedRaw)}' actual='${preview(baseSlice)}'" + actualExtra,
+            )
+            return null
+        }
+
+        val windowStart0 = (baseStartLine0 - radius).coerceAtLeast(0)
+        val windowEnd0 = (baseEndLine0 + radius).coerceAtMost((document.lineCount - 1).coerceAtLeast(0))
+
+        val matches = mutableListOf<ResolvedRange>()
+        var candStart0 = windowStart0
+        while (candStart0 <= windowEnd0) {
+            val candEnd0 = candStart0 + expLineCount - 1
+            if (candEnd0 > windowEnd0) break
+
+            val (candRange, candSlice) = sliceForLines(document, candStart0, candEnd0)
+            val candNorm = normalizeForCompare(candSlice)
+            if (candNorm == expNorm) {
+                matches.add(
+                    ResolvedRange(
+                        startLine0 = candStart0,
+                        endLine0 = candEnd0,
+                        startOffset = candRange.startOffset,
+                        endOffset = candRange.endOffset,
+                        relocated = true,
+                        note = "Patch $patchIndex1 relocated from ${patch.fromLine}-${patch.toLine} to ${candStart0 + 1}-${candEnd0 + 1}",
+                    ),
+                )
+                if (matches.size > 1) break
+            }
+            candStart0++
+        }
+
+        if (matches.size == 1) {
+            val rr = matches.first()
+            relocationNotesOut?.add(rr.note ?: "")
+            return rr
+        }
+
+        val reason =
+            if (matches.isEmpty()) {
+                "no match in soft window +/-$radius lines"
+            } else {
+                "ambiguous: ${matches.size} matches in soft window +/-$radius lines"
+            }
+
+        val actualExtra =
+            if (includeActualSliceOnMismatch) {
+                val raw = baseSlice
+                val clipped = if (raw.length <= actualSliceMaxChars) raw else raw.take(actualSliceMaxChars) + "…"
+                " actualSlice='" + clipped.replace("\n", "\\n") + "'"
+            } else {
+                ""
+            }
+        mismatchesOut?.add(
+            "Patch $patchIndex1: expectedText mismatch at lines ${patch.fromLine}-${patch.toLine} ($reason). " +
+                    "expected='${preview(expectedRaw)}' actual='${preview(baseSlice)}'" + actualExtra,
+        )
+        return null
     }
 
     private data class Range(val from: Int, val to: Int, val index: Int)
@@ -193,28 +372,13 @@ class PatchFile : ToolInterface<String> {
                     }
 
                     val sorted = patchList.sortedWith(compareByDescending<Patch> { it.fromLine }.thenByDescending { it.toLine })
+                    val relocationNotes = mutableListOf<String>()
 
                     if (stopOnMismatch || (hashProvided && !hashMatched && allowProceedIfGuardsMatch)) {
                         val mismatches = mutableListOf<String>()
                         for ((index, p) in sorted.withIndex()) {
-                            val startLine = (p.fromLine - 1).coerceAtLeast(0)
-                            val endLine = (p.toLine - 1).coerceAtLeast(startLine)
-                            if (startLine >= document.lineCount) {
-                                mismatches.add(
-                                    "Patch ${index + 1}: start line ${p.fromLine} beyond document line count ${document.lineCount}",
-                                )
-                                continue
-                            }
-                            val startOffset = document.getLineStartOffset(startLine)
-                            val endOffset = if (endLine < document.lineCount) document.getLineEndOffset(endLine) else document.textLength
-                            val currentSlice = document.getText(TextRange(startOffset, endOffset))
-                            p.expectedText?.let { exp0 ->
-                                val exp = normalizeForCompare(exp0)
-                                val cur = normalizeForCompare(currentSlice)
-                                if (exp != cur) {
-                                    mismatches.add("Patch ${index + 1}: expectedText mismatch at lines ${p.fromLine}-${p.toLine}")
-                                }
-                            }
+                            // Smart guard: exact match at provided lines OR unique match in soft window.
+                            resolveRange(document, p, index + 1, mismatches, relocationNotes)
                         }
                         if (mismatches.isNotEmpty() && stopOnMismatch) {
                             result.append("Patched 0 range(s) in ").append(relToBase).append(" with ").append(mismatches.size)
@@ -231,30 +395,23 @@ class PatchFile : ToolInterface<String> {
                     }
 
                     var applied = 0
+                    var alreadyApplied = 0
                     val mismatches = mutableListOf<String>()
                     for ((index, p) in sorted.withIndex()) {
-                        val startLine = (p.fromLine - 1).coerceAtLeast(0)
-                        val endLine = (p.toLine - 1).coerceAtLeast(startLine)
-                        if (startLine >= document.lineCount) {
-                            mismatches.add("Patch ${index + 1}: start line ${p.fromLine} beyond document line count ${document.lineCount}")
+                        val rr = resolveRange(document, p, index + 1, mismatches, relocationNotes)
+                        if (rr == null) {
+                            if (stopOnMismatch) continue
                             continue
                         }
-                        val startOffset = document.getLineStartOffset(startLine)
-                        val endOffset = if (endLine < document.lineCount) document.getLineEndOffset(endLine) else document.textLength
-                        val currentSlice = document.getText(TextRange(startOffset, endOffset))
-                        p.expectedText?.let { exp0 ->
-                            val exp = normalizeForCompare(exp0)
-                            val cur = normalizeForCompare(currentSlice)
-                            if (exp != cur) {
-                                mismatches.add("Patch ${index + 1}: expectedText mismatch at lines ${p.fromLine}-${p.toLine}")
-                                if (stopOnMismatch) {
-                                    continue
-                                } else {
-                                    continue
-                                }
-                            }
+
+                        // Idempotence: if the resolved slice already equals newContent (after normalization), skip.
+                        val currentSlice = document.getText(TextRange(rr.startOffset, rr.endOffset))
+                        if (normalizeForCompare(currentSlice) == normalizeForCompare(p.newContent)) {
+                            alreadyApplied++
+                            continue
                         }
-                        document.replaceString(startOffset, endOffset, p.newContent)
+
+                        document.replaceString(rr.startOffset, rr.endOffset, p.newContent)
                         applied++
                     }
 
@@ -286,6 +443,12 @@ class PatchFile : ToolInterface<String> {
                     } else {
                         result.append("Patched ").append(applied).append(" range(s) in ").append(relToBase).append(" with ")
                             .append(mismatches.size).append(" mismatch(es). Details: \n").append(mismatches.joinToString("\n"))
+                    }
+                    if (alreadyApplied > 0) {
+                        result.append("\nNo-op: ").append(alreadyApplied).append(" range(s) already matched newContent")
+                    }
+                    if (relocationNotes.isNotEmpty()) {
+                        result.append("\nRelocations:\n").append(relocationNotes.distinct().joinToString("\n"))
                     }
                 }
             }

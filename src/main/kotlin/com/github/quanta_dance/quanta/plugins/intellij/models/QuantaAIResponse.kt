@@ -14,10 +14,12 @@ data class OpenAIResponse(
     @field:JsonPropertyDescription("Required Audio summary suitable for TTS. This MUST be short, catchy and natural.")
     val ttsSummary: String,
     @field:JsonPropertyDescription(
-        "True if this response is complete and the agent should stop. " +
-            "False if the agent must continue in a follow-up turn (the main loop will automatically request the next response).",
+        "Next step for the conversation loop. One of: DONE | WAIT_USER | CONTINUE. " +
+                "Use CONTINUE only when the system should immediately request another model turn without user input " +
+                "(e.g., multi-step work that can proceed automatically). Use WAIT_USER when you need the user to confirm/provide info. " +
+                "Use DONE when the task is complete.",
     )
-    val isFinished: Boolean,
+    val nextStep: String? = null,
 )
 
 @JsonClassDescription("Actionable or informational refactor suggestion.")
