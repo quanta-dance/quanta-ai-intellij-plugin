@@ -104,7 +104,7 @@ tasks {
         jvmArgs(
             "-Didea.is.internal=true",
             "-Didea.log.debug.categories=com.github.quanta_dance.quanta.plugins.intellij.*",
-            "-Djava.net.preferIPv4Stack=true"
+            "-Djava.net.preferIPv4Stack=true",
         )
     }
 
@@ -171,7 +171,11 @@ dependencies {
 // ensure sqlite-jdbc is available in the plugin sandbox at runtime
 tasks.register<Task>("copyRuntimeLibsToSandbox") {
     doLast {
-        val sandboxLib = layout.buildDirectory.dir("idea-sandbox/plugins/${project.name}/lib").get().asFile
+        val sandboxLib =
+            layout.buildDirectory
+                .dir("idea-sandbox/plugins/${project.name}/lib")
+                .get()
+                .asFile
         sandboxLib.mkdirs()
         configurations.runtimeClasspath.get().forEach { file ->
             if (file.name.contains("sqlite-jdbc") || file.name.contains("sqlite")) {
@@ -201,7 +205,7 @@ tasks.named("runIde") {
 spotless {
     kotlin {
         licenseHeaderFile(
-            rootProject.file("config/license/HEADER")
+            rootProject.file("config/license/HEADER"),
         )
         ktlint()
         trimTrailingWhitespace()

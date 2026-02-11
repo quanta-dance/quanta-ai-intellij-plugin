@@ -50,12 +50,10 @@ import javax.swing.UIManager
 
 class SuggestionCardPanel(
     private var suggestion: Suggestion,
-) :
-    JPanel(BorderLayout()) {
-    private fun isActionable(): Boolean {
-        return suggestion.suggested_code.isNotBlank() && suggestion.replaced_code.isNotBlank() &&
+) : JPanel(BorderLayout()) {
+    private fun isActionable(): Boolean =
+        suggestion.suggested_code.isNotBlank() && suggestion.replaced_code.isNotBlank() &&
             suggestion.original_line_from > 0 && suggestion.original_line_to >= suggestion.original_line_from
-    }
 
     private lateinit var fileLabel: JBLabel
     private var actionsPanel: JBPanel<Nothing>? = null
@@ -72,7 +70,11 @@ class SuggestionCardPanel(
         if (docListenerDisposable == null) {
             docListenerDisposable = Disposer.newDisposable("SuggestionCardPanel.docListener")
         }
-        ProjectManager.getInstance().openProjects.firstOrNull()?.let { attachDocumentListener(it) }
+        ProjectManager
+            .getInstance()
+            .openProjects
+            .firstOrNull()
+            ?.let { attachDocumentListener(it) }
     }
 
     override fun removeNotify() {
@@ -398,7 +400,8 @@ class SuggestionCardPanel(
                     addSettingsProvider { editor ->
                         editor.colorsScheme = editor.colorsScheme
                         editor.highlighter =
-                            EditorHighlighterFactory.getInstance()
+                            EditorHighlighterFactory
+                                .getInstance()
                                 .createEditorHighlighter(fileType, editor.colorsScheme, null)
                     }
                 }

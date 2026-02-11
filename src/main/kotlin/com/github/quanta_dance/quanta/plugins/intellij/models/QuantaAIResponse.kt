@@ -15,9 +15,9 @@ data class OpenAIResponse(
     val ttsSummary: String,
     @field:JsonPropertyDescription(
         "Next step for the conversation loop. One of: DONE | WAIT_USER | CONTINUE. " +
-                "Use CONTINUE only when the system should immediately request another model turn without user input " +
-                "(e.g., multi-step work that can proceed automatically). Use WAIT_USER when you need the user to confirm/provide info. " +
-                "Use DONE when the task is complete.",
+            "Use CONTINUE only when the system should immediately request another model turn without user input " +
+            "(e.g., multi-step work that can proceed automatically). Use WAIT_USER when you need the user to confirm/provide info. " +
+            "Use DONE when the task is complete.",
     )
     val nextStep: String? = null,
 )
