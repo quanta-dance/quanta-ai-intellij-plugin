@@ -63,7 +63,8 @@ class GenerateImage : ToolInterface<String> {
                     try {
                         PathUtils.resolveWithinProject(projectBase, fp)
                     } catch (e: IllegalArgumentException) {
-                        project.service<ToolWindowService>()
+                        project
+                            .service<ToolWindowService>()
                             .addToolingMessage("Save Image - rejected", e.message ?: "Invalid path")
                         QDLog.warn(logger, { "Invalid path for GenerateImage: $fp" }, e)
                         throw e

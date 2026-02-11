@@ -22,9 +22,14 @@ import javax.swing.JPanel
 import javax.swing.SwingUtilities
 
 @Service(Service.Level.PROJECT)
-class ToolWindowService(private val project: Project) {
+class ToolWindowService(
+    private val project: Project,
+) {
     private var mainToolPanel: JPanel? = null
     private var messageScrollPane: JBScrollPane? = null
+
+    @Volatile
+    private var restoredOnce: Boolean = false
 
     fun clear() {
         ApplicationManager.getApplication().invokeLater {
@@ -35,7 +40,7 @@ class ToolWindowService(private val project: Project) {
         }
     }
 
-    fun addUserMessage(message: String): UserMessageCardPanel? {
+    fun addUserMessage(message: String): UserMessageCardPanel {
         // Create the panel instance synchronously so caller receives a reference to it (e.g., for streaming updates)
         val messagePanel = UserMessageCardPanel(message)
 
@@ -137,6 +142,42 @@ class ToolWindowService(private val project: Project) {
     fun setToolWindowFactory(toolPanel: MainPanel) {
         this.messageScrollPane = toolPanel.messageScrollPane
         this.mainToolPanel = toolPanel.messagePanel
+
+        // Restore chat history when UI is ready (only once per tool window creation)
+        if (!restoredOnce) {
+            restoredOnce = true
+            restorePersistedChat()
+        }
+    }
+
+    private fun restorePersistedChat() {
+        try {
+            val state = com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState.instance.state
+            val projectService = project.service<OpenAIService>()
+
+            // Use same conversation key logic as OpenAIService via reflection
+            val key =
+                try {
+                    val m = projectService.javaClass.getDeclaredMethod("conversationKeyForMain")
+                    m.isAccessible = true
+                    m.invoke(projectService) as String
+                } catch (_: Throwable) {
+                    "main@no-branch"
+                }
+
+            val messages = state.conversations[key].orEmpty()
+
+            ApplicationManager.getApplication().invokeLater {
+                messages.forEach { msg ->
+                    when (msg.role.lowercase()) {
+                        "user" -> addUserMessage(msg.text)
+                        "assistant" -> addToolingMessage("AI(manager)", msg.text)
+                        else -> addToolingMessage(msg.role, msg.text)
+                    }
+                }
+            }
+        } catch (_: Throwable) {
+        }
     }
 
     inner class SpinnerHandle(

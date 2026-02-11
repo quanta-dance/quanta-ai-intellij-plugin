@@ -48,15 +48,24 @@ class QuantaAISettingsState : PersistentStateComponent<QuantaAISettingsState.Qua
         // Persistence for main and agents conversations
         var mainLastResponseId: String? = null,
         var agents: MutableList<PersistedAgent> = mutableListOf(),
+        // Stored conversations keyed by conversation id (e.g., "main@<branch>")
+        var conversations: MutableMap<String, MutableList<PersistedMessage>> = mutableMapOf(),
         // Security: Terminal tool availability (default disabled)
         var terminalToolEnabled: Boolean? = false,
     )
 
+    // Persisted message structure
+    data class PersistedMessage(
+        var timestamp: Long = System.currentTimeMillis(),
+        // "user" | "assistant" | "system"
+        var role: String = "",
+        var text: String = "",
+        var responseId: String? = null,
+    )
+
     private var state = QuantaAIState()
 
-    override fun getState(): QuantaAIState {
-        return state
-    }
+    override fun getState(): QuantaAIState = state
 
     override fun loadState(state: QuantaAIState) {
         this.state = state

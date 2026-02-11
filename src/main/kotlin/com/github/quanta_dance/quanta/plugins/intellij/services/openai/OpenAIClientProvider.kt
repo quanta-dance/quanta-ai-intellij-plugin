@@ -19,7 +19,8 @@ object OpenAIClientProvider {
      */
     fun get(project: Project): OpenAIClient {
         val state = QuantaAISettingsState.instance.state
-        return OpenAIOkHttpClient.builder()
+        return OpenAIOkHttpClient
+            .builder()
             .apiKey(state.token)
             .baseUrl(state.host)
             .maxRetries(2)
