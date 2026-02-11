@@ -19,9 +19,10 @@ object ProjectVersionUtil {
         val projectBaseDir =
             project.basePath?.let { LocalFileSystem.getInstance().findFileByPath(it) } ?: return emptyList()
 
-        return projectBaseDir.children.filter { file ->
-            file.name in listOf("build.gradle.kts", "build.gradle", "pom.xml", "build.sbt", "Cargo.toml", "go.mod", "package.json")
-        }.map { it.name }
+        return projectBaseDir.children
+            .filter { file ->
+                file.name in listOf("build.gradle.kts", "build.gradle", "pom.xml", "build.sbt", "Cargo.toml", "go.mod", "package.json")
+            }.map { it.name }
     }
 
     fun buildProjectFileTree(
@@ -104,14 +105,16 @@ object ProjectVersionUtil {
         // Try from classpath libs first (kotlin-stdlib-<ver>.jar)
         val libs = OrderEnumerator.orderEntries(project).librariesOnly().classesRoots
         val fromJar =
-            libs.firstOrNull { vf ->
-                val p = vf.path
-                p.contains("kotlin-stdlib-") || p.contains("kotlin-reflect-") || p.contains("kotlin-stdlib-jdk")
-            }?.path?.let { path ->
-                // Extract version after kotlin-stdlib- or kotlin-reflect-
-                val re = Regex("kotlin-(?:stdlib(?:-jdk[0-9]+)?|reflect)-([0-9][0-9a-zA-Z+_.-]*)")
-                re.find(path)?.groupValues?.getOrNull(1)
-            }
+            libs
+                .firstOrNull { vf ->
+                    val p = vf.path
+                    p.contains("kotlin-stdlib-") || p.contains("kotlin-reflect-") || p.contains("kotlin-stdlib-jdk")
+                }?.path
+                ?.let { path ->
+                    // Extract version after kotlin-stdlib- or kotlin-reflect-
+                    val re = Regex("kotlin-(?:stdlib(?:-jdk[0-9]+)?|reflect)-([0-9][0-9a-zA-Z+_.-]*)")
+                    re.find(path)?.groupValues?.getOrNull(1)
+                }
         val cleanedJar = sanitizeKotlinVersion(fromJar)
         if (!cleanedJar.isNullOrBlank()) return cleanedJar
 
@@ -120,14 +123,14 @@ object ProjectVersionUtil {
         val gradleKts = LocalFileSystem.getInstance().findFileByPath("$base/build.gradle.kts")
         val gradleGroovy = LocalFileSystem.getInstance().findFileByPath("$base/build.gradle")
         val versionFromBuild =
-            sequenceOf(gradleKts, gradleGroovy).mapNotNull { vf -> vf?.let { readText(it) } }
+            sequenceOf(gradleKts, gradleGroovy)
+                .mapNotNull { vf -> vf?.let { readText(it) } }
                 .mapNotNull { text ->
                     // plugins { kotlin("jvm") version "1.9.24" } or id("org.jetbrains.kotlin.jvm") version "1.9.24"
                     val r1 = Regex("""kotlin\("[^\"]+"\)\s+version\s+"([^\"]+)"""")
                     val r2 = Regex("""id\("org\.jetbrains\.kotlin\.[^"]+"\)\s+version\s+"([^"]+)"""")
                     r1.find(text)?.groupValues?.getOrNull(1) ?: r2.find(text)?.groupValues?.getOrNull(1)
-                }
-                .firstOrNull()
+                }.firstOrNull()
         return sanitizeKotlinVersion(versionFromBuild)
     }
 
@@ -143,9 +146,13 @@ object ProjectVersionUtil {
         // kotlinOptions { jvmTarget = "17" } or jvmTarget = 17
         val jvmTarget =
             Regex("""kotlinOptions\s*\{[^}]*jvmTarget\s*=\s*"?([A-Za-z0-9_.]+)"?""")
-                .find(text)?.groupValues?.getOrNull(1)
+                .find(text)
+                ?.groupValues
+                ?.getOrNull(1)
                 ?: Regex("""compilerOptions\s*\{[^}]*jvmTarget\.set\(JvmTarget\.JVM_(\d+)\)""")
-                    .find(text)?.groupValues?.getOrNull(1)
+                    .find(text)
+                    ?.groupValues
+                    ?.getOrNull(1)
 
         // languageVersion = "2.0" or compilerOptions { languageVersion.set(KotlinVersion.KOTLIN_2_0) }
         var lang = Regex("""languageVersion\s*=\s*"([0-9][0-9_.]*)"""").find(text)?.groupValues?.getOrNull(1)
@@ -161,7 +168,8 @@ object ProjectVersionUtil {
     private fun getGradleVersion(project: Project): String? {
         val base = project.basePath ?: return null
         val wrapper =
-            LocalFileSystem.getInstance()
+            LocalFileSystem
+                .getInstance()
                 .findFileByPath("$base/gradle/wrapper/gradle-wrapper.properties")
                 ?: return null
         val text = readText(wrapper) ?: return null
@@ -173,7 +181,8 @@ object ProjectVersionUtil {
     private fun getMavenVersion(project: Project): String? {
         val base = project.basePath ?: return null
         val wrapper =
-            LocalFileSystem.getInstance()
+            LocalFileSystem
+                .getInstance()
                 .findFileByPath("$base/.mvn/wrapper/maven-wrapper.properties")
                 ?: return null
         val text = readText(wrapper) ?: return null
@@ -184,7 +193,8 @@ object ProjectVersionUtil {
 
     private fun getScalaVersion(project: Project): String? {
         val modules = OrderEnumerator.orderEntries(project).librariesOnly().classesRoots
-        return modules.firstOrNull { it.path.contains("scala-library-") }
+        return modules
+            .firstOrNull { it.path.contains("scala-library-") }
             ?.path
             ?.substringAfterLast("scala-library-")
             ?.removeSuffix(".jar")
@@ -193,7 +203,8 @@ object ProjectVersionUtil {
     private fun getGoVersion(project: Project): String? {
         // Heuristic: look for a module/jar path containing goX.Y
         val modules = OrderEnumerator.orderEntries(project).classesRoots
-        return modules.firstOrNull { it.path.contains("/go") || it.path.contains("\\go") }
+        return modules
+            .firstOrNull { it.path.contains("/go") || it.path.contains("\\go") }
             ?.path
             ?.substringAfterLast("go")
             ?.takeWhile { it.isDigit() || it == '.' }
@@ -208,7 +219,9 @@ object ProjectVersionUtil {
             // engines: { "node": ">=18" }
             node =
                 Regex(""""engines"\s*:\s*\{[^}]*"node"\s*:\s*"([^"]+)"""")
-                    .find(text)?.groupValues?.getOrNull(1)
+                    .find(text)
+                    ?.groupValues
+                    ?.getOrNull(1)
             // dependencies/devDependencies: { "typescript": "^5.4.0" }
             ts = Regex(""""typescript"\s*:\s*"([^"]+)"""").find(text)?.groupValues?.getOrNull(1)
         }

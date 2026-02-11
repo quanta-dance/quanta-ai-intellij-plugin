@@ -28,8 +28,8 @@ import java.security.MessageDigest
 
 @JsonClassDescription(
     "Apply one or more line-range patches to a specified file. Patches are applied in a single write action, " +
-            "from bottom to top (descending start line), so earlier replacements do not shift later ranges. " +
-            "Lines are 1-based inclusive; offsets are computed from the current Document. Supports optional guards.",
+        "from bottom to top (descending start line), so earlier replacements do not shift later ranges. " +
+        "Lines are 1-based inclusive; offsets are computed from the current Document. Supports optional guards.",
 )
 class PatchFile : ToolInterface<String> {
     data class Patch(
@@ -41,7 +41,7 @@ class PatchFile : ToolInterface<String> {
         var newContent: String = "",
         @field:JsonPropertyDescription(
             "Optional expected current text for the specified line range. " +
-                    "If provided and does not match, patch is skipped or triggers failure depending on stopOnMismatch.",
+                "If provided and does not match, patch is skipped or triggers failure depending on stopOnMismatch.",
         )
         var expectedText: String? = null,
     )
@@ -57,7 +57,7 @@ class PatchFile : ToolInterface<String> {
 
     @field:JsonPropertyDescription(
         "If true (default), aborts and applies nothing when any patch guard fails. " +
-                "If false, skips only mismatched patches and applies the rest.",
+            "If false, skips only mismatched patches and applies the rest.",
     )
     var stopOnMismatch: Boolean = true
 
@@ -69,13 +69,13 @@ class PatchFile : ToolInterface<String> {
 
     @field:JsonPropertyDescription(
         "Optional expected SHA-256 hash of normalized file content (\\r\\n/\\r -> \\n)." +
-                " If provided and matches current, patches can proceed.",
+            " If provided and matches current, patches can proceed.",
     )
     var expectedFileHashSha256: String? = null
 
     @field:JsonPropertyDescription(
         "If true, proceed when all patches' expectedText guards match even if content hash mismatches. " +
-                "Default: true",
+            "Default: true",
     )
     var allowProceedIfGuardsMatch: Boolean = true
 
@@ -92,7 +92,7 @@ class PatchFile : ToolInterface<String> {
 
     @field:JsonPropertyDescription(
         "Soft window radius in lines for expectedText matching. If expectedText does not match exactly at fromLine..toLine, " +
-                "the tool will search within +/- this many lines for a unique match and apply the patch there (if allowed). Default: 50.",
+            "the tool will search within +/- this many lines for a unique match and apply the patch there (if allowed). Default: 50.",
     )
     var softWindowRadiusLines: Int = 50
 
@@ -126,11 +126,15 @@ class PatchFile : ToolInterface<String> {
 
         // Remove trailing spaces/tabs at end of each line to avoid frequent false mismatches.
         // Do NOT trim leading whitespace or collapse internal spaces (that could hide real code changes).
-        return lf.split("\n")
+        return lf
+            .split("\n")
             .joinToString("\n") { line -> line.replace(Regex("[\\t ]+$"), "") }
     }
 
-    private fun preview(text: String, maxChars: Int = 200): String {
+    private fun preview(
+        text: String,
+        maxChars: Int = 200,
+    ): String {
         val oneLine = normalizeForCompare(text).replace("\n", "\\n")
         return if (oneLine.length <= maxChars) oneLine else oneLine.take(maxChars) + "…"
     }
@@ -150,9 +154,10 @@ class PatchFile : ToolInterface<String> {
         val note: String? = null,
     )
 
-    private fun lineEndOffsetOrEof(document: com.intellij.openapi.editor.Document, line0: Int): Int {
-        return if (line0 < document.lineCount) document.getLineEndOffset(line0) else document.textLength
-    }
+    private fun lineEndOffsetOrEof(
+        document: com.intellij.openapi.editor.Document,
+        line0: Int,
+    ): Int = if (line0 < document.lineCount) document.getLineEndOffset(line0) else document.textLength
 
     private fun sliceForLines(
         document: com.intellij.openapi.editor.Document,
@@ -215,12 +220,12 @@ class PatchFile : ToolInterface<String> {
 
         val relocationAllowed =
             (!requireMultilineExpectedTextForRelocation || expLineCount >= 2) &&
-                    (expChars >= minExpectedTextCharsForRelocation || expLineCount >= 2)
+                (expChars >= minExpectedTextCharsForRelocation || expLineCount >= 2)
 
         if (!relocationAllowed) {
             val reason =
                 "relocation disabled (expectedText not specific enough: lines=$expLineCount chars=$expChars; " +
-                        "requireMultiline=$requireMultilineExpectedTextForRelocation minChars=$minExpectedTextCharsForRelocation)"
+                    "requireMultiline=$requireMultilineExpectedTextForRelocation minChars=$minExpectedTextCharsForRelocation)"
             val actualExtra =
                 if (includeActualSliceOnMismatch) {
                     val raw = baseSlice
@@ -231,7 +236,7 @@ class PatchFile : ToolInterface<String> {
                 }
             mismatchesOut?.add(
                 "Patch $patchIndex1: expectedText mismatch at lines ${patch.fromLine}-${patch.toLine} ($reason). " +
-                        "expected='${preview(expectedRaw)}' actual='${preview(baseSlice)}'" + actualExtra,
+                    "expected='${preview(expectedRaw)}' actual='${preview(baseSlice)}'" + actualExtra,
             )
             return null
         }
@@ -286,12 +291,16 @@ class PatchFile : ToolInterface<String> {
             }
         mismatchesOut?.add(
             "Patch $patchIndex1: expectedText mismatch at lines ${patch.fromLine}-${patch.toLine} ($reason). " +
-                    "expected='${preview(expectedRaw)}' actual='${preview(baseSlice)}'" + actualExtra,
+                "expected='${preview(expectedRaw)}' actual='${preview(baseSlice)}'" + actualExtra,
         )
         return null
     }
 
-    private data class Range(val from: Int, val to: Int, val index: Int)
+    private data class Range(
+        val from: Int,
+        val to: Int,
+        val index: Int,
+    )
 
     private fun findOverlaps(ranges: List<Range>): List<Pair<Range, Range>> {
         if (ranges.size < 2) return emptyList()
@@ -365,8 +374,11 @@ class PatchFile : ToolInterface<String> {
                                 overlaps.joinToString("\n") { (a, b) ->
                                     "Patch ${a.index} (${a.from}-${a.to}) overlaps with Patch ${b.index} (${b.from}-${b.to})"
                                 }
-                            result.append("Patched 0 range(s) in ").append(relToBase)
-                                .append(" due to overlapping patch ranges. Details: \n").append(details)
+                            result
+                                .append("Patched 0 range(s) in ")
+                                .append(relToBase)
+                                .append(" due to overlapping patch ranges. Details: \n")
+                                .append(details)
                             return@runWriteCommandAction
                         }
                     }
@@ -381,13 +393,20 @@ class PatchFile : ToolInterface<String> {
                             resolveRange(document, p, index + 1, mismatches, relocationNotes)
                         }
                         if (mismatches.isNotEmpty() && stopOnMismatch) {
-                            result.append("Patched 0 range(s) in ").append(relToBase).append(" with ").append(mismatches.size)
+                            result
+                                .append("Patched 0 range(s) in ")
+                                .append(relToBase)
+                                .append(" with ")
+                                .append(mismatches.size)
                                 .append(" mismatch(es). Aborted due to stopOnMismatch=true. ")
-                                .append("Details: \n").append(mismatches.joinToString("\n"))
+                                .append("Details: \n")
+                                .append(mismatches.joinToString("\n"))
                             return@runWriteCommandAction
                         }
                         if (mismatches.isNotEmpty() && hashProvided && !hashMatched && allowProceedIfGuardsMatch) {
-                            result.append("Patched 0 range(s) in ").append(relToBase)
+                            result
+                                .append("Patched 0 range(s) in ")
+                                .append(relToBase)
                                 .append(" because guards mismatched under content hash mismatch. Details: \n")
                                 .append(mismatches.joinToString("\n"))
                             return@runWriteCommandAction
@@ -439,10 +458,21 @@ class PatchFile : ToolInterface<String> {
                     lastModified = PsiManager.getInstance(project).findFile(vFile)?.modificationStamp ?: 0
 
                     if (mismatches.isEmpty()) {
-                        result.append("Patched ").append(applied).append(" range(s) in ").append(relToBase)
+                        result
+                            .append("Patched ")
+                            .append(applied)
+                            .append(" range(s) in ")
+                            .append(relToBase)
                     } else {
-                        result.append("Patched ").append(applied).append(" range(s) in ").append(relToBase).append(" with ")
-                            .append(mismatches.size).append(" mismatch(es). Details: \n").append(mismatches.joinToString("\n"))
+                        result
+                            .append("Patched ")
+                            .append(applied)
+                            .append(" range(s) in ")
+                            .append(relToBase)
+                            .append(" with ")
+                            .append(mismatches.size)
+                            .append(" mismatch(es). Details: \n")
+                            .append(mismatches.joinToString("\n"))
                     }
                     if (alreadyApplied > 0) {
                         result.append("\nNo-op: ").append(alreadyApplied).append(" range(s) already matched newContent")

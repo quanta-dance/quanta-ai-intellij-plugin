@@ -16,8 +16,7 @@ import javax.swing.UIManager
 class ImageCardPanel(
     private val title: String,
     private val url: String,
-) :
-    JBPanel<Nothing>(BorderLayout()) {
+) : JBPanel<Nothing>(BorderLayout()) {
     init {
         initializeUI()
     }

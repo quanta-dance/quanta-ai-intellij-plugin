@@ -68,7 +68,8 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
             try {
                 PathUtils.resolveWithinProject(base, rel).toFile()
             } catch (e: IllegalArgumentException) {
-                project.service<ToolWindowService>()
+                project
+                    .service<ToolWindowService>()
                     .addToolingMessage("ReadPsiBlockAtPosition - invalid path", e.message ?: "Invalid path")
                 return err(e.message ?: "Invalid path")
             }
@@ -153,7 +154,11 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
         return text.lines().mapIndexed { i, line -> "%05d %s".format(base + i, line) }.joinToString("\n")
     }
 
-    private data class Window(val text: String, val firstLine: Int, val lastLine: Int)
+    private data class Window(
+        val text: String,
+        val firstLine: Int,
+        val lastLine: Int,
+    )
 
     private fun windowAroundOffset(
         raw: String,
@@ -233,10 +238,19 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
         }
 
         return when (prefer) {
-            "function" -> ktFunction?.let { parentOfType(it) }?.let { it to "function" } ?: firstMatchAuto()
-            "method" -> psiMethod?.let { parentOfType(it) }?.let { it to "method" } ?: firstMatchAuto()
-            "class" -> (ktClass?.let { parentOfType(it) } ?: psiClass?.let { parentOfType(it) })?.let { it to "class" } ?: firstMatchAuto()
-            "field" ->
+            "function" -> {
+                ktFunction?.let { parentOfType(it) }?.let { it to "function" } ?: firstMatchAuto()
+            }
+
+            "method" -> {
+                psiMethod?.let { parentOfType(it) }?.let { it to "method" } ?: firstMatchAuto()
+            }
+
+            "class" -> {
+                (ktClass?.let { parentOfType(it) } ?: psiClass?.let { parentOfType(it) })?.let { it to "class" } ?: firstMatchAuto()
+            }
+
+            "field" -> {
                 (
                     ktProperty?.let {
                         parentOfType(
@@ -244,9 +258,15 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
                         )
                     } ?: psiField?.let { parentOfType(it) }
                 )?.let { it to "field" } ?: firstMatchAuto()
+            }
 
-            "object" -> ktObject?.let { parentOfType(it) }?.let { it to "object" } ?: firstMatchAuto()
-            else -> firstMatchAuto()
+            "object" -> {
+                ktObject?.let { parentOfType(it) }?.let { it to "object" } ?: firstMatchAuto()
+            }
+
+            else -> {
+                firstMatchAuto()
+            }
         }
     }
 

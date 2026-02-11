@@ -16,7 +16,9 @@ import java.util.concurrent.Executors
  * DNS/connection prewarm helper: resolves API host and initializes the OpenAI client off the UI thread.
  */
 @Service(Service.Level.PROJECT)
-class OpenAIPrewarmService(private val project: Project) {
+class OpenAIPrewarmService(
+    private val project: Project,
+) {
     private val executor = Executors.newSingleThreadExecutor { r -> Thread(r, "openai-prewarm") }
 
     fun prewarm() {

@@ -29,7 +29,7 @@ import java.security.MessageDigest
 
 @JsonClassDescription(
     "Create or Update specified file. Supports full replacement via 'content' or partial line-range updates via 'patches'. " +
-            "Before modifying methods in the file you may need to check for method references as they might need updates.",
+        "Before modifying methods in the file you may need to check for method references as they might need updates.",
 )
 class CreateOrUpdateFile : ToolInterface<String> {
     data class Patch(
@@ -48,7 +48,7 @@ class CreateOrUpdateFile : ToolInterface<String> {
 
     @field:JsonPropertyDescription(
         "New content for the file to be modified. If provided and 'patches' is empty, " +
-                "this fully replaces file content.",
+            "this fully replaces file content.",
     )
     var content: String? = null
 
@@ -57,13 +57,13 @@ class CreateOrUpdateFile : ToolInterface<String> {
 
     @field:JsonPropertyDescription(
         "Optional list of line-range patches to apply (1-based inclusive lines). If non-empty, " +
-                "patches are applied instead of full replace.",
+            "patches are applied instead of full replace.",
     )
     var patches: List<Patch>? = null
 
     @field:JsonPropertyDescription(
         "If true, force synchronous save/commit/refresh " +
-                "to surface PSI errors immediately (no Gradle run). Default: true",
+            "to surface PSI errors immediately (no Gradle run). Default: true",
     )
     var validateBuildAfterUpdate: Boolean = true
 
@@ -73,7 +73,7 @@ class CreateOrUpdateFile : ToolInterface<String> {
 
     @field:JsonPropertyDescription(
         "Optional expected file version before patching (PSI/Document/VFS). " +
-                "If differs, no changes are applied.",
+            "If differs, no changes are applied.",
     )
     var expectedFileVersion: Long? = null
 
@@ -132,7 +132,8 @@ class CreateOrUpdateFile : ToolInterface<String> {
             try {
                 PathUtils.resolveWithinProject(projectBase, filePath)
             } catch (e: IllegalArgumentException) {
-                project.service<ToolWindowService>()
+                project
+                    .service<ToolWindowService>()
                     .addToolingMessage("Modify File - rejected", e.message ?: "Invalid path")
                 QDLog.warn(logger, { "Invalid path for CreateOrUpdateFile: $filePath" }, e)
                 return e.message ?: "Invalid path"
@@ -184,7 +185,8 @@ class CreateOrUpdateFile : ToolInterface<String> {
                     if (document != null) {
                         try {
                             document.setText(content ?: "")
-                            PsiDocumentManager.getInstance(project)
+                            PsiDocumentManager
+                                .getInstance(project)
                                 .commitDocument(document)
                             FileDocumentManager.getInstance().saveDocument(document)
                         } catch (e: Throwable) {
@@ -212,7 +214,8 @@ class CreateOrUpdateFile : ToolInterface<String> {
                     }
 
                     try {
-                        FileEditorManager.getInstance(project)
+                        FileEditorManager
+                            .getInstance(project)
                             .openTextEditor(OpenFileDescriptor(project, virtualFile), true)
                     } catch (_: Throwable) {
                     }
@@ -226,7 +229,8 @@ class CreateOrUpdateFile : ToolInterface<String> {
                     }
                 } catch (e: Throwable) {
                     QDLog.warn(logger, { "Failed to update file $relToBase" }, e)
-                    project.service<ToolWindowService>()
+                    project
+                        .service<ToolWindowService>()
                         .addToolingMessage("Modify File - failed", e.message ?: "Write action failed")
                     throw e
                 }
@@ -238,7 +242,8 @@ class CreateOrUpdateFile : ToolInterface<String> {
                 flushPsiAndVfs(project, updatedVirtualFile)
             } else {
                 PsiDocumentManager.getInstance(project).commitAllDocuments()
-                FileDocumentManager.getInstance()
+                FileDocumentManager
+                    .getInstance()
                     .saveAllDocuments()
                 val ioFile = resolved.toFile()
                 val vFile = LocalFileSystem.getInstance().refreshAndFindFileByIoFile(ioFile)
@@ -273,8 +278,8 @@ class CreateOrUpdateFile : ToolInterface<String> {
     private fun runPsiValidation(
         project: Project,
         relToBase: String,
-    ): String {
-        return try {
+    ): String =
+        try {
             val validator = ValidateClassFileTool().apply { filePath = relToBase }
             val errors =
                 ApplicationManager.getApplication().runReadAction<List<String>> { validator.findErrors(project) }
@@ -293,5 +298,4 @@ class CreateOrUpdateFile : ToolInterface<String> {
             QDLog.warn(logger, { "Validation unavailable for $relToBase" }, e)
             "Validation: skipped (${e.message})"
         }
-    }
 }
