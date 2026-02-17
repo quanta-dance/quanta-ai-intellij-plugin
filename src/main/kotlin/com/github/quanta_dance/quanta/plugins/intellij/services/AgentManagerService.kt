@@ -20,7 +20,9 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 @Service(Service.Level.PROJECT)
-class AgentManagerService(private val project: Project) : Disposable {
+class AgentManagerService(
+    private val project: Project,
+) : Disposable {
     data class AgentConfig(
         val role: String,
         val model: String?,
@@ -187,15 +189,41 @@ class AgentManagerService(private val project: Project) : Disposable {
                 if (session.previousId == null) {
                     inputs.add(
                         ResponseInputItem.ofMessage(
-                            ResponseInputItem.Message.builder().addInputTextContent(
-                                "Agent Role: ${session.config.role}",
-                            ).role(ResponseInputItem.Message.Role.SYSTEM).build(),
+                            ResponseInputItem.Message
+                                .builder()
+                                .addInputTextContent(
+                                    "Agent Role: ${session.config.role}",
+                                ).role(ResponseInputItem.Message.Role.SYSTEM)
+                                .build(),
                         ),
                     )
+
+                    // Provide project-specific instructions from repository-root AGENTS.md (if present)
+                    try {
+                        val agentsText = ProjectAgentsFileManager(project).readAgentsFile()
+                        if (agentsText.isNotBlank()) {
+                            inputs.add(
+                                ResponseInputItem.ofMessage(
+                                    ResponseInputItem.Message
+                                        .builder()
+                                        .addInputTextContent(agentsText)
+                                        .role(ResponseInputItem.Message.Role.SYSTEM)
+                                        .build(),
+                                ),
+                            )
+                        }
+                    } catch (_: Throwable) {
+                        // Non-fatal: proceed without AGENTS.md
+                    }
                 }
+
                 inputs.add(
                     ResponseInputItem.ofMessage(
-                        ResponseInputItem.Message.builder().addInputTextContent(message).role(ResponseInputItem.Message.Role.USER).build(),
+                        ResponseInputItem.Message
+                            .builder()
+                            .addInputTextContent(message)
+                            .role(ResponseInputItem.Message.Role.USER)
+                            .build(),
                     ),
                 )
                 val filter: ((Class<*>) -> Boolean)? = if (session.config.allowedBuiltInTools) null else { _ -> false }
@@ -214,7 +242,9 @@ class AgentManagerService(private val project: Project) : Disposable {
                         allowedMcpNames = session.config.allowedMcpNames,
                     )
                 session.previousId = newPrev
-                QuantaAISettingsState.instance.state.agents.find { it.id == agentId }?.previousId = newPrev
+                QuantaAISettingsState.instance.state.agents
+                    .find { it.id == agentId }
+                    ?.previousId = newPrev
                 QDLog.info(logger) { "Agent[$agentId][$requestId] reply length=${reply.length}" }
                 val result = AgentTaskResult(requestId, agentId, true, reply.ifBlank { "<no message>" }, null)
                 fut.complete(result)
@@ -244,15 +274,41 @@ class AgentManagerService(private val project: Project) : Disposable {
             if (session.previousId == null) {
                 inputs.add(
                     ResponseInputItem.ofMessage(
-                        ResponseInputItem.Message.builder().addInputTextContent(
-                            "Agent Role: ${session.config.role}",
-                        ).role(ResponseInputItem.Message.Role.SYSTEM).build(),
+                        ResponseInputItem.Message
+                            .builder()
+                            .addInputTextContent(
+                                "Agent Role: ${session.config.role}",
+                            ).role(ResponseInputItem.Message.Role.SYSTEM)
+                            .build(),
                     ),
                 )
+
+                // Provide project-specific instructions from repository-root AGENTS.md (if present)
+                try {
+                    val agentsText = ProjectAgentsFileManager(project).readAgentsFile()
+                    if (agentsText.isNotBlank()) {
+                        inputs.add(
+                            ResponseInputItem.ofMessage(
+                                ResponseInputItem.Message
+                                    .builder()
+                                    .addInputTextContent(agentsText)
+                                    .role(ResponseInputItem.Message.Role.SYSTEM)
+                                    .build(),
+                            ),
+                        )
+                    }
+                } catch (_: Throwable) {
+                    // Non-fatal: proceed without AGENTS.md
+                }
             }
+
             inputs.add(
                 ResponseInputItem.ofMessage(
-                    ResponseInputItem.Message.builder().addInputTextContent(message).role(ResponseInputItem.Message.Role.USER).build(),
+                    ResponseInputItem.Message
+                        .builder()
+                        .addInputTextContent(message)
+                        .role(ResponseInputItem.Message.Role.USER)
+                        .build(),
                 ),
             )
             val filter: ((Class<*>) -> Boolean)? = if (session.config.allowedBuiltInTools) null else { _ -> false }
@@ -271,7 +327,9 @@ class AgentManagerService(private val project: Project) : Disposable {
                     allowedMcpNames = session.config.allowedMcpNames,
                 )
             session.previousId = newPrev
-            QuantaAISettingsState.instance.state.agents.find { it.id == agentId }?.previousId = newPrev
+            QuantaAISettingsState.instance.state.agents
+                .find { it.id == agentId }
+                ?.previousId = newPrev
             QDLog.info(logger) { "Agent[$agentId] reply length=${reply.length}" }
             val out = reply.ifBlank { "<no message>" }
             pcs.firePropertyChange("agent_task_finished", null, AgentTaskResult(requestId, agentId, true, out, null))

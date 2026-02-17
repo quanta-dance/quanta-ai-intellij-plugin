@@ -7,7 +7,10 @@ import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettings
 import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentCreateTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentRemoveTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentSendMessageTool
+import com.github.quanta_dance.quanta.plugins.intellij.tools.builder.GetTestInfoTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.builder.GradleSyncTool
+import com.github.quanta_dance.quanta.plugins.intellij.tools.builder.RunGradleBuildTool
+import com.github.quanta_dance.quanta.plugins.intellij.tools.builder.RunGradleTestsTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.catalog.ListToolsCatalogTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.go.RunGoTestsTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.CopyFileOrDirectoryTool
@@ -40,9 +43,15 @@ import java.util.concurrent.ConcurrentHashMap
 object ToolsRegistry {
     enum class Group { GENERIC, GRADLE, GO }
 
-    data class ToolEntry(val clazz: Class<out ToolInterface<out Any>>, val group: Group = Group.GENERIC)
+    data class ToolEntry(
+        val clazz: Class<out ToolInterface<out Any>>,
+        val group: Group = Group.GENERIC,
+    )
 
-    private data class CacheEntry(val signature: String, val tools: List<Class<out ToolInterface<out Any>>>)
+    private data class CacheEntry(
+        val signature: String,
+        val tools: List<Class<out ToolInterface<out Any>>>,
+    )
 
     private val cache = ConcurrentHashMap<Project, CacheEntry>()
 
@@ -94,7 +103,13 @@ object ToolsRegistry {
                 ToolEntry(McpListServerToolsTool::class.java, Group.GENERIC),
             )
         if (terminalEnabled) list.add(ToolEntry(TerminalCommandTool::class.java, Group.GENERIC))
+
+        // if project is gradle
         list.add(ToolEntry(GradleSyncTool::class.java, Group.GRADLE))
+        list.add(ToolEntry(GetTestInfoTool::class.java, Group.GRADLE))
+        list.add(ToolEntry(RunGradleBuildTool::class.java, Group.GRADLE))
+        list.add(ToolEntry(RunGradleTestsTool::class.java, Group.GRADLE))
+        // if project is go
         list.add(ToolEntry(RunGoTestsTool::class.java, Group.GO))
         if (agentic) {
             list.add(ToolEntry(AgentCreateTool::class.java, Group.GENERIC))
@@ -129,22 +144,22 @@ object ToolsRegistry {
             if (basePath == null) {
                 entries.map { it.clazz }
             } else {
-                entries.filter { e ->
-                    when (e.group) {
-                        Group.GENERIC -> true
-                        Group.GRADLE -> gradle
-                        Group.GO -> go
-                    }
-                }.map { it.clazz }
+                entries
+                    .filter { e ->
+                        when (e.group) {
+                            Group.GENERIC -> true
+                            Group.GRADLE -> gradle
+                            Group.GO -> go
+                        }
+                    }.map { it.clazz }
             }
         cache[project] = CacheEntry(signature, tools)
         return tools
     }
 
-    private fun detectGradle(root: File): Boolean {
-        return File(root, "gradlew").exists() || File(root, "gradlew.bat").exists() ||
+    private fun detectGradle(root: File): Boolean =
+        File(root, "gradlew").exists() || File(root, "gradlew.bat").exists() ||
             File(root, "build.gradle").exists() || File(root, "build.gradle.kts").exists()
-    }
 
     private fun detectGo(root: File): Boolean {
         if (File(root, "go.mod").exists()) return true
@@ -168,8 +183,7 @@ object ToolsRegistry {
             }
         }
         val dirs = listOf(root, File(root, "cmd"), File(root, "pkg"), File(root, "internal"))
-        return dirs.any {
-                dir ->
+        return dirs.any { dir ->
             dir.exists() && dir.isDirectory && dir.listFiles()?.any { it.isFile && it.extension.equals("go", true) } == true
         }
     }
