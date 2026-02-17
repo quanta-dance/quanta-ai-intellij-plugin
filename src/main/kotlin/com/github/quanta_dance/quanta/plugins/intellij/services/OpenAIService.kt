@@ -6,6 +6,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.services
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.quanta_dance.quanta.plugins.intellij.models.OpenAIResponse
 import com.github.quanta_dance.quanta.plugins.intellij.project.CurrentFileContextProvider
+import com.github.quanta_dance.quanta.plugins.intellij.project.ProjectVersionUtil
 import com.github.quanta_dance.quanta.plugins.intellij.services.openai.DefaultToolInvoker
 import com.github.quanta_dance.quanta.plugins.intellij.services.openai.ModelSelector
 import com.github.quanta_dance.quanta.plugins.intellij.services.openai.OpenAIClientProvider
@@ -144,6 +145,59 @@ class OpenAIService(
             project.service<ToolWindowService>().addToolingMessage(label, text)
         } catch (_: Throwable) {
         }
+    }
+
+    private fun buildProjectDetailsSystemMessage(): String {
+        val sdkVersion =
+            try {
+                ProjectVersionUtil.getProjectCompileVersion(project)
+            } catch (_: Throwable) {
+                null
+            }
+        val buildFiles =
+            try {
+                ProjectVersionUtil.getProjectBuildFiles(project)
+            } catch (_: Throwable) {
+                null
+            }
+
+        val filesCount =
+            try {
+                val basePath = project.basePath
+                if (basePath != null) {
+                    val root =
+                        com.intellij.openapi.vfs.LocalFileSystem
+                            .getInstance()
+                            .findFileByPath(basePath)
+                    if (root != null) {
+                        var cnt = 0
+
+                        fun dfs(v: com.intellij.openapi.vfs.VirtualFile) {
+                            if (!v.isValid) return
+                            if (v.isDirectory) {
+                                v.children?.forEach { dfs(it) }
+                            } else {
+                                cnt++
+                            }
+                        }
+                        dfs(root)
+                        cnt
+                    } else {
+                        0
+                    }
+                } else {
+                    0
+                }
+            } catch (_: Throwable) {
+                0
+            }
+
+        val b = StringBuilder()
+        b.append("Project details (auto, hidden).\n")
+        b.append("Available build files: ").append(buildFiles).append('\n')
+        sdkVersion?.let { b.append(it).append('\n') }
+        b.append("Files in the project: ").append(filesCount)
+        return b.toString()
     }
 
     init {
@@ -450,6 +504,17 @@ class OpenAIService(
                 } catch (_: Throwable) {
                 }
                 if (lastResponseId == null) {
+                    // Hidden system context: repository-root AGENTS.md (preferred) or fallback project details
+                    try {
+                        val ctx = ProjectAgentsFileManager(project).readAgentsFile()
+                        if (ctx.isNotBlank()) {
+                            requestInputs.add(systemMessage("AGENTS.md:\n" + ctx))
+                        } else {
+                            // Fallback (should be rare)
+                            requestInputs.add(systemMessage(buildProjectDetailsSystemMessage()))
+                        }
+                    } catch (_: Throwable) {
+                    }
                     requestInputs.add(systemMessage(buildBootstrapContext()))
                 }
 

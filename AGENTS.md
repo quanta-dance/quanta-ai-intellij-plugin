@@ -45,12 +45,8 @@ Conventions and safety rules (must follow)
 - Prefer small, focused patches. When modifying a class or function, patch only the minimal line range required.
 - When multiple patches are applied, send them in one call with stopOnMismatch=true for atomicity.
 - If a change might affect build or tests, run Gradle build/tests locally using the provided RunGradleBuildTool and RunGradleTestsTool after applying patches.
-- Spotless formatting is a hard build gate in this repo. Keep Kotlin formatting Spotless-compliant (indentation, wrapping, and avoid introducing extra blank lines).
-  - Prefer minimal formatting changes in the touched area; do not apply massive repo-wide reformat unless requested.
-  - If Spotless fails, fix formatting via small patches (or run ./gradlew spotlessApply only with maintainer approval because it can touch many files).
 - Respect existing code style. Use reformatAfterUpdate when applying patches that change formatting.
 - If uncertain about intent of the maintainers, ask clarifying questions instead of guessing.
-
 
 Development & testing workflow for agents
 
@@ -68,10 +64,8 @@ Development & testing workflow for agents
    - Use PatchFile with expectedFileHashSha256. If you must replace the entire file, use CreateOrUpdateFile.content but only with clear justification.
 
 4) Validate
-   - Run RunGradleBuildTool (or ./gradlew build) to catch compile/test failures and Spotless violations.
-   - If issues are found, run RunGradleTestsTool and inspect stack traces.
+   - Run RunGradleBuildTool. If issues are found, run RunGradleTestsTool and inspect stack traces.
    - Use ValidateClassFileTool for single-file compile validation.
-
 
 5) Commit suggestion
    - Provide a summary of changes and rationales in the agent message. If CI is available, request that maintainers run CI before merging.

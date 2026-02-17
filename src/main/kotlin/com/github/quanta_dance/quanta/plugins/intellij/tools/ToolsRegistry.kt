@@ -5,8 +5,6 @@ package com.github.quanta_dance.quanta.plugins.intellij.tools
 
 import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState
 import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentCreateTool
-import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentPostMessageTool
-import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentReadInboxTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentRemoveTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentSendMessageTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.builder.GetTestInfoTool
@@ -35,8 +33,6 @@ import com.github.quanta_dance.quanta.plugins.intellij.tools.project.SearchInFil
 import com.github.quanta_dance.quanta.plugins.intellij.tools.project.SearchProjectEmbeddings
 import com.github.quanta_dance.quanta.plugins.intellij.tools.project.UpsertProjectEmbedding
 import com.github.quanta_dance.quanta.plugins.intellij.tools.refactor.CodeRefactorSuggester
-import com.github.quanta_dance.quanta.plugins.intellij.tools.session.ScheduleTaskTool
-import com.github.quanta_dance.quanta.plugins.intellij.tools.session.SessionPlanTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.system.RequestModelSwitch
 import com.github.quanta_dance.quanta.plugins.intellij.tools.system.TerminalCommandTool
 import com.intellij.openapi.project.Project
@@ -77,24 +73,6 @@ object ToolsRegistry {
         }
     }
 
-    private fun gradlePluginAvailable(project: Project?): Boolean {
-        fun tryLoad(loader: ClassLoader?): Boolean =
-            try {
-                loader?.loadClass("org.jetbrains.plugins.gradle.util.GradleConstants")
-                true
-            } catch (_: Throwable) {
-                false
-            }
-        if (tryLoad(this::class.java.classLoader)) return true
-        if (project != null && tryLoad(project::class.java.classLoader)) return true
-        return try {
-            Class.forName("org.jetbrains.plugins.gradle.util.GradleConstants")
-            true
-        } catch (_: Throwable) {
-            false
-        }
-    }
-
     private fun baseEntries(project: Project?): List<ToolEntry> {
         val settings = QuantaAISettingsState.instance.state
         val agentic = settings.agenticEnabled ?: true
@@ -123,20 +101,19 @@ object ToolsRegistry {
                 ToolEntry(RequestModelSwitch::class.java, Group.GENERIC),
                 ToolEntry(McpListServersTool::class.java, Group.GENERIC),
                 ToolEntry(McpListServerToolsTool::class.java, Group.GENERIC),
-                ToolEntry(SessionPlanTool::class.java, Group.GENERIC),
-                ToolEntry(ScheduleTaskTool::class.java, Group.GENERIC),
             )
-
         if (terminalEnabled) list.add(ToolEntry(TerminalCommandTool::class.java, Group.GENERIC))
 
-        // GO tools are filtered later based on project detection.
+        // if project is gradle
+        list.add(ToolEntry(GradleSyncTool::class.java, Group.GRADLE))
+        list.add(ToolEntry(GetTestInfoTool::class.java, Group.GRADLE))
+        list.add(ToolEntry(RunGradleBuildTool::class.java, Group.GRADLE))
+        list.add(ToolEntry(RunGradleTestsTool::class.java, Group.GRADLE))
+        // if project is go
         list.add(ToolEntry(RunGoTestsTool::class.java, Group.GO))
-
         if (agentic) {
             list.add(ToolEntry(AgentCreateTool::class.java, Group.GENERIC))
             list.add(ToolEntry(AgentSendMessageTool::class.java, Group.GENERIC))
-            list.add(ToolEntry(AgentPostMessageTool::class.java, Group.GENERIC))
-            list.add(ToolEntry(AgentReadInboxTool::class.java, Group.GENERIC))
             list.add(ToolEntry(AgentRemoveTool::class.java, Group.GENERIC))
         }
         if (javaPsiAvailable(project)) list.add(ToolEntry(InspectDependencies::class.java, Group.GENERIC))
@@ -162,14 +139,7 @@ object ToolsRegistry {
         val cached = cache[project]
         if (cached != null && cached.signature == signature) return cached.tools
 
-        val entries = baseEntries(project).toMutableList()
-        if (gradle && gradlePluginAvailable(project)) {
-            entries.add(ToolEntry(GradleSyncTool::class.java, Group.GRADLE))
-            entries.add(ToolEntry(GetTestInfoTool::class.java, Group.GRADLE))
-            entries.add(ToolEntry(RunGradleBuildTool::class.java, Group.GRADLE))
-            entries.add(ToolEntry(RunGradleTestsTool::class.java, Group.GRADLE))
-        }
-
+        val entries = baseEntries(project)
         val tools =
             if (basePath == null) {
                 entries.map { it.clazz }
@@ -183,7 +153,6 @@ object ToolsRegistry {
                         }
                     }.map { it.clazz }
             }
-
         cache[project] = CacheEntry(signature, tools)
         return tools
     }
@@ -215,8 +184,7 @@ object ToolsRegistry {
         }
         val dirs = listOf(root, File(root, "cmd"), File(root, "pkg"), File(root, "internal"))
         return dirs.any { dir ->
-            dir.exists() && dir.isDirectory && dir.listFiles()
-                ?.any { it.isFile && it.extension.equals("go", true) } == true
+            dir.exists() && dir.isDirectory && dir.listFiles()?.any { it.isFile && it.extension.equals("go", true) } == true
         }
     }
 }
