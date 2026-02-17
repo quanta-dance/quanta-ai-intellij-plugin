@@ -46,6 +46,20 @@ class ReadFileContent : ToolInterface<ReadFileResult> {
     @field:JsonPropertyDescription("Window radius in lines (before and after caret or selection) when strategy=window. Default 300.")
     var windowRadiusLines: Int = 300
 
+    @field:JsonPropertyDescription(
+        "Optional 1-based starting line (inclusive). If set, content is first sliced to start from this line. " +
+            "When provided together with toLine, returns that exact line range. " +
+            "Takes precedence over strategy/window behavior.",
+    )
+    var fromLine: Int? = null
+
+    @field:JsonPropertyDescription(
+        "Optional 1-based ending line (inclusive). If set, content is first sliced to end at this line. " +
+            "If set without fromLine, fromLine defaults to 1. " +
+            "Takes precedence over strategy/window behavior.",
+    )
+    var toLine: Int? = null
+
     companion object {
         private val logger = Logger.getInstance(ReadFileContent::class.java)
     }
@@ -135,6 +149,22 @@ class ReadFileContent : ToolInterface<ReadFileResult> {
         return bytes.joinToString("") { b -> "%02x".format(b) }
     }
 
+    private fun validateRange(
+        fromLine: Int?,
+        toLine: Int?,
+    ): String? {
+        if (fromLine == null && toLine == null) return null
+
+        val start1 = fromLine ?: 1
+        val end1 = toLine
+
+        if (start1 <= 0) return "fromLine must be >= 1"
+        if (end1 != null && end1 <= 0) return "toLine must be >= 1"
+        if (end1 != null && end1 < start1) return "toLine must be >= fromLine"
+
+        return null
+    }
+
     override fun execute(project: Project): ReadFileResult {
         val basePath = project.basePath ?: return ReadFileResult("", "", "Project base path not found.")
         val resolved =
@@ -169,7 +199,11 @@ class ReadFileContent : ToolInterface<ReadFileResult> {
                     return@runReadAction ReadFileResult("", "", "Unable to read file: ${t.message}")
                 }
 
-            val isTooLarge = rawContent.length > maxChars
+            val rangeErr = validateRange(fromLine, toLine)
+            if (rangeErr != null) {
+                return@runReadAction ReadFileResult("", "", rangeErr)
+            }
+
             val currentCtx =
                 try {
                     CurrentFileContextProvider(project).getCurrent()
@@ -178,34 +212,56 @@ class ReadFileContent : ToolInterface<ReadFileResult> {
                 }
             val isCurrentTarget = currentCtx?.filePathRelative?.equals(relToBase, ignoreCase = false) == true
 
+            // Step 1: explicit slice by line range, if requested (takes precedence)
             var finalContent = rawContent
-            var truncated = false
             var firstLineNumber = 1
-            if (isTooLarge) {
+            val explicitRangeRequested = (fromLine != null || toLine != null)
+            if (explicitRangeRequested) {
+                val start1 = fromLine ?: 1
+                val end1 = toLine
+
                 val lines = rawContent.lines()
-                val lc = lines.size
+                if (lines.isEmpty()) {
+                    finalContent = ""
+                    firstLineNumber = start1
+                } else {
+                    val start0 = (start1 - 1).coerceAtLeast(0)
+                    val end0 =
+                        (end1?.minus(1) ?: lines.lastIndex)
+                            .coerceAtMost(lines.lastIndex)
+                            .coerceAtLeast(start0)
+                    finalContent = lines.subList(start0, end0 + 1).joinToString("\n")
+                    firstLineNumber = start0 + 1
+                }
+            }
+
+            // Step 2: truncate if too large
+            var truncated = false
+            val isTooLarge = finalContent.length > maxChars
+            if (isTooLarge) {
+                val lc = finalContent.lines().size
                 when (strategy.lowercase()) {
                     "head" -> {
-                        val (slice, start0) = headByLines(rawContent, maxChars)
+                        val (slice, start0) = headByLines(finalContent, maxChars)
                         finalContent = slice
-                        truncated =
-                            true
-                        firstLineNumber = start0 + 1
+                        truncated = true
+                        firstLineNumber += start0
                     }
 
                     "tail" -> {
-                        val (slice, start0) = tailByLines(rawContent, maxChars)
+                        val (slice, start0) = tailByLines(finalContent, maxChars)
                         finalContent = slice
-                        truncated =
-                            true
-                        firstLineNumber = start0 + 1
+                        truncated = true
+                        firstLineNumber = (firstLineNumber + start0).coerceAtLeast(1)
                     }
 
                     else -> { // window
-                        if (preferWindowIfCurrentFile && isCurrentTarget) {
+                        // Windowing is only meaningful for the current file when no explicit range was requested.
+                        if (!explicitRangeRequested && preferWindowIfCurrentFile && isCurrentTarget) {
                             val cStart = currentCtx?.selectionStartLine
                             val cEnd = currentCtx?.selectionEndLine
                             val caret = currentCtx?.caretLine
+
                             val startLine0: Int
                             val endLine0: Int
                             if (cStart != null && cEnd != null) {
@@ -215,26 +271,24 @@ class ReadFileContent : ToolInterface<ReadFileResult> {
                                 startLine0 = ((caret - 1) - windowRadiusLines).coerceAtLeast(0)
                                 endLine0 = ((caret - 1) + windowRadiusLines).coerceAtMost(lc - 1)
                             } else {
-                                val (slice, start0) = headByLines(rawContent, maxChars)
-                                finalContent =
-                                    slice
+                                val (slice, start0) = headByLines(finalContent, maxChars)
+                                finalContent = slice
                                 truncated = true
-                                firstLineNumber = start0 + 1
+                                firstLineNumber += start0
                                 startLine0 = 0
                                 endLine0 = -1
                             }
+
                             if (startLine0 <= endLine0) {
-                                finalContent = sliceByLines(rawContent, startLine0, endLine0)
-                                truncated =
-                                    true
-                                firstLineNumber = startLine0 + 1
+                                finalContent = sliceByLines(finalContent, startLine0, endLine0)
+                                truncated = true
+                                firstLineNumber += startLine0
                             }
                         } else {
-                            val (slice, start0) = headByLines(rawContent, maxChars)
+                            val (slice, start0) = headByLines(finalContent, maxChars)
                             finalContent = slice
-                            truncated =
-                                true
-                            firstLineNumber = start0 + 1
+                            truncated = true
+                            firstLineNumber += start0
                         }
                     }
                 }
@@ -250,21 +304,28 @@ class ReadFileContent : ToolInterface<ReadFileResult> {
                 } else {
                     "plain" to finalContent
                 }
+
             val hash = sha256Normalized(rawContent)
             if (truncated) {
                 addMsg(
                     project,
                     "Read file content - truncated",
                     "strategy=$strategy maxChars=$maxChars windowRadiusLines=$windowRadiusLines " +
-                        "current=$isCurrentTarget startLine=$firstLineNumber",
+                        "current=$isCurrentTarget startLine=$firstLineNumber fromLine=${fromLine ?: ""} toLine=${toLine ?: ""}",
                 )
             } else {
-                addMsg(project, "Read file content - success", "lineNumbers=$includeLineNumbers")
+                addMsg(
+                    project,
+                    "Read file content - success",
+                    "lineNumbers=$includeLineNumbers startLine=$firstLineNumber fromLine=${fromLine ?: ""} toLine=${toLine ?: ""}",
+                )
             }
+
             QDLog.debug(logger) {
-                "Read file content: $relToBase, lineNumbers=$includeLineNumbers, " +
-                    "truncated=$truncated, startLine=$firstLineNumber"
+                "Read file content: $relToBase, lineNumbers=$includeLineNumbers, truncated=$truncated, " +
+                    "startLine=$firstLineNumber fromLine=${fromLine ?: ""} toLine=${toLine ?: ""}"
             }
+
             ReadFileResult(format, content, "", hash)
         }
     }
