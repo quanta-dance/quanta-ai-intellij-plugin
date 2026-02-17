@@ -50,6 +50,8 @@ class QuantaAISettingsState : PersistentStateComponent<QuantaAISettingsState.Qua
         var agents: MutableList<PersistedAgent> = mutableListOf(),
         // Stored conversations keyed by conversation id (e.g., "main@<branch>")
         var conversations: MutableMap<String, MutableList<PersistedMessage>> = mutableMapOf(),
+        // Optional rolling summaries per conversation key (used to keep context small)
+        var conversationSummaries: MutableMap<String, String> = mutableMapOf(),
         // Security: Terminal tool availability (default disabled)
         var terminalToolEnabled: Boolean? = false,
     )
