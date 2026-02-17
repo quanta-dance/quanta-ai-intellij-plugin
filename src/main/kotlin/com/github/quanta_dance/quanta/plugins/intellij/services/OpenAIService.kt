@@ -33,6 +33,7 @@ import java.beans.PropertyChangeListener
 import java.beans.PropertyChangeSupport
 import java.util.Collections
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Future
 
 @Service(Service.Level.PROJECT)
@@ -147,6 +148,191 @@ class OpenAIService(
         }
     }
 
+    private fun summaryForKey(key: String): String? =
+        try {
+            QuantaAISettingsState.instance.state.conversationSummaries[key]
+        } catch (_: Throwable) {
+            null
+        }
+
+    private fun storeSummaryForKey(
+        key: String,
+        summary: String,
+    ) {
+        if (summary.isBlank()) return
+        try {
+            QuantaAISettingsState.instance.state.conversationSummaries[key] = summary
+        } catch (_: Throwable) {
+        }
+    }
+
+    private fun buildHeuristicSummaryForKey(
+        key: String,
+        maxChars: Int = 2_000,
+    ): String {
+        val msgs =
+            try {
+                QuantaAISettingsState.instance.state.conversations[key]
+            } catch (_: Throwable) {
+                null
+            } ?: return ""
+
+        val lastUser =
+            msgs
+                .asReversed()
+                .firstOrNull { it.role == "user" }
+                ?.text
+                ?.trim()
+                .orEmpty()
+        val lastAssistant =
+            msgs
+                .asReversed()
+                .firstOrNull { it.role == "assistant" }
+                ?.text
+                ?.trim()
+                .orEmpty()
+        val recentUsers =
+            msgs
+                .asReversed()
+                .filter { it.role == "user" }
+                .take(3)
+                .mapNotNull {
+                    it.text
+                        ?.trim()
+                        ?.take(400)
+                        ?.ifBlank { null }
+                }
+
+        val b = StringBuilder()
+        if (recentUsers.isNotEmpty()) {
+            b.append("Recent user requests:\n")
+            recentUsers.asReversed().forEach { u -> b.append("- ").append(u.replace("\n", " ")).append('\n') }
+            b.append('\n')
+        }
+        if (lastAssistant.isNotBlank()) {
+            b.append("Last assistant response (truncated):\n")
+            b.append(lastAssistant.take(800)).append('\n')
+        } else if (lastUser.isNotBlank()) {
+            b.append("Last user request:\n")
+            b.append(lastUser.take(800)).append('\n')
+        }
+
+        val out = b.toString().trim()
+        return if (out.length <= maxChars) out else out.take(maxChars) + "\n... (truncated)"
+    }
+
+    private val summaryLastRunAtMs: MutableMap<String, Long> = ConcurrentHashMap()
+
+    private fun shouldSummarizeProactively(
+        key: String,
+        budgetedThisTurn: Boolean,
+    ): Boolean {
+        if (budgetedThisTurn) return true
+        val msgs =
+            try {
+                QuantaAISettingsState.instance.state.conversations[key]
+            } catch (_: Throwable) {
+                null
+            } ?: return false
+        return msgs.size >= 80
+    }
+
+    private fun scheduleSummaryIfNeeded(
+        key: String,
+        budgetedThisTurn: Boolean,
+    ) {
+        val now = System.currentTimeMillis()
+        val last = summaryLastRunAtMs[key] ?: 0L
+        val minIntervalMs = 2 * 60 * 1000L
+        if (now - last < minIntervalMs) return
+        if (!shouldSummarizeProactively(key, budgetedThisTurn)) return
+
+        summaryLastRunAtMs[key] = now
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                val summary = generateSummaryWithLlm(key)
+                if (summary.isNotBlank()) {
+                    storeSummaryForKey(key, summary)
+                }
+            } catch (t: Throwable) {
+                thisLogger().warn("Proactive summarization failed: ${t.message}", t)
+            }
+        }
+    }
+
+    private fun generateSummaryWithLlm(
+        key: String,
+        maxSummaryChars: Int = 2_000,
+    ): String {
+        val msgs =
+            try {
+                QuantaAISettingsState.instance.state.conversations[key]
+            } catch (_: Throwable) {
+                null
+            } ?: return ""
+
+        val previousSummary = summaryForKey(key).orEmpty().trim()
+        val tail = msgs.takeLast(30)
+        val transcript =
+            buildString {
+                tail.forEach { m ->
+                    val role = m.role.ifBlank { "unknown" }
+                    val text = (m.text ?: "").trim().take(800)
+                    if (text.isNotBlank()) {
+                        append(role.uppercase()).append(": ").append(text.replace("\n", " ")).append('\n')
+                    }
+                }
+            }.trim()
+
+        val instr =
+            """
+            You are maintaining a rolling conversation summary for an IDE assistant.
+            Produce a concise summary using this exact schema:
+            - Goal
+            - Key decisions
+            - Current state
+            - Open questions
+            - Next steps
+            Keep it under $maxSummaryChars characters.
+            """.trimIndent()
+
+        val inputs = mutableListOf<ResponseInputItem>()
+        inputs.add(systemMessage(instr))
+        if (previousSummary.isNotBlank()) {
+            inputs.add(systemMessage("Previous summary:\n" + previousSummary.take(1_500)))
+        }
+        if (transcript.isNotBlank()) {
+            inputs.add(systemMessage("Recent transcript:\n" + transcript))
+        }
+
+        val (resp, _) =
+            createResponse(
+                inputs = inputs,
+                previousId = null,
+                allowedToolClassFilter = { _ -> false },
+                includeMcp = false,
+            )
+
+        val out = StringBuilder()
+        resp.output().forEach { item ->
+            if (item.isMessage()) {
+                item.message().map { m ->
+                    m.content().forEach { c ->
+                        try {
+                            val t = c.asOutputText().summaryMessage
+                            if (t.isNotBlank()) out.append(t).append('\n')
+                        } catch (_: Throwable) {
+                        }
+                    }
+                }
+            }
+        }
+
+        val text = out.toString().trim()
+        if (text.isBlank()) return ""
+        return if (text.length <= maxSummaryChars) text else text.take(maxSummaryChars) + "\n... (truncated)"
+    }
+
     private fun buildProjectDetailsSystemMessage(): String {
         val sdkVersion =
             try {
@@ -247,6 +433,72 @@ class OpenAIService(
                 .role(com.openai.models.responses.ResponseInputItem.Message.Role.SYSTEM)
                 .build(),
         )
+
+    private companion object {
+        private const val MAX_REQUEST_APPROX_CHARS: Int = 60_000
+        private const val KEEP_PREFIX_ITEMS: Int = 3
+        private const val KEEP_TAIL_ITEMS: Int = 20
+        private const val TRIM_NOTICE: String = "Context trimmed due to size limits."
+    }
+
+    private fun approxChars(item: ResponseInputItem): Int =
+        try {
+            item.toString().length
+        } catch (_: Throwable) {
+            0
+        }
+
+    private fun approxTotalChars(inputs: List<ResponseInputItem>): Int {
+        var total = 0
+        inputs.forEach { total += approxChars(it) }
+        return total
+    }
+
+    private fun budgetRequestInputs(
+        inputs: MutableList<ResponseInputItem>,
+        maxApproxChars: Int = MAX_REQUEST_APPROX_CHARS,
+        keepPrefixItems: Int = KEEP_PREFIX_ITEMS,
+        keepTailItems: Int = KEEP_TAIL_ITEMS,
+    ): Boolean {
+        val beforeSize = inputs.size
+        val beforeChars = approxTotalChars(inputs)
+        if (beforeChars <= maxApproxChars) return false
+
+        val prefix = keepPrefixItems.coerceAtLeast(0).coerceAtMost(inputs.size)
+        val minKeep = (prefix + keepTailItems.coerceAtLeast(1)).coerceAtMost(inputs.size)
+
+        // Drop oldest items after the prefix first.
+        while (inputs.size > minKeep && approxTotalChars(inputs) > maxApproxChars) {
+            val idx = prefix.coerceAtMost(inputs.lastIndex)
+            if (idx <= inputs.lastIndex) {
+                inputs.removeAt(idx)
+            } else {
+                break
+            }
+        }
+
+        // If still too large, keep only the tail.
+        while (inputs.size > keepTailItems.coerceAtLeast(1) && approxTotalChars(inputs) > maxApproxChars) {
+            inputs.removeAt(0)
+        }
+
+        // If still too large, fall back to a minimal context: trim notice + last item (usually the user message).
+        if (inputs.isNotEmpty() && approxTotalChars(inputs) > maxApproxChars) {
+            val last = inputs.last()
+            inputs.clear()
+            inputs.add(systemMessage(TRIM_NOTICE))
+            inputs.add(last)
+        }
+
+        val changed = (inputs.size != beforeSize) || (approxTotalChars(inputs) != beforeChars)
+        if (changed) {
+            thisLogger().info(
+                "Budgeted requestInputs: beforeItems=$beforeSize beforeApproxChars=$beforeChars " +
+                    "afterItems=${inputs.size} afterApproxChars=${approxTotalChars(inputs)}",
+            )
+        }
+        return changed
+    }
 
     fun inProgress(): Boolean = operationInProgress
 
@@ -504,9 +756,19 @@ class OpenAIService(
                 } catch (_: Throwable) {
                 }
                 if (lastResponseId == null) {
+                    // Hidden system context: optional rolling summary (if present)
+                    try {
+                        val key = conversationKeyForMain()
+                        val sum = summaryForKey(key)
+                        if (!sum.isNullOrBlank()) {
+                            requestInputs.add(systemMessage("Conversation summary (auto):\n" + sum))
+                        }
+                    } catch (_: Throwable) {
+                    }
+
                     // Hidden system context: repository-root AGENTS.md (preferred) or fallback project details
                     try {
-                        val ctx = ProjectAgentsFileManager(project).readAgentsFile()
+                        val ctx = ProjectAgentsFileManager(project).readAgentsFile(maxChars = 8_000)
                         if (ctx.isNotBlank()) {
                             requestInputs.add(systemMessage("AGENTS.md:\n" + ctx))
                         } else {
@@ -532,6 +794,8 @@ class OpenAIService(
                 val processedCallIds = mutableSetOf<String>()
                 var previousIdForThisTurn = lastResponseId
                 var aborted = false
+                var retriedAfterContextReset = false
+                var budgetedThisTurn = false
 
                 val tws = project.service<ToolWindowService>()
                 val delayedSpinner = DelayedSpinner(tws)
@@ -540,8 +804,36 @@ class OpenAIService(
                 while (reprocess) {
                     reprocess = false
                     try {
+                        // Step 0 instrumentation: estimate request size before calling the API
+                        try {
+                            var totalChars = 0
+                            var maxItemChars = 0
+                            requestInputs.forEach { item ->
+                                val n =
+                                    try {
+                                        item.toString().length
+                                    } catch (_: Throwable) {
+                                        0
+                                    }
+                                totalChars += n
+                                if (n > maxItemChars) maxItemChars = n
+                            }
+                            thisLogger().info(
+                                "RequestInputs: items=${requestInputs.size} approxChars=$totalChars maxItemChars=$maxItemChars " +
+                                    "previousIdNull=${previousIdForThisTurn == null} session=$currentSessionId",
+                            )
+                        } catch (_: Throwable) {
+                        }
+
+                        // Step 1 mitigation: budget request inputs to reduce chances of hitting the context window
+                        try {
+                            budgetedThisTurn = budgetedThisTurn || budgetRequestInputs(requestInputs)
+                        } catch (_: Throwable) {
+                        }
+
                         // Expose all tools by default: include MCP and no per-turn allow-list restrictions
                         val (structResponse, newId) =
+
                             createResponse(
                                 requestInputs,
                                 previousIdForThisTurn,
@@ -645,17 +937,85 @@ class OpenAIService(
                         Thread.currentThread().interrupt()
                         break
                     } catch (e: Throwable) {
+                        val msg = e.message.orEmpty()
+                        val isContextWindow =
+                            msg.contains("exceeds context window", ignoreCase = true) ||
+                                msg.contains("context window", ignoreCase = true)
+
+                        if (isContextWindow && !retriedAfterContextReset) {
+                            // Step 4: summarize + reset previousId and retry once with minimal context
+                            thisLogger().warn(
+                                "CONTEXT_WINDOW_EXCEEDED: attempting soft reset (retry once). " +
+                                    "items=${requestInputs.size} previousIdNull=${previousIdForThisTurn == null} session=$currentSessionId message=$msg",
+                                e,
+                            )
+
+                            try {
+                                val key = conversationKeyForMain()
+                                val summary = buildHeuristicSummaryForKey(key)
+                                if (summary.isNotBlank()) {
+                                    storeSummaryForKey(key, summary)
+                                }
+                            } catch (_: Throwable) {
+                            }
+
+                            // Reset server-side thread state
+                            previousIdForThisTurn = null
+                            lastResponseId = null
+                            try {
+                                QuantaAISettingsState.instance.state.mainLastResponseId = null
+                            } catch (_: Throwable) {
+                            }
+
+                            // Rebuild minimal request inputs for retry
+                            try {
+                                requestInputs.clear()
+                                val key = conversationKeyForMain()
+                                val summary = summaryForKey(key)
+                                if (!summary.isNullOrBlank()) {
+                                    requestInputs.add(systemMessage("Conversation summary (auto):\n" + summary))
+                                }
+                                val agentsCtx = ProjectAgentsFileManager(project).readAgentsFile(maxChars = 8_000)
+                                if (agentsCtx.isNotBlank()) {
+                                    requestInputs.add(systemMessage("AGENTS.md:\n" + agentsCtx))
+                                }
+                                requestInputs.add(systemMessage(buildBootstrapContext()))
+                                requestInputs.add(userMessage(text))
+                            } catch (_: Throwable) {
+                            }
+
+                            retriedAfterContextReset = true
+                            reprocess = true
+                            continue
+                        }
+
                         aborted = true
-                        delayedSpinner.stopError(e.message ?: "Unexpected error")
-                        thisLogger().warn("Unexpected Error: ", e)
-                        Notifications.show(project, e.message.orEmpty(), NotificationType.ERROR)
+                        delayedSpinner.stopError(if (msg.isNotBlank()) msg else "Unexpected error")
+                        if (isContextWindow) {
+                            thisLogger().warn(
+                                "CONTEXT_WINDOW_EXCEEDED: items=${requestInputs.size} previousIdNull=${previousIdForThisTurn == null} " +
+                                    "session=$currentSessionId message=$msg",
+                                e,
+                            )
+                        } else {
+                            thisLogger().warn("Unexpected Error: ", e)
+                        }
+                        Notifications.show(project, msg, NotificationType.ERROR)
                         break
                     }
                 }
                 if (!aborted) {
                     lastResponseId = previousIdForThisTurn
                     QuantaAISettingsState.instance.state.mainLastResponseId = lastResponseId
+
+                    // Proactive LLM summarization (throttled) to keep long conversations within context limits
+                    try {
+                        val key = conversationKeyForMain()
+                        scheduleSummaryIfNeeded(key, budgetedThisTurn)
+                    } catch (_: Throwable) {
+                    }
                 }
+
                 operationInProgress = false
                 pcs.firePropertyChange("inProgress", true, false)
             }

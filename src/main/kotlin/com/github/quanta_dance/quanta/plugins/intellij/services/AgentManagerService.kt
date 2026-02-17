@@ -6,6 +6,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.services
 import com.github.quanta_dance.quanta.plugins.intellij.settings.Instructions
 import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
@@ -13,7 +14,7 @@ import com.intellij.openapi.project.Project
 import com.openai.models.responses.ResponseInputItem
 import java.beans.PropertyChangeListener
 import java.beans.PropertyChangeSupport
-import java.util.UUID
+import java.util.*
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
@@ -61,6 +62,9 @@ class AgentManagerService(
     private val pcs = PropertyChangeSupport(this)
     private val executors = ConcurrentHashMap<String, ExecutorService>()
 
+    // Proactive summarization throttle
+    private val agentSummaryLastRunAtMs = ConcurrentHashMap<String, Long>()
+
     init {
         val st = QuantaAISettingsState.instance.state
         st.agents.forEach { pa ->
@@ -77,6 +81,166 @@ class AgentManagerService(
 
     private fun ensureExecutor(agentId: String): ExecutorService =
         executors.computeIfAbsent(agentId) { Executors.newSingleThreadExecutor { r -> Thread(r, "agent-$agentId") } }
+
+    private fun agentConversationKey(agentId: String): String = "agent:$agentId"
+
+    private fun persistAgentMessage(
+        agentId: String,
+        role: String,
+        text: String,
+    ) {
+        try {
+            val key = agentConversationKey(agentId)
+            val state = QuantaAISettingsState.instance.state
+            val list = state.conversations.getOrPut(key) { mutableListOf() }
+            list.add(QuantaAISettingsState.PersistedMessage(System.currentTimeMillis(), role, text, null))
+
+            // Keep bounded to ensure summary inputs remain small.
+            val max = 120
+            if (list.size > max) {
+                val drop = list.size - max
+                repeat(drop) { if (list.isNotEmpty()) list.removeAt(0) }
+            }
+        } catch (_: Throwable) {
+        }
+    }
+
+    private fun summaryForAgent(agentId: String): String? =
+        try {
+            QuantaAISettingsState.instance.state.conversationSummaries[agentConversationKey(agentId)]
+        } catch (_: Throwable) {
+            null
+        }
+
+    private fun storeSummaryForAgent(
+        agentId: String,
+        summary: String,
+    ) {
+        if (summary.isBlank()) return
+        try {
+            QuantaAISettingsState.instance.state.conversationSummaries[agentConversationKey(agentId)] = summary
+        } catch (_: Throwable) {
+        }
+    }
+
+    private fun shouldSummarizeAgentProactively(
+        agentId: String,
+        maxMessages: Int = 80,
+    ): Boolean {
+        val key = agentConversationKey(agentId)
+        val msgs =
+            try {
+                QuantaAISettingsState.instance.state.conversations[key]
+            } catch (_: Throwable) {
+                null
+            } ?: return false
+        return msgs.size >= maxMessages
+    }
+
+    private fun scheduleAgentSummaryIfNeeded(
+        agentId: String,
+        agentModelOverride: String?,
+    ) {
+        val now = System.currentTimeMillis()
+        val last = agentSummaryLastRunAtMs[agentId] ?: 0L
+        val minIntervalMs = 2 * 60 * 1000L
+        if (now - last < minIntervalMs) return
+        if (!shouldSummarizeAgentProactively(agentId)) return
+
+        agentSummaryLastRunAtMs[agentId] = now
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                val openAI = project.service<OpenAIService>()
+                val summary = generateAgentSummaryWithLlm(openAI, agentId, agentModelOverride)
+                if (summary.isNotBlank()) {
+                    storeSummaryForAgent(agentId, summary)
+                }
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    private fun generateAgentSummaryWithLlm(
+        openAI: OpenAIService,
+        agentId: String,
+        agentModelOverride: String?,
+        maxSummaryChars: Int = 2_000,
+    ): String {
+        val key = agentConversationKey(agentId)
+        val msgs =
+            try {
+                QuantaAISettingsState.instance.state.conversations[key]
+            } catch (_: Throwable) {
+                null
+            } ?: return ""
+
+        val previousSummary = summaryForAgent(agentId).orEmpty().trim()
+        val tail = msgs.takeLast(30)
+        val transcript =
+            buildString {
+                tail.forEach { m ->
+                    val role = m.role.ifBlank { "unknown" }
+                    val t = (m.text ?: "").trim().take(800)
+                    if (t.isNotBlank()) {
+                        append(role.uppercase()).append(": ").append(t.replace("\n", " ")).append('\n')
+                    }
+                }
+            }.trim()
+
+        val instr =
+            """
+            You are maintaining a rolling conversation summary for an IDE sub-agent.
+            Produce a concise summary using this exact schema:
+            - Goal
+            - Key decisions
+            - Current state
+            - Open questions
+            - Next steps
+            Keep it under $maxSummaryChars characters.
+            """.trimIndent()
+
+        fun sys(text: String): ResponseInputItem =
+            ResponseInputItem.ofMessage(
+                ResponseInputItem.Message
+                    .builder()
+                    .addInputTextContent(text)
+                    .role(ResponseInputItem.Message.Role.SYSTEM)
+                    .build(),
+            )
+
+        val inputs = mutableListOf<ResponseInputItem>()
+        inputs.add(sys(instr))
+        if (previousSummary.isNotBlank()) inputs.add(sys("Previous summary:\n" + previousSummary.take(1_500)))
+        if (transcript.isNotBlank()) inputs.add(sys("Recent transcript:\n" + transcript))
+
+        val (resp, _) =
+            openAI.createResponse(
+                inputs = inputs,
+                previousId = null,
+                overrideModel = agentModelOverride,
+                allowedToolClassFilter = { _ -> false },
+                includeMcp = false,
+            )
+
+        val out = StringBuilder()
+        resp.output().forEach { item ->
+            if (item.isMessage()) {
+                item.message().map { m ->
+                    m.content().forEach { c ->
+                        try {
+                            val t = c.asOutputText().summaryMessage
+                            if (t.isNotBlank()) out.append(t).append('\n')
+                        } catch (_: Throwable) {
+                        }
+                    }
+                }
+            }
+        }
+
+        val text = out.toString().trim()
+        if (text.isBlank()) return ""
+        return if (text.length <= maxSummaryChars) text else text.take(maxSummaryChars) + "\n... (truncated)"
+    }
 
     fun createAgent(config: AgentConfig): String {
         val enabled = QuantaAISettingsState.instance.state.agenticEnabled ?: true
@@ -198,9 +362,26 @@ class AgentManagerService(
                         ),
                     )
 
+                    // Provide rolling summary if present
+                    try {
+                        val sum = summaryForAgent(agentId)
+                        if (!sum.isNullOrBlank()) {
+                            inputs.add(
+                                ResponseInputItem.ofMessage(
+                                    ResponseInputItem.Message
+                                        .builder()
+                                        .addInputTextContent("Conversation summary (auto):\n" + sum)
+                                        .role(ResponseInputItem.Message.Role.SYSTEM)
+                                        .build(),
+                                ),
+                            )
+                        }
+                    } catch (_: Throwable) {
+                    }
+
                     // Provide project-specific instructions from repository-root AGENTS.md (if present)
                     try {
-                        val agentsText = ProjectAgentsFileManager(project).readAgentsFile()
+                        val agentsText = ProjectAgentsFileManager(project).readAgentsFile(maxChars = 8_000)
                         if (agentsText.isNotBlank()) {
                             inputs.add(
                                 ResponseInputItem.ofMessage(
@@ -245,6 +426,15 @@ class AgentManagerService(
                 QuantaAISettingsState.instance.state.agents
                     .find { it.id == agentId }
                     ?.previousId = newPrev
+
+                // Persist transcript and schedule proactive summarization
+                persistAgentMessage(agentId, "user", message)
+                persistAgentMessage(agentId, "assistant", reply)
+                try {
+                    scheduleAgentSummaryIfNeeded(agentId, session.config.model)
+                } catch (_: Throwable) {
+                }
+
                 QDLog.info(logger) { "Agent[$agentId][$requestId] reply length=${reply.length}" }
                 val result = AgentTaskResult(requestId, agentId, true, reply.ifBlank { "<no message>" }, null)
                 fut.complete(result)
@@ -283,9 +473,26 @@ class AgentManagerService(
                     ),
                 )
 
+                // Provide rolling summary if present
+                try {
+                    val sum = summaryForAgent(agentId)
+                    if (!sum.isNullOrBlank()) {
+                        inputs.add(
+                            ResponseInputItem.ofMessage(
+                                ResponseInputItem.Message
+                                    .builder()
+                                    .addInputTextContent("Conversation summary (auto):\n" + sum)
+                                    .role(ResponseInputItem.Message.Role.SYSTEM)
+                                    .build(),
+                            ),
+                        )
+                    }
+                } catch (_: Throwable) {
+                }
+
                 // Provide project-specific instructions from repository-root AGENTS.md (if present)
                 try {
-                    val agentsText = ProjectAgentsFileManager(project).readAgentsFile()
+                    val agentsText = ProjectAgentsFileManager(project).readAgentsFile(maxChars = 8_000)
                     if (agentsText.isNotBlank()) {
                         inputs.add(
                             ResponseInputItem.ofMessage(
@@ -330,6 +537,15 @@ class AgentManagerService(
             QuantaAISettingsState.instance.state.agents
                 .find { it.id == agentId }
                 ?.previousId = newPrev
+
+            // Persist transcript and schedule proactive summarization
+            persistAgentMessage(agentId, "user", message)
+            persistAgentMessage(agentId, "assistant", reply)
+            try {
+                scheduleAgentSummaryIfNeeded(agentId, session.config.model)
+            } catch (_: Throwable) {
+            }
+
             QDLog.info(logger) { "Agent[$agentId] reply length=${reply.length}" }
             val out = reply.ifBlank { "<no message>" }
             pcs.firePropertyChange("agent_task_finished", null, AgentTaskResult(requestId, agentId, true, out, null))
