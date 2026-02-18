@@ -191,6 +191,32 @@ class MainPanel(var project: Project) : JPanel(BorderLayout()) {
         val agents = manager.getAgentsSnapshot()
         agentsBar.removeAll()
         agentLabels.clear()
+
+        if (agents.isEmpty()) {
+            val btn =
+                JButton("Create default team").apply {
+                    isFocusable = false
+                    toolTipText = "Create Developer Agent, Test Agent, and Project Analyst"
+                    addActionListener {
+                        isEnabled = false
+                        ApplicationManager.getApplication().executeOnPooledThread {
+                            try {
+                                manager.createDefaultTeam()
+                            } finally {
+                                ApplicationManager.getApplication().invokeLater {
+                                    isEnabled = true
+                                    refreshAgentsBar()
+                                }
+                            }
+                        }
+                    }
+                }
+            agentsBar.add(btn)
+            agentsBar.revalidate()
+            agentsBar.repaint()
+            return
+        }
+
         agents.forEach { a ->
             val label = JLabel()
             val currentBusy = busyCounts[a.id] ?: 0
