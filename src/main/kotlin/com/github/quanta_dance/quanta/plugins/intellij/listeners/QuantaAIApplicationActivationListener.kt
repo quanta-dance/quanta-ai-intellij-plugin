@@ -22,6 +22,7 @@ class QuantaAIApplicationActivationListener : ProjectActivity {
         } catch (_: Throwable) {
         }
 
+
         // Ensure MCP services are initialized; discovery continues in background
         try {
             project.service<McpClientService>()
