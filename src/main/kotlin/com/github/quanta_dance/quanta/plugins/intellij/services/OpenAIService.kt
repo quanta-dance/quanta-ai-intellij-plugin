@@ -28,6 +28,7 @@ import com.openai.client.OpenAIClient
 import com.openai.models.images.ImageGenerateParams
 import com.openai.models.images.ImageModel
 import com.openai.models.responses.ResponseInputItem
+import com.openai.models.responses.ResponseUsage
 import com.openai.models.responses.StructuredResponse
 import java.beans.PropertyChangeListener
 import java.beans.PropertyChangeSupport
@@ -35,6 +36,7 @@ import java.util.Collections
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Future
+import java.util.concurrent.atomic.AtomicLong
 
 @Service(Service.Level.PROJECT)
 class OpenAIService(
@@ -65,6 +67,79 @@ class OpenAIService(
     private var currentModel: String = ModelSelector.initialModel()
 
     private val managerLabel: String = "AI(manager)"
+
+    data class UsageSnapshot(
+        val inputTokens: Long,
+        val outputTokens: Long,
+        val totalTokens: Long,
+    )
+
+    private data class UsageTotals(
+        val inputTokens: AtomicLong = AtomicLong(0),
+        val outputTokens: AtomicLong = AtomicLong(0),
+        val totalTokens: AtomicLong = AtomicLong(0),
+    )
+
+    private val globalUsageTotals: UsageTotals = UsageTotals()
+
+    fun getUsageSnapshot(): UsageSnapshot =
+        UsageSnapshot(
+            inputTokens = globalUsageTotals.inputTokens.get(),
+            outputTokens = globalUsageTotals.outputTokens.get(),
+            totalTokens = globalUsageTotals.totalTokens.get(),
+        )
+
+    private fun recordUsage(
+        tag: String,
+        usage: ResponseUsage,
+        reportToUi: Boolean,
+    ) {
+        // Note: tag is intentionally ignored for UI; we show only global totals.
+        val inTok =
+            try {
+                usage.inputTokens()
+            } catch (_: Throwable) {
+                0L
+            }
+        val outTok =
+            try {
+                usage.outputTokens()
+            } catch (_: Throwable) {
+                0L
+            }
+        val totalTok =
+            try {
+                usage.totalTokens()
+            } catch (_: Throwable) {
+                inTok + outTok
+            }
+
+        val tIn = globalUsageTotals.inputTokens.addAndGet(inTok)
+        val tOut = globalUsageTotals.outputTokens.addAndGet(outTok)
+        val tTot = globalUsageTotals.totalTokens.addAndGet(totalTok)
+
+        try {
+            pcs.firePropertyChange("usage", null, UsageSnapshot(tIn, tOut, tTot))
+        } catch (_: Throwable) {
+        }
+
+        if (reportToUi) {
+            try {
+                project.service<ToolWindowService>().addDebugMessage(
+                    "usage",
+                    "+in=$inTok +out=$outTok +total=$totalTok | total in=$tIn out=$tOut total=$tTot",
+                )
+            } catch (_: Throwable) {
+            }
+        }
+
+        try {
+            thisLogger().info(
+                "Usage: tag=$tag in=$inTok out=$outTok total=$totalTok global(in=$tIn out=$tOut total=$tTot)",
+            )
+        } catch (_: Throwable) {
+        }
+    }
 
     @Volatile
     private var lastCtxHash: Int? = null
@@ -311,6 +386,8 @@ class OpenAIService(
                 previousId = null,
                 allowedToolClassFilter = { _ -> false },
                 includeMcp = false,
+                usageTag = "summary",
+                reportUsageToUi = false,
             )
 
         val out = StringBuilder()
@@ -528,6 +605,15 @@ class OpenAIService(
         QuantaAISettingsState.instance.state.mainLastResponseId = null
         lastCtxHash = null
 
+        // Reset global token usage counters
+        try {
+            globalUsageTotals.inputTokens.set(0)
+            globalUsageTotals.outputTokens.set(0)
+            globalUsageTotals.totalTokens.set(0)
+            pcs.firePropertyChange("usage", null, UsageSnapshot(0, 0, 0))
+        } catch (_: Throwable) {
+        }
+
         // Clear persisted chat for current branch so "new session" is a clean slate on restart too
         try {
             val key = conversationKeyForMain()
@@ -587,6 +673,8 @@ class OpenAIService(
         includeMcp: Boolean = true,
         allowedBuiltInNames: Set<String>? = null,
         allowedMcpNames: Set<String>? = null,
+        usageTag: String = "main",
+        reportUsageToUi: Boolean = true,
     ): Pair<StructuredResponse<OpenAIResponse>, String?> {
         val createParams =
             responseBuilder
@@ -602,6 +690,15 @@ class OpenAIService(
                     allowedMcpNames,
                 ).build()
         val structResponse = oAI.responses().create(createParams)
+
+        try {
+            val usage = structResponse.usage().orElse(null)
+            if (usage != null) {
+                recordUsage(usageTag, usage, reportToUi = reportUsageToUi)
+            }
+        } catch (_: Throwable) {
+        }
+
         val id =
             try {
                 structResponse.id()
@@ -886,8 +983,8 @@ class OpenAIService(
                                             persistAndShow("assistant", managerLabel, message.summaryMessage)
 
                                             // Debug: surface nextStep value
-                                            project.service<ToolWindowService>().addToolingMessage(
-                                                "AI(debug)",
+                                            project.service<ToolWindowService>().addDebugMessage(
+                                                "next_step",
                                                 "nextStep=${message.nextStep} continuationCount=$continuationCount/$maxContinuations",
                                             )
                                             message.ttsSummary?.also { summary ->
@@ -960,7 +1057,6 @@ class OpenAIService(
                             } catch (_: Throwable) {
                             }
 
-
                             val key = conversationKeyForMain()
 
                             // Force a rolling summary that represents the whole conversation.
@@ -1013,7 +1109,6 @@ class OpenAIService(
                                 } catch (_: Throwable) {
                                 }
                             }
-
 
                             // Reset server-side thread state
                             previousIdForThisTurn = null

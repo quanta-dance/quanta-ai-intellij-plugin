@@ -505,6 +505,8 @@ class AgentManagerService(
                 overrideModel = agentModelOverride,
                 allowedToolClassFilter = { _ -> false },
                 includeMcp = false,
+                usageTag = "agent_summary",
+                reportUsageToUi = false,
             )
 
         val out = StringBuilder()
@@ -784,7 +786,6 @@ class AgentManagerService(
                 } catch (_: Throwable) {
                 }
 
-
                 if (session.previousId == null) {
                     inputs.add(
                         ResponseInputItem.ofMessage(
@@ -989,7 +990,6 @@ class AgentManagerService(
                 }
             } catch (_: Throwable) {
             }
-
 
             if (session.previousId == null) {
                 inputs.add(
