@@ -952,6 +952,14 @@ class OpenAIService(
                                     "session=$currentSessionId message=$msg",
                                 e,
                             )
+                            try {
+                                project.service<ToolWindowService>().addDebugMessage(
+                                    "context_reset",
+                                    "attempting soft reset: items=${requestInputs.size} previousIdNull=${previousIdForThisTurn == null}",
+                                )
+                            } catch (_: Throwable) {
+                            }
+
 
                             val key = conversationKeyForMain()
 
@@ -973,6 +981,13 @@ class OpenAIService(
                             if (summaryText.isNotBlank()) {
                                 try {
                                     storeSummaryForKey(key, summaryText)
+                                } catch (_: Throwable) {
+                                }
+                                try {
+                                    project.service<ToolWindowService>().addDebugMessage(
+                                        "context_reset",
+                                        "summary generated: chars=${summaryText.length}",
+                                    )
                                 } catch (_: Throwable) {
                                 }
 
@@ -998,6 +1013,7 @@ class OpenAIService(
                                 } catch (_: Throwable) {
                                 }
                             }
+
 
                             // Reset server-side thread state
                             previousIdForThisTurn = null

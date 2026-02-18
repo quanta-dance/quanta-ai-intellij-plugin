@@ -71,6 +71,28 @@ class ToolWindowService(
         }
     }
 
+    fun addDebugMessage(
+        tag: String,
+        text: String,
+    ) {
+        val enabled =
+            try {
+                com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState.instance.state.debugEnabled
+            } catch (_: Throwable) {
+                false
+            }
+        if (!enabled) return
+
+        val safe =
+            try {
+                if (text.length <= 2_000) text else text.take(2_000) + "\n... (truncated)"
+            } catch (_: Throwable) {
+                "<debug message unavailable>"
+            }
+        addToolingMessage("AI(debug):$tag", safe)
+    }
+
+
     inner class ToolExecHandle(
         private val container: JPanel,
         private val panel: ToolExecCardPanel,
