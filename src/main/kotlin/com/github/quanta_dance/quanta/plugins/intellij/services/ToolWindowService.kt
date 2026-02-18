@@ -92,6 +92,21 @@ class ToolWindowService(
         addToolingMessage("AI(debug):$tag", safe)
     }
 
+    fun clearDebugMessages() {
+        ApplicationManager.getApplication().invokeLater {
+            val container = mainToolPanel ?: return@invokeLater
+            val toRemove =
+                container.components.filter { c ->
+                    val border = (c as? javax.swing.JComponent)?.border
+                    val title = (border as? javax.swing.border.TitledBorder)?.title
+                    title != null && (title.startsWith("AI(debug):") || title == "Usage")
+                }
+            if (toRemove.isEmpty()) return@invokeLater
+            toRemove.forEach { container.remove(it) }
+            container.revalidate()
+            container.repaint()
+        }
+    }
 
     inner class ToolExecHandle(
         private val container: JPanel,

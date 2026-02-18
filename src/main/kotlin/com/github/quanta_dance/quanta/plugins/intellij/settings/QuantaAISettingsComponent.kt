@@ -87,7 +87,6 @@ class QuantaAISettingsComponent {
             toolTipText = "Allows the assistant to run shell commands. Disabled by default."
         }
 
-
     private var customPromptField = JBTextField()
 
     private var extraInstructionsArea =

@@ -83,6 +83,11 @@ class MainPanel(var project: Project) : JPanel(BorderLayout()) {
     private val agentLabels = ConcurrentHashMap<String, JLabel>()
     private val busyCounts = ConcurrentHashMap<String, Int>()
 
+    private val usageLabel =
+        JLabel("Tokens: 0").apply {
+            toolTipText = "Total tokens used in current session (input + output)"
+        }
+
     private val promptButtonPanel =
         JPanel().apply {
             val group =
@@ -97,6 +102,8 @@ class MainPanel(var project: Project) : JPanel(BorderLayout()) {
             layout = BoxLayout(this, BoxLayout.X_AXIS)
             add(toolbar.component)
             add(Box.createHorizontalGlue())
+            add(usageLabel)
+            add(Box.createHorizontalStrut(8))
             add(submitButton, BorderLayout.EAST)
         }
 
@@ -114,6 +121,26 @@ class MainPanel(var project: Project) : JPanel(BorderLayout()) {
         bottom.add(agentsBar, BorderLayout.NORTH)
         bottom.add(promptPanel, BorderLayout.SOUTH)
         add(bottom, BorderLayout.SOUTH)
+
+        // Usage total label
+        try {
+            val svc = project.service<OpenAIService>()
+            val snap = svc.getUsageSnapshot()
+            usageLabel.text = "Tokens: ${snap.totalTokens}"
+            usageLabel.toolTipText = "Input: ${snap.inputTokens} | Output: ${snap.outputTokens} | Total: ${snap.totalTokens}"
+            svc.addPropertyChangeListener(
+                PropertyChangeListener { evt ->
+                    if (evt.propertyName == "usage") {
+                        val s = evt.newValue as? OpenAIService.UsageSnapshot ?: return@PropertyChangeListener
+                        ApplicationManager.getApplication().invokeLater {
+                            usageLabel.text = "Tokens: ${s.totalTokens}"
+                            usageLabel.toolTipText = "Input: ${s.inputTokens} | Output: ${s.outputTokens} | Total: ${s.totalTokens}"
+                        }
+                    }
+                },
+            )
+        } catch (_: Throwable) {
+        }
 
         val agentService = project.service<AgentManagerService>()
         agentService.addPropertyChangeListener(
@@ -152,6 +179,12 @@ class MainPanel(var project: Project) : JPanel(BorderLayout()) {
             object : QuantaAISettingsListener {
                 override fun onSettingsChanged(newState: QuantaAISettingsState.QuantaAIState) {
                     agentsBar.isVisible = newState.agenticEnabled ?: true
+                    if (!newState.debugEnabled) {
+                        try {
+                            project.service<ToolWindowService>().clearDebugMessages()
+                        } catch (_: Throwable) {
+                        }
+                    }
                     refreshAgentsBar()
                 }
             },
