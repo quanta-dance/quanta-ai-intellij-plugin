@@ -5,6 +5,8 @@ package com.github.quanta_dance.quanta.plugins.intellij.tools
 
 import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState
 import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentCreateTool
+import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentPostMessageTool
+import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentReadInboxTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentRemoveTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentSendMessageTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.builder.GetTestInfoTool
@@ -114,6 +116,8 @@ object ToolsRegistry {
         if (agentic) {
             list.add(ToolEntry(AgentCreateTool::class.java, Group.GENERIC))
             list.add(ToolEntry(AgentSendMessageTool::class.java, Group.GENERIC))
+            list.add(ToolEntry(AgentPostMessageTool::class.java, Group.GENERIC))
+            list.add(ToolEntry(AgentReadInboxTool::class.java, Group.GENERIC))
             list.add(ToolEntry(AgentRemoveTool::class.java, Group.GENERIC))
         }
         if (javaPsiAvailable(project)) list.add(ToolEntry(InspectDependencies::class.java, Group.GENERIC))

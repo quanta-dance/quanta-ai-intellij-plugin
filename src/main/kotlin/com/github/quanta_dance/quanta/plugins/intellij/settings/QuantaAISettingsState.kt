@@ -30,6 +30,15 @@ class QuantaAISettingsState : PersistentStateComponent<QuantaAISettingsState.Qua
         var previousId: String? = null,
     )
 
+    // Persisted inbox message structure (agent-to-agent / manager-to-agent notifications)
+    data class AgentInboxMessage(
+        var timestamp: Long = System.currentTimeMillis(),
+        var from: String? = null,
+        var text: String = "",
+        // e.g. "notification" | "roster_update"
+        var kind: String? = null,
+    )
+
     // default configuration
     data class QuantaAIState(
         var host: String = DEFAULT_HOST,
@@ -52,6 +61,8 @@ class QuantaAISettingsState : PersistentStateComponent<QuantaAISettingsState.Qua
         var conversations: MutableMap<String, MutableList<PersistedMessage>> = mutableMapOf(),
         // Optional rolling summaries per conversation key (used to keep context small)
         var conversationSummaries: MutableMap<String, String> = mutableMapOf(),
+        // Per-agent inboxes (asynchronous notifications). Key: agentId
+        var agentInboxes: MutableMap<String, MutableList<AgentInboxMessage>> = mutableMapOf(),
         // Security: Terminal tool availability (default disabled)
         var terminalToolEnabled: Boolean? = false,
     )

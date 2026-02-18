@@ -79,6 +79,67 @@ class AgentManagerService(
     fun getAgentsSnapshot(): List<AgentSnapshot> =
         agents.values.map { AgentSnapshot(it.id, it.config.role, it.config.instructions, it.config.model) }
 
+    private fun buildAgentsRosterText(): String {
+        val snaps = getAgentsSnapshot().sortedBy { it.role }
+        val b = StringBuilder()
+        b.append("Agents roster (auto):\n")
+        if (snaps.isEmpty()) {
+            b.append("- <none>\n")
+            return b.toString()
+        }
+        snaps.forEach { a ->
+            b.append("- id=").append(a.id).append(", role=").append(a.role)
+            a.model?.let { m -> b.append(", model=").append(m) }
+            b.append('\n')
+        }
+        return b.toString().trimEnd()
+    }
+
+    fun postInboxMessage(
+        toAgentId: String,
+        from: String?,
+        text: String,
+        kind: String? = "notification",
+    ): Boolean {
+        if (text.isBlank()) return false
+        if (!agents.containsKey(toAgentId)) return false
+        return try {
+            val st = QuantaAISettingsState.instance.state
+            val list = st.agentInboxes.getOrPut(toAgentId) { mutableListOf() }
+            list.add(QuantaAISettingsState.AgentInboxMessage(System.currentTimeMillis(), from, text, kind))
+            val max = 50
+            if (list.size > max) {
+                val drop = list.size - max
+                repeat(drop) { if (list.isNotEmpty()) list.removeAt(0) }
+            }
+            pcs.firePropertyChange("agent_inbox", null, mapOf("agentId" to toAgentId, "count" to list.size))
+            true
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    fun readAndClearInbox(agentId: String): List<QuantaAISettingsState.AgentInboxMessage> {
+        return try {
+            val st = QuantaAISettingsState.instance.state
+            val list = st.agentInboxes[agentId] ?: return emptyList()
+            val out = list.toList()
+            list.clear()
+            pcs.firePropertyChange("agent_inbox", null, mapOf("agentId" to agentId, "count" to 0))
+            out
+        } catch (_: Throwable) {
+            emptyList()
+        }
+    }
+
+    private fun broadcastRosterUpdate(from: String? = "AgentManager") {
+        val roster = buildAgentsRosterText()
+        if (roster.isBlank()) return
+        agents.keys.forEach { id ->
+            postInboxMessage(id, from, roster, kind = "roster_update")
+        }
+    }
+
     private fun ensureExecutor(agentId: String): ExecutorService =
         executors.computeIfAbsent(agentId) { Executors.newSingleThreadExecutor { r -> Thread(r, "agent-$agentId") } }
 
@@ -383,6 +444,10 @@ class AgentManagerService(
         agents[id] = session
         ensureExecutor(id)
         project.service<ToolWindowService>().addToolingMessage("AgentManager", "Created agent ${config.role} [$id]")
+        try {
+            broadcastRosterUpdate(from = "AgentManager")
+        } catch (_: Throwable) {
+        }
         val st = QuantaAISettingsState.instance.state
         st.agents.add(
             QuantaAISettingsState.PersistedAgent(
@@ -408,6 +473,10 @@ class AgentManagerService(
         val st = QuantaAISettingsState.instance.state
         st.agents.removeIf { it.id == agentId }
         project.service<ToolWindowService>().addToolingMessage("AgentManager", "Removed agent ${removed.config.role} [$agentId]")
+        try {
+            broadcastRosterUpdate(from = "AgentManager")
+        } catch (_: Throwable) {
+        }
         pcs.firePropertyChange("agents", null, agentId)
         pcs.firePropertyChange("agent_removed", null, agentId)
         return true
@@ -474,6 +543,35 @@ class AgentManagerService(
             try {
                 val openAI = project.service<OpenAIService>()
                 val inputs = mutableListOf<ResponseInputItem>()
+
+                // Always deliver pending inbox messages at the start of the turn.
+                try {
+                    val inbox = readAndClearInbox(agentId)
+                    if (inbox.isNotEmpty()) {
+                        val inboxText =
+                            buildString {
+                                append("Inbox messages (auto):\n")
+                                inbox.sortedBy { it.timestamp }.forEach { m ->
+                                    val from = m.from?.ifBlank { null } ?: "unknown"
+                                    val kind = m.kind?.ifBlank { null }
+                                    append("- [").append(from)
+                                    if (kind != null) append(", kind=").append(kind)
+                                    append("] ").append(m.text.trim()).append('\n')
+                                }
+                            }.trimEnd()
+                        inputs.add(
+                            ResponseInputItem.ofMessage(
+                                ResponseInputItem.Message
+                                    .builder()
+                                    .addInputTextContent(inboxText)
+                                    .role(ResponseInputItem.Message.Role.SYSTEM)
+                                    .build(),
+                            ),
+                        )
+                    }
+                } catch (_: Throwable) {
+                }
+
                 if (session.previousId == null) {
                     inputs.add(
                         ResponseInputItem.ofMessage(
@@ -485,6 +583,20 @@ class AgentManagerService(
                                 .build(),
                         ),
                     )
+
+                    // Provide agents roster so agents can message each other by id.
+                    try {
+                        inputs.add(
+                            ResponseInputItem.ofMessage(
+                                ResponseInputItem.Message
+                                    .builder()
+                                    .addInputTextContent(buildAgentsRosterText())
+                                    .role(ResponseInputItem.Message.Role.SYSTEM)
+                                    .build(),
+                            ),
+                        )
+                    } catch (_: Throwable) {
+                    }
 
                     // Provide rolling summary if present
                     try {
@@ -624,6 +736,35 @@ class AgentManagerService(
         return try {
             val openAI = project.service<OpenAIService>()
             val inputs = mutableListOf<ResponseInputItem>()
+
+            // Always deliver pending inbox messages at the start of the turn.
+            try {
+                val inbox = readAndClearInbox(agentId)
+                if (inbox.isNotEmpty()) {
+                    val inboxText =
+                        buildString {
+                            append("Inbox messages (auto):\n")
+                            inbox.sortedBy { it.timestamp }.forEach { m ->
+                                val from = m.from?.ifBlank { null } ?: "unknown"
+                                val kind = m.kind?.ifBlank { null }
+                                append("- [").append(from)
+                                if (kind != null) append(", kind=").append(kind)
+                                append("] ").append(m.text.trim()).append('\n')
+                            }
+                        }.trimEnd()
+                    inputs.add(
+                        ResponseInputItem.ofMessage(
+                            ResponseInputItem.Message
+                                .builder()
+                                .addInputTextContent(inboxText)
+                                .role(ResponseInputItem.Message.Role.SYSTEM)
+                                .build(),
+                        ),
+                    )
+                }
+            } catch (_: Throwable) {
+            }
+
             if (session.previousId == null) {
                 inputs.add(
                     ResponseInputItem.ofMessage(
@@ -635,6 +776,20 @@ class AgentManagerService(
                             .build(),
                     ),
                 )
+
+                // Provide agents roster so agents can message each other by id.
+                try {
+                    inputs.add(
+                        ResponseInputItem.ofMessage(
+                            ResponseInputItem.Message
+                                .builder()
+                                .addInputTextContent(buildAgentsRosterText())
+                                .role(ResponseInputItem.Message.Role.SYSTEM)
+                                .build(),
+                        ),
+                    )
+                } catch (_: Throwable) {
+                }
 
                 // Provide rolling summary if present
                 try {

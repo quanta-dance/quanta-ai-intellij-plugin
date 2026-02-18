@@ -782,7 +782,7 @@ class OpenAIService(
 
                 // Reset continuation counter at the start of a user-initiated turn so continuations don't carry over from prior turns
                 var continuationCount = 0
-                val maxContinuations = 5 // safety limit
+                val maxContinuations = 10 // safety limit
 
                 // Persist user input for this turn (per-branch). UI may already show it elsewhere, so we persist only.
                 persistOnly("user", text)
