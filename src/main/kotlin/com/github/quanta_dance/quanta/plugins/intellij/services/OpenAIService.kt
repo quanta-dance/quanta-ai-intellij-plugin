@@ -68,6 +68,9 @@ class OpenAIService(
 
     private val managerLabel: String = "AI(manager)"
 
+    @Volatile
+    private var initialContextInjectedThisIdeSession: Boolean = false
+
     data class UsageSnapshot(
         val inputTokens: Long,
         val outputTokens: Long,
@@ -597,6 +600,23 @@ class OpenAIService(
         }
     }
 
+    fun resetThreadStatePreservingHistory() {
+        thisLogger().info("Resetting AI thread state (preserve history). session=$currentSessionId")
+        lastResponseId = null
+        try {
+            QuantaAISettingsState.instance.state.mainLastResponseId = null
+        } catch (_: Throwable) {
+        }
+        lastCtxHash = null
+        initialContextInjectedThisIdeSession = false
+
+        // Reset agents thread pointers as well; keep their transcripts.
+        try {
+            project.service<AgentManagerService>().resetForNewSession()
+        } catch (_: Throwable) {
+        }
+    }
+
     fun newSession(): String {
         thisLogger().info("Starting new AI session. Previous session: $currentSessionId")
         val old = currentSessionId
@@ -604,6 +624,7 @@ class OpenAIService(
         lastResponseId = null
         QuantaAISettingsState.instance.state.mainLastResponseId = null
         lastCtxHash = null
+        initialContextInjectedThisIdeSession = false
 
         // Reset global token usage counters
         try {
@@ -852,15 +873,35 @@ class OpenAIService(
                     requestInputs.add(systemMessage("{\"currentModel\":\"${effectiveForThisCall}\"}"))
                 } catch (_: Throwable) {
                 }
-                if (lastResponseId == null) {
-                    // Hidden system context: optional rolling summary (if present)
-                    try {
-                        val key = conversationKeyForMain()
-                        val sum = summaryForKey(key)
-                        if (!sum.isNullOrBlank()) {
-                            requestInputs.add(systemMessage("Conversation summary (auto):\n" + sum))
+                // Inject hidden context on:
+                // - new server thread (lastResponseId == null)
+                // - first IDE session turn after restart (server thread may not exist even if lastResponseId is non-null)
+                if (lastResponseId == null || !initialContextInjectedThisIdeSession) {
+                    val key = conversationKeyForMain()
+
+                    // Ensure a summary exists; if none, build a heuristic one from persisted messages.
+                    val existingSummary =
+                        try {
+                            summaryForKey(key)
+                        } catch (_: Throwable) {
+                            null
+                        }.orEmpty()
+
+                    val ensuredSummary =
+                        if (existingSummary.isNotBlank()) {
+                            existingSummary
+                        } else {
+                            try {
+                                val h = buildHeuristicSummaryForKey(key)
+                                if (h.isNotBlank()) storeSummaryForKey(key, h)
+                                h
+                            } catch (_: Throwable) {
+                                ""
+                            }
                         }
-                    } catch (_: Throwable) {
+
+                    if (ensuredSummary.isNotBlank()) {
+                        requestInputs.add(systemMessage("Conversation summary (auto):\n" + ensuredSummary))
                     }
 
                     // Hidden system context: repository-root AGENTS.md (preferred) or fallback project details
@@ -875,6 +916,8 @@ class OpenAIService(
                     } catch (_: Throwable) {
                     }
                     requestInputs.add(systemMessage(buildBootstrapContext()))
+
+                    initialContextInjectedThisIdeSession = true
                 }
 
                 // Reset continuation counter at the start of a user-initiated turn so continuations don't carry over from prior turns
