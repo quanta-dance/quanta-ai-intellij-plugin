@@ -72,10 +72,10 @@ class CreateOrUpdateFile : ToolInterface<String> {
     var stopOnMismatch: Boolean = true
 
     @field:JsonPropertyDescription(
-        "Optional expected file version before patching (PSI/Document/VFS). " +
-            "If differs, no changes are applied.",
+        "Optional expected SHA-256 hash of normalized file content (\\r\\n/\\r -> \\n)." +
+            " If provided and matches current, patches can proceed.",
     )
-    var expectedFileVersion: Long? = null
+    var expectedFileHashSha256: String? = null
 
     // PSI post-processing
     @field:JsonPropertyDescription("If true, reformat the PSI file after update.")
@@ -148,7 +148,8 @@ class CreateOrUpdateFile : ToolInterface<String> {
                     patches = patchList.map { p -> PatchFile.Patch(p.fromLine, p.toLine, p.newContent, p.expectedText) }
                     validateAfterUpdate = this@CreateOrUpdateFile.validateAfterUpdate
                     stopOnMismatch = this@CreateOrUpdateFile.stopOnMismatch
-                    expectedFileVersion = this@CreateOrUpdateFile.expectedFileVersion
+                    expectedFileHashSha256 = this@CreateOrUpdateFile.expectedFileHashSha256
+
                     reformatAfterUpdate = this@CreateOrUpdateFile.reformatAfterUpdate
                     optimizeImportsAfterUpdate = this@CreateOrUpdateFile.optimizeImportsAfterUpdate
                 }
