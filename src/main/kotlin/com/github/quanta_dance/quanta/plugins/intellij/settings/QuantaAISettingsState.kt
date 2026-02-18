@@ -63,6 +63,8 @@ class QuantaAISettingsState : PersistentStateComponent<QuantaAISettingsState.Qua
         var conversationSummaries: MutableMap<String, String> = mutableMapOf(),
         // Per-agent inboxes (asynchronous notifications). Key: agentId
         var agentInboxes: MutableMap<String, MutableList<AgentInboxMessage>> = mutableMapOf(),
+        // Developer-only: show additional debug details in the tool window UI (default off)
+        var debugEnabled: Boolean = false,
         // Security: Terminal tool availability (default disabled)
         var terminalToolEnabled: Boolean? = false,
     )

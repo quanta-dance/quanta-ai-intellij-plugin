@@ -75,11 +75,18 @@ class QuantaAISettingsComponent {
             toolTipText = "Allow the manager to create role-based sub-agents and use agent tools."
         }
 
+    // Debug UI toggle (developer assistance)
+    private var debugEnabledField =
+        JBCheckBox("Enable debug messages in tool window").apply {
+            toolTipText = "Show extra debug details in the tool window (disabled by default)."
+        }
+
     // Terminal tool toggle (dangerous)
     private var terminalToolEnabledField =
         JBCheckBox("Enable Terminal tool (dangerous)").apply {
             toolTipText = "Allows the assistant to run shell commands. Disabled by default."
         }
+
 
     private var customPromptField = JBTextField()
 
@@ -166,6 +173,7 @@ class QuantaAISettingsComponent {
             .addLabeledComponent(JBLabel("AI chat model: "), aiChatModelField, 1, false)
             .addComponent(dynamicModelEnabledField)
             .addComponent(agenticEnabledField)
+            .addComponent(debugEnabledField)
             .addComponent(terminalToolEnabledField)
             .addSeparator()
             .addLabeledComponent(JBLabel("Custom prompt: "), customPromptField, 1, false)
@@ -238,6 +246,12 @@ class QuantaAISettingsComponent {
         get() = agenticEnabledField.isSelected
         set(value) {
             agenticEnabledField.isSelected = value
+        }
+
+    var debugEnabled: Boolean
+        get() = debugEnabledField.isSelected
+        set(value) {
+            debugEnabledField.isSelected = value
         }
 
     var terminalToolEnabled: Boolean
