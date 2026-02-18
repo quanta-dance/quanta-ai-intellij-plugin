@@ -19,6 +19,7 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 @Service(Service.Level.PROJECT)
 class AgentManagerService(
@@ -65,6 +66,10 @@ class AgentManagerService(
     // Proactive summarization throttle
     private val agentSummaryLastRunAtMs = ConcurrentHashMap<String, Long>()
 
+    // Auto-wake agents when new inbox messages arrive
+    private val agentWakeInFlight = ConcurrentHashMap<String, AtomicBoolean>()
+    private val agentLastWakeRequestedAtMs = ConcurrentHashMap<String, Long>()
+
     init {
         val st = QuantaAISettingsState.instance.state
         st.agents.forEach { pa ->
@@ -78,6 +83,8 @@ class AgentManagerService(
 
     fun getAgentsSnapshot(): List<AgentSnapshot> =
         agents.values.map { AgentSnapshot(it.id, it.config.role, it.config.instructions, it.config.model) }
+
+    fun getAgentAllowedBuiltInNames(agentId: String): Set<String>? = agents[agentId]?.config?.allowedBuiltInNames
 
     private fun buildAgentsRosterText(): String {
         val snaps = getAgentsSnapshot().sortedBy { it.role }
@@ -113,9 +120,44 @@ class AgentManagerService(
                 repeat(drop) { if (list.isNotEmpty()) list.removeAt(0) }
             }
             pcs.firePropertyChange("agent_inbox", null, mapOf("agentId" to toAgentId, "count" to list.size))
+
+            requestWakeIfIdle(toAgentId)
             true
         } catch (_: Throwable) {
             false
+        }
+    }
+
+    fun getLastWakeRequestedAtMs(agentId: String): Long? = agentLastWakeRequestedAtMs[agentId]
+
+    private fun requestWakeIfIdle(agentId: String) {
+        // Debounce: if multiple messages come in quickly, we wake at most once per short interval.
+        val now = System.currentTimeMillis()
+        val last = agentLastWakeRequestedAtMs[agentId] ?: 0L
+        if (now - last < 500L) return
+        agentLastWakeRequestedAtMs[agentId] = now
+        pcs.firePropertyChange("agent_wake_requested", null, mapOf("agentId" to agentId, "at" to now))
+
+        // Do not auto-call OpenAI during unit tests.
+        if (ApplicationManager.getApplication().isUnitTestMode) return
+
+        val session = agents[agentId] ?: return
+        val flag = agentWakeInFlight.computeIfAbsent(agentId) { AtomicBoolean(false) }
+        if (!flag.compareAndSet(false, true)) return
+
+        ensureExecutor(agentId).submit {
+            try {
+                // A lightweight wake turn. Inbox messages will be injected at start-of-turn and cleared.
+                sendMessage(
+                    agentId,
+                    "(auto) You have new inbox messages. Process them. " +
+                        "If you need to respond to another agent, use AgentPostMessageTool. " +
+                        "If nothing is required, reply with DONE.",
+                )
+            } catch (_: Throwable) {
+            } finally {
+                flag.set(false)
+            }
         }
     }
 
@@ -460,6 +502,106 @@ class AgentManagerService(
         )
         pcs.firePropertyChange("agents", null, id)
         return id
+    }
+
+    fun createDefaultTeam(): List<String> {
+        val enabled = QuantaAISettingsState.instance.state.agenticEnabled ?: true
+        if (!enabled) return emptyList()
+
+        // Idempotent: do not create duplicates if user already has agents.
+        if (agents.isNotEmpty()) {
+            return agents.keys.toList()
+        }
+
+        // Common communication tools for sub-agents.
+        // Note: we intentionally do NOT grant AgentReadInboxTool to sub-agents.
+        // Inbox messages are delivered automatically at the start of each turn.
+        val commonComms =
+            setOf(
+                "AgentSendMessageTool",
+                "AgentPostMessageTool",
+            )
+
+        val developerTools =
+            commonComms +
+                setOf(
+                    "CodeRefactorSuggester",
+                    "CreateOrUpdateFile",
+                    "PatchFile",
+                    "ReadFileContent",
+                    "ReadPsiBlockAtPosition",
+                    "SearchInFiles",
+                    "SearchProjectEmbeddings",
+                    "UpsertProjectEmbedding",
+                    "GetProjectDetails",
+                    "ListFiles",
+                    "GetFileReferencesAndDependencies",
+                    "InspectDependencies",
+                    "OpenFileInEditorTool",
+                    "ValidateClassFileTool",
+                    "CopyFileOrDirectoryTool",
+                    "DeleteFileTool",
+                )
+
+        val testTools =
+            commonComms +
+                setOf(
+                    "RunGradleTestsTool",
+                    "RunGradleBuildTool",
+                    "GetTestInfoTool",
+                    "GradleSyncTool",
+                    "ReadFileContent",
+                    "SearchInFiles",
+                    "GetProjectDetails",
+                )
+
+        val analystTools =
+            commonComms +
+                setOf(
+                    "GetProjectDetails",
+                    "SearchInFiles",
+                    "ReadFileContent",
+                    "SearchProjectEmbeddings",
+                    "GetFileReferencesAndDependencies",
+                    "InspectDependencies",
+                    "ListFiles",
+                )
+
+        val ids = mutableListOf<String>()
+        ids +=
+            createAgent(
+                AgentConfig(
+                    role = "Developer Agent",
+                    model = null,
+                    instructions = "Develop and implement code changes. Do not run Gradle tasks; coordinate with Test Agent.",
+                    includeMcp = false,
+                    allowedBuiltInTools = true,
+                    allowedBuiltInNames = developerTools,
+                ),
+            )
+        ids +=
+            createAgent(
+                AgentConfig(
+                    role = "Test Agent",
+                    model = null,
+                    instructions = "Run Gradle tests/build and report failures and key logs. Avoid editing code.",
+                    includeMcp = false,
+                    allowedBuiltInTools = true,
+                    allowedBuiltInNames = testTools,
+                ),
+            )
+        ids +=
+            createAgent(
+                AgentConfig(
+                    role = "Project Analyst",
+                    model = null,
+                    instructions = "Analyze project structure and requirements; provide concise guidance. Avoid editing code.",
+                    includeMcp = false,
+                    allowedBuiltInTools = true,
+                    allowedBuiltInNames = analystTools,
+                ),
+            )
+        return ids
     }
 
     fun removeAgent(agentId: String): Boolean {
