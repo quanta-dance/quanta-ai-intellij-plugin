@@ -121,9 +121,25 @@ class AgentManagerService(
             }
             pcs.firePropertyChange("agent_inbox", null, mapOf("agentId" to toAgentId, "count" to list.size))
 
+            try {
+                QDLog.debug(logger) {
+                    "Inbox post: to=$toAgentId from=${from ?: "<null>"} kind=${kind ?: "<null>"} " +
+                        "len=${text.length} inboxSize=${list.size}"
+                }
+                project.service<ToolWindowService>().addDebugMessage(
+                    "inbox_post",
+                    "to=$toAgentId from=${from ?: "<null>"} kind=${kind ?: "<null>"} inboxSize=${list.size}",
+                )
+            } catch (_: Throwable) {
+            }
+
             requestWakeIfIdle(toAgentId)
             true
-        } catch (_: Throwable) {
+        } catch (t: Throwable) {
+            try {
+                QDLog.warn(logger, { "Inbox post failed: to=$toAgentId err=${t.message}" }, t)
+            } catch (_: Throwable) {
+            }
             false
         }
     }
@@ -134,27 +150,61 @@ class AgentManagerService(
         // Debounce: if multiple messages come in quickly, we wake at most once per short interval.
         val now = System.currentTimeMillis()
         val last = agentLastWakeRequestedAtMs[agentId] ?: 0L
-        if (now - last < 500L) return
+        if (now - last < 500L) {
+            try {
+                QDLog.debug(logger) { "Wake skipped (debounce): agent=$agentId now=$now last=$last" }
+            } catch (_: Throwable) {
+            }
+            return
+        }
         agentLastWakeRequestedAtMs[agentId] = now
         pcs.firePropertyChange("agent_wake_requested", null, mapOf("agentId" to agentId, "at" to now))
+        try {
+            project.service<ToolWindowService>().addDebugMessage("wake_requested", "agent=$agentId at=$now")
+        } catch (_: Throwable) {
+        }
 
         // Do not auto-call OpenAI during unit tests.
-        if (ApplicationManager.getApplication().isUnitTestMode) return
+        if (ApplicationManager.getApplication().isUnitTestMode) {
+            try {
+                QDLog.debug(logger) { "Wake not executed in unit test mode: agent=$agentId" }
+            } catch (_: Throwable) {
+            }
+            return
+        }
 
         val session = agents[agentId] ?: return
         val flag = agentWakeInFlight.computeIfAbsent(agentId) { AtomicBoolean(false) }
-        if (!flag.compareAndSet(false, true)) return
+        if (!flag.compareAndSet(false, true)) {
+            try {
+                QDLog.debug(logger) { "Wake skipped (already in flight): agent=$agentId" }
+                project.service<ToolWindowService>().addDebugMessage("wake_skip", "agent=$agentId alreadyInFlight=true")
+            } catch (_: Throwable) {
+            }
+            return
+        }
 
         ensureExecutor(agentId).submit {
             try {
+                QDLog.debug(logger) { "Wake turn starting: agent=$agentId" }
+                project.service<ToolWindowService>().addDebugMessage("wake_start", "agent=$agentId")
+
                 // A lightweight wake turn. Inbox messages will be injected at start-of-turn and cleared.
-                sendMessage(
-                    agentId,
-                    "(auto) You have new inbox messages. Process them. " +
-                        "If you need to respond to another agent, use AgentPostMessageTool. " +
-                        "If nothing is required, reply with DONE.",
-                )
-            } catch (_: Throwable) {
+                val reply =
+                    sendMessage(
+                        agentId,
+                        "(auto) You have new inbox messages. Process them. " +
+                            "If you need to respond to another agent, use AgentPostMessageTool. " +
+                            "If nothing is required, reply with DONE.",
+                    )
+                QDLog.debug(logger) { "Wake turn finished: agent=$agentId replyLen=${reply.length}" }
+                project.service<ToolWindowService>().addDebugMessage("wake_done", "agent=$agentId replyLen=${reply.length}")
+            } catch (t: Throwable) {
+                try {
+                    QDLog.warn(logger, { "Wake turn failed: agent=$agentId err=${t.message}" }, t)
+                    project.service<ToolWindowService>().addDebugMessage("wake_error", "agent=$agentId err=${t.message}")
+                } catch (_: Throwable) {
+                }
             } finally {
                 flag.set(false)
             }
@@ -177,6 +227,14 @@ class AgentManagerService(
     private fun broadcastRosterUpdate(from: String? = "AgentManager") {
         val roster = buildAgentsRosterText()
         if (roster.isBlank()) return
+        try {
+            QDLog.debug(logger) { "Roster broadcast: from=${from ?: "<null>"} agents=${agents.size}" }
+            project.service<ToolWindowService>().addDebugMessage(
+                "roster_broadcast",
+                "from=${from ?: "<null>"} agents=${agents.size}",
+            )
+        } catch (_: Throwable) {
+        }
         agents.keys.forEach { id ->
             postInboxMessage(id, from, roster, kind = "roster_update")
         }
@@ -690,6 +748,18 @@ class AgentManagerService(
                 try {
                     val inbox = readAndClearInbox(agentId)
                     if (inbox.isNotEmpty()) {
+                        try {
+                            QDLog.debug(logger) {
+                                val kinds = inbox.mapNotNull { it.kind?.ifBlank { null } }.distinct()
+                                "Inbox injected: agent=$agentId count=${inbox.size} kinds=$kinds"
+                            }
+                            project.service<ToolWindowService>().addDebugMessage(
+                                "inbox_injected",
+                                "agent=$agentId count=${inbox.size}",
+                            )
+                        } catch (_: Throwable) {
+                        }
+
                         val inboxText =
                             buildString {
                                 append("Inbox messages (auto):\n")
@@ -713,6 +783,7 @@ class AgentManagerService(
                     }
                 } catch (_: Throwable) {
                 }
+
 
                 if (session.previousId == null) {
                     inputs.add(
@@ -883,6 +954,18 @@ class AgentManagerService(
             try {
                 val inbox = readAndClearInbox(agentId)
                 if (inbox.isNotEmpty()) {
+                    try {
+                        QDLog.debug(logger) {
+                            val kinds = inbox.mapNotNull { it.kind?.ifBlank { null } }.distinct()
+                            "Inbox injected: agent=$agentId count=${inbox.size} kinds=$kinds"
+                        }
+                        project.service<ToolWindowService>().addDebugMessage(
+                            "inbox_injected",
+                            "agent=$agentId count=${inbox.size}",
+                        )
+                    } catch (_: Throwable) {
+                    }
+
                     val inboxText =
                         buildString {
                             append("Inbox messages (auto):\n")
@@ -906,6 +989,7 @@ class AgentManagerService(
                 }
             } catch (_: Throwable) {
             }
+
 
             if (session.previousId == null) {
                 inputs.add(

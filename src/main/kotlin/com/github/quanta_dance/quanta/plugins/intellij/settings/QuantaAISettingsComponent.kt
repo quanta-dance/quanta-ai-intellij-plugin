@@ -41,20 +41,17 @@ class QuantaAISettingsComponent {
         }
     private var voiceEnabledField =
         JBCheckBox("Voice enabled").apply {
-            this.toolTipText = "AI will process messages with voice. Requires tokens for transcription"
+            this.toolTipText = "AI will process messages with voice. Require tokens for transcription"
         }
     private var voiceByLocalTTSField =
         JBCheckBox("Use Local TTS").apply {
-            this.toolTipText = "Use local TTS. Will save OpenAI TTS tokens"
+            this.toolTipText = "Use local TTS. Will save OpenAI TTS Tokens"
         }
 
     private var maxOutputTokensField = JBTextField("Max output tokens")
 
     private var models: Array<String> =
         arrayOf(
-            ChatModel.GPT_5_4.toString(),
-            ChatModel.GPT_5_4_MINI.toString(),
-            ChatModel.GPT_5_4_NANO.toString(),
             // ChatModel.GPT_5_2_PRO.toString(),
             ChatModel.GPT_5_2.toString(),
             AllModels.ResponsesOnlyModel.GPT_5_1_CODEX_MAX.toString(),
@@ -84,23 +81,12 @@ class QuantaAISettingsComponent {
             toolTipText = "Show extra debug details in the tool window (disabled by default)."
         }
 
-    private var maxAutomaticTurnsField =
-        JBTextField().apply {
-            toolTipText = "Maximum automatic CONTINUE turns per user request (1..100)."
-        }
-
     // Terminal tool toggle (dangerous)
     private var terminalToolEnabledField =
         JBCheckBox("Enable Terminal tool (dangerous)").apply {
             toolTipText = "Allows the assistant to run shell commands. Disabled by default."
         }
 
-    private var terminalAllowedCommandsCsvField =
-        JBTextField().apply {
-            toolTipText =
-                "Comma-separated allowed command prefixes (strict token-prefix match). " +
-                "Examples: git status, git diff, git add, git commit, ./gradlew"
-        }
 
     private var customPromptField = JBTextField()
 
@@ -188,9 +174,7 @@ class QuantaAISettingsComponent {
             .addComponent(dynamicModelEnabledField)
             .addComponent(agenticEnabledField)
             .addComponent(debugEnabledField)
-            .addLabeledComponent(JBLabel("Max automatic turns: "), maxAutomaticTurnsField, 1, false)
             .addComponent(terminalToolEnabledField)
-            .addLabeledComponent(JBLabel("Terminal allowed commands: "), terminalAllowedCommandsCsvField, 1, false)
             .addSeparator()
             .addLabeledComponent(JBLabel("Custom prompt: "), customPromptField, 1, false)
             .addLabeledComponent(JBLabel("Custom instructions: "), extraInstructionsScroll, 1, false)
@@ -250,23 +234,6 @@ class QuantaAISettingsComponent {
             }
         set(value) {
             maxOutputTokensField.text = value.toString()
-        }
-
-    var maxAutomaticTurns: Int
-        get() =
-            try {
-                Integer.parseInt(maxAutomaticTurnsField.text).coerceIn(1, 100)
-            } catch (_: NumberFormatException) {
-                10
-            }
-        set(value) {
-            maxAutomaticTurnsField.text = value.coerceIn(1, 100).toString()
-        }
-
-    var terminalAllowedCommandsCsv: String
-        get() = terminalAllowedCommandsCsvField.text
-        set(value) {
-            terminalAllowedCommandsCsvField.text = value
         }
 
     var dynamicModelEnabled: Boolean

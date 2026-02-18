@@ -30,9 +30,7 @@ class QuantaAIPluginConfigurable : Configurable {
                 this.dynamicModelEnabled != (settings.dynamicModelEnabled ?: true) ||
                 this.agenticEnabled != (settings.agenticEnabled ?: true) ||
                 this.debugEnabled != settings.debugEnabled ||
-                this.maxAutomaticTurns != settings.maxAutomaticTurns ||
-                this.terminalToolEnabled != (settings.terminalToolEnabled ?: false) ||
-                this.terminalAllowedCommandsCsv != settings.terminalAllowedCommandsCsv
+                this.terminalToolEnabled != (settings.terminalToolEnabled ?: false)
         }
     }
 
@@ -50,9 +48,7 @@ class QuantaAIPluginConfigurable : Configurable {
             settings.dynamicModelEnabled = this.dynamicModelEnabled
             settings.agenticEnabled = this.agenticEnabled
             settings.debugEnabled = this.debugEnabled
-            settings.maxAutomaticTurns = this.maxAutomaticTurns
             settings.terminalToolEnabled = this.terminalToolEnabled
-            settings.terminalAllowedCommandsCsv = this.terminalAllowedCommandsCsv
         }
         val snapshot = settings.copy()
         ApplicationManager.getApplication()
@@ -75,9 +71,7 @@ class QuantaAIPluginConfigurable : Configurable {
             this.dynamicModelEnabled = (settings.dynamicModelEnabled ?: true)
             this.agenticEnabled = (settings.agenticEnabled ?: true)
             this.debugEnabled = settings.debugEnabled
-            this.maxAutomaticTurns = settings.maxAutomaticTurns
             this.terminalToolEnabled = (settings.terminalToolEnabled ?: false)
-            this.terminalAllowedCommandsCsv = settings.terminalAllowedCommandsCsv
         }
     }
 }
