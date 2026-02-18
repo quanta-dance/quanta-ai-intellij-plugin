@@ -724,8 +724,12 @@ class AgentManagerService(
         agents.values.forEach { it.previousId = null }
         val st = QuantaAISettingsState.instance.state
         st.agents.forEach { it.previousId = null }
-        project.service<ToolWindowService>().addToolingMessage("AgentManager", "Reset agents conversation state for new session")
+        project.service<ToolWindowService>().addDebugMessage(
+            "agents_reset",
+            "Reset agents conversation state for new session",
+        )
         pcs.firePropertyChange("agents_reset", null, null)
+
     }
 
     fun sendMessageAsync(
