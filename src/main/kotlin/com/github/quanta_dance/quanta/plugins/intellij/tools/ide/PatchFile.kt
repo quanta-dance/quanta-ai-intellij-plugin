@@ -61,12 +61,6 @@ class PatchFile : ToolInterface<String> {
     )
     var stopOnMismatch: Boolean = true
 
-    @Deprecated("Use expectedFileHashSha256 for content-stable preconditions.")
-    @field:JsonPropertyDescription(
-        "Deprecated: expected file version before patching. Use expectedFileHashSha256 instead.",
-    )
-    var expectedFileVersion: Long? = null
-
     @field:JsonPropertyDescription(
         "Optional expected SHA-256 hash of normalized file content (\\r\\n/\\r -> \\n)." +
             " If provided and matches current, patches can proceed.",
@@ -326,7 +320,8 @@ class PatchFile : ToolInterface<String> {
             try {
                 PathUtils.resolveWithinProject(projectBase, filePath)
             } catch (e: IllegalArgumentException) {
-                project.service<ToolWindowService>().addToolingMessage("Patch File - rejected", e.message ?: "Invalid path")
+                project.service<ToolWindowService>()
+                    .addToolingMessage("Patch File - rejected", e.message ?: "Invalid path")
                 return e.message ?: "Invalid path"
             }
         val relToBase = PathUtils.relativizeToProject(projectBase, resolved)
@@ -353,7 +348,8 @@ class PatchFile : ToolInterface<String> {
                 val document = docManager.getDocument(vFile)
                 if (document == null) {
                     result.append("Document not found; cannot apply line-range patches.")
-                    project.service<ToolWindowService>().addToolingMessage("Patch File - failed", "$relToBase (no document)")
+                    project.service<ToolWindowService>()
+                        .addToolingMessage("Patch File - failed", "$relToBase (no document)")
                 } else {
                     // Global precondition via content hash if provided
                     val curHash = sha256Normalized(document.text)
@@ -383,7 +379,8 @@ class PatchFile : ToolInterface<String> {
                         }
                     }
 
-                    val sorted = patchList.sortedWith(compareByDescending<Patch> { it.fromLine }.thenByDescending { it.toLine })
+                    val sorted =
+                        patchList.sortedWith(compareByDescending<Patch> { it.fromLine }.thenByDescending { it.toLine })
                     val relocationNotes = mutableListOf<String>()
 
                     if (stopOnMismatch || (hashProvided && !hashMatched && allowProceedIfGuardsMatch)) {
@@ -501,7 +498,8 @@ class PatchFile : ToolInterface<String> {
         if (validateAfterUpdate) {
             try {
                 val validator = ValidateClassFileTool().apply { filePath = relToBase }
-                val errors = ApplicationManager.getApplication().runReadAction<List<String>> { validator.findErrors(project) }
+                val errors =
+                    ApplicationManager.getApplication().runReadAction<List<String>> { validator.findErrors(project) }
                 val summary =
                     if (errors.size == 1 && errors.first().equals("No compilation errors found.", true)) {
                         "No compilation errors found."

@@ -14,7 +14,7 @@ import com.intellij.openapi.project.Project
 import com.openai.models.responses.ResponseInputItem
 import java.beans.PropertyChangeListener
 import java.beans.PropertyChangeSupport
-import java.util.*
+import java.util.UUID
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
@@ -157,6 +157,130 @@ class AgentManagerService(
                 }
             } catch (_: Throwable) {
             }
+        }
+    }
+
+    private fun isContextWindowError(t: Throwable): Boolean {
+        val msg = t.message.orEmpty()
+        return msg.contains("exceeds context window", ignoreCase = true) ||
+            msg.contains("context window", ignoreCase = true)
+    }
+
+    private fun softResetAndRetryAgentTurnOnce(
+        openAI: OpenAIService,
+        agentId: String,
+        session: AgentSession,
+        message: String,
+        agentLabel: String,
+        toolClassFilter: ((Class<*>) -> Boolean)?,
+        includeMcp: Boolean,
+    ): Pair<String, String?>? {
+        // Generate and store a fresh rolling summary
+        val summaryText =
+            try {
+                generateAgentSummaryWithLlm(openAI, agentId, session.config.model)
+            } catch (_: Throwable) {
+                ""
+            }
+        if (summaryText.isNotBlank()) {
+            try {
+                storeSummaryForAgent(agentId, summaryText)
+            } catch (_: Throwable) {
+            }
+        }
+
+        // Rewrite persisted history so restart won't immediately exceed context window
+        try {
+            val key = agentConversationKey(agentId)
+            QuantaAISettingsState.instance.state.conversations[key] =
+                mutableListOf(
+                    QuantaAISettingsState.PersistedMessage(
+                        System.currentTimeMillis(),
+                        "system",
+                        "Conversation summary (auto, rewritten after context-window reset):\n" + summaryText,
+                        null,
+                    ),
+                    QuantaAISettingsState.PersistedMessage(
+                        System.currentTimeMillis(),
+                        "user",
+                        message,
+                        null,
+                    ),
+                )
+        } catch (_: Throwable) {
+        }
+
+        // Reset server-side thread state for the agent
+        session.previousId = null
+        try {
+            QuantaAISettingsState.instance.state.agents
+                .find { it.id == agentId }
+                ?.previousId = null
+        } catch (_: Throwable) {
+        }
+
+        // Rebuild minimal request inputs and retry once
+        val retryInputs = mutableListOf<ResponseInputItem>()
+        retryInputs.add(
+            ResponseInputItem.ofMessage(
+                ResponseInputItem.Message
+                    .builder()
+                    .addInputTextContent("Agent Role: ${session.config.role}")
+                    .role(ResponseInputItem.Message.Role.SYSTEM)
+                    .build(),
+            ),
+        )
+        val sum = summaryForAgent(agentId)
+        if (!sum.isNullOrBlank()) {
+            retryInputs.add(
+                ResponseInputItem.ofMessage(
+                    ResponseInputItem.Message
+                        .builder()
+                        .addInputTextContent("Conversation summary (auto):\n" + sum)
+                        .role(ResponseInputItem.Message.Role.SYSTEM)
+                        .build(),
+                ),
+            )
+        }
+        try {
+            val agentsText = ProjectAgentsFileManager(project).readAgentsFile(maxChars = 8_000)
+            if (agentsText.isNotBlank()) {
+                retryInputs.add(
+                    ResponseInputItem.ofMessage(
+                        ResponseInputItem.Message
+                            .builder()
+                            .addInputTextContent(agentsText)
+                            .role(ResponseInputItem.Message.Role.SYSTEM)
+                            .build(),
+                    ),
+                )
+            }
+        } catch (_: Throwable) {
+        }
+        retryInputs.add(
+            ResponseInputItem.ofMessage(
+                ResponseInputItem.Message
+                    .builder()
+                    .addInputTextContent(message)
+                    .role(ResponseInputItem.Message.Role.USER)
+                    .build(),
+            ),
+        )
+
+        return try {
+            openAI.agentTurn(
+                inputs = retryInputs,
+                previousId = null,
+                overrideInstructions = session.config.instructions,
+                overrideModel = session.config.model,
+                allowedToolClassFilter = toolClassFilter,
+                includeMcp = includeMcp,
+                agentLabel = agentLabel,
+                allowedBuiltInNames = session.config.allowedBuiltInNames,
+                allowedMcpNames = session.config.allowedMcpNames,
+            )
+        } catch (_: Throwable) {
+            null
         }
     }
 
@@ -440,6 +564,45 @@ class AgentManagerService(
                 fut.complete(result)
                 pcs.firePropertyChange("agent_task_finished", null, result)
             } catch (t: Throwable) {
+                if (isContextWindowError(t)) {
+                    try {
+                        val openAI = project.service<OpenAIService>()
+                        val filter: ((Class<*>) -> Boolean)? = if (session.config.allowedBuiltInTools) null else { _ -> false }
+                        val includeMcp = session.config.includeMcp
+                        val agentLabel = "AI(${session.config.role})"
+                        val retry =
+                            softResetAndRetryAgentTurnOnce(
+                                openAI = openAI,
+                                agentId = agentId,
+                                session = session,
+                                message = message,
+                                agentLabel = agentLabel,
+                                toolClassFilter = filter,
+                                includeMcp = includeMcp,
+                            )
+                        if (retry != null) {
+                            val (reply, newPrev) = retry
+                            session.previousId = newPrev
+                            QuantaAISettingsState.instance.state.agents
+                                .find { it.id == agentId }
+                                ?.previousId = newPrev
+
+                            persistAgentMessage(agentId, "user", message)
+                            persistAgentMessage(agentId, "assistant", reply)
+                            try {
+                                scheduleAgentSummaryIfNeeded(agentId, session.config.model)
+                            } catch (_: Throwable) {
+                            }
+
+                            val result = AgentTaskResult(requestId, agentId, true, reply.ifBlank { "<no message>" }, null)
+                            fut.complete(result)
+                            pcs.firePropertyChange("agent_task_finished", null, result)
+                            return@submit
+                        }
+                    } catch (_: Throwable) {
+                    }
+                }
+
                 val err = t.message ?: t.javaClass.simpleName
                 val result = AgentTaskResult(requestId, agentId, false, null, err)
                 fut.complete(result)
@@ -551,6 +714,44 @@ class AgentManagerService(
             pcs.firePropertyChange("agent_task_finished", null, AgentTaskResult(requestId, agentId, true, out, null))
             out
         } catch (t: Throwable) {
+            if (isContextWindowError(t)) {
+                try {
+                    val openAI = project.service<OpenAIService>()
+                    val filter: ((Class<*>) -> Boolean)? = if (session.config.allowedBuiltInTools) null else { _ -> false }
+                    val includeMcp = session.config.includeMcp
+                    val agentLabel = "AI(${session.config.role})"
+                    val retry =
+                        softResetAndRetryAgentTurnOnce(
+                            openAI = openAI,
+                            agentId = agentId,
+                            session = session,
+                            message = message,
+                            agentLabel = agentLabel,
+                            toolClassFilter = filter,
+                            includeMcp = includeMcp,
+                        )
+                    if (retry != null) {
+                        val (reply, newPrev) = retry
+                        session.previousId = newPrev
+                        QuantaAISettingsState.instance.state.agents
+                            .find { it.id == agentId }
+                            ?.previousId = newPrev
+
+                        persistAgentMessage(agentId, "user", message)
+                        persistAgentMessage(agentId, "assistant", reply)
+                        try {
+                            scheduleAgentSummaryIfNeeded(agentId, session.config.model)
+                        } catch (_: Throwable) {
+                        }
+
+                        val out = reply.ifBlank { "<no message>" }
+                        pcs.firePropertyChange("agent_task_finished", null, AgentTaskResult(requestId, agentId, true, out, null))
+                        return out
+                    }
+                } catch (_: Throwable) {
+                }
+            }
+
             val err = t.message ?: t.javaClass.simpleName
             pcs.firePropertyChange("agent_task_finished", null, AgentTaskResult(requestId, agentId, false, null, err))
             "Agent error: $err"

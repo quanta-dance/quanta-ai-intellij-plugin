@@ -943,20 +943,60 @@ class OpenAIService(
                                 msg.contains("context window", ignoreCase = true)
 
                         if (isContextWindow && !retriedAfterContextReset) {
-                            // Step 4: summarize + reset previousId and retry once with minimal context
+                            // Step 4: summarize + rewrite local history + reset previousId and retry once with minimal context.
+                            // Goal: user should not notice the context-window failure.
                             thisLogger().warn(
                                 "CONTEXT_WINDOW_EXCEEDED: attempting soft reset (retry once). " +
-                                    "items=${requestInputs.size} previousIdNull=${previousIdForThisTurn == null} session=$currentSessionId message=$msg",
+                                    "items=${requestInputs.size} " +
+                                    "previousIdNull=${previousIdForThisTurn == null} " +
+                                    "session=$currentSessionId message=$msg",
                                 e,
                             )
 
-                            try {
-                                val key = conversationKeyForMain()
-                                val summary = buildHeuristicSummaryForKey(key)
-                                if (summary.isNotBlank()) {
-                                    storeSummaryForKey(key, summary)
+                            val key = conversationKeyForMain()
+
+                            // Force a rolling summary that represents the whole conversation.
+                            // Prefer LLM summary (more accurate), fallback to heuristic if needed.
+                            val summaryText: String =
+                                try {
+                                    generateSummaryWithLlm(key)
+                                } catch (_: Throwable) {
+                                    ""
+                                }.ifBlank {
+                                    try {
+                                        buildHeuristicSummaryForKey(key)
+                                    } catch (_: Throwable) {
+                                        ""
+                                    }
                                 }
-                            } catch (_: Throwable) {
+
+                            if (summaryText.isNotBlank()) {
+                                try {
+                                    storeSummaryForKey(key, summaryText)
+                                } catch (_: Throwable) {
+                                }
+
+                                // Rewrite persisted history to avoid re-hitting the context window on restart
+                                // and to keep the chat UI coherent.
+                                try {
+                                    val st = QuantaAISettingsState.instance.state
+                                    st.conversations[key] =
+                                        mutableListOf(
+                                            QuantaAISettingsState.PersistedMessage(
+                                                System.currentTimeMillis(),
+                                                "system",
+                                                "Conversation summary (auto, rewritten after context-window reset):\n" + summaryText,
+                                                null,
+                                            ),
+                                            QuantaAISettingsState.PersistedMessage(
+                                                System.currentTimeMillis(),
+                                                "user",
+                                                text,
+                                                null,
+                                            ),
+                                        )
+                                } catch (_: Throwable) {
+                                }
                             }
 
                             // Reset server-side thread state
@@ -970,7 +1010,6 @@ class OpenAIService(
                             // Rebuild minimal request inputs for retry
                             try {
                                 requestInputs.clear()
-                                val key = conversationKeyForMain()
                                 val summary = summaryForKey(key)
                                 if (!summary.isNullOrBlank()) {
                                     requestInputs.add(systemMessage("Conversation summary (auto):\n" + summary))
