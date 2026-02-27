@@ -71,6 +71,16 @@ class OpenAIService(
     @Volatile
     private var initialContextInjectedThisIdeSession: Boolean = false
 
+    @Volatile
+    private var lastInjectedSummaryHash: Int? = null
+
+    @Volatile
+    private var lastInjectedAgentsMdHash: Int? = null
+
+    @Volatile
+    private var lastInjectedAgentsRosterHash: Int? = null
+
+
     data class UsageSnapshot(
         val inputTokens: Long,
         val outputTokens: Long,
@@ -514,6 +524,53 @@ class OpenAIService(
                 .build(),
         )
 
+    private fun truncateSelectedText(
+        text: String,
+        maxChars: Int = 1200,
+    ): String {
+        if (text.length <= maxChars) return text
+        return text.take(maxChars) + "\n... (truncated, originalChars=${text.length})"
+    }
+
+    private fun truncateToolOutput(
+        value: Any?,
+        maxJsonChars: Int = 4000,
+        maxStringChars: Int = 2000,
+        depth: Int = 0,
+    ): Any? {
+        if (value == null) return null
+        if (depth > 6) return "<truncated: max depth reached>"
+
+        val simplified: Any =
+            when (value) {
+                is String -> if (value.length <= maxStringChars) value else value.take(maxStringChars) + "... (truncated)"
+                is Map<*, *> ->
+                    value.entries
+                        .take(80)
+                        .associate { (k, v) ->
+                            val key = k?.toString() ?: "<null>"
+                            key to truncateToolOutput(v, maxJsonChars, maxStringChars, depth + 1)
+                        }
+                is List<*> -> value.take(80).map { truncateToolOutput(it, maxJsonChars, maxStringChars, depth + 1) }
+                else -> value
+            }
+
+        return try {
+            val json = mapper.writeValueAsString(simplified)
+            if (json.length <= maxJsonChars) simplified
+            else {
+                mapOf(
+                    "truncated" to true,
+                    "preview" to json.take(maxJsonChars) + "... (truncated)",
+                    "originalChars" to json.length,
+                )
+            }
+        } catch (_: Throwable) {
+            simplified
+        }
+    }
+
+
     private companion object {
         private const val MAX_REQUEST_APPROX_CHARS: Int = 60_000
         private const val KEEP_PREFIX_ITEMS: Int = 3
@@ -659,7 +716,7 @@ class OpenAIService(
         newSession()
     }
 
-    private fun buildBootstrapContext(): String {
+    private fun buildAgentsRosterContext(): String {
         val agents =
             try {
                 project.service<AgentManagerService>().getAgentsSnapshot()
@@ -667,22 +724,17 @@ class OpenAIService(
                 emptyList()
             }
         val b = StringBuilder()
-        b.append("New session bootstrap context.\n")
-        b.append("Session ID: ").append(currentSessionId).append('\n')
-        b.append("Existing sub-agents: ").append(agents.size).append('\n')
-        agents.forEachIndexed { idx, a ->
-            b
-                .append(idx + 1)
-                .append('.')
-                .append(' ')
-                .append("id=")
-                .append(a.id)
-                .append(", role=")
-                .append(a.role)
+        b.append("Agents roster (auto):\n")
+        if (agents.isEmpty()) {
+            b.append("- <none>")
+            return b.toString()
+        }
+        agents.forEach { a ->
+            b.append("- id=").append(a.id).append(", role=").append(a.role)
             a.model?.let { m -> b.append(", model=").append(m) }
             b.append('\n')
         }
-        return b.toString()
+        return b.toString().trimEnd()
     }
 
     fun createResponse(
@@ -773,12 +825,13 @@ class OpenAIService(
                             .service<ToolWindowService>()
                             .addToolingMessage(agentLabel, "Calling tool: ${functionCall.name()}")
                         val functionResult = toolRouter.route(functionCall)
+                        val safeResult = truncateToolOutput(functionResult)!!
                         pendingToolOutputs.add(
                             com.openai.models.responses.ResponseInputItem.ofFunctionCallOutput(
                                 com.openai.models.responses.ResponseInputItem.FunctionCallOutput
                                     .builder()
                                     .callId(callId)
-                                    .outputAsJson(functionResult)
+                                    .outputAsJson(safeResult ?: emptyMap<String, Any>())
                                     .build(),
                             ),
                         )
@@ -859,7 +912,11 @@ class OpenAIService(
                             "\nSelection starts at line ${ctx.selectionStartLine}, column ${ctx.selectionStartColumn} " +
                                 "and ends at line ${ctx.selectionEndLine}, column ${ctx.selectionEndLine}\n",
                         )
-                        sb.append("Selected text is: ${ctx.selectedText}")
+                        val sel = ctx.selectedText
+                        if (sel != null) {
+                            sb.append("Selected text snippet is:\n")
+                            sb.append(truncateSelectedText(sel))
+                        }
                     }
                     val payload = sb.toString()
                     val h = payload.hashCode()
@@ -876,47 +933,68 @@ class OpenAIService(
                 // Inject hidden context on:
                 // - new server thread (lastResponseId == null)
                 // - first IDE session turn after restart (server thread may not exist even if lastResponseId is non-null)
-                if (lastResponseId == null || !initialContextInjectedThisIdeSession) {
-                    val key = conversationKeyForMain()
+                // - any observable changes to summary / AGENTS.md / agents roster
+                val needBaseContext = (lastResponseId == null) || (!initialContextInjectedThisIdeSession)
+                val key = conversationKeyForMain()
 
-                    // Ensure a summary exists; if none, build a heuristic one from persisted messages.
-                    val existingSummary =
-                        try {
-                            summaryForKey(key)
-                        } catch (_: Throwable) {
-                            null
-                        }.orEmpty()
-
-                    val ensuredSummary =
-                        if (existingSummary.isNotBlank()) {
-                            existingSummary
-                        } else {
-                            try {
-                                val h = buildHeuristicSummaryForKey(key)
-                                if (h.isNotBlank()) storeSummaryForKey(key, h)
-                                h
-                            } catch (_: Throwable) {
-                                ""
-                            }
-                        }
-
-                    if (ensuredSummary.isNotBlank()) {
-                        requestInputs.add(systemMessage("Conversation summary (auto):\n" + ensuredSummary))
-                    }
-
-                    // Hidden system context: repository-root AGENTS.md (preferred) or fallback project details
+                // Ensure a summary exists; if none, build a heuristic one from persisted messages.
+                val existingSummary =
                     try {
-                        val ctx = ProjectAgentsFileManager(project).readAgentsFile(maxChars = 8_000)
-                        if (ctx.isNotBlank()) {
-                            requestInputs.add(systemMessage("AGENTS.md:\n" + ctx))
-                        } else {
-                            // Fallback (should be rare)
-                            requestInputs.add(systemMessage(buildProjectDetailsSystemMessage()))
-                        }
+                        summaryForKey(key)
                     } catch (_: Throwable) {
-                    }
-                    requestInputs.add(systemMessage(buildBootstrapContext()))
+                        null
+                    }.orEmpty()
 
+                val ensuredSummary =
+                    if (existingSummary.isNotBlank()) {
+                        existingSummary
+                    } else {
+                        try {
+                            val h = buildHeuristicSummaryForKey(key)
+                            if (h.isNotBlank()) storeSummaryForKey(key, h)
+                            h
+                        } catch (_: Throwable) {
+                            ""
+                        }
+                    }
+
+                if (ensuredSummary.isNotBlank()) {
+                    val h = ensuredSummary.hashCode()
+                    if (needBaseContext || lastInjectedSummaryHash == null || lastInjectedSummaryHash != h) {
+                        requestInputs.add(systemMessage("Conversation summary (auto):\n" + ensuredSummary))
+                        lastInjectedSummaryHash = h
+                    }
+                }
+
+                // Repository-root AGENTS.md (preferred) or fallback project details (rare)
+                try {
+                    val ctx = ProjectAgentsFileManager(project).readAgentsFile(maxChars = 8_000)
+                    if (ctx.isNotBlank()) {
+                        val h = ctx.hashCode()
+                        if (needBaseContext || lastInjectedAgentsMdHash == null || lastInjectedAgentsMdHash != h) {
+                            requestInputs.add(systemMessage("AGENTS.md:\n" + ctx))
+                            lastInjectedAgentsMdHash = h
+                        }
+                    } else if (needBaseContext && lastInjectedAgentsMdHash == null) {
+                        // Only send fallback project details once per base context injection.
+                        requestInputs.add(systemMessage(buildProjectDetailsSystemMessage()))
+                        lastInjectedAgentsMdHash = 0
+                    }
+                } catch (_: Throwable) {
+                }
+
+                // Agents roster: only send when it changes or on base context injection.
+                try {
+                    val roster = buildAgentsRosterContext()
+                    val h = roster.hashCode()
+                    if (needBaseContext || lastInjectedAgentsRosterHash == null || lastInjectedAgentsRosterHash != h) {
+                        requestInputs.add(systemMessage(roster))
+                        lastInjectedAgentsRosterHash = h
+                    }
+                } catch (_: Throwable) {
+                }
+
+                if (needBaseContext) {
                     initialContextInjectedThisIdeSession = true
                 }
 
@@ -1008,12 +1086,13 @@ class OpenAIService(
                                         .service<ToolWindowService>()
                                         .addToolingMessage(managerLabel, "Calling tool: ${functionCall.name()}")
                                     val functionResult = toolRouter.route(functionCall)
+                                    val safeResult = truncateToolOutput(functionResult)
                                     pendingToolOutputs.add(
                                         com.openai.models.responses.ResponseInputItem.ofFunctionCallOutput(
                                             com.openai.models.responses.ResponseInputItem.FunctionCallOutput
                                                 .builder()
                                                 .callId(callId)
-                                                .outputAsJson(functionResult)
+                                                .outputAsJson(safeResult ?: emptyMap<String, Any>())
                                                 .build(),
                                         ),
                                     )
@@ -1172,8 +1251,9 @@ class OpenAIService(
                                 if (agentsCtx.isNotBlank()) {
                                     requestInputs.add(systemMessage("AGENTS.md:\n" + agentsCtx))
                                 }
-                                requestInputs.add(systemMessage(buildBootstrapContext()))
+                                requestInputs.add(systemMessage(buildAgentsRosterContext()))
                                 requestInputs.add(userMessage(text))
+
                             } catch (_: Throwable) {
                             }
 
