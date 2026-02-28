@@ -65,8 +65,13 @@ class QuantaAISettingsState : PersistentStateComponent<QuantaAISettingsState.Qua
         var agentInboxes: MutableMap<String, MutableList<AgentInboxMessage>> = mutableMapOf(),
         // Developer-only: show additional debug details in the tool window UI (default off)
         var debugEnabled: Boolean = false,
+        // Max automatic turns (CONTINUE loops) allowed per user turn. Clamped to [1..100].
+        var maxAutomaticTurns: Int = 10,
         // Security: Terminal tool availability (default disabled)
         var terminalToolEnabled: Boolean? = false,
+        // Security: allowed terminal command prefixes (strict token-prefix match), comma-separated.
+        // Each entry may contain spaces. Examples: "git status", "git diff", "git add", "git commit", "./gradlew"
+        var terminalAllowedCommandsCsv: String = "git status,git diff,git add,git commit",
     )
 
     // Persisted message structure
