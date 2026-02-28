@@ -64,7 +64,14 @@ class OpenAIService(
     private val managerLabel: String = "AI(manager)"
 
     @Volatile
+    private var pendingTeamAddAgents: List<com.github.quanta_dance.quanta.plugins.intellij.models.TeamAgentSpec>? = null
+
+    @Volatile
+    private var pendingTeamRemoveRoles: List<String>? = null
+
+    @Volatile
     private var initialContextInjectedThisIdeSession: Boolean = false
+
 
     @Volatile
     private var lastInjectedSummaryHash: Int? = null
@@ -1042,10 +1049,56 @@ class OpenAIService(
                 // Cooperative activation: user must explicitly approve the drafted plan.
                 if (normalized == "approve" || normalized == "approve plan" || normalized == "approve the plan") {
                     try {
+                        // Apply pending team shaping once on approval
+                        val agentMgr = project.service<AgentManagerService>()
+                        val snaps = agentMgr.getAgentsSnapshot()
+
+                        val toRemove =
+                            pendingTeamRemoveRoles
+                                ?.mapNotNull { it.trim().ifBlank { null } }
+                                .orEmpty()
+                                .toSet()
+                        if (toRemove.isNotEmpty()) {
+                            snaps.forEach { s ->
+                                try {
+                                    if (toRemove.contains(s.role)) {
+                                        agentMgr.removeAgent(s.id)
+                                    }
+                                } catch (_: Throwable) {
+                                }
+                            }
+                        }
+
+                        val toAdd = pendingTeamAddAgents.orEmpty()
+                        toAdd.forEach { spec ->
+                            try {
+                                val role = spec.role.trim()
+                                if (role.isNotBlank()) {
+                                    agentMgr.createAgent(
+                                        AgentManagerService.AgentConfig(
+                                            role = role,
+                                            model = spec.model,
+                                            instructions = spec.instructions,
+                                            includeMcp = false,
+                                            allowedBuiltInTools = true,
+                                        ),
+                                    )
+                                }
+                            } catch (_: Throwable) {
+                            }
+                        }
+
+                        pendingTeamAddAgents = null
+                        pendingTeamRemoveRoles = null
+                    } catch (_: Throwable) {
+                    }
+
+                    try {
                         planService.activate()
                     } catch (_: Throwable) {
                     }
                 }
+
 
                 // If plan is ACTIVE, attach it as context so the manager follows it until finished.
                 val planIsActive = planService.isActive()
@@ -1059,10 +1112,13 @@ class OpenAIService(
                             systemMessage(
                                 "Plan execution policy: the session plan is ACTIVE. " +
                                         "Proceed autonomously through unchecked tasks from top to bottom. " +
+                                        "Prefer delegation: coordinate work by sending tasks to sub-agents (Developer Agent / Test Agent / Project Analyst) and integrate their replies. " +
+                                        "Only do work yourself when coordination-only or trivial. " +
                                         "Do NOT ask the user questions unless truly blocked. " +
                                         "If blocked, set nextStep=WAIT_USER, set planNeedsUserConfirmation=true, and put exactly one question in planBlockingQuestion. " +
                                         "Otherwise, keep nextStep=CONTINUE until all tasks are [x], then DONE.",
-                            ),
+
+                                ),
                         )
                     } catch (_: Throwable) {
                     }
@@ -1201,6 +1257,15 @@ class OpenAIService(
                                     item.message().map { m ->
                                         m.content().forEach { c ->
                                             val message = c.asOutputText()
+
+                                            // Capture draft team shaping proposals (applied only when user approves)
+                                            try {
+                                                if (message.planStatus?.uppercase() == "DRAFT" && message.planNeedsUserConfirmation == true) {
+                                                    pendingTeamAddAgents = message.teamAddAgents
+                                                    pendingTeamRemoveRoles = message.teamRemoveRoles
+                                                }
+                                            } catch (_: Throwable) {
+                                            }
 
                                             // Apply plan progress if present
                                             try {
