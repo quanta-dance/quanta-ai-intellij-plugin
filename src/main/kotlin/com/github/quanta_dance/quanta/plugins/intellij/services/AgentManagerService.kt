@@ -729,7 +729,6 @@ class AgentManagerService(
             "Reset agents conversation state for new session",
         )
         pcs.firePropertyChange("agents_reset", null, null)
-
     }
 
     fun sendMessageAsync(
