@@ -7,12 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.quanta_dance.quanta.plugins.intellij.models.OpenAIResponse
 import com.github.quanta_dance.quanta.plugins.intellij.project.CurrentFileContextProvider
 import com.github.quanta_dance.quanta.plugins.intellij.project.ProjectVersionUtil
-import com.github.quanta_dance.quanta.plugins.intellij.services.openai.DefaultToolInvoker
-import com.github.quanta_dance.quanta.plugins.intellij.services.openai.ModelSelector
-import com.github.quanta_dance.quanta.plugins.intellij.services.openai.OpenAIClientProvider
-import com.github.quanta_dance.quanta.plugins.intellij.services.openai.ResponseBuilder
-import com.github.quanta_dance.quanta.plugins.intellij.services.openai.ToolInvoker
-import com.github.quanta_dance.quanta.plugins.intellij.services.openai.ToolRouter
+import com.github.quanta_dance.quanta.plugins.intellij.services.openai.*
 import com.github.quanta_dance.quanta.plugins.intellij.services.ui.DelayedSpinner
 import com.github.quanta_dance.quanta.plugins.intellij.services.ui.Notifications
 import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsListener
@@ -33,8 +28,7 @@ import com.openai.models.responses.ResponseUsage
 import com.openai.models.responses.StructuredResponse
 import java.beans.PropertyChangeListener
 import java.beans.PropertyChangeSupport
-import java.util.Collections
-import java.util.UUID
+import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Future
 import java.util.concurrent.atomic.AtomicLong
@@ -658,7 +652,7 @@ class OpenAIService(
         if (changed) {
             thisLogger().info(
                 "Budgeted requestInputs: beforeItems=$beforeSize beforeApproxChars=$beforeChars " +
-                    "afterItems=${inputs.size} afterApproxChars=${approxTotalChars(inputs)}",
+                        "afterItems=${inputs.size} afterApproxChars=${approxTotalChars(inputs)}",
             )
         }
         return changed
@@ -927,7 +921,7 @@ class OpenAIService(
                 if (ctx != null) {
                     val header =
                         "Current file open: ${ctx.filePathRelative}, file version: ${ctx.version} - " +
-                            "you must always reread file if version changed"
+                                "you must always reread file if version changed"
                     val caretLine = ctx.caretLine
                     val caretCol = ctx.caretColumn
                     val sb = StringBuilder().append(header)
@@ -943,7 +937,7 @@ class OpenAIService(
                     ) {
                         sb.append(
                             "\nSelection starts at line ${ctx.selectionStartLine}, column ${ctx.selectionStartColumn} " +
-                                "and ends at line ${ctx.selectionEndLine}, column ${ctx.selectionEndLine}\n",
+                                    "and ends at line ${ctx.selectionEndLine}, column ${ctx.selectionEndLine}\n",
                         )
                         val sel = ctx.selectedText
                         if (sel != null) {
@@ -1043,6 +1037,39 @@ class OpenAIService(
                 // Persist user input for this turn (per-branch). UI may already show it elsewhere, so we persist only.
                 persistOnly("user", text)
 
+                val planService = SessionPlanService(project)
+                val normalized = text.trim().lowercase()
+                // Cooperative activation: user must explicitly approve the drafted plan.
+                if (normalized == "approve" || normalized == "approve plan" || normalized == "approve the plan") {
+                    try {
+                        planService.activate()
+                    } catch (_: Throwable) {
+                    }
+                }
+
+                // If plan is ACTIVE, attach it as context so the manager follows it until finished.
+                val planIsActive = planService.isActive()
+                if (planIsActive) {
+                    try {
+                        val planText = planService.loadText(maxChars = 8_000)
+                        if (planText.isNotBlank()) {
+                            requestInputs.add(systemMessage("Session plan (.quantadance/session/plan.md):\n" + planText))
+                        }
+                        requestInputs.add(
+                            systemMessage(
+                                "Plan execution policy: the session plan is ACTIVE. " +
+                                        "Proceed autonomously through unchecked tasks from top to bottom. " +
+                                        "Do NOT ask the user questions unless truly blocked. " +
+                                        "If blocked, set nextStep=WAIT_USER, set planNeedsUserConfirmation=true, and put exactly one question in planBlockingQuestion. " +
+                                        "Otherwise, keep nextStep=CONTINUE until all tasks are [x], then DONE.",
+                            ),
+                        )
+                    } catch (_: Throwable) {
+                    }
+                }
+
+
+
                 if (FEATURE_SILENT_TOOL_ESCALATION) {
                     // Tools are disabled by default. Model can request tools by class simple name via OpenAIResponse.requestedTools.
                     // We then silently retry once with only those tools enabled.
@@ -1054,8 +1081,8 @@ class OpenAIService(
                             requestInputs.add(
                                 systemMessage(
                                     "Tool policy: tools are DISABLED by default. If you need tools, set nextStep=CONTINUE and " +
-                                        "requestedTools=[<ClassSimpleName>, ...]. " +
-                                        "Do not claim you executed tools unless tool outputs are present.",
+                                            "requestedTools=[<ClassSimpleName>, ...]. " +
+                                            "Do not claim you executed tools unless tool outputs are present.",
                                 ),
                             )
                             toolPolicyHintInjectedThisIdeSession = true
@@ -1109,7 +1136,7 @@ class OpenAIService(
                             }
                             thisLogger().info(
                                 "RequestInputs: items=${requestInputs.size} approxChars=$totalChars maxItemChars=$maxItemChars " +
-                                    "previousIdNull=${previousIdForThisTurn == null} session=$currentSessionId",
+                                        "previousIdNull=${previousIdForThisTurn == null} session=$currentSessionId",
                             )
                         } catch (_: Throwable) {
                         }
@@ -1175,14 +1202,47 @@ class OpenAIService(
                                         m.content().forEach { c ->
                                             val message = c.asOutputText()
 
+                                            // Apply plan progress if present
+                                            try {
+                                                val completed =
+                                                    message.planCompletedTasks
+                                                        ?.mapNotNull { it.trim().ifBlank { null } }
+                                                        .orEmpty()
+                                                if (completed.isNotEmpty()) {
+                                                    SessionPlanService(project).markTasksDone(completed)
+                                                }
+                                            } catch (_: Throwable) {
+                                            }
+
+                                            // Enforce ACTIVE plan autonomy: do not allow WAIT_USER unless explicitly blocked.
+                                            if (planIsActive && message.nextStep?.uppercase() == "WAIT_USER") {
+                                                val blocked = message.planNeedsUserConfirmation == true
+                                                if (!blocked) {
+                                                    // Override to continue execution without user input.
+                                                    if (continuationCount < maxContinuations) {
+                                                        continuationCount++
+                                                        reprocess = true
+                                                        requestInputs.add(
+                                                            systemMessage(
+                                                                "Continue executing the ACTIVE plan autonomously. " +
+                                                                        "Do not ask the user questions unless truly blocked.",
+                                                            ),
+                                                        )
+                                                        return@forEach
+                                                    }
+                                                }
+                                            }
+
+
                                             if (FEATURE_SILENT_TOOL_ESCALATION) {
+
                                                 val requested =
                                                     message.requestedTools?.mapNotNull { it.trim().ifBlank { null } }
                                                         .orEmpty()
                                                 val wantsTools =
                                                     message.nextStep?.uppercase() == "CONTINUE" &&
-                                                        requested.isNotEmpty() &&
-                                                        !toolEscalatedThisTurn
+                                                            requested.isNotEmpty() &&
+                                                            !toolEscalatedThisTurn
 
                                                 if (!wantsTools) {
                                                     persistAndShow("assistant", managerLabel, message.summaryMessage)
@@ -1225,7 +1285,7 @@ class OpenAIService(
                                                                 "Tools enabled for this turn: ${
                                                                     filtered.sorted().joinToString()
                                                                 }. " +
-                                                                    "Proceed to call tools as needed.",
+                                                                        "Proceed to call tools as needed.",
                                                             ),
                                                         )
                                                     } else {
@@ -1252,7 +1312,7 @@ class OpenAIService(
                                                             project.service<ToolWindowService>().addToolingMessage(
                                                                 managerLabel,
                                                                 "Response incomplete but maxContinuations=$maxContinuations" +
-                                                                    " reached; stopping",
+                                                                        " reached; stopping",
                                                             )
                                                         }
                                                     }
@@ -1317,16 +1377,16 @@ class OpenAIService(
                         val msg = e.message.orEmpty()
                         val isContextWindow =
                             msg.contains("exceeds context window", ignoreCase = true) ||
-                                msg.contains("context window", ignoreCase = true)
+                                    msg.contains("context window", ignoreCase = true)
 
                         if (isContextWindow && !retriedAfterContextReset) {
                             // Step 4: summarize + rewrite local history + reset previousId and retry once with minimal context.
                             // Goal: user should not notice the context-window failure.
                             thisLogger().warn(
                                 "CONTEXT_WINDOW_EXCEEDED: attempting soft reset (retry once). " +
-                                    "items=${requestInputs.size} " +
-                                    "previousIdNull=${previousIdForThisTurn == null} " +
-                                    "session=$currentSessionId message=$msg",
+                                        "items=${requestInputs.size} " +
+                                        "previousIdNull=${previousIdForThisTurn == null} " +
+                                        "session=$currentSessionId message=$msg",
                                 e,
                             )
                             try {
@@ -1424,7 +1484,7 @@ class OpenAIService(
                         if (isContextWindow) {
                             thisLogger().warn(
                                 "CONTEXT_WINDOW_EXCEEDED: items=${requestInputs.size} previousIdNull=${previousIdForThisTurn == null} " +
-                                    "session=$currentSessionId message=$msg",
+                                        "session=$currentSessionId message=$msg",
                                 e,
                             )
                         } else {

@@ -4,28 +4,14 @@
 package com.github.quanta_dance.quanta.plugins.intellij.tools
 
 import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState
-import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentCreateTool
-import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentPostMessageTool
-import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentReadInboxTool
-import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentRemoveTool
-import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentSendMessageTool
+import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.*
 import com.github.quanta_dance.quanta.plugins.intellij.tools.builder.GetTestInfoTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.builder.GradleSyncTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.builder.RunGradleBuildTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.builder.RunGradleTestsTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.catalog.ListToolsCatalogTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.go.RunGoTestsTool
-import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.CopyFileOrDirectoryTool
-import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.CreateOrUpdateFile
-import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.DeleteFileTool
-import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.GetFileReferencesAndDependencies
-import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.InspectDependencies
-import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.ListFiles
-import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.OpenFileInEditorTool
-import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile
-import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.ReadFileContent
-import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.ReadPsiBlockAtPosition
-import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.ValidateClassFileTool
+import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.*
 import com.github.quanta_dance.quanta.plugins.intellij.tools.mcp.McpListServerToolsTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.mcp.McpListServersTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.media.GenerateImage
@@ -35,11 +21,12 @@ import com.github.quanta_dance.quanta.plugins.intellij.tools.project.SearchInFil
 import com.github.quanta_dance.quanta.plugins.intellij.tools.project.SearchProjectEmbeddings
 import com.github.quanta_dance.quanta.plugins.intellij.tools.project.UpsertProjectEmbedding
 import com.github.quanta_dance.quanta.plugins.intellij.tools.refactor.CodeRefactorSuggester
+import com.github.quanta_dance.quanta.plugins.intellij.tools.session.SessionPlanTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.system.RequestModelSwitch
 import com.github.quanta_dance.quanta.plugins.intellij.tools.system.TerminalCommandTool
 import com.intellij.openapi.project.Project
 import java.io.File
-import java.util.ArrayDeque
+import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
 object ToolsRegistry {
@@ -103,7 +90,9 @@ object ToolsRegistry {
                 ToolEntry(RequestModelSwitch::class.java, Group.GENERIC),
                 ToolEntry(McpListServersTool::class.java, Group.GENERIC),
                 ToolEntry(McpListServerToolsTool::class.java, Group.GENERIC),
+                ToolEntry(SessionPlanTool::class.java, Group.GENERIC),
             )
+
         if (terminalEnabled) list.add(ToolEntry(TerminalCommandTool::class.java, Group.GENERIC))
 
         // if project is gradle
@@ -163,7 +152,7 @@ object ToolsRegistry {
 
     private fun detectGradle(root: File): Boolean =
         File(root, "gradlew").exists() || File(root, "gradlew.bat").exists() ||
-            File(root, "build.gradle").exists() || File(root, "build.gradle.kts").exists()
+                File(root, "build.gradle").exists() || File(root, "build.gradle.kts").exists()
 
     private fun detectGo(root: File): Boolean {
         if (File(root, "go.mod").exists()) return true
@@ -188,7 +177,8 @@ object ToolsRegistry {
         }
         val dirs = listOf(root, File(root, "cmd"), File(root, "pkg"), File(root, "internal"))
         return dirs.any { dir ->
-            dir.exists() && dir.isDirectory && dir.listFiles()?.any { it.isFile && it.extension.equals("go", true) } == true
+            dir.exists() && dir.isDirectory && dir.listFiles()
+                ?.any { it.isFile && it.extension.equals("go", true) } == true
         }
     }
 }
