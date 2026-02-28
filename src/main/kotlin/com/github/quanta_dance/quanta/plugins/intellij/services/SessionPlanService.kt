@@ -26,6 +26,7 @@ class SessionPlanService(private val project: Project) {
         return File(File(base, DIR), FILE)
     }
 
+
     fun loadText(maxChars: Int = 16_000): String {
         val io = planFileIo() ?: return ""
         return try {
@@ -107,11 +108,6 @@ class SessionPlanService(private val project: Project) {
 
     fun hasPlan(): Boolean = loadText(maxChars = 200).isNotBlank()
 
-    fun getStatus(): String {
-        val parsed = parse(loadText(maxChars = 32_000))
-        return parsed.status.trim().ifBlank { "DRAFT" }
-    }
-
     private data class ParsedPlan(
         val status: String,
         val goal: String,
@@ -187,29 +183,29 @@ class SessionPlanService(private val project: Project) {
         val io = planFileIo() ?: return
         try {
             if (!io.parentFile.exists()) io.parentFile.mkdirs()
-            val content =
-                buildString {
-                    appendLine("# Session Plan")
-                    appendLine("Status: ${status.trim().ifBlank { "DRAFT" }}")
-                    appendLine()
-                    appendLine("Goal:")
-                    appendLine(goal.trim())
-                    appendLine()
-                    appendLine("Definition of done:")
-                    appendLine(definitionOfDone.trim())
-                    appendLine()
-                    appendLine("Tasks:")
-                    tasks.forEachIndexed { idx, t ->
-                        val mark = if (checked.contains(idx)) "x" else " "
-                        append("- [").append(mark).append("] ").appendLine(t.trim())
-                    }
+            val content = buildString {
+                appendLine("# Session Plan")
+                appendLine("Status: ${status.trim().ifBlank { "DRAFT" }}")
+                appendLine()
+                appendLine("Goal:")
+                appendLine(goal.trim())
+                appendLine()
+                appendLine("Definition of done:")
+                appendLine(definitionOfDone.trim())
+                appendLine()
+                appendLine("Tasks:")
+                tasks.forEachIndexed { idx, t ->
+                    val mark = if (checked.contains(idx)) "x" else " "
+                    append("- [").append(mark).append("] ").appendLine(t.trim())
                 }
+            }
             io.writeText(content)
             QDLog.info(log) { "Session plan written: ${io.absolutePath} (chars=${content.length})" }
             refresh(io)
         } catch (t: Throwable) {
             log.warn("Failed to write plan.md: ${t.message}", t)
         }
+
     }
 
     private fun refresh(io: File) {
