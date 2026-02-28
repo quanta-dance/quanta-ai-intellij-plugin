@@ -7,16 +7,12 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.quanta_dance.quanta.plugins.intellij.models.OpenAIResponse
 import com.github.quanta_dance.quanta.plugins.intellij.project.CurrentFileContextProvider
 import com.github.quanta_dance.quanta.plugins.intellij.project.ProjectVersionUtil
-import com.github.quanta_dance.quanta.plugins.intellij.services.openai.DefaultToolInvoker
-import com.github.quanta_dance.quanta.plugins.intellij.services.openai.ModelSelector
-import com.github.quanta_dance.quanta.plugins.intellij.services.openai.OpenAIClientProvider
-import com.github.quanta_dance.quanta.plugins.intellij.services.openai.ResponseBuilder
-import com.github.quanta_dance.quanta.plugins.intellij.services.openai.ToolInvoker
-import com.github.quanta_dance.quanta.plugins.intellij.services.openai.ToolRouter
+import com.github.quanta_dance.quanta.plugins.intellij.services.openai.*
 import com.github.quanta_dance.quanta.plugins.intellij.services.ui.DelayedSpinner
 import com.github.quanta_dance.quanta.plugins.intellij.services.ui.Notifications
 import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsListener
 import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.tools.ToolsRegistry
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
@@ -32,8 +28,7 @@ import com.openai.models.responses.ResponseUsage
 import com.openai.models.responses.StructuredResponse
 import java.beans.PropertyChangeListener
 import java.beans.PropertyChangeSupport
-import java.util.Collections
-import java.util.UUID
+import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Future
 import java.util.concurrent.atomic.AtomicLong
@@ -79,6 +74,12 @@ class OpenAIService(
 
     @Volatile
     private var lastInjectedAgentsRosterHash: Int? = null
+
+    @Volatile
+    private var toolPolicyHintInjectedThisIdeSession: Boolean = false
+
+    @Volatile
+    private var toolManifestInjectedThisIdeSession: Boolean = false
 
 
     data class UsageSnapshot(
@@ -524,6 +525,23 @@ class OpenAIService(
                 .build(),
         )
 
+    private fun buildBuiltInToolsManifestMessage(maxChars: Int = 2_000): String {
+        val names =
+            try {
+                ToolsRegistry.toolsFor(project).map { it.simpleName }.sorted()
+            } catch (_: Throwable) {
+                emptyList()
+            }
+        val text =
+            if (names.isEmpty()) {
+                "Available built-in tools: <unavailable>."
+            } else {
+                "Available built-in tools (request via requestedTools by class simple name):\n" + names.joinToString(", ")
+            }
+        return if (text.length <= maxChars) text else text.take(maxChars) + "\n... (truncated)"
+    }
+
+
     private fun truncateSelectedText(
         text: String,
         maxChars: Int = 1200,
@@ -551,6 +569,7 @@ class OpenAIService(
                             val key = k?.toString() ?: "<null>"
                             key to truncateToolOutput(v, maxJsonChars, maxStringChars, depth + 1)
                         }
+
                 is List<*> -> value.take(80).map { truncateToolOutput(it, maxJsonChars, maxStringChars, depth + 1) }
                 else -> value
             }
@@ -572,11 +591,16 @@ class OpenAIService(
 
 
     private companion object {
+        // Internal feature flag (not user-configurable). Default OFF.
+        // When enabled, tools are disabled by default and the model can request tools by class name for a silent retry.
+        private const val FEATURE_SILENT_TOOL_ESCALATION: Boolean = false
+
         private const val MAX_REQUEST_APPROX_CHARS: Int = 60_000
         private const val KEEP_PREFIX_ITEMS: Int = 3
         private const val KEEP_TAIL_ITEMS: Int = 20
         private const val TRIM_NOTICE: String = "Context trimmed due to size limits."
     }
+
 
     private fun approxChars(item: ResponseInputItem): Int =
         try {
@@ -631,7 +655,7 @@ class OpenAIService(
         if (changed) {
             thisLogger().info(
                 "Budgeted requestInputs: beforeItems=$beforeSize beforeApproxChars=$beforeChars " +
-                    "afterItems=${inputs.size} afterApproxChars=${approxTotalChars(inputs)}",
+                        "afterItems=${inputs.size} afterApproxChars=${approxTotalChars(inputs)}",
             )
         }
         return changed
@@ -894,7 +918,7 @@ class OpenAIService(
                 if (ctx != null) {
                     val header =
                         "Current file open: ${ctx.filePathRelative}, file version: ${ctx.version} - " +
-                            "you must always reread file if version changed"
+                                "you must always reread file if version changed"
                     val caretLine = ctx.caretLine
                     val caretCol = ctx.caretColumn
                     val sb = StringBuilder().append(header)
@@ -910,7 +934,7 @@ class OpenAIService(
                     ) {
                         sb.append(
                             "\nSelection starts at line ${ctx.selectionStartLine}, column ${ctx.selectionStartColumn} " +
-                                "and ends at line ${ctx.selectionEndLine}, column ${ctx.selectionEndLine}\n",
+                                    "and ends at line ${ctx.selectionEndLine}, column ${ctx.selectionEndLine}\n",
                         )
                         val sel = ctx.selectedText
                         if (sel != null) {
@@ -1005,7 +1029,34 @@ class OpenAIService(
                 // Persist user input for this turn (per-branch). UI may already show it elsewhere, so we persist only.
                 persistOnly("user", text)
 
+                if (FEATURE_SILENT_TOOL_ESCALATION) {
+                    // Tools are disabled by default. Model can request tools by class simple name via OpenAIResponse.requestedTools.
+                    // We then silently retry once with only those tools enabled.
+                    try {
+                        val isNewThread = lastResponseId == null
+
+                        val shouldInjectToolPolicyHint = !toolPolicyHintInjectedThisIdeSession || isNewThread
+                        if (shouldInjectToolPolicyHint) {
+                            requestInputs.add(
+                                systemMessage(
+                                    "Tool policy: tools are DISABLED by default. If you need tools, set nextStep=CONTINUE and " +
+                                            "requestedTools=[<ClassSimpleName>, ...]. Do not claim you executed tools unless tool outputs are present.",
+                                ),
+                            )
+                            toolPolicyHintInjectedThisIdeSession = true
+                        }
+
+                        val shouldInjectToolManifest = !toolManifestInjectedThisIdeSession || isNewThread
+                        if (shouldInjectToolManifest) {
+                            requestInputs.add(systemMessage(buildBuiltInToolsManifestMessage()))
+                            toolManifestInjectedThisIdeSession = true
+                        }
+                    } catch (_: Throwable) {
+                    }
+                }
+
                 requestInputs.add(userMessage(text))
+
 
                 var reprocess = true
                 var spokeThisTurn = false
@@ -1014,6 +1065,13 @@ class OpenAIService(
                 var aborted = false
                 var retriedAfterContextReset = false
                 var budgetedThisTurn = false
+
+                var includeMcpThisAttempt = !FEATURE_SILENT_TOOL_ESCALATION
+                var allowedBuiltInNamesThisAttempt: Set<String>? =
+                    if (FEATURE_SILENT_TOOL_ESCALATION) emptySet() else null
+                var allowedMcpNamesThisAttempt: Set<String>? = if (FEATURE_SILENT_TOOL_ESCALATION) emptySet() else null
+                var toolEscalatedThisTurn = false
+
 
                 val tws = project.service<ToolWindowService>()
                 val delayedSpinner = DelayedSpinner(tws)
@@ -1038,7 +1096,7 @@ class OpenAIService(
                             }
                             thisLogger().info(
                                 "RequestInputs: items=${requestInputs.size} approxChars=$totalChars maxItemChars=$maxItemChars " +
-                                    "previousIdNull=${previousIdForThisTurn == null} session=$currentSessionId",
+                                        "previousIdNull=${previousIdForThisTurn == null} session=$currentSessionId",
                             )
                         } catch (_: Throwable) {
                         }
@@ -1049,16 +1107,17 @@ class OpenAIService(
                         } catch (_: Throwable) {
                         }
 
-                        // Expose all tools by default: include MCP and no per-turn allow-list restrictions
+                        // Tools are disabled by default. When the model requests tools (requestedTools), we silently retry once
+                        // with only those tools enabled by passing allow-lists to createResponse.
                         val (structResponse, newId) =
 
                             createResponse(
                                 requestInputs,
                                 previousIdForThisTurn,
                                 allowedToolClassFilter = null,
-                                includeMcp = true,
-                                allowedBuiltInNames = null,
-                                allowedMcpNames = null,
+                                includeMcp = includeMcpThisAttempt,
+                                allowedBuiltInNames = allowedBuiltInNamesThisAttempt,
+                                allowedMcpNames = allowedMcpNamesThisAttempt,
                             )
                         previousIdForThisTurn = newId
                         delayedSpinner.stopSuccess()
@@ -1102,38 +1161,124 @@ class OpenAIService(
                                     item.message().map { m ->
                                         m.content().forEach { c ->
                                             val message = c.asOutputText()
-                                            persistAndShow("assistant", managerLabel, message.summaryMessage)
 
-                                            // Debug: surface nextStep value
-                                            project.service<ToolWindowService>().addDebugMessage(
-                                                "next_step",
-                                                "nextStep=${message.nextStep} continuationCount=$continuationCount/$maxContinuations",
-                                            )
-                                            message.ttsSummary?.also { summary ->
-                                                if (!spokeThisTurn) {
-                                                    project.service<AIVoiceService>().say(summary)
-                                                    spokeThisTurn = true
+                                            if (FEATURE_SILENT_TOOL_ESCALATION) {
+                                                val requested =
+                                                    message.requestedTools?.mapNotNull { it.trim().ifBlank { null } }
+                                                        .orEmpty()
+                                                val wantsTools =
+                                                    message.nextStep?.uppercase() == "CONTINUE" &&
+                                                            requested.isNotEmpty() &&
+                                                            !toolEscalatedThisTurn
+
+                                                if (!wantsTools) {
+                                                    persistAndShow("assistant", managerLabel, message.summaryMessage)
+
+                                                    message.ttsSummary?.also { summary ->
+                                                        if (!spokeThisTurn) {
+                                                            project.service<AIVoiceService>().say(summary)
+                                                            spokeThisTurn = true
+                                                        }
+                                                    }
                                                 }
-                                            }
 
-                                            // Option 3: 3-state conversation control
-                                            if (message.nextStep?.uppercase() == "CONTINUE") {
-                                                if (continuationCount < maxContinuations) {
-                                                    continuationCount++
-                                                    reprocess = true
-                                                    // Add an explicit continuation nudge so the next call continues immediately.
-                                                    requestInputs.add(systemMessage("Continue."))
-                                                    project.service<ToolWindowService>().addToolingMessage(
-                                                        managerLabel,
-                                                        "Response incomplete; requesting continuation (#$continuationCount)",
-                                                    )
+                                                // Debug: surface nextStep value
+                                                project.service<ToolWindowService>().addDebugMessage(
+                                                    "next_step",
+                                                    "nextStep=${message.nextStep} continuationCount=$continuationCount/$maxContinuations",
+                                                )
+
+                                                if (wantsTools) {
+                                                    // Silent tool escalation: enable only requested built-in tools by class simple name and retry once.
+                                                    toolEscalatedThisTurn = true
+                                                    val available =
+                                                        try {
+                                                            com.github.quanta_dance.quanta.plugins.intellij.tools.ToolsRegistry
+                                                                .toolsFor(project)
+                                                                .map { it.simpleName }
+                                                                .toSet()
+                                                        } catch (_: Throwable) {
+                                                            emptySet()
+                                                        }
+                                                    val filtered = requested.filter { available.contains(it) }.toSet()
+                                                    allowedBuiltInNamesThisAttempt = filtered
+                                                    includeMcpThisAttempt = false
+                                                    allowedMcpNamesThisAttempt = emptySet()
+
+                                                    reprocess = filtered.isNotEmpty()
+                                                    if (reprocess) {
+                                                        requestInputs.add(
+                                                            systemMessage(
+                                                                "Tools enabled for this turn: ${
+                                                                    filtered.sorted().joinToString()
+                                                                }. " +
+                                                                        "Proceed to call tools as needed.",
+                                                            ),
+                                                        )
+                                                    } else {
+                                                        // Fall back to plain continuation if nothing matched.
+                                                        if (continuationCount < maxContinuations) {
+                                                            continuationCount++
+                                                            reprocess = true
+                                                            requestInputs.add(systemMessage("Continue."))
+                                                        }
+                                                    }
                                                 } else {
-                                                    project.service<ToolWindowService>().addToolingMessage(
-                                                        managerLabel,
-                                                        "Response incomplete but maxContinuations=$maxContinuations reached; stopping",
-                                                    )
+                                                    // Option 3: 3-state conversation control
+                                                    if (message.nextStep?.uppercase() == "CONTINUE") {
+                                                        if (continuationCount < maxContinuations) {
+                                                            continuationCount++
+                                                            reprocess = true
+                                                            // Add an explicit continuation nudge so the next call continues immediately.
+                                                            requestInputs.add(systemMessage("Continue."))
+                                                            project.service<ToolWindowService>().addToolingMessage(
+                                                                managerLabel,
+                                                                "Response incomplete; requesting continuation (#$continuationCount)",
+                                                            )
+                                                        } else {
+                                                            project.service<ToolWindowService>().addToolingMessage(
+                                                                managerLabel,
+                                                                "Response incomplete but maxContinuations=$maxContinuations reached; stopping",
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            } else {
+                                                // Baseline mode: expose all tools by default.
+                                                persistAndShow("assistant", managerLabel, message.summaryMessage)
+
+                                                message.ttsSummary?.also { summary ->
+                                                    if (!spokeThisTurn) {
+                                                        project.service<AIVoiceService>().say(summary)
+                                                        spokeThisTurn = true
+                                                    }
+                                                }
+
+                                                // Debug: surface nextStep value
+                                                project.service<ToolWindowService>().addDebugMessage(
+                                                    "next_step",
+                                                    "nextStep=${message.nextStep} continuationCount=$continuationCount/$maxContinuations",
+                                                )
+
+                                                // Option 3: 3-state conversation control
+                                                if (message.nextStep?.uppercase() == "CONTINUE") {
+                                                    if (continuationCount < maxContinuations) {
+                                                        continuationCount++
+                                                        reprocess = true
+                                                        requestInputs.add(systemMessage("Continue."))
+                                                        project.service<ToolWindowService>().addToolingMessage(
+                                                            managerLabel,
+                                                            "Response incomplete; requesting continuation (#$continuationCount)",
+                                                        )
+                                                    } else {
+                                                        project.service<ToolWindowService>().addToolingMessage(
+                                                            managerLabel,
+                                                            "Response incomplete but maxContinuations=$maxContinuations reached; stopping",
+                                                        )
+                                                    }
                                                 }
                                             }
+
                                         }
                                     }
                                 }
@@ -1159,16 +1304,16 @@ class OpenAIService(
                         val msg = e.message.orEmpty()
                         val isContextWindow =
                             msg.contains("exceeds context window", ignoreCase = true) ||
-                                msg.contains("context window", ignoreCase = true)
+                                    msg.contains("context window", ignoreCase = true)
 
                         if (isContextWindow && !retriedAfterContextReset) {
                             // Step 4: summarize + rewrite local history + reset previousId and retry once with minimal context.
                             // Goal: user should not notice the context-window failure.
                             thisLogger().warn(
                                 "CONTEXT_WINDOW_EXCEEDED: attempting soft reset (retry once). " +
-                                    "items=${requestInputs.size} " +
-                                    "previousIdNull=${previousIdForThisTurn == null} " +
-                                    "session=$currentSessionId message=$msg",
+                                        "items=${requestInputs.size} " +
+                                        "previousIdNull=${previousIdForThisTurn == null} " +
+                                        "session=$currentSessionId message=$msg",
                                 e,
                             )
                             try {
@@ -1267,7 +1412,7 @@ class OpenAIService(
                         if (isContextWindow) {
                             thisLogger().warn(
                                 "CONTEXT_WINDOW_EXCEEDED: items=${requestInputs.size} previousIdNull=${previousIdForThisTurn == null} " +
-                                    "session=$currentSessionId message=$msg",
+                                        "session=$currentSessionId message=$msg",
                                 e,
                             )
                         } else {
