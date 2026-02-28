@@ -81,10 +81,22 @@ class QuantaAISettingsComponent {
             toolTipText = "Show extra debug details in the tool window (disabled by default)."
         }
 
+    private var maxAutomaticTurnsField =
+        JBTextField().apply {
+            toolTipText = "Maximum automatic CONTINUE turns per user request (1..100)."
+        }
+
     // Terminal tool toggle (dangerous)
     private var terminalToolEnabledField =
         JBCheckBox("Enable Terminal tool (dangerous)").apply {
             toolTipText = "Allows the assistant to run shell commands. Disabled by default."
+        }
+
+    private var terminalAllowedCommandsCsvField =
+        JBTextField().apply {
+            toolTipText =
+                "Comma-separated allowed command prefixes (strict token-prefix match). " +
+                "Examples: git status, git diff, git add, git commit, ./gradlew"
         }
 
     private var customPromptField = JBTextField()
@@ -173,7 +185,9 @@ class QuantaAISettingsComponent {
             .addComponent(dynamicModelEnabledField)
             .addComponent(agenticEnabledField)
             .addComponent(debugEnabledField)
+            .addLabeledComponent(JBLabel("Max automatic turns: "), maxAutomaticTurnsField, 1, false)
             .addComponent(terminalToolEnabledField)
+            .addLabeledComponent(JBLabel("Terminal allowed commands: "), terminalAllowedCommandsCsvField, 1, false)
             .addSeparator()
             .addLabeledComponent(JBLabel("Custom prompt: "), customPromptField, 1, false)
             .addLabeledComponent(JBLabel("Custom instructions: "), extraInstructionsScroll, 1, false)
@@ -233,6 +247,23 @@ class QuantaAISettingsComponent {
             }
         set(value) {
             maxOutputTokensField.text = value.toString()
+        }
+
+    var maxAutomaticTurns: Int
+        get() =
+            try {
+                Integer.parseInt(maxAutomaticTurnsField.text).coerceIn(1, 100)
+            } catch (_: NumberFormatException) {
+                10
+            }
+        set(value) {
+            maxAutomaticTurnsField.text = value.coerceIn(1, 100).toString()
+        }
+
+    var terminalAllowedCommandsCsv: String
+        get() = terminalAllowedCommandsCsvField.text
+        set(value) {
+            terminalAllowedCommandsCsvField.text = value
         }
 
     var dynamicModelEnabled: Boolean

@@ -33,7 +33,6 @@ class ResponseBuilder(private val project: Project) {
         Keep responses concise and actionable.
         """.trimIndent()
 
-
     private fun addSelectedBuiltInTools(
         builder: StructuredResponseCreateParams.Builder<OpenAIResponse>,
         allowedBuiltInNames: Set<String>?,
@@ -50,7 +49,6 @@ class ResponseBuilder(private val project: Project) {
         filtered.forEach { builder.addTool(it) }
         return filtered.size
     }
-
 
     private fun addAllMcpTools(builder: StructuredResponseCreateParams.Builder<OpenAIResponse>) {
         val mcp = project.service<McpClientService>()
@@ -105,7 +103,6 @@ class ResponseBuilder(private val project: Project) {
         return added
     }
 
-
     fun createParamsBuilder(
         inputs: MutableList<ResponseInputItem>,
         previousId: String?,
@@ -140,7 +137,6 @@ class ResponseBuilder(private val project: Project) {
                 .model(ChatModel.of(effectiveModel))
         if (!previousId.isNullOrBlank()) builder.previousResponseId(previousId)
 
-
         val builtInToolsCount = addSelectedBuiltInTools(builder, allowedBuiltInNames)
         val mcpToolsCount = if (includeMcp) addSelectedMcpTools(builder, allowedMcpNames) else 0
 
@@ -155,8 +151,8 @@ class ResponseBuilder(private val project: Project) {
                 val previousIdNull = previousId.isNullOrBlank()
                 val msg =
                     "model=$effectiveModel previousIdNull=$previousIdNull " +
-                            "instrChars=${effectiveInstructions.length} inputItems=${inputs.size} inputApproxChars=$approxInputChars " +
-                            "builtInTools=$builtInToolsCount mcpTools=$mcpToolsCount"
+                        "instrChars=${effectiveInstructions.length} inputItems=${inputs.size} inputApproxChars=$approxInputChars " +
+                        "builtInTools=$builtInToolsCount mcpTools=$mcpToolsCount"
 
                 project.service<ToolWindowService>().addDebugMessage("request_meta", msg)
                 thisLogger().info("RequestMeta: $msg")
@@ -165,6 +161,5 @@ class ResponseBuilder(private val project: Project) {
         }
 
         return builder
-
     }
 }

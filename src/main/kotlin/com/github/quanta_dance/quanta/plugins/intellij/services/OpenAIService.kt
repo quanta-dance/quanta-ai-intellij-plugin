@@ -7,7 +7,12 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.quanta_dance.quanta.plugins.intellij.models.OpenAIResponse
 import com.github.quanta_dance.quanta.plugins.intellij.project.CurrentFileContextProvider
 import com.github.quanta_dance.quanta.plugins.intellij.project.ProjectVersionUtil
-import com.github.quanta_dance.quanta.plugins.intellij.services.openai.*
+import com.github.quanta_dance.quanta.plugins.intellij.services.openai.DefaultToolInvoker
+import com.github.quanta_dance.quanta.plugins.intellij.services.openai.ModelSelector
+import com.github.quanta_dance.quanta.plugins.intellij.services.openai.OpenAIClientProvider
+import com.github.quanta_dance.quanta.plugins.intellij.services.openai.ResponseBuilder
+import com.github.quanta_dance.quanta.plugins.intellij.services.openai.ToolInvoker
+import com.github.quanta_dance.quanta.plugins.intellij.services.openai.ToolRouter
 import com.github.quanta_dance.quanta.plugins.intellij.services.ui.DelayedSpinner
 import com.github.quanta_dance.quanta.plugins.intellij.services.ui.Notifications
 import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsListener
@@ -28,7 +33,8 @@ import com.openai.models.responses.ResponseUsage
 import com.openai.models.responses.StructuredResponse
 import java.beans.PropertyChangeListener
 import java.beans.PropertyChangeSupport
-import java.util.*
+import java.util.Collections
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Future
 import java.util.concurrent.atomic.AtomicLong
@@ -80,7 +86,6 @@ class OpenAIService(
 
     @Volatile
     private var toolManifestInjectedThisIdeSession: Boolean = false
-
 
     data class UsageSnapshot(
         val inputTokens: Long,
@@ -541,7 +546,6 @@ class OpenAIService(
         return if (text.length <= maxChars) text else text.take(maxChars) + "\n... (truncated)"
     }
 
-
     private fun truncateSelectedText(
         text: String,
         maxChars: Int = 1200,
@@ -576,8 +580,9 @@ class OpenAIService(
 
         return try {
             val json = mapper.writeValueAsString(simplified)
-            if (json.length <= maxJsonChars) simplified
-            else {
+            if (json.length <= maxJsonChars) {
+                simplified
+            } else {
                 mapOf(
                     "truncated" to true,
                     "preview" to json.take(maxJsonChars) + "... (truncated)",
@@ -589,7 +594,6 @@ class OpenAIService(
         }
     }
 
-
     private companion object {
         // Internal feature flag (not user-configurable). Default OFF.
         // When enabled, tools are disabled by default and the model can request tools by class name for a silent retry.
@@ -600,7 +604,6 @@ class OpenAIService(
         private const val KEEP_TAIL_ITEMS: Int = 20
         private const val TRIM_NOTICE: String = "Context trimmed due to size limits."
     }
-
 
     private fun approxChars(item: ResponseInputItem): Int =
         try {
@@ -655,7 +658,7 @@ class OpenAIService(
         if (changed) {
             thisLogger().info(
                 "Budgeted requestInputs: beforeItems=$beforeSize beforeApproxChars=$beforeChars " +
-                        "afterItems=${inputs.size} afterApproxChars=${approxTotalChars(inputs)}",
+                    "afterItems=${inputs.size} afterApproxChars=${approxTotalChars(inputs)}",
             )
         }
         return changed
@@ -821,7 +824,13 @@ class OpenAIService(
         val processedCallIds = mutableSetOf<String>()
         var reprocess = true
         var continuationCount = 0
-        val maxContinuations = 5 // safety limit
+        val maxContinuations =
+            try {
+                QuantaAISettingsState.instance.state.maxAutomaticTurns.coerceIn(1, 100)
+            } catch (_: Throwable) {
+                5
+            }
+
         while (reprocess) {
             reprocess = false
             val (structResponse, newId) =
@@ -918,7 +927,7 @@ class OpenAIService(
                 if (ctx != null) {
                     val header =
                         "Current file open: ${ctx.filePathRelative}, file version: ${ctx.version} - " +
-                                "you must always reread file if version changed"
+                            "you must always reread file if version changed"
                     val caretLine = ctx.caretLine
                     val caretCol = ctx.caretColumn
                     val sb = StringBuilder().append(header)
@@ -934,7 +943,7 @@ class OpenAIService(
                     ) {
                         sb.append(
                             "\nSelection starts at line ${ctx.selectionStartLine}, column ${ctx.selectionStartColumn} " +
-                                    "and ends at line ${ctx.selectionEndLine}, column ${ctx.selectionEndLine}\n",
+                                "and ends at line ${ctx.selectionEndLine}, column ${ctx.selectionEndLine}\n",
                         )
                         val sel = ctx.selectedText
                         if (sel != null) {
@@ -1024,7 +1033,12 @@ class OpenAIService(
 
                 // Reset continuation counter at the start of a user-initiated turn so continuations don't carry over from prior turns
                 var continuationCount = 0
-                val maxContinuations = 10 // safety limit
+                val maxContinuations =
+                    try {
+                        QuantaAISettingsState.instance.state.maxAutomaticTurns.coerceIn(1, 100)
+                    } catch (_: Throwable) {
+                        10
+                    }
 
                 // Persist user input for this turn (per-branch). UI may already show it elsewhere, so we persist only.
                 persistOnly("user", text)
@@ -1040,7 +1054,8 @@ class OpenAIService(
                             requestInputs.add(
                                 systemMessage(
                                     "Tool policy: tools are DISABLED by default. If you need tools, set nextStep=CONTINUE and " +
-                                            "requestedTools=[<ClassSimpleName>, ...]. Do not claim you executed tools unless tool outputs are present.",
+                                        "requestedTools=[<ClassSimpleName>, ...]. " +
+                                        "Do not claim you executed tools unless tool outputs are present.",
                                 ),
                             )
                             toolPolicyHintInjectedThisIdeSession = true
@@ -1057,7 +1072,6 @@ class OpenAIService(
 
                 requestInputs.add(userMessage(text))
 
-
                 var reprocess = true
                 var spokeThisTurn = false
                 val processedCallIds = mutableSetOf<String>()
@@ -1071,7 +1085,6 @@ class OpenAIService(
                     if (FEATURE_SILENT_TOOL_ESCALATION) emptySet() else null
                 var allowedMcpNamesThisAttempt: Set<String>? = if (FEATURE_SILENT_TOOL_ESCALATION) emptySet() else null
                 var toolEscalatedThisTurn = false
-
 
                 val tws = project.service<ToolWindowService>()
                 val delayedSpinner = DelayedSpinner(tws)
@@ -1096,7 +1109,7 @@ class OpenAIService(
                             }
                             thisLogger().info(
                                 "RequestInputs: items=${requestInputs.size} approxChars=$totalChars maxItemChars=$maxItemChars " +
-                                        "previousIdNull=${previousIdForThisTurn == null} session=$currentSessionId",
+                                    "previousIdNull=${previousIdForThisTurn == null} session=$currentSessionId",
                             )
                         } catch (_: Throwable) {
                         }
@@ -1168,8 +1181,8 @@ class OpenAIService(
                                                         .orEmpty()
                                                 val wantsTools =
                                                     message.nextStep?.uppercase() == "CONTINUE" &&
-                                                            requested.isNotEmpty() &&
-                                                            !toolEscalatedThisTurn
+                                                        requested.isNotEmpty() &&
+                                                        !toolEscalatedThisTurn
 
                                                 if (!wantsTools) {
                                                     persistAndShow("assistant", managerLabel, message.summaryMessage)
@@ -1212,7 +1225,7 @@ class OpenAIService(
                                                                 "Tools enabled for this turn: ${
                                                                     filtered.sorted().joinToString()
                                                                 }. " +
-                                                                        "Proceed to call tools as needed.",
+                                                                    "Proceed to call tools as needed.",
                                                             ),
                                                         )
                                                     } else {
@@ -1238,7 +1251,8 @@ class OpenAIService(
                                                         } else {
                                                             project.service<ToolWindowService>().addToolingMessage(
                                                                 managerLabel,
-                                                                "Response incomplete but maxContinuations=$maxContinuations reached; stopping",
+                                                                "Response incomplete but maxContinuations=$maxContinuations" +
+                                                                    " reached; stopping",
                                                             )
                                                         }
                                                     }
@@ -1278,7 +1292,6 @@ class OpenAIService(
                                                     }
                                                 }
                                             }
-
                                         }
                                     }
                                 }
@@ -1304,16 +1317,16 @@ class OpenAIService(
                         val msg = e.message.orEmpty()
                         val isContextWindow =
                             msg.contains("exceeds context window", ignoreCase = true) ||
-                                    msg.contains("context window", ignoreCase = true)
+                                msg.contains("context window", ignoreCase = true)
 
                         if (isContextWindow && !retriedAfterContextReset) {
                             // Step 4: summarize + rewrite local history + reset previousId and retry once with minimal context.
                             // Goal: user should not notice the context-window failure.
                             thisLogger().warn(
                                 "CONTEXT_WINDOW_EXCEEDED: attempting soft reset (retry once). " +
-                                        "items=${requestInputs.size} " +
-                                        "previousIdNull=${previousIdForThisTurn == null} " +
-                                        "session=$currentSessionId message=$msg",
+                                    "items=${requestInputs.size} " +
+                                    "previousIdNull=${previousIdForThisTurn == null} " +
+                                    "session=$currentSessionId message=$msg",
                                 e,
                             )
                             try {
@@ -1398,7 +1411,6 @@ class OpenAIService(
                                 }
                                 requestInputs.add(systemMessage(buildAgentsRosterContext()))
                                 requestInputs.add(userMessage(text))
-
                             } catch (_: Throwable) {
                             }
 
@@ -1412,7 +1424,7 @@ class OpenAIService(
                         if (isContextWindow) {
                             thisLogger().warn(
                                 "CONTEXT_WINDOW_EXCEEDED: items=${requestInputs.size} previousIdNull=${previousIdForThisTurn == null} " +
-                                        "session=$currentSessionId message=$msg",
+                                    "session=$currentSessionId message=$msg",
                                 e,
                             )
                         } else {

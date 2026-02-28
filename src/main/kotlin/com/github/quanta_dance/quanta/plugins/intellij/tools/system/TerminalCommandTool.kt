@@ -10,6 +10,7 @@ import com.fasterxml.jackson.annotation.JsonSetter
 import com.fasterxml.jackson.annotation.Nulls
 import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
+import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState
 import com.github.quanta_dance.quanta.plugins.intellij.tools.ToolInterface
 import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.execution.impl.ConsoleViewImpl
@@ -55,8 +56,41 @@ class TerminalCommandTool : ToolInterface<String> {
         val cmd = command?.trim().orEmpty()
         if (cmd.isEmpty()) return "Command is not specified."
 
+        // Security: allow-list of command prefixes when terminal tool is enabled.
+        // Each entry in terminalAllowedCommandsCsv may contain spaces (multi-token prefix), e.g. "git add", "git commit", "./gradlew".
+        // The command is allowed only if its tokens start with one of these prefixes.
+        try {
+            val settings = QuantaAISettingsState.instance.state
+            if (settings.terminalToolEnabled == true) {
+                val allowedPrefixes =
+                    settings.terminalAllowedCommandsCsv
+                        .split(',')
+                        .map { it.trim() }
+                        .filter { it.isNotBlank() }
+                        .map { it.split(Regex("\\s+")) }
+                        .filter { it.isNotEmpty() }
+
+                if (allowedPrefixes.isNotEmpty()) {
+                    val cmdTokens = cmd.split(Regex("\\s+"))
+                    val allowed =
+                        allowedPrefixes.any { prefix ->
+                            if (cmdTokens.size < prefix.size) return@any false
+                            prefix.indices.all { i -> cmdTokens[i] == prefix[i] }
+                        }
+                    if (!allowed) {
+                        val allowedText = allowedPrefixes.joinToString(", ") { it.joinToString(" ") }
+                        val msg = "Command is not allowed: '$cmd'. Allowed prefixes: $allowedText"
+                        QDLog.warn(logger) { msg }
+                        return msg
+                    }
+                }
+            }
+        } catch (_: Throwable) {
+        }
+
         // Execute via the system shell to support arguments and quoting
         val commandLine =
+
             if (SystemInfo.isWindows) {
                 GeneralCommandLine("cmd").withParameters("/c", cmd)
             } else {
@@ -141,7 +175,8 @@ class TerminalCommandTool : ToolInterface<String> {
                     override fun processWillTerminate(
                         event: ProcessEvent,
                         willBeDestroyed: Boolean,
-                    ) {}
+                    ) {
+                    }
                 },
             )
 
