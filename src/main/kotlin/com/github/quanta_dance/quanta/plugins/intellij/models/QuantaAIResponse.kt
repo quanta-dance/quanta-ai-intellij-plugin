@@ -46,6 +46,24 @@ data class OpenAIResponse(
         "Optional: a single blocking question to ask the user when planNeedsUserConfirmation=true.",
     )
     val planBlockingQuestion: String? = null,
+    @field:JsonPropertyDescription(
+        "Optional: propose adding agents before plan activation. Applied only after user approval.",
+    )
+    val teamAddAgents: List<TeamAgentSpec>? = null,
+    @field:JsonPropertyDescription(
+        "Optional: propose removing agents by role name before plan activation. Applied only after user approval.",
+    )
+    val teamRemoveRoles: List<String>? = null,
+)
+
+@JsonClassDescription("Agent spec for team shaping")
+data class TeamAgentSpec(
+    @field:JsonPropertyDescription("Role name for the agent")
+    val role: String,
+    @field:JsonPropertyDescription("Optional model id override. If omitted, default is used.")
+    val model: String? = null,
+    @field:JsonPropertyDescription("Role-specific instructions")
+    val instructions: String? = null,
 )
 
 
