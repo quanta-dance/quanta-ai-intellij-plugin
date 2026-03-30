@@ -15,6 +15,7 @@ import com.openai.models.audio.AudioModel
 import com.openai.models.audio.speech.SpeechCreateParams
 import com.openai.models.audio.speech.SpeechModel
 import com.openai.models.audio.transcriptions.TranscriptionCreateParams
+import com.openai.services.blocking.audio.SpeechService
 import java.io.BufferedInputStream
 import java.io.InputStream
 import java.util.concurrent.CompletableFuture
@@ -48,7 +49,7 @@ class AIVoiceService(private val project: Project) {
         project.service<QuantaAIService>().mute(true)
         val useLocalMacTts =
             System.getProperty("os.name").contains("Mac", ignoreCase = true) &&
-                QuantaAISettingsState.instance.state.voiceByLocalTTS
+                    QuantaAISettingsState.instance.state.voiceByLocalTTS
         if (useLocalMacTts) {
             val th =
                 Thread {

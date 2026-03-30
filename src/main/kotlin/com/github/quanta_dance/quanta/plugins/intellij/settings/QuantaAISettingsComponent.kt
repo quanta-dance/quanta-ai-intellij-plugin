@@ -41,17 +41,20 @@ class QuantaAISettingsComponent {
         }
     private var voiceEnabledField =
         JBCheckBox("Voice enabled").apply {
-            this.toolTipText = "AI will process messages with voice. Require tokens for transcription"
+            this.toolTipText = "AI will process messages with voice. Requires tokens for transcription"
         }
     private var voiceByLocalTTSField =
         JBCheckBox("Use Local TTS").apply {
-            this.toolTipText = "Use local TTS. Will save OpenAI TTS Tokens"
+            this.toolTipText = "Use local TTS. Will save OpenAI TTS tokens"
         }
 
     private var maxOutputTokensField = JBTextField("Max output tokens")
 
     private var models: Array<String> =
         arrayOf(
+            ChatModel.GPT_5_4.toString(),
+            ChatModel.GPT_5_4_MINI.toString(),
+            ChatModel.GPT_5_4_NANO.toString(),
             // ChatModel.GPT_5_2_PRO.toString(),
             ChatModel.GPT_5_2.toString(),
             AllModels.ResponsesOnlyModel.GPT_5_1_CODEX_MAX.toString(),
@@ -96,7 +99,7 @@ class QuantaAISettingsComponent {
         JBTextField().apply {
             toolTipText =
                 "Comma-separated allowed command prefixes (strict token-prefix match). " +
-                "Examples: git status, git diff, git add, git commit, ./gradlew"
+                        "Examples: git status, git diff, git add, git commit, ./gradlew"
         }
 
     private var customPromptField = JBTextField()
@@ -134,8 +137,8 @@ class QuantaAISettingsComponent {
                             """
                             {
                             """.trimIndent() +
-                                "\"mcpServers\": { }\n" +
-                                "}".trimIndent(),
+                                    "\"mcpServers\": { }\n" +
+                                    "}".trimIndent(),
                         )
                     }
                     LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)?.let { vFile ->
@@ -158,7 +161,7 @@ class QuantaAISettingsComponent {
     val linkLabel =
         JBLabel(
             "<html>Model Pricing details available at <a href=\"https://platform.openai.com/docs/pricing\">" +
-                "https://platform.openai.com/docs/pricing</a></html>",
+                    "https://platform.openai.com/docs/pricing</a></html>",
         ).apply {
             cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
             foreground = Color(42, 122, 255)

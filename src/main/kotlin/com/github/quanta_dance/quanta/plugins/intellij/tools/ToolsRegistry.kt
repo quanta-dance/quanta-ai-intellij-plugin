@@ -4,14 +4,29 @@
 package com.github.quanta_dance.quanta.plugins.intellij.tools
 
 import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState
-import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.*
+import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentCreateTool
+import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentPostMessageTool
+import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentReadInboxTool
+import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentRemoveTool
+import com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentSendMessageTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.builder.GetTestInfoTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.builder.GradleSyncTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.builder.RunGradleBuildTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.builder.RunGradleTestsTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.catalog.ListToolsCatalogTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.go.RunGoTestsTool
-import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.*
+import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.CopyFileOrDirectoryTool
+import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.CreateOrUpdateFile
+import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.DeleteFileTool
+import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.GetFileReferencesAndDependencies
+import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.InspectDependencies
+import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.ListFiles
+import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.OpenFileInEditorTool
+import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile
+import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.ReadFileContent
+import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.ReadPsiBlockAtPosition
+import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.ValidateClassFileTool
+
 import com.github.quanta_dance.quanta.plugins.intellij.tools.mcp.McpListServerToolsTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.mcp.McpListServersTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.media.GenerateImage
@@ -21,13 +36,16 @@ import com.github.quanta_dance.quanta.plugins.intellij.tools.project.SearchInFil
 import com.github.quanta_dance.quanta.plugins.intellij.tools.project.SearchProjectEmbeddings
 import com.github.quanta_dance.quanta.plugins.intellij.tools.project.UpsertProjectEmbedding
 import com.github.quanta_dance.quanta.plugins.intellij.tools.refactor.CodeRefactorSuggester
+import com.github.quanta_dance.quanta.plugins.intellij.tools.session.ScheduleTaskTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.session.SessionPlanTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.system.RequestModelSwitch
+
 import com.github.quanta_dance.quanta.plugins.intellij.tools.system.TerminalCommandTool
 import com.intellij.openapi.project.Project
 import java.io.File
-import java.util.*
+import java.util.ArrayDeque
 import java.util.concurrent.ConcurrentHashMap
+
 
 object ToolsRegistry {
     enum class Group { GENERIC, GRADLE, GO }
@@ -62,7 +80,26 @@ object ToolsRegistry {
         }
     }
 
+    private fun gradlePluginAvailable(project: Project?): Boolean {
+        fun tryLoad(loader: ClassLoader?): Boolean =
+            try {
+                loader?.loadClass("org.jetbrains.plugins.gradle.util.GradleConstants")
+                true
+            } catch (_: Throwable) {
+                false
+            }
+        if (tryLoad(this::class.java.classLoader)) return true
+        if (project != null && tryLoad(project::class.java.classLoader)) return true
+        return try {
+            Class.forName("org.jetbrains.plugins.gradle.util.GradleConstants")
+            true
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
     private fun baseEntries(project: Project?): List<ToolEntry> {
+
         val settings = QuantaAISettingsState.instance.state
         val agentic = settings.agenticEnabled ?: true
         val terminalEnabled = settings.terminalToolEnabled == true
@@ -91,17 +128,14 @@ object ToolsRegistry {
                 ToolEntry(McpListServersTool::class.java, Group.GENERIC),
                 ToolEntry(McpListServerToolsTool::class.java, Group.GENERIC),
                 ToolEntry(SessionPlanTool::class.java, Group.GENERIC),
+                ToolEntry(ScheduleTaskTool::class.java, Group.GENERIC),
             )
 
         if (terminalEnabled) list.add(ToolEntry(TerminalCommandTool::class.java, Group.GENERIC))
 
-        // if project is gradle
-        list.add(ToolEntry(GradleSyncTool::class.java, Group.GRADLE))
-        list.add(ToolEntry(GetTestInfoTool::class.java, Group.GRADLE))
-        list.add(ToolEntry(RunGradleBuildTool::class.java, Group.GRADLE))
-        list.add(ToolEntry(RunGradleTestsTool::class.java, Group.GRADLE))
-        // if project is go
+        // GO tools are filtered later based on project detection.
         list.add(ToolEntry(RunGoTestsTool::class.java, Group.GO))
+
         if (agentic) {
             list.add(ToolEntry(AgentCreateTool::class.java, Group.GENERIC))
             list.add(ToolEntry(AgentSendMessageTool::class.java, Group.GENERIC))
@@ -132,7 +166,14 @@ object ToolsRegistry {
         val cached = cache[project]
         if (cached != null && cached.signature == signature) return cached.tools
 
-        val entries = baseEntries(project)
+        val entries = baseEntries(project).toMutableList()
+        if (gradle && gradlePluginAvailable(project)) {
+            entries.add(ToolEntry(GradleSyncTool::class.java, Group.GRADLE))
+            entries.add(ToolEntry(GetTestInfoTool::class.java, Group.GRADLE))
+            entries.add(ToolEntry(RunGradleBuildTool::class.java, Group.GRADLE))
+            entries.add(ToolEntry(RunGradleTestsTool::class.java, Group.GRADLE))
+        }
+
         val tools =
             if (basePath == null) {
                 entries.map { it.clazz }
@@ -146,6 +187,7 @@ object ToolsRegistry {
                         }
                     }.map { it.clazz }
             }
+
         cache[project] = CacheEntry(signature, tools)
         return tools
     }
