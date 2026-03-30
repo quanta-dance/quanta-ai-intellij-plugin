@@ -126,7 +126,7 @@ dependencies {
             listOf(
                 "com.intellij.java",
                 "com.intellij.gradle",
-                "Git4Idea",
+             //   "Git4Idea",
             ),
         )
         pluginVerifier()
@@ -154,6 +154,8 @@ dependencies {
     implementation("io.ktor:ktor-client-websockets")
 
     implementation("org.xerial:sqlite-jdbc:3.41.2.2")
+
+    implementation("org.eclipse.jgit:org.eclipse.jgit:6.10.0.202406032230-r")
 
     implementation("com.openai:openai-java:4.30.0")
     testRuntimeOnly("junit:junit:4.13.2")

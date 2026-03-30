@@ -1127,7 +1127,8 @@ class OpenAIService(
                                         "(Developer Agent / Test Agent / Project Analyst) and integrate their replies. " +
                                         "Only do work yourself when coordination-only or trivial. " +
                                         "Do NOT ask the user questions unless truly blocked. " +
-                                        "If blocked, set nextStep=WAIT_USER, set planNeedsUserConfirmation=true, and put exactly one question in planBlockingQuestion. " +
+                                        "If blocked, set nextStep=WAIT_USER, set planNeedsUserConfirmation=true, " +
+                                        "and put exactly one question in planBlockingQuestion. " +
                                         "Otherwise, keep nextStep=CONTINUE until all tasks are [x], then DONE.",
 
                                 ),
@@ -1272,10 +1273,14 @@ class OpenAIService(
 
                                             // Capture draft team shaping proposals (applied only when user approves)
                                             try {
-                                                if (message.planStatus?.uppercase() == "DRAFT" && message.planNeedsUserConfirmation == true) {
+                                                if (
+                                                    message.planStatus?.uppercase() == "DRAFT" &&
+                                                    message.planNeedsUserConfirmation == true
+                                                ) {
                                                     pendingTeamAddAgents = message.teamAddAgents
                                                     pendingTeamRemoveRoles = message.teamRemoveRoles
                                                 }
+
                                             } catch (_: Throwable) {
                                             }
 
