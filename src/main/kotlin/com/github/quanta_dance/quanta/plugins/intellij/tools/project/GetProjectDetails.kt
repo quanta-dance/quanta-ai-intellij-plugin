@@ -9,13 +9,14 @@ import com.github.quanta_dance.quanta.plugins.intellij.tools.ToolInterface
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.vcs.FilePath
-import com.intellij.openapi.vcs.LocalFilePath
-import com.intellij.openapi.vcs.ProjectLevelVcsManager
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
-import git4idea.commands.Git
-import git4idea.repo.GitRepositoryManager
+import org.eclipse.jgit.ignore.IgnoreNode
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.Paths
+import java.util.concurrent.ConcurrentHashMap
+
 
 @JsonClassDescription("Provide Project Details and a bounded, depth-first project structure with clear truncation indicators.")
 class GetProjectDetails : ToolInterface<String> {
@@ -33,14 +34,87 @@ class GetProjectDetails : ToolInterface<String> {
 
     @field:JsonPropertyDescription(
         "Maximum depth to traverse (root’s direct children are depth 1). Default: 12.\n" +
-            "Adaptive behavior: for JVM projects (Java/Kotlin/Scala with src/main/java|kotlin|scala), " +
-            "an effective depth of at least 32 is used to accommodate deep package structures.",
+                "Adaptive behavior: for JVM projects (Java/Kotlin/Scala with src/main/java|kotlin|scala), " +
+                "an effective depth of at least 32 is used to accommodate deep package structures.",
     )
     var maxDepth: Int = 12
 
     companion object {
         private val logger = Logger.getInstance(GetProjectDetails::class.java)
     }
+
+    private var gitIgnoreMatcher: GitIgnoreMatcher? = null
+    private var gitIgnoreRootPath: String? = null
+
+    private class GitIgnoreMatcher(
+        private val rootPath: Path,
+    ) {
+        private val nodesByDir: ConcurrentHashMap<Path, IgnoreNode?> = ConcurrentHashMap()
+
+        fun isIgnored(vf: VirtualFile): Boolean {
+            val filePath =
+                try {
+                    Paths.get(vf.path).normalize()
+                } catch (_: Throwable) {
+                    return false
+                }
+
+            if (!filePath.startsWith(rootPath)) return false
+
+            val ancestors = mutableListOf<Path>()
+            var dir: Path? = filePath.parent
+            while (dir != null && dir.startsWith(rootPath)) {
+                ancestors.add(dir)
+                if (dir == rootPath) break
+                dir = dir.parent
+            }
+            ancestors.reverse()
+
+            var ignored: Boolean? = null
+            for (ancestorDir in ancestors) {
+                val node = loadIgnoreNode(ancestorDir) ?: continue
+                val rel =
+                    try {
+                        ancestorDir.relativize(filePath).toString().replace('\\', '/')
+                    } catch (_: Throwable) {
+                        continue
+                    }
+
+                when (node.isIgnored(rel, vf.isDirectory)) {
+                    IgnoreNode.MatchResult.IGNORED -> ignored = true
+                    IgnoreNode.MatchResult.NOT_IGNORED -> ignored = false
+                    IgnoreNode.MatchResult.CHECK_PARENT -> {
+                        // no-op
+                    }
+
+                    else -> {
+                        // Newer JGit versions add additional states; we treat them as neutral.
+                    }
+                }
+            }
+
+            return ignored == true
+        }
+
+        private fun loadIgnoreNode(dir: Path): IgnoreNode? {
+            return nodesByDir.computeIfAbsent(dir) { d ->
+                val ignoreFile = d.resolve(".gitignore")
+                if (!Files.isRegularFile(ignoreFile)) return@computeIfAbsent null
+
+                try {
+                    Files.newInputStream(ignoreFile).use { input ->
+                        val node = IgnoreNode()
+                        node.parse(input)
+                        node
+                    }
+
+                } catch (_: Throwable) {
+                    null
+                }
+            }
+        }
+    }
+
 
     override fun execute(project: Project): String {
         QDLog.info(
@@ -63,6 +137,16 @@ class GetProjectDetails : ToolInterface<String> {
             }
 
         val basePath = project.basePath
+        if (basePath != null && basePath != gitIgnoreRootPath) {
+            gitIgnoreRootPath = basePath
+            gitIgnoreMatcher =
+                try {
+                    GitIgnoreMatcher(Paths.get(basePath).normalize())
+                } catch (_: Throwable) {
+                    null
+                }
+        }
+
         val filesCount =
             if (basePath != null) {
                 val root = LocalFileSystem.getInstance().findFileByPath(basePath)
@@ -123,7 +207,12 @@ class GetProjectDetails : ToolInterface<String> {
             name: String,
         ): VirtualFile? =
             try {
-                parent?.children?.firstOrNull { it.isValid && it.isDirectory && it.name.equals(name, ignoreCase = false) }
+                parent?.children?.firstOrNull {
+                    it.isValid && it.isDirectory && it.name.equals(
+                        name,
+                        ignoreCase = false
+                    )
+                }
             } catch (_: Throwable) {
                 null
             }
@@ -135,46 +224,44 @@ class GetProjectDetails : ToolInterface<String> {
         fun hasJvmLangDir(base: VirtualFile?): Boolean {
             if (base == null) return false
             return (findChildDir(base, "java") != null) || (findChildDir(base, "kotlin") != null) || (
-                findChildDir(
-                    base,
-                    "scala",
-                ) != null
-            )
+                    findChildDir(
+                        base,
+                        "scala",
+                    ) != null
+                    )
         }
         return hasJvmLangDir(main) || hasJvmLangDir(test)
     }
 
-    // Accurate Git-ignore check leveraging Git plugin and VCS manager
-    private fun isIgnored(
-        project: Project,
-        vf: VirtualFile,
-    ): Boolean {
-        return try {
-            val repo = GitRepositoryManager.getInstance(project).getRepositoryForFileQuick(vf)
-            if (repo != null) {
-                val filePath: FilePath = LocalFilePath(vf.path, vf.isDirectory)
-                val ignored: Set<FilePath> = Git.getInstance().ignoredFilePaths(project, repo.root, listOf(filePath))
-                if (ignored.contains(filePath)) return true
-            }
-            val plvm = ProjectLevelVcsManager.getInstance(project)
-            if (try {
-                    plvm.isIgnored(vf)
-                } catch (_: Throwable) {
-                    false
-                }
-            ) {
-                return true
-            }
-            val fp: FilePath = LocalFilePath(vf.path, vf.isDirectory)
-            try {
-                plvm.isIgnored(fp)
-            } catch (_: Throwable) {
-                false
-            }
-        } catch (_: Throwable) {
-            false
+    // Uses JGit to evaluate .gitignore files (including nested ones) and adds a small performance-focused fallback list.
+    private fun isIgnored(vf: VirtualFile): Boolean {
+        if (!vf.isValid) return true
+
+        val name = vf.name
+        if (name == ".DS_Store") return true
+
+        val quickIgnoredDirs =
+            setOf(
+                ".git",
+                ".hg",
+                ".svn",
+                ".idea",
+                ".gradle",
+                "build",
+                "out",
+                "target",
+                "node_modules",
+            )
+
+        val path = vf.path.replace('\\', '/')
+        for (dir in quickIgnoredDirs) {
+            if (path == dir || path.endsWith("/$dir") || path.contains("/$dir/")) return true
         }
+
+        val matcher = gitIgnoreMatcher ?: return false
+        return matcher.isIgnored(vf)
     }
+
 
     // Count non-ignored files (not directories) in the project tree
     private fun totalFilesCount(
@@ -184,7 +271,7 @@ class GetProjectDetails : ToolInterface<String> {
         var count = 0
 
         fun dfs(v: VirtualFile) {
-            if (!v.isValid || isIgnored(project, v)) return
+            if (isIgnored(v)) return
             if (v.isDirectory) {
                 v.children?.forEach { dfs(it) }
             } else {
@@ -225,11 +312,10 @@ class GetProjectDetails : ToolInterface<String> {
         }
 
         fun listChildren(
-            project: Project,
             dir: VirtualFile,
         ): List<VirtualFile> {
             return try {
-                dir.children?.filter { it.isValid && !isIgnored(project, it) }?.sortedWith(
+                dir.children?.filter { it.isValid && !isIgnored(it) }?.sortedWith(
                     compareBy<VirtualFile>({ !it.isDirectory }, { it.name.lowercase() }),
                 ).orEmpty()
             } catch (_: Throwable) {
@@ -241,12 +327,12 @@ class GetProjectDetails : ToolInterface<String> {
             dir: VirtualFile,
             depth: Int,
         ) {
-            if (!dir.isValid || isIgnored(project, dir)) return
+            if (isIgnored(dir)) return
             // Check the next level (children level) against maxDepth
             if (depth + 1 > maxDepth) {
                 val hidden =
                     try {
-                        dir.children?.count { it.isValid && !isIgnored(project, it) } ?: 0
+                        dir.children?.count { it.isValid && !isIgnored(it) } ?: 0
                     } catch (_: Throwable) {
                         0
                     }
@@ -256,7 +342,8 @@ class GetProjectDetails : ToolInterface<String> {
                 return
             }
 
-            val children = listChildren(project, dir)
+            val children = listChildren(dir)
+
             var shown = 0
             for (child in children) {
                 val display = if (child.isDirectory) "${child.name}/" else child.name
@@ -277,7 +364,7 @@ class GetProjectDetails : ToolInterface<String> {
         }
 
         // We don’t print the root directory itself, only its non-ignored children at depth 1
-        val top = listChildren(project, root)
+        val top = listChildren(root)
         for (child in top) {
             val display = if (child.isDirectory) "${child.name}/" else child.name
             if (!appendLine(1, display)) {
