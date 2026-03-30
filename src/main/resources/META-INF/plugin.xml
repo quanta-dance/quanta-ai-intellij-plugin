@@ -58,8 +58,9 @@
     <depends>com.intellij.modules.vcs</depends>
     <depends>Git4Idea</depends>
     <depends optional="true" config-file="java.xml">com.intellij.java</depends>
-    <depends>com.intellij.gradle</depends>
+    <depends optional="true" config-file="gradle.xml">com.intellij.gradle</depends>
     <resource-bundle>messages.QuantaAIBundle</resource-bundle>
+
 
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow factoryClass="com.github.quanta_dance.quanta.plugins.intellij.toolWindow.QuantaAIToolWindowFactory"

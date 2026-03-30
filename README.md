@@ -6,17 +6,35 @@ Quanta AI is an AI-powered coding assistant designed to integrate with IntelliJ 
 
 ## Features
 
-- **Code Review:** Let the AI review your selected code snippets and provide suggestions.
-- **Code Refactoring:** Automatically refactor selected code with AI assistance.
-- **Add Comments:** Enhance your code with AI-generated comments.
-- **Custom AI Prompts:** Execute custom prompts defined by the user.
-- **Voice Interaction:** Interact with the AI using voice commands.
+- **AI-Powered Code Assistance:**
+  - Code Review: Get AI suggestions on selected code
+  - Code Refactoring: Automatically refactor code with AI
+  - Code Commenting: Generate AI-enhanced documentation
+  - Custom Prompts: Execute user-defined AI prompts
+
+- **Agentic Mode:** Enable AI agents to autonomously perform complex development tasks
+
+- **Voice Interaction:** Speak to AI via microphone and receive voice feedback (with optional local TTS)
+
+- **IDE Tool Integration:**
+  - File operations (read, create, update, delete)
+  - Dependency inspection and management
+  - File reference tracking
+  - Go language testing support
+  - Custom terminal command execution (with security allowlist)
+
+- **Advanced Features:**
+  - MCP (Model Context Protocol) support for tool integration
+  - Session scheduling for automated tasks
+  - Tool catalog with customizable scopes
+  - Dynamic model switching (start with GPT-5-MINI, upgrade as needed)
+  - Embeddings and vector search via local SQLite store
 
 ## Prerequisites
 
 - IntelliJ IDEA
 - An API Key from OpenAI. Generate one at: [OpenAI API Keys](https://platform.openai.com/api-keys)
-- Your OpenAI account must have a positive balance (OpenAI does not provide free models).
+- Your OpenAI account must have a positive balance
 
 ## Installation
 
@@ -26,8 +44,24 @@ Quanta AI is an AI-powered coding assistant designed to integrate with IntelliJ 
 
 ## Usage
 
-- Access Quanta AI features through the Editor Popup Menu or Floating Code Toolbar.
-- Use voice commands if voice interaction is enabled in the settings.
+### Basic Features
+- Access Quanta AI features through the Editor Popup Menu or Floating Code Toolbar
+- Use voice commands if voice interaction is enabled in the settings
+
+### Agentic Mode
+- Enable Agentic Mode in settings to let AI agents autonomously handle multi-step tasks
+- Configure maximum automatic turns (1-100) to control agent behavior
+- Stop running agents anytime with the Stop All Agents button
+
+### Model Configuration
+- Select a GPT-5 model tier in settings (NANO, MINI, standard, CODEX, or 4)
+- Enable Dynamic Model Switching to start with MINI and upgrade based on task complexity
+- Set maximum token output (default: 2048)
+
+### Security Settings
+- Enable Terminal Tool only if needed for shell command execution
+- Configure allowed command prefixes via comma-separated CSV
+- Debug Mode available for development troubleshooting
 
 ## Best Practices
 

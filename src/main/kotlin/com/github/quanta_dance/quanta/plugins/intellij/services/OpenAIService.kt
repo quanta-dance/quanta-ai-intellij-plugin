@@ -7,9 +7,15 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.quanta_dance.quanta.plugins.intellij.models.OpenAIResponse
 import com.github.quanta_dance.quanta.plugins.intellij.project.CurrentFileContextProvider
 import com.github.quanta_dance.quanta.plugins.intellij.project.ProjectVersionUtil
-import com.github.quanta_dance.quanta.plugins.intellij.services.openai.*
+import com.github.quanta_dance.quanta.plugins.intellij.services.openai.DefaultToolInvoker
+import com.github.quanta_dance.quanta.plugins.intellij.services.openai.ModelSelector
+import com.github.quanta_dance.quanta.plugins.intellij.services.openai.OpenAIClientProvider
+import com.github.quanta_dance.quanta.plugins.intellij.services.openai.ResponseBuilder
+import com.github.quanta_dance.quanta.plugins.intellij.services.openai.ToolInvoker
+import com.github.quanta_dance.quanta.plugins.intellij.services.openai.ToolRouter
 import com.github.quanta_dance.quanta.plugins.intellij.services.ui.DelayedSpinner
 import com.github.quanta_dance.quanta.plugins.intellij.services.ui.Notifications
+
 import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsListener
 import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState
 import com.github.quanta_dance.quanta.plugins.intellij.tools.ToolsRegistry
@@ -28,9 +34,11 @@ import com.openai.models.responses.ResponseUsage
 import com.openai.models.responses.StructuredResponse
 import java.beans.PropertyChangeListener
 import java.beans.PropertyChangeSupport
-import java.util.*
+import java.util.Collections
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Future
+
 import java.util.concurrent.atomic.AtomicLong
 
 @Service(Service.Level.PROJECT)
@@ -914,21 +922,24 @@ class OpenAIService(
 
     fun sendMessage(
         text: String,
+        includeEditorContext: Boolean = true,
         messageCallback: (OpenAIResponse) -> Unit = {},
         toolCallback: () -> Unit = {},
     ) {
         operationInProgress = true
+
         pcs.firePropertyChange("inProgress", false, true)
         processingFuture =
             ApplicationManager.getApplication().executeOnPooledThread {
                 val requestInputs =
                     Collections.synchronizedList(mutableListOf<com.openai.models.responses.ResponseInputItem>())
 
-                val ctx = CurrentFileContextProvider(project).getCurrent()
+                val ctx = if (includeEditorContext) CurrentFileContextProvider(project).getCurrent() else null
                 if (ctx != null) {
                     val header =
                         "Current file open: ${ctx.filePathRelative}, file version: ${ctx.version} - " +
                                 "you must always reread file if version changed"
+
                     val caretLine = ctx.caretLine
                     val caretCol = ctx.caretColumn
                     val sb = StringBuilder().append(header)
@@ -1112,7 +1123,8 @@ class OpenAIService(
                             systemMessage(
                                 "Plan execution policy: the session plan is ACTIVE. " +
                                         "Proceed autonomously through unchecked tasks from top to bottom. " +
-                                        "Prefer delegation: coordinate work by sending tasks to sub-agents (Developer Agent / Test Agent / Project Analyst) and integrate their replies. " +
+                                        "Prefer delegation: coordinate work by sending tasks to sub-agents " +
+                                        "(Developer Agent / Test Agent / Project Analyst) and integrate their replies. " +
                                         "Only do work yourself when coordination-only or trivial. " +
                                         "Do NOT ask the user questions unless truly blocked. " +
                                         "If blocked, set nextStep=WAIT_USER, set planNeedsUserConfirmation=true, and put exactly one question in planBlockingQuestion. " +
