@@ -7,6 +7,7 @@ import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
+import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState
 import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
 import com.github.quanta_dance.quanta.plugins.intellij.tools.ToolInterface
 import com.intellij.codeInsight.actions.OptimizeImportsProcessor
@@ -28,8 +29,8 @@ import java.security.MessageDigest
 
 @JsonClassDescription(
     "Apply one or more line-range patches to a specified file. Patches are applied in a single write action, " +
-            "from bottom to top (descending start line), so earlier replacements do not shift later ranges. " +
-            "Lines are 1-based inclusive; offsets are computed from the current Document. Supports optional guards.",
+        "from bottom to top (descending start line), so earlier replacements do not shift later ranges. " +
+        "Lines are 1-based inclusive; offsets are computed from the current Document. Supports optional guards.",
 )
 class PatchFile : ToolInterface<String> {
     data class Patch(
@@ -41,7 +42,7 @@ class PatchFile : ToolInterface<String> {
         var newContent: String = "",
         @field:JsonPropertyDescription(
             "Optional expected current text for the specified line range. " +
-                    "If provided and does not match, patch is skipped or triggers failure depending on stopOnMismatch.",
+                "If provided and does not match, patch is skipped or triggers failure depending on stopOnMismatch.",
         )
         var expectedText: String? = null,
     )
@@ -57,19 +58,19 @@ class PatchFile : ToolInterface<String> {
 
     @field:JsonPropertyDescription(
         "If true (default), aborts and applies nothing when any patch guard fails. " +
-                "If false, skips only mismatched patches and applies the rest.",
+            "If false, skips only mismatched patches and applies the rest.",
     )
     var stopOnMismatch: Boolean = true
 
     @field:JsonPropertyDescription(
         "Optional expected SHA-256 hash of normalized file content (\\r\\n/\\r -> \\n)." +
-                " If provided and matches current, patches can proceed.",
+            " If provided and matches current, patches can proceed.",
     )
     var expectedFileHashSha256: String? = null
 
     @field:JsonPropertyDescription(
         "If true, proceed when all patches' expectedText guards match even if content hash mismatches. " +
-                "Default: true",
+            "Default: true",
     )
     var allowProceedIfGuardsMatch: Boolean = true
 
@@ -86,7 +87,7 @@ class PatchFile : ToolInterface<String> {
 
     @field:JsonPropertyDescription(
         "Soft window radius in lines for expectedText matching. If expectedText does not match exactly at fromLine..toLine, " +
-                "the tool will search within +/- this many lines for a unique match and apply the patch there (if allowed). Default: 50.",
+            "the tool will search within +/- this many lines for a unique match and apply the patch there (if allowed). Default: 50.",
     )
     var softWindowRadiusLines: Int = 50
 
@@ -174,7 +175,6 @@ class PatchFile : ToolInterface<String> {
         return range to document.getText(range)
     }
 
-
     private fun resolveRange(
         document: com.intellij.openapi.editor.Document,
         patch: Patch,
@@ -225,12 +225,12 @@ class PatchFile : ToolInterface<String> {
 
         val relocationAllowed =
             (!requireMultilineExpectedTextForRelocation || expLineCount >= 2) &&
-                    (expChars >= minExpectedTextCharsForRelocation || expLineCount >= 2)
+                (expChars >= minExpectedTextCharsForRelocation || expLineCount >= 2)
 
         if (!relocationAllowed) {
             val reason =
                 "relocation disabled (expectedText not specific enough: lines=$expLineCount chars=$expChars; " +
-                        "requireMultiline=$requireMultilineExpectedTextForRelocation minChars=$minExpectedTextCharsForRelocation)"
+                    "requireMultiline=$requireMultilineExpectedTextForRelocation minChars=$minExpectedTextCharsForRelocation)"
             val actualExtra =
                 if (includeActualSliceOnMismatch) {
                     val raw = baseSlice
@@ -241,7 +241,7 @@ class PatchFile : ToolInterface<String> {
                 }
             mismatchesOut?.add(
                 "Patch $patchIndex1: expectedText mismatch at lines ${patch.fromLine}-${patch.toLine} ($reason). " +
-                        "expected='${preview(expectedRaw)}' actual='${preview(baseSlice)}'" + actualExtra,
+                    "expected='${preview(expectedRaw)}' actual='${preview(baseSlice)}'" + actualExtra,
             )
             return null
         }
@@ -296,7 +296,7 @@ class PatchFile : ToolInterface<String> {
             }
         mismatchesOut?.add(
             "Patch $patchIndex1: expectedText mismatch at lines ${patch.fromLine}-${patch.toLine} ($reason). " +
-                    "expected='${preview(expectedRaw)}' actual='${preview(baseSlice)}'" + actualExtra,
+                "expected='${preview(expectedRaw)}' actual='${preview(baseSlice)}'" + actualExtra,
         )
         return null
     }
@@ -371,8 +371,9 @@ class PatchFile : ToolInterface<String> {
                         return@runWriteCommandAction
                     }
 
-                val sorted = patchList.mapIndexed { idx, p -> Range(p.fromLine, p.toLine, idx) }
-                    .sortedWith(compareByDescending<Range> { it.from }.thenBy { it.to })
+                val sorted =
+                    patchList.mapIndexed { idx, p -> Range(p.fromLine, p.toLine, idx) }
+                        .sortedWith(compareByDescending<Range> { it.from }.thenBy { it.to })
 
                 if (rejectOverlappingPatches) {
                     val overlaps = findOverlaps(sorted)
@@ -400,7 +401,6 @@ class PatchFile : ToolInterface<String> {
                         .addToolingMessage("Patch File - aborted", result.toString())
                     return@runWriteCommandAction
                 }
-
 
                 // Preflight: resolve all patches first so we can abort without partial application.
                 val resolved = mutableListOf<Pair<Patch, ResolvedRange>>()
@@ -448,8 +448,6 @@ class PatchFile : ToolInterface<String> {
                     applied++
                 }
 
-
-
                 try {
                     PsiDocumentManager.getInstance(project).commitDocument(document)
                 } catch (_: Throwable) {
@@ -468,9 +466,11 @@ class PatchFile : ToolInterface<String> {
                 }
 
                 try {
-                    FileEditorManager.getInstance(project).openTextEditor(OpenFileDescriptor(project, vFile), true)
+                    val focus = QuantaAISettingsState.instance.state.followEnabled
+                    FileEditorManager.getInstance(project).openTextEditor(OpenFileDescriptor(project, vFile), focus)
                 } catch (_: Throwable) {
                 }
+
                 lastModified = PsiManager.getInstance(project).findFile(vFile)?.modificationStamp ?: 0
 
                 if (mismatches.isEmpty()) {

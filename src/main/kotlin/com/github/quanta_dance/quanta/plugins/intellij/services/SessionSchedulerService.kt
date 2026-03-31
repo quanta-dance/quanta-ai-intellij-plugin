@@ -15,8 +15,6 @@ import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 
-
-
 @Service(Service.Level.PROJECT)
 class SessionSchedulerService(
     private val project: Project,
@@ -31,21 +29,18 @@ class SessionSchedulerService(
         val ownerAgentId: String,
     )
 
-
-
     private val log = Logger.getInstance(SessionSchedulerService::class.java)
 
-    private val exec: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor { r ->
-        Thread(r, "quanta-session-scheduler").apply { isDaemon = true }
-    }
+    private val exec: ScheduledExecutorService =
+        Executors.newSingleThreadScheduledExecutor { r ->
+            Thread(r, "quanta-session-scheduler").apply { isDaemon = true }
+        }
 
     private val jobs = ConcurrentHashMap<String, JobInfo>()
     private val futures = ConcurrentHashMap<String, ScheduledFuture<*>>()
 
     // Enforce: at most one pending one-shot job per agent.
     private val agentJobIds = ConcurrentHashMap<String, String>()
-
-
 
     override fun dispose() {
         try {
@@ -81,9 +76,7 @@ class SessionSchedulerService(
             agentJobIds.remove(removed.ownerAgentId, jobId)
         }
         return removed != null
-
     }
-
 
     fun add(
         name: String,
@@ -97,16 +90,16 @@ class SessionSchedulerService(
         val prevId = agentJobIds.put(ownerAgentId, id)
         if (prevId != null && prevId != id) cancel(prevId)
 
-
         val now = System.currentTimeMillis()
         val next = now + delayMs
-        val info = JobInfo(
-            id = id,
-            name = name,
-            message = message,
-            nextRunAtMs = next,
-            ownerAgentId = ownerAgentId,
-        )
+        val info =
+            JobInfo(
+                id = id,
+                name = name,
+                message = message,
+                nextRunAtMs = next,
+                ownerAgentId = ownerAgentId,
+            )
         jobs[id] = info
 
         val runnable = Runnable { onTrigger(id) }
@@ -114,7 +107,6 @@ class SessionSchedulerService(
         futures[id] = future
         return info
     }
-
 
     private fun onTrigger(jobId: String) {
         val info = jobs[jobId] ?: return
@@ -138,5 +130,4 @@ class SessionSchedulerService(
             cancel(info.id)
         }
     }
-
 }

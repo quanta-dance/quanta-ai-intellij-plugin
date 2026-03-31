@@ -67,6 +67,9 @@ class QuantaAISettingsState : PersistentStateComponent<QuantaAISettingsState.Qua
         var debugEnabled: Boolean = false,
         // Max automatic turns (CONTINUE loops) allowed per user turn. Clamped to [1..100].
         var maxAutomaticTurns: Int = 10,
+        // UX: when enabled, the IDE will focus/navigate to files after AI changes or suggestion clicks.
+        // When disabled, changes still apply but the editor focus/caret should not jump automatically.
+        var followEnabled: Boolean = true,
         // Security: Terminal tool availability (default disabled)
         var terminalToolEnabled: Boolean? = false,
         // Security: allowed terminal command prefixes (strict token-prefix match), comma-separated.

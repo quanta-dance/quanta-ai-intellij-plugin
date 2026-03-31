@@ -12,7 +12,7 @@ import com.intellij.openapi.project.Project
 
 @JsonClassDescription(
     "Schedule a follow-up manager turn in this IDE session. Session-only: tasks are not persisted across IDE restarts. " +
-            "Actions: ADD | LIST | CANCEL.",
+        "Actions: ADD | LIST | CANCEL.",
 )
 class ScheduleTaskTool : ToolInterface<Map<String, Any>> {
     @field:JsonPropertyDescription("Action: ADD | LIST | CANCEL")
@@ -38,7 +38,6 @@ class ScheduleTaskTool : ToolInterface<Map<String, Any>> {
     @field:JsonPropertyDescription("Job id (for CANCEL)")
     var jobId: String? = null
 
-
     override fun execute(project: Project): Map<String, Any> {
         val svc = project.service<SessionSchedulerService>()
         val act = action?.trim()?.uppercase().orEmpty().ifBlank { "LIST" }
@@ -51,7 +50,6 @@ class ScheduleTaskTool : ToolInterface<Map<String, Any>> {
                             "name" to it.name,
                             "nextRunAtMs" to it.nextRunAtMs,
                             "ownerAgentId" to it.ownerAgentId,
-
                         )
                     }
                 mapOf("status" to "ok", "jobs" to items)
@@ -61,10 +59,14 @@ class ScheduleTaskTool : ToolInterface<Map<String, Any>> {
                 val id = jobId?.trim().orEmpty()
                 if (id.isBlank()) return mapOf("status" to "error", "message" to "jobId is required")
                 val ok = svc.cancel(id)
-                if (ok) mapOf("status" to "ok", "cancelled" to id) else mapOf(
-                    "status" to "error",
-                    "message" to "unknown job id"
-                )
+                if (ok) {
+                    mapOf("status" to "ok", "cancelled" to id)
+                } else {
+                    mapOf(
+                        "status" to "error",
+                        "message" to "unknown job id",
+                    )
+                }
             }
 
             "ADD" -> {
@@ -90,16 +92,15 @@ class ScheduleTaskTool : ToolInterface<Map<String, Any>> {
                 val info = svc.add(n, msg, delayMs, ownerAgentId = owner)
                 mapOf(
                     "status" to "ok",
-                    "job" to mapOf(
-                        "id" to info.id,
-                        "name" to info.name,
-                        "nextRunAtMs" to info.nextRunAtMs,
-                        "ownerAgentId" to info.ownerAgentId,
-                    ),
+                    "job" to
+                        mapOf(
+                            "id" to info.id,
+                            "name" to info.name,
+                            "nextRunAtMs" to info.nextRunAtMs,
+                            "ownerAgentId" to info.ownerAgentId,
+                        ),
                 )
             }
-
-
 
             else -> mapOf("status" to "error", "message" to "Unknown action: $act")
         }

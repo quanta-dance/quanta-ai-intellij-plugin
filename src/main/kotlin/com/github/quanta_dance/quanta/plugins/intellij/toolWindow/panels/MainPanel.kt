@@ -5,10 +5,12 @@ package com.github.quanta_dance.quanta.plugins.intellij.toolWindow.panels
 
 import com.github.quanta_dance.quanta.plugins.intellij.services.AgentManagerService
 import com.github.quanta_dance.quanta.plugins.intellij.services.OpenAIService
+import com.github.quanta_dance.quanta.plugins.intellij.services.SessionPlanService
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsListener
 import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState
 import com.github.quanta_dance.quanta.plugins.intellij.toolWindow.actions.AgenticModeToggleAction
+import com.github.quanta_dance.quanta.plugins.intellij.toolWindow.actions.FollowToggleAction
 import com.github.quanta_dance.quanta.plugins.intellij.toolWindow.actions.MicAction
 import com.github.quanta_dance.quanta.plugins.intellij.toolWindow.actions.SpeakerAction
 import com.github.quanta_dance.quanta.plugins.intellij.toolWindow.actions.StopAgentsAction
@@ -19,7 +21,9 @@ import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.ComboBox
 import com.intellij.ui.components.JBScrollPane
+import com.openai.models.ChatModel
 import java.awt.BorderLayout
 import java.awt.Component
 import java.awt.FlowLayout
@@ -39,6 +43,7 @@ import javax.swing.JPanel
 import javax.swing.JScrollPane
 import javax.swing.JTextArea
 import javax.swing.KeyStroke
+import javax.swing.Timer
 import javax.swing.UIManager
 
 class MainPanel(var project: Project) : JPanel(BorderLayout()) {
@@ -86,21 +91,67 @@ class MainPanel(var project: Project) : JPanel(BorderLayout()) {
     private val usageLabel =
         JLabel("Tokens: 0").apply {
             toolTipText = "Total tokens used in current session (input + output)"
+            font = font.deriveFont((font.size2D - 2f).coerceAtLeast(10f))
+        }
+
+    private val modeLabel =
+        JLabel("").apply {
+            toolTipText = ""
+            font = font.deriveFont((font.size2D - 2f).coerceAtLeast(10f))
+        }
+
+    private val models =
+        arrayOf(
+            ChatModel.GPT_5_4.toString(),
+            ChatModel.GPT_5_4_MINI.toString(),
+            ChatModel.GPT_5_4_NANO.toString(),
+            ChatModel.GPT_5_2.toString(),
+            ChatModel.GPT_5_1_CODEX.toString(),
+            ChatModel.GPT_5_1.toString(),
+            ChatModel.GPT_5.toString(),
+            ChatModel.GPT_5_MINI.toString(),
+            ChatModel.GPT_5_NANO.toString(),
+        )
+
+    private val modelSelector =
+        ComboBox(models).apply {
+            isFocusable = false
+            font = font.deriveFont((font.size2D - 2f).coerceAtLeast(10f))
+            val current = QuantaAISettingsState.instance.state.aiChatModel
+            selectedItem = if (models.contains(current)) current else models.last()
+            toolTipText = "Current model for requests (or max model cap when dynamic switching is enabled)."
+            addActionListener {
+                val selected = (selectedItem as? String).orEmpty().trim()
+                if (selected.isNotBlank()) {
+                    QuantaAISettingsState.instance.state.aiChatModel = selected
+                    try {
+                        project.service<ToolWindowService>().addToolingMessage("Model", "Selected: $selected")
+                    } catch (_: Throwable) {
+                    }
+                }
+            }
         }
 
     private val promptButtonPanel =
         JPanel().apply {
             val group =
                 DefaultActionGroup().apply {
+                    add(FollowToggleAction())
                     add(MicAction())
                     add(SpeakerAction())
                     add(AgenticModeToggleAction())
                     add(StopAgentsAction())
                 }
+
             val toolbar: ActionToolbar = ActionManager.getInstance().createActionToolbar("MyToolbar", group, true)
             toolbar.targetComponent = this
             layout = BoxLayout(this, BoxLayout.X_AXIS)
             add(toolbar.component)
+            add(Box.createHorizontalStrut(8))
+            add(modeLabel)
+            add(Box.createHorizontalStrut(10))
+            add(modelSelector)
+
             add(Box.createHorizontalGlue())
             add(usageLabel)
             add(Box.createHorizontalStrut(8))
@@ -127,14 +178,16 @@ class MainPanel(var project: Project) : JPanel(BorderLayout()) {
             val svc = project.service<OpenAIService>()
             val snap = svc.getUsageSnapshot()
             usageLabel.text = "Tokens: ${snap.totalTokens}"
-            usageLabel.toolTipText = "Input: ${snap.inputTokens} | Output: ${snap.outputTokens} | Total: ${snap.totalTokens}"
+            usageLabel.toolTipText =
+                "Input: ${snap.inputTokens} | Output: ${snap.outputTokens} | Total: ${snap.totalTokens}"
             svc.addPropertyChangeListener(
                 PropertyChangeListener { evt ->
                     if (evt.propertyName == "usage") {
                         val s = evt.newValue as? OpenAIService.UsageSnapshot ?: return@PropertyChangeListener
                         ApplicationManager.getApplication().invokeLater {
                             usageLabel.text = "Tokens: ${s.totalTokens}"
-                            usageLabel.toolTipText = "Input: ${s.inputTokens} | Output: ${s.outputTokens} | Total: ${s.totalTokens}"
+                            usageLabel.toolTipText =
+                                "Input: ${s.inputTokens} | Output: ${s.outputTokens} | Total: ${s.totalTokens}"
                         }
                     }
                 },
@@ -153,6 +206,7 @@ class MainPanel(var project: Project) : JPanel(BorderLayout()) {
                         val cnt = busyCounts.merge(agentId, 1) { a, _ -> (a ?: 0) + 1 } ?: 1
                         updateAgentIcon(agentId, cnt)
                     }
+
                     "agent_task_finished" -> {
                         val res = evt.newValue as? AgentManagerService.AgentTaskResult ?: return@PropertyChangeListener
                         val agentId = res.agentId
@@ -161,10 +215,12 @@ class MainPanel(var project: Project) : JPanel(BorderLayout()) {
                         busyCounts[agentId] = next
                         updateAgentIcon(agentId, next)
                     }
+
                     "agents_stopped" -> {
                         busyCounts.keys.forEach { k -> busyCounts[k] = 0 }
                         refreshAgentsBar()
                     }
+
                     "agent_stopped" -> {
                         val id = evt.newValue as? String ?: return@PropertyChangeListener
                         busyCounts[id] = 0
@@ -185,11 +241,31 @@ class MainPanel(var project: Project) : JPanel(BorderLayout()) {
                         } catch (_: Throwable) {
                         }
                     }
+
+                    // Sync UI widgets
+                    try {
+                        val current = newState.aiChatModel
+                        if (current.isNotBlank() && models.contains(current)) {
+                            modelSelector.selectedItem = current
+                        }
+                    } catch (_: Throwable) {
+                    }
+                    refreshModeLabel()
+
                     refreshAgentsBar()
                 }
             },
         )
         refreshAgentsBar()
+        refreshModeLabel()
+
+        // Keep mode status reasonably fresh (plan.md can change during a session)
+        Timer(2_000) {
+            refreshModeLabel()
+        }.apply {
+            isRepeats = true
+            start()
+        }
     }
 
     private fun updateAgentIcon(
@@ -293,7 +369,46 @@ class MainPanel(var project: Project) : JPanel(BorderLayout()) {
         return html.toString()
     }
 
-    private fun escapeHtml(s: String): String = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    private fun refreshModeLabel() {
+        try {
+            val svc = SessionPlanService(project)
+            val hasPlan = svc.hasPlan()
+            val status = if (hasPlan) svc.getStatus() else ""
+
+            val modeText =
+                if (!hasPlan) {
+                    ""
+                } else {
+                    when (status.trim().uppercase()) {
+                        "ACTIVE" -> "Plan"
+                        "DONE" -> "Done"
+                        else -> "Draft"
+                    }
+                }
+
+            val planText = if (hasPlan) svc.loadText(maxChars = 6_000) else ""
+            val tip =
+                if (planText.isBlank()) {
+                    ""
+                } else {
+                    "<html><pre>${escapeHtml(planText)}</pre></html>"
+                }
+
+            ApplicationManager.getApplication().invokeLater {
+                modeLabel.text = modeText
+                modeLabel.toolTipText = tip
+                modeLabel.repaint()
+            }
+        } catch (_: Throwable) {
+        }
+    }
+
+    private fun escapeHtml(s: String): String =
+        s
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\"", "&quot;")
 
     private fun submitPrompt(e: ActionEvent) {
         val promptText = promptTextArea.text
