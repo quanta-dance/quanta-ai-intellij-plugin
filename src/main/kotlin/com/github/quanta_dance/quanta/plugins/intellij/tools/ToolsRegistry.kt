@@ -26,7 +26,6 @@ import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile
 import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.ReadFileContent
 import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.ReadPsiBlockAtPosition
 import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.ValidateClassFileTool
-
 import com.github.quanta_dance.quanta.plugins.intellij.tools.mcp.McpListServerToolsTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.mcp.McpListServersTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.media.GenerateImage
@@ -39,13 +38,11 @@ import com.github.quanta_dance.quanta.plugins.intellij.tools.refactor.CodeRefact
 import com.github.quanta_dance.quanta.plugins.intellij.tools.session.ScheduleTaskTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.session.SessionPlanTool
 import com.github.quanta_dance.quanta.plugins.intellij.tools.system.RequestModelSwitch
-
 import com.github.quanta_dance.quanta.plugins.intellij.tools.system.TerminalCommandTool
 import com.intellij.openapi.project.Project
 import java.io.File
 import java.util.ArrayDeque
 import java.util.concurrent.ConcurrentHashMap
-
 
 object ToolsRegistry {
     enum class Group { GENERIC, GRADLE, GO }
@@ -99,7 +96,6 @@ object ToolsRegistry {
     }
 
     private fun baseEntries(project: Project?): List<ToolEntry> {
-
         val settings = QuantaAISettingsState.instance.state
         val agentic = settings.agenticEnabled ?: true
         val terminalEnabled = settings.terminalToolEnabled == true
@@ -194,7 +190,7 @@ object ToolsRegistry {
 
     private fun detectGradle(root: File): Boolean =
         File(root, "gradlew").exists() || File(root, "gradlew.bat").exists() ||
-                File(root, "build.gradle").exists() || File(root, "build.gradle.kts").exists()
+            File(root, "build.gradle").exists() || File(root, "build.gradle.kts").exists()
 
     private fun detectGo(root: File): Boolean {
         if (File(root, "go.mod").exists()) return true
