@@ -7,6 +7,7 @@ import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
+import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState
 import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
 import com.github.quanta_dance.quanta.plugins.intellij.tools.ToolInterface
 import com.intellij.codeInsight.actions.OptimizeImportsProcessor
@@ -215,11 +216,13 @@ class CreateOrUpdateFile : ToolInterface<String> {
                     }
 
                     try {
+                        val focus = QuantaAISettingsState.instance.state.followEnabled
                         FileEditorManager
                             .getInstance(project)
-                            .openTextEditor(OpenFileDescriptor(project, virtualFile), true)
+                            .openTextEditor(OpenFileDescriptor(project, virtualFile), focus)
                     } catch (_: Throwable) {
                     }
+
                     project.service<ToolWindowService>().addToolingMessage("File updated", relToBase)
                     try {
                         val currentText =

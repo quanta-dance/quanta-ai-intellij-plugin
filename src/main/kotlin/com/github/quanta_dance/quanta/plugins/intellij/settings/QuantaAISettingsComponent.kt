@@ -99,7 +99,7 @@ class QuantaAISettingsComponent {
         JBTextField().apply {
             toolTipText =
                 "Comma-separated allowed command prefixes (strict token-prefix match). " +
-                        "Examples: git status, git diff, git add, git commit, ./gradlew"
+                "Examples: git status, git diff, git add, git commit, ./gradlew"
         }
 
     private var customPromptField = JBTextField()
@@ -137,8 +137,8 @@ class QuantaAISettingsComponent {
                             """
                             {
                             """.trimIndent() +
-                                    "\"mcpServers\": { }\n" +
-                                    "}".trimIndent(),
+                                "\"mcpServers\": { }\n" +
+                                "}".trimIndent(),
                         )
                     }
                     LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)?.let { vFile ->
@@ -161,7 +161,7 @@ class QuantaAISettingsComponent {
     val linkLabel =
         JBLabel(
             "<html>Model Pricing details available at <a href=\"https://platform.openai.com/docs/pricing\">" +
-                    "https://platform.openai.com/docs/pricing</a></html>",
+                "https://platform.openai.com/docs/pricing</a></html>",
         ).apply {
             cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
             foreground = Color(42, 122, 255)

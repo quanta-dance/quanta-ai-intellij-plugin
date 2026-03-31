@@ -15,14 +15,14 @@ data class OpenAIResponse(
     val ttsSummary: String,
     @field:JsonPropertyDescription(
         "Next step for the conversation loop. One of: DONE | WAIT_USER | CONTINUE. " +
-                "Use CONTINUE only when the system should immediately request another model turn without user input " +
-                "(e.g., multi-step work that can proceed automatically). Use WAIT_USER when you need the user to confirm/provide info. " +
-                "Use DONE when the task is complete.",
+            "Use CONTINUE only when the system should immediately request another model turn without user input " +
+            "(e.g., multi-step work that can proceed automatically). Use WAIT_USER when you need the user to confirm/provide info. " +
+            "Use DONE when the task is complete.",
     )
     val nextStep: String? = null,
     @field:JsonPropertyDescription(
         "Optional: request specific built-in tools by class simple name (e.g., ReadFileContent, SearchInFiles, PatchFile). " +
-                "Used for silent retry tool escalation when tools are not attached by default.",
+            "Used for silent retry tool escalation when tools are not attached by default.",
     )
     val requestedTools: List<String>? = null,
     @field:JsonPropertyDescription(
@@ -39,7 +39,7 @@ data class OpenAIResponse(
     val planCompletedTasks: List<String>? = null,
     @field:JsonPropertyDescription(
         "If true, the assistant is proposing a plan or is blocked and needs explicit user input. " +
-                "During ACTIVE plan execution, use this only when truly blocked.",
+            "During ACTIVE plan execution, use this only when truly blocked.",
     )
     val planNeedsUserConfirmation: Boolean? = null,
     @field:JsonPropertyDescription(
@@ -65,7 +65,6 @@ data class TeamAgentSpec(
     @field:JsonPropertyDescription("Role-specific instructions")
     val instructions: String? = null,
 )
-
 
 @JsonClassDescription("Actionable or informational refactor suggestion.")
 data class Suggestion(
