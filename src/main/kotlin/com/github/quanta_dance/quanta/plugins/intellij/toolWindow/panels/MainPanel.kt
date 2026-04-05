@@ -33,6 +33,7 @@ import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import java.beans.PropertyChangeListener
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.AbstractAction
 import javax.swing.BorderFactory
 import javax.swing.Box
@@ -87,6 +88,7 @@ class MainPanel(var project: Project) : JPanel(BorderLayout()) {
 
     private val agentLabels = ConcurrentHashMap<String, JLabel>()
     private val busyCounts = ConcurrentHashMap<String, Int>()
+    private val agentsBarRefreshScheduled = AtomicBoolean(false)
 
     private val usageLabel =
         JLabel("Tokens: 0").apply {
@@ -272,12 +274,11 @@ class MainPanel(var project: Project) : JPanel(BorderLayout()) {
         agentId: String,
         count: Int,
     ) {
-        var label = agentLabels[agentId]
+        val label = agentLabels[agentId]
         if (label == null) {
             refreshAgentsBar()
-            label = agentLabels[agentId]
+            return
         }
-        if (label == null) return
         val icon = if (count > 0) AllIcons.CodeWithMe.CwmAccessOn else AllIcons.CodeWithMe.Users
         ApplicationManager.getApplication().invokeLater {
             label.icon = icon
@@ -286,8 +287,20 @@ class MainPanel(var project: Project) : JPanel(BorderLayout()) {
     }
 
     private fun refreshAgentsBar() {
+        // Agent roster changes can be emitted from background threads; Swing must be updated on EDT.
+        if (!ApplicationManager.getApplication().isDispatchThread) {
+            if (agentsBarRefreshScheduled.compareAndSet(false, true)) {
+                ApplicationManager.getApplication().invokeLater {
+                    agentsBarRefreshScheduled.set(false)
+                    refreshAgentsBar()
+                }
+            }
+            return
+        }
+
         val agentic = QuantaAISettingsState.instance.state.agenticEnabled ?: true
         agentsBar.isVisible = agentic
+
         if (!agentic) {
             agentsBar.removeAll()
             agentsBar.revalidate()
@@ -356,22 +369,27 @@ class MainPanel(var project: Project) : JPanel(BorderLayout()) {
     ): String {
         val safeInstr = (instructions ?: "").trim()
         val safeModel = (model ?: "").trim()
-        val html = StringBuilder("<html>")
-        html.append("<b>").append(role).append("</b>")
-        if (safeModel.isNotEmpty()) {
-            html.append(" &nbsp; <i>(").append(escapeHtml(safeModel)).append(")</i>")
-        }
-        if (safeInstr.isNotEmpty()) {
-            html.append("<br/>")
-            html.append(escapeHtml(safeInstr).replace("\n", "<br/>"))
-        }
-        html.append("</html>")
-        return html.toString()
+
+        val header =
+            buildString {
+                append("<b>").append(escapeHtml(role)).append("</b>")
+                if (safeModel.isNotEmpty()) {
+                    append(" &nbsp; <i>(").append(escapeHtml(safeModel)).append(")</i>")
+                }
+            }
+
+        if (safeInstr.isBlank()) return "<html>$header</html>"
+
+        // Make tooltip wider and more readable (similar feel to the plan tooltip).
+        // 'width' is a hint used by Swing HTML renderer for wrapping.
+        val body = "<pre>${escapeHtml(safeInstr)}</pre>"
+        return "<html><div style='width:520px;'>$header<br/>$body</div></html>"
     }
 
     private fun refreshModeLabel() {
         try {
             val svc = SessionPlanService(project)
+
             val hasPlan = svc.hasPlan()
             val status = if (hasPlan) svc.getStatus() else ""
 
