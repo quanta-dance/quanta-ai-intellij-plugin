@@ -3,7 +3,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.toolWindow.actions
 
-import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendQuantaSettingsState
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
@@ -17,14 +17,14 @@ class FollowToggleAction : ToggleAction(
     AllIcons.General.Locate,
 ) {
     override fun isSelected(e: AnActionEvent): Boolean {
-        return ApplicationManager.getApplication().service<QuantaAISettingsState>().state.followEnabled
+        return ApplicationManager.getApplication().service<FrontendQuantaSettingsState>().state.followEnabled
     }
 
     override fun setSelected(
         e: AnActionEvent,
         sel: Boolean,
     ) {
-        ApplicationManager.getApplication().service<QuantaAISettingsState>().state.followEnabled = sel
+        ApplicationManager.getApplication().service<FrontendQuantaSettingsState>().state.followEnabled = sel
     }
 
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT

@@ -4,7 +4,8 @@
 package com.github.quanta_dance.quanta.plugins.intellij.toolWindow.cards
 
 import com.github.quanta_dance.quanta.plugins.intellij.models.Suggestion
-import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendQuantaSettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.command.WriteCommandAction
@@ -32,29 +33,18 @@ import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
 import com.intellij.ui.components.JBScrollPane
-import java.awt.BorderLayout
-import java.awt.Cursor
-import java.awt.Dimension
-import java.awt.FlowLayout
-import java.awt.MouseInfo
+import java.awt.*
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import java.nio.file.Paths
-import javax.swing.BorderFactory
-import javax.swing.JButton
-import javax.swing.JLabel
-import javax.swing.JPanel
-import javax.swing.JTextArea
-import javax.swing.JWindow
-import javax.swing.SwingUtilities
-import javax.swing.UIManager
+import javax.swing.*
 
 class SuggestionCardPanel(
     private var suggestion: Suggestion,
 ) : JPanel(BorderLayout()) {
     private fun isActionable(): Boolean =
         suggestion.suggested_code.isNotBlank() && suggestion.replaced_code.isNotBlank() &&
-            suggestion.original_line_from > 0 && suggestion.original_line_to >= suggestion.original_line_from
+                suggestion.original_line_from > 0 && suggestion.original_line_to >= suggestion.original_line_from
 
     private lateinit var fileLabel: JBLabel
     private var actionsPanel: JBPanel<Nothing>? = null
@@ -84,8 +74,9 @@ class SuggestionCardPanel(
     }
 
     private fun attachDocumentListener(project: Project) {
+        val basePath = PathUtils.projectRootPath(project) ?: return
         val vFile =
-            LocalFileSystem.getInstance().refreshAndFindFileByPath(project.basePath + "/" + suggestion.file) ?: return
+            LocalFileSystem.getInstance().refreshAndFindFileByPath(basePath + "/" + suggestion.file) ?: return
         val doc = FileDocumentManager.getInstance().getDocument(vFile) ?: return
         if (docListener != null) return
         docListener =
@@ -109,7 +100,8 @@ class SuggestionCardPanel(
 
     private fun detachDocumentListener() {
         ProjectManager.getInstance().openProjects.firstOrNull()?.let { project ->
-            val vFile = LocalFileSystem.getInstance().findFileByPath(project.basePath + "/" + suggestion.file)
+            val basePath = PathUtils.projectRootPath(project) ?: return@let
+            val vFile = LocalFileSystem.getInstance().findFileByPath(basePath + "/" + suggestion.file)
             val doc = vFile?.let { FileDocumentManager.getInstance().getDocument(it) }
             if (docListener != null && doc != null) {
                 doc.removeDocumentListener(docListener!!)
@@ -128,7 +120,8 @@ class SuggestionCardPanel(
         startOffset: Int,
         endOffset: Int,
     ) {
-        val virtualFile: VirtualFile? = LocalFileSystem.getInstance().findFileByPath(project.basePath + "/" + filePath)
+        val basePath = PathUtils.projectRootPath(project) ?: return
+        val virtualFile: VirtualFile? = LocalFileSystem.getInstance().findFileByPath(basePath + "/" + filePath)
         virtualFile?.let {
             val followEnabled = QuantaAISettingsState.instance.state.followEnabled
             if (!followEnabled) return
@@ -241,8 +234,9 @@ class SuggestionCardPanel(
     }
 
     private fun plannedOffsets(project: Project): Pair<Int, Int>? {
+        val basePath = PathUtils.projectRootPath(project) ?: return null
         val vFile =
-            LocalFileSystem.getInstance().refreshAndFindFileByPath(project.basePath + "/" + suggestion.file)
+            LocalFileSystem.getInstance().refreshAndFindFileByPath(basePath + "/" + suggestion.file)
                 ?: return null
         val doc = FileDocumentManager.getInstance().getDocument(vFile) ?: return null
         val startLineIdx = (suggestion.original_line_from - 1).coerceAtLeast(0).coerceAtMost(doc.lineCount - 1)
@@ -267,8 +261,9 @@ class SuggestionCardPanel(
     }
 
     private fun remapOffsets(project: Project): Pair<Int, Int>? {
+        val basePath = PathUtils.projectRootPath(project) ?: return null
         val vFile =
-            LocalFileSystem.getInstance().refreshAndFindFileByPath(project.basePath + "/" + suggestion.file)
+            LocalFileSystem.getInstance().refreshAndFindFileByPath(basePath + "/" + suggestion.file)
                 ?: return null
         val doc = FileDocumentManager.getInstance().getDocument(vFile) ?: return null
         val (plannedStart, plannedEnd) = plannedOffsets(project) ?: return null
@@ -291,7 +286,8 @@ class SuggestionCardPanel(
 
     private fun remapAndUpdateLabel(project: Project) {
         val offsets = remapOffsets(project) ?: return
-        val vFile = LocalFileSystem.getInstance().findFileByPath(project.basePath + "/" + suggestion.file) ?: return
+        val basePath = PathUtils.projectRootPath(project) ?: return
+        val vFile = LocalFileSystem.getInstance().findFileByPath(basePath + "/" + suggestion.file) ?: return
         val doc = FileDocumentManager.getInstance().getDocument(vFile) ?: return
         val start = offsets.first
         val end = offsets.second
@@ -328,7 +324,7 @@ class SuggestionCardPanel(
     }
 
     private fun applyDirectly(project: Project) {
-        val path = project.basePath + "/" + suggestion.file
+        val path = (PathUtils.projectRootPath(project) ?: return) + "/" + suggestion.file
         val vFile = LocalFileSystem.getInstance().refreshAndFindFileByPath(path) ?: run { return }
         val doc = FileDocumentManager.getInstance().getDocument(vFile) ?: run { return }
 

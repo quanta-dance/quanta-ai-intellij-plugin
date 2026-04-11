@@ -7,8 +7,8 @@ import com.github.quanta_dance.quanta.plugins.intellij.services.AgentManagerServ
 import com.github.quanta_dance.quanta.plugins.intellij.services.OpenAIService
 import com.github.quanta_dance.quanta.plugins.intellij.services.SessionPlanService
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
-import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsListener
-import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendQuantaSettingsListener
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendQuantaSettingsState
 import com.github.quanta_dance.quanta.plugins.intellij.toolWindow.actions.AgenticModeToggleAction
 import com.github.quanta_dance.quanta.plugins.intellij.toolWindow.actions.FollowToggleAction
 import com.github.quanta_dance.quanta.plugins.intellij.toolWindow.actions.MicAction

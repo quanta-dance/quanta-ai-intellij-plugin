@@ -6,6 +6,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.listeners
 import com.github.quanta_dance.quanta.plugins.intellij.mcp.McpClientService
 import com.github.quanta_dance.quanta.plugins.intellij.services.OpenAIPrewarmService
 import com.github.quanta_dance.quanta.plugins.intellij.services.OpenAIService
+import com.github.quanta_dance.quanta.plugins.intellij.services.SessionMemoryService
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.ProjectActivity
@@ -19,6 +20,14 @@ class QuantaAIApplicationActivationListener : ProjectActivity {
         // but preserve persisted chat history and tool window restore.
         try {
             project.service<OpenAIService>().resetThreadStatePreservingHistory()
+        } catch (_: Throwable) {
+        }
+
+        try {
+            project.service<SessionMemoryService>().apply {
+                ensureInitialized()
+                refreshFromCurrentState(reason = "project_resume", explicitNote = "IDE session resumed/reopened.")
+            }
         } catch (_: Throwable) {
         }
 

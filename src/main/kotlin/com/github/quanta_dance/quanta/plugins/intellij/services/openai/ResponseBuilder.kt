@@ -7,8 +7,8 @@ import com.github.quanta_dance.quanta.plugins.intellij.mcp.DynamicMcpToolProvide
 import com.github.quanta_dance.quanta.plugins.intellij.mcp.McpClientService
 import com.github.quanta_dance.quanta.plugins.intellij.models.OpenAIResponse
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
-import com.github.quanta_dance.quanta.plugins.intellij.settings.Instructions
-import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.Instructions
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendQuantaSettingsState
 import com.github.quanta_dance.quanta.plugins.intellij.tools.ToolsRegistry.toolsFor
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
@@ -23,7 +23,7 @@ import com.openai.models.responses.StructuredResponseCreateParams
 class ResponseBuilder(private val project: Project) {
     private fun mergedInstructions(): String {
         val base = Instructions.instructions
-        val extra = QuantaAISettingsState.instance.state.extraInstructions?.trim().orEmpty()
+        val extra = FrontendQuantaSettingsState.instance.state.extraInstructions?.trim().orEmpty()
         return if (extra.isNotEmpty()) base + "\n\n# User Custom Instructions\n" + extra else base
     }
 
@@ -132,7 +132,7 @@ class ResponseBuilder(private val project: Project) {
                 .instructions(effectiveInstructions)
                 .inputOfResponse(inputs)
                 .reasoning(Reasoning.builder().effort(ReasoningEffort.LOW).build())
-                .maxOutputTokens(QuantaAISettingsState.instance.state.maxTokens)
+                .maxOutputTokens(FrontendQuantaSettingsState.instance.state.maxTokens)
                 .text(OpenAIResponse::class.java)
                 .model(ChatModel.of(effectiveModel))
         if (!previousId.isNullOrBlank()) builder.previousResponseId(previousId)
@@ -151,8 +151,8 @@ class ResponseBuilder(private val project: Project) {
                 val previousIdNull = previousId.isNullOrBlank()
                 val msg =
                     "model=$effectiveModel previousIdNull=$previousIdNull " +
-                        "instrChars=${effectiveInstructions.length} inputItems=${inputs.size} inputApproxChars=$approxInputChars " +
-                        "builtInTools=$builtInToolsCount mcpTools=$mcpToolsCount"
+                            "instrChars=${effectiveInstructions.length} inputItems=${inputs.size} inputApproxChars=$approxInputChars " +
+                            "builtInTools=$builtInToolsCount mcpTools=$mcpToolsCount"
 
                 project.service<ToolWindowService>().addDebugMessage("request_meta", msg)
                 thisLogger().info("RequestMeta: $msg")

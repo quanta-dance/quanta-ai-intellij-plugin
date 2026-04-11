@@ -3,7 +3,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.toolWindow.actions
 
-import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendQuantaSettingsState
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.ToggleAction
@@ -24,19 +24,19 @@ class SpeakerAction : ToggleAction("Toggle Voice Feedback", "Toggle voice feedba
     }
 
     override fun isSelected(e: AnActionEvent): Boolean {
-        if (!ApplicationManager.getApplication().service<QuantaAISettingsState>().state.voiceEnabled) {
+        if (!ApplicationManager.getApplication().service<FrontendQuantaSettingsState>().state.voiceEnabled) {
             e.presentation.icon = speakerOff
         } else {
             e.presentation.icon = speakerOn
         }
-        return ApplicationManager.getApplication().service<QuantaAISettingsState>().state.voiceEnabled
+        return ApplicationManager.getApplication().service<FrontendQuantaSettingsState>().state.voiceEnabled
     }
 
     override fun setSelected(
         e: AnActionEvent,
         sel: Boolean,
     ) {
-        ApplicationManager.getApplication().service<QuantaAISettingsState>().state.voiceEnabled = sel
+        ApplicationManager.getApplication().service<FrontendQuantaSettingsState>().state.voiceEnabled = sel
     }
 
     override fun getActionUpdateThread(): ActionUpdateThread {

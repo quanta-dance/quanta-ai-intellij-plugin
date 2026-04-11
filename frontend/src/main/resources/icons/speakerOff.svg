@@ -1,0 +1,7 @@
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect width="24" height="24" fill="none"/>
+    <!-- Sleeker speaker body -->
+    <polygon points="5,9 9,9 12,5 12,19 9,15 5,15" fill="#ca6460" />
+    <!-- Muted symbol -->
+    <path d="M15 8.5C16.3 10 16.5 13 15 15" stroke="#ca6460" stroke-width="1.0" fill="none"/>
+</svg>

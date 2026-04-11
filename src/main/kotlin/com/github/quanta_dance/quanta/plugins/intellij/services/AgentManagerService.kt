@@ -3,8 +3,8 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.services
 
-import com.github.quanta_dance.quanta.plugins.intellij.settings.Instructions
-import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.Instructions
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendQuantaSettingsState
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
@@ -71,9 +71,10 @@ class AgentManagerService(
     private val agentLastWakeRequestedAtMs = ConcurrentHashMap<String, Long>()
 
     init {
-        val st = QuantaAISettingsState.instance.state
+        val st = FrontendQuantaSettingsState.instance.state
         st.agents.forEach { pa ->
-            val session = AgentSession(pa.id, AgentConfig(pa.role, pa.model, pa.instructions), previousId = pa.previousId)
+            val session =
+                AgentSession(pa.id, AgentConfig(pa.role, pa.model, pa.instructions), previousId = pa.previousId)
             agents[pa.id] = session
             ensureExecutor(pa.id)
         }
@@ -111,7 +112,7 @@ class AgentManagerService(
         if (text.isBlank()) return false
         if (!agents.containsKey(toAgentId)) return false
         return try {
-            val st = QuantaAISettingsState.instance.state
+            val st = FrontendQuantaSettingsState.instance.state
             val list = st.agentInboxes.getOrPut(toAgentId) { mutableListOf() }
             list.add(QuantaAISettingsState.AgentInboxMessage(System.currentTimeMillis(), from, text, kind))
             val max = 50
@@ -124,7 +125,7 @@ class AgentManagerService(
             try {
                 QDLog.debug(logger) {
                     "Inbox post: to=$toAgentId from=${from ?: "<null>"} kind=${kind ?: "<null>"} " +
-                        "len=${text.length} inboxSize=${list.size}"
+                            "len=${text.length} inboxSize=${list.size}"
                 }
                 project.service<ToolWindowService>().addDebugMessage(
                     "inbox_post",
@@ -194,15 +195,17 @@ class AgentManagerService(
                     sendMessage(
                         agentId,
                         "(auto) You have new inbox messages. Process them. " +
-                            "If you need to respond to another agent, use AgentPostMessageTool. " +
-                            "If nothing is required, reply with DONE.",
+                                "If you need to respond to another agent, use AgentPostMessageTool. " +
+                                "If nothing is required, reply with DONE.",
                     )
                 QDLog.debug(logger) { "Wake turn finished: agent=$agentId replyLen=${reply.length}" }
-                project.service<ToolWindowService>().addDebugMessage("wake_done", "agent=$agentId replyLen=${reply.length}")
+                project.service<ToolWindowService>()
+                    .addDebugMessage("wake_done", "agent=$agentId replyLen=${reply.length}")
             } catch (t: Throwable) {
                 try {
                     QDLog.warn(logger, { "Wake turn failed: agent=$agentId err=${t.message}" }, t)
-                    project.service<ToolWindowService>().addDebugMessage("wake_error", "agent=$agentId err=${t.message}")
+                    project.service<ToolWindowService>()
+                        .addDebugMessage("wake_error", "agent=$agentId err=${t.message}")
                 } catch (_: Throwable) {
                 }
             } finally {
@@ -213,7 +216,7 @@ class AgentManagerService(
 
     fun readAndClearInbox(agentId: String): List<QuantaAISettingsState.AgentInboxMessage> {
         return try {
-            val st = QuantaAISettingsState.instance.state
+            val st = FrontendQuantaSettingsState.instance.state
             val list = st.agentInboxes[agentId] ?: return emptyList()
             val out = list.toList()
             list.clear()
@@ -324,7 +327,7 @@ class AgentManagerService(
     private fun isContextWindowError(t: Throwable): Boolean {
         val msg = t.message.orEmpty()
         return msg.contains("exceeds context window", ignoreCase = true) ||
-            msg.contains("context window", ignoreCase = true)
+                msg.contains("context window", ignoreCase = true)
     }
 
     private fun softResetAndRetryAgentTurnOnce(
@@ -584,48 +587,48 @@ class AgentManagerService(
 
         val developerTools =
             commonComms +
-                setOf(
-                    "CodeRefactorSuggester",
-                    "CreateOrUpdateFile",
-                    "PatchFile",
-                    "ReadFileContent",
-                    "ReadPsiBlockAtPosition",
-                    "SearchInFiles",
-                    "SearchProjectEmbeddings",
-                    "UpsertProjectEmbedding",
-                    "GetProjectDetails",
-                    "ListFiles",
-                    "GetFileReferencesAndDependencies",
-                    "InspectDependencies",
-                    "OpenFileInEditorTool",
-                    "ValidateClassFileTool",
-                    "CopyFileOrDirectoryTool",
-                    "DeleteFileTool",
-                )
+                    setOf(
+                        "CodeRefactorSuggester",
+                        "CreateOrUpdateFile",
+                        "PatchFile",
+                        "ReadFileContent",
+                        "ReadPsiBlockAtPosition",
+                        "SearchInFiles",
+                        "SearchProjectEmbeddings",
+                        "UpsertProjectEmbedding",
+                        "GetProjectDetails",
+                        "ListFiles",
+                        "GetFileReferencesAndDependencies",
+                        "InspectDependencies",
+                        "OpenFileInEditorTool",
+                        "ValidateClassFileTool",
+                        "CopyFileOrDirectoryTool",
+                        "DeleteFileTool",
+                    )
 
         val testTools =
             commonComms +
-                setOf(
-                    "RunGradleTestsTool",
-                    "RunGradleBuildTool",
-                    "GetTestInfoTool",
-                    "GradleSyncTool",
-                    "ReadFileContent",
-                    "SearchInFiles",
-                    "GetProjectDetails",
-                )
+                    setOf(
+                        "RunGradleTestsTool",
+                        "RunGradleBuildTool",
+                        "GetTestInfoTool",
+                        "GradleSyncTool",
+                        "ReadFileContent",
+                        "SearchInFiles",
+                        "GetProjectDetails",
+                    )
 
         val analystTools =
             commonComms +
-                setOf(
-                    "GetProjectDetails",
-                    "SearchInFiles",
-                    "ReadFileContent",
-                    "SearchProjectEmbeddings",
-                    "GetFileReferencesAndDependencies",
-                    "InspectDependencies",
-                    "ListFiles",
-                )
+                    setOf(
+                        "GetProjectDetails",
+                        "SearchInFiles",
+                        "ReadFileContent",
+                        "SearchProjectEmbeddings",
+                        "GetFileReferencesAndDependencies",
+                        "InspectDependencies",
+                        "ListFiles",
+                    )
 
         val ids = mutableListOf<String>()
         ids +=
@@ -674,7 +677,8 @@ class AgentManagerService(
         }
         val st = QuantaAISettingsState.instance.state
         st.agents.removeIf { it.id == agentId }
-        project.service<ToolWindowService>().addToolingMessage("AgentManager", "Removed agent ${removed.config.role} [$agentId]")
+        project.service<ToolWindowService>()
+            .addToolingMessage("AgentManager", "Removed agent ${removed.config.role} [$agentId]")
         try {
             broadcastRosterUpdate(from = "AgentManager")
         } catch (_: Throwable) {
@@ -736,10 +740,26 @@ class AgentManagerService(
         message: String,
     ): CompletableFuture<AgentTaskResult> { // unchanged
         val enabled = QuantaAISettingsState.instance.state.agenticEnabled ?: true
-        if (!enabled) return CompletableFuture.completedFuture(AgentTaskResult("", agentId, false, null, "Agentic mode disabled"))
+        if (!enabled) return CompletableFuture.completedFuture(
+            AgentTaskResult(
+                "",
+                agentId,
+                false,
+                null,
+                "Agentic mode disabled"
+            )
+        )
         val session =
             agents[agentId]
-                ?: return CompletableFuture.completedFuture(AgentTaskResult("", agentId, false, null, "Agent not found"))
+                ?: return CompletableFuture.completedFuture(
+                    AgentTaskResult(
+                        "",
+                        agentId,
+                        false,
+                        null,
+                        "Agent not found"
+                    )
+                )
         val requestId = UUID.randomUUID().toString()
         pcs.firePropertyChange("agent_task_started", null, mapOf("requestId" to requestId, "agentId" to agentId))
 
@@ -896,7 +916,8 @@ class AgentManagerService(
                 if (isContextWindowError(t)) {
                     try {
                         val openAI = project.service<OpenAIService>()
-                        val filter: ((Class<*>) -> Boolean)? = if (session.config.allowedBuiltInTools) null else { _ -> false }
+                        val filter: ((Class<*>) -> Boolean)? =
+                            if (session.config.allowedBuiltInTools) null else { _ -> false }
                         val includeMcp = session.config.includeMcp
                         val agentLabel = "AI(${session.config.role})"
                         val retry =
@@ -923,7 +944,8 @@ class AgentManagerService(
                             } catch (_: Throwable) {
                             }
 
-                            val result = AgentTaskResult(requestId, agentId, true, reply.ifBlank { "<no message>" }, null)
+                            val result =
+                                AgentTaskResult(requestId, agentId, true, reply.ifBlank { "<no message>" }, null)
                             fut.complete(result)
                             pcs.firePropertyChange("agent_task_finished", null, result)
                             return@submit
@@ -1101,7 +1123,8 @@ class AgentManagerService(
             if (isContextWindowError(t)) {
                 try {
                     val openAI = project.service<OpenAIService>()
-                    val filter: ((Class<*>) -> Boolean)? = if (session.config.allowedBuiltInTools) null else { _ -> false }
+                    val filter: ((Class<*>) -> Boolean)? =
+                        if (session.config.allowedBuiltInTools) null else { _ -> false }
                     val includeMcp = session.config.includeMcp
                     val agentLabel = "AI(${session.config.role})"
                     val retry =
@@ -1129,7 +1152,11 @@ class AgentManagerService(
                         }
 
                         val out = reply.ifBlank { "<no message>" }
-                        pcs.firePropertyChange("agent_task_finished", null, AgentTaskResult(requestId, agentId, true, out, null))
+                        pcs.firePropertyChange(
+                            "agent_task_finished",
+                            null,
+                            AgentTaskResult(requestId, agentId, true, out, null)
+                        )
                         return out
                     }
                 } catch (_: Throwable) {

@@ -5,6 +5,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.mcp
 
 import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
+import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
@@ -15,21 +16,16 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
-import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.plugins.defaultRequest
-import io.ktor.client.plugins.sse.SSE
-import io.ktor.client.plugins.websocket.WebSockets
-import io.ktor.http.HttpHeaders
+import io.ktor.client.*
+import io.ktor.client.engine.cio.*
+import io.ktor.client.plugins.*
+import io.ktor.client.plugins.sse.*
+import io.ktor.client.plugins.websocket.*
+import io.ktor.http.*
 import io.modelcontextprotocol.kotlin.sdk.Implementation
 import io.modelcontextprotocol.kotlin.sdk.ListToolsRequest
 import io.modelcontextprotocol.kotlin.sdk.Tool
-import io.modelcontextprotocol.kotlin.sdk.client.Client
-import io.modelcontextprotocol.kotlin.sdk.client.ClientOptions
-import io.modelcontextprotocol.kotlin.sdk.client.StdioClientTransport
-import io.modelcontextprotocol.kotlin.sdk.client.StreamableHttpClientTransport
-import io.modelcontextprotocol.kotlin.sdk.client.WebSocketClientTransport
+import io.modelcontextprotocol.kotlin.sdk.client.*
 import io.modelcontextprotocol.kotlin.sdk.shared.AbstractTransport
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.runBlocking
@@ -85,7 +81,7 @@ class McpClientService(
     ) {
         val group = NotificationGroupManager.getInstance().getNotificationGroup("Plugin Notifications")
         val notification = group.createNotification(title, content, type)
-        val base = project.basePath
+        val base = PathUtils.projectRootPath(project)
         if (base != null) {
             val file = File(base, ".quantadance/mcp-servers.json")
             notification.addAction(
@@ -173,7 +169,7 @@ class McpClientService(
 
         QDLog.info(log) {
             "Reconcile complete. added=${added.size}, removed=${removed.size}, " +
-                "changed=${maybeChanged.count { oldServers[it] != newServers[it] }}"
+                    "changed=${maybeChanged.count { oldServers[it] != newServers[it] }}"
         }
     }
 
@@ -218,7 +214,7 @@ class McpClientService(
         try {
             val cmd = mutableListOf(cfg.command ?: return).apply { addAll(cfg.args) }
             val pb = ProcessBuilder(cmd)
-            project.basePath?.let { base -> pb.directory(java.io.File(base)) }
+            PathUtils.projectRootPath(project)?.let { base -> pb.directory(java.io.File(base)) }
             cfg.env?.let { env -> pb.environment().putAll(env) }
             QDLog.info(log) { "Starting MCP server '$name' with command: ${cmd.joinToString(" ")}" }
             val proc = pb.start()
@@ -286,7 +282,8 @@ class McpClientService(
                     }
                     defaultRequest {
                         cfg.headers?.forEach { (k, v) -> headers.append(k, v) }
-                        cfg.headers?.get(HttpHeaders.Authorization)?.let { headers.append(HttpHeaders.Authorization, it) }
+                        cfg.headers?.get(HttpHeaders.Authorization)
+                            ?.let { headers.append(HttpHeaders.Authorization, it) }
                     }
                 }
 
@@ -449,7 +446,12 @@ class McpClientService(
         val client =
             clients[server] ?: run {
                 val cfg = serversConfig.mcpServers[server]
-                if (cfg?.url != null) ensureClientUrl(server, cfg) else processes[server]?.let { ensureClient(server, it) }
+                if (cfg?.url != null) ensureClientUrl(server, cfg) else processes[server]?.let {
+                    ensureClient(
+                        server,
+                        it
+                    )
+                }
             } ?: return "MCP client for '$server' is not available"
 
         val args = input.toMutableMap()

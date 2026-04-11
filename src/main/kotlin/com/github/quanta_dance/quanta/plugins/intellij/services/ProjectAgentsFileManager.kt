@@ -3,6 +3,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.services
 
+import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import java.nio.charset.StandardCharsets
@@ -25,7 +26,7 @@ class ProjectAgentsFileManager(
         private const val FILE_NAME = "AGENTS.md"
     }
 
-    private fun projectRoot(): Path? = project.basePath?.let { Path.of(it) }
+    private fun projectRoot(): Path? = PathUtils.projectRootPath(project)?.let { Path.of(it) }
 
     fun readAgentsFile(maxChars: Int = 16_000): String {
         val root = projectRoot() ?: return ""

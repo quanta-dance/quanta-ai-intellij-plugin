@@ -3,7 +3,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.services
 
-import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendQuantaSettingsState
 import com.intellij.openapi.components.service
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 
@@ -20,7 +20,7 @@ class AgentManagerServiceDefaultTeamTest : BasePlatformTestCase() {
         assertTrue(roles.contains("Test Agent"))
         assertTrue(roles.contains("Project Analyst"))
 
-        val st = QuantaAISettingsState.instance.state
+        val st = FrontendQuantaSettingsState.instance.state
         assertEquals(3, st.agents.size)
     }
 
@@ -36,7 +36,7 @@ class AgentManagerServiceDefaultTeamTest : BasePlatformTestCase() {
     fun testRosterUpdateIsPostedToInboxes() {
         val svc = project.service<AgentManagerService>()
         val ids = svc.createDefaultTeam()
-        val st = QuantaAISettingsState.instance.state
+        val st = FrontendQuantaSettingsState.instance.state
         ids.forEach { id ->
             val inbox = st.agentInboxes[id]
             assertNotNull(inbox)

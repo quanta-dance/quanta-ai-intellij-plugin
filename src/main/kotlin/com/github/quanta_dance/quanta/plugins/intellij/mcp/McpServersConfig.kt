@@ -6,6 +6,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.mcp
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
+import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import java.io.File
@@ -41,7 +42,7 @@ object McpServersConfigLoader {
     }
 
     fun loadWithDiagnostics(project: Project): LoadResult {
-        val base = project.basePath ?: return LoadResult(McpServersFile())
+        val base = PathUtils.projectRootPath(project) ?: return LoadResult(McpServersFile())
         val file = File(base, ".quantadance/mcp-servers.json")
         if (!file.exists()) return LoadResult(McpServersFile())
         return try {

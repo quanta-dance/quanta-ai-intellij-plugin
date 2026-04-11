@@ -7,6 +7,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.services.SQLiteVectorStore
 import com.github.quanta_dance.quanta.plugins.intellij.services.VectorStoreService
 import com.github.quanta_dance.quanta.plugins.intellij.services.openai.EmbeddingService
+import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
@@ -61,7 +62,7 @@ class EmbeddingManager(private val project: com.intellij.openapi.project.Project
     ) {
         val chunks = slidingWindowChunk(text, defaultChunkSize, defaultOverlap)
         if (chunks.isEmpty()) return
-        val projectKey = project.basePath ?: project.name
+        val projectKey = PathUtils.projectRootPath(project) ?: project.name
         val timestamp = Instant.now().toEpochMilli()
         val ids = mutableListOf<String>()
         val metas = mutableListOf<Map<String, String>>()

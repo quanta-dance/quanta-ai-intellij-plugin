@@ -4,7 +4,7 @@
 package com.github.quanta_dance.quanta.plugins.intellij.toolWindow.actions
 
 import com.github.quanta_dance.quanta.plugins.intellij.services.AgentManagerService
-import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendQuantaSettingsState
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
@@ -20,7 +20,7 @@ class StopAgentsAction : AnAction("Stop All Agents", "Stop all agents", AllIcons
 
     override fun update(e: AnActionEvent) {
         // Hide when agentic mode is disabled
-        val agentic = QuantaAISettingsState.instance.state.agenticEnabled ?: true
+        val agentic = FrontendQuantaSettingsState.instance.state.agenticEnabled ?: true
         e.presentation.isVisible = agentic
         e.presentation.isEnabled = agentic
     }
