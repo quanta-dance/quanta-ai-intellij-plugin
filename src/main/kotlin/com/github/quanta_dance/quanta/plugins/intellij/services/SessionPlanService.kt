@@ -3,7 +3,9 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.services
 
+import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
@@ -18,9 +20,9 @@ class SessionPlanService(private val project: Project) {
     }
 
     private fun planFileIo(): File? {
-        val base = project.basePath
+        val base = PathUtils.projectRootPath(project)
         if (base.isNullOrBlank()) {
-            QDLog.warn(log) { "SessionPlanService: project.basePath is null/blank; cannot resolve plan path" }
+            QDLog.warn(log) { "SessionPlanService: project root path is null/blank; cannot resolve plan path" }
             return null
         }
         return File(File(base, DIR), FILE)
@@ -207,6 +209,13 @@ class SessionPlanService(private val project: Project) {
             io.writeText(content)
             QDLog.info(log) { "Session plan written: ${io.absolutePath} (chars=${content.length})" }
             refresh(io)
+            try {
+                project.service<SessionMemoryService>().refreshFromCurrentState(
+                    reason = "plan_update",
+                    explicitNote = "Session plan updated: ${status.trim().ifBlank { "DRAFT" }}",
+                )
+            } catch (_: Throwable) {
+            }
         } catch (t: Throwable) {
             log.warn("Failed to write plan.md: ${t.message}", t)
         }

@@ -3,9 +3,9 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.services
 
-import com.github.quanta_dance.quanta.plugins.intellij.services.openai.OpenAIClientProvider
-import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState
-import com.github.quanta_dance.quanta.plugins.intellij.sound.Player
+import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.OpenAIClientProvider
+import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQuantaSettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.sound.Player
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
@@ -41,14 +41,14 @@ class AIVoiceService(private val project: Project) {
     }
 
     fun say(message: String) {
-        if (!QuantaAISettingsState.instance.state.voiceEnabled) return
+        if (!BackendQuantaSettingsState.instance.settings.voiceEnabled) return
         // Stop any ongoing speech (local process or mp3 playback) before starting new
         stopTalking()
         QDLog.debug(logger) { "Muting mic while speaking" }
         project.service<QuantaAIService>().mute(true)
         val useLocalMacTts =
             System.getProperty("os.name").contains("Mac", ignoreCase = true) &&
-                QuantaAISettingsState.instance.state.voiceByLocalTTS
+                    BackendQuantaSettingsState.instance.settings.voiceByLocalTTS
         if (useLocalMacTts) {
             val th =
                 Thread {

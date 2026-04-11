@@ -3,6 +3,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.mcp
 
+import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
 import com.intellij.openapi.project.Project
 import java.nio.file.Path
 
@@ -12,7 +13,7 @@ object McpServersPaths {
     const val RELATIVE_UNIX = "/$DIR_NAME/$FILE_NAME"
 
     fun resolve(project: Project): Path? {
-        val base = project.basePath ?: return null
+        val base = PathUtils.projectRootPath(project) ?: return null
         return Path.of(base, DIR_NAME, FILE_NAME)
     }
 }

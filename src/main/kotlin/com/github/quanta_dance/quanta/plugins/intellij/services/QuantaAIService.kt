@@ -3,7 +3,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.services
 
-import com.github.quanta_dance.quanta.plugins.intellij.sound.AudioCapture
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.sound.AudioCapture
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service

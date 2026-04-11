@@ -4,6 +4,7 @@
 package com.github.quanta_dance.quanta.plugins.intellij.services.openai
 
 import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
+import com.github.quanta_dance.quanta.plugins.intellij.services.SessionMemoryService
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.github.quanta_dance.quanta.plugins.intellij.tools.ToolsRegistry
 import com.intellij.openapi.components.service
@@ -32,6 +33,10 @@ class DefaultToolInvoker : ToolInvoker {
                     val args = functionCall.arguments(toolClass)
                     val out = args.execute(project)
                     try {
+                        project.service<SessionMemoryService>().recordToolEvent(name, functionCall.arguments(), out)
+                    } catch (_: Throwable) {
+                    }
+                    try {
                         QDLog.debug(log) { "Tool ok: name=$name" }
                     } catch (_: Throwable) {
                     }
@@ -39,7 +44,8 @@ class DefaultToolInvoker : ToolInvoker {
                 } catch (e: Throwable) {
                     try {
                         QDLog.warn(log, { "Tool failed: name=$name err=${e.message}" }, e)
-                        project.service<ToolWindowService>().addDebugMessage("tool_failed", "name=$name err=${e.message}")
+                        project.service<ToolWindowService>()
+                            .addDebugMessage("tool_failed", "name=$name err=${e.message}")
                     } catch (_: Throwable) {
                     }
                     log.error("Tool '$name' failed: ${e.message}", e)

@@ -7,16 +7,12 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.quanta_dance.quanta.plugins.intellij.models.OpenAIResponse
 import com.github.quanta_dance.quanta.plugins.intellij.project.CurrentFileContextProvider
 import com.github.quanta_dance.quanta.plugins.intellij.project.ProjectVersionUtil
-import com.github.quanta_dance.quanta.plugins.intellij.services.openai.DefaultToolInvoker
-import com.github.quanta_dance.quanta.plugins.intellij.services.openai.ModelSelector
-import com.github.quanta_dance.quanta.plugins.intellij.services.openai.OpenAIClientProvider
-import com.github.quanta_dance.quanta.plugins.intellij.services.openai.ResponseBuilder
-import com.github.quanta_dance.quanta.plugins.intellij.services.openai.ToolInvoker
-import com.github.quanta_dance.quanta.plugins.intellij.services.openai.ToolRouter
+import com.github.quanta_dance.quanta.plugins.intellij.services.openai.*
 import com.github.quanta_dance.quanta.plugins.intellij.services.ui.DelayedSpinner
 import com.github.quanta_dance.quanta.plugins.intellij.services.ui.Notifications
-import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsListener
-import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendQuantaSettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendQuantaSettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
 import com.github.quanta_dance.quanta.plugins.intellij.tools.ToolsRegistry
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
@@ -33,8 +29,7 @@ import com.openai.models.responses.ResponseUsage
 import com.openai.models.responses.StructuredResponse
 import java.beans.PropertyChangeListener
 import java.beans.PropertyChangeSupport
-import java.util.Collections
-import java.util.UUID
+import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Future
 import java.util.concurrent.atomic.AtomicLong
@@ -51,13 +46,14 @@ class OpenAIService(
     private var oAI: OpenAIClient = OpenAIClientProvider.get(project)
 
     @Volatile
-    private var clientKey: Pair<String, String> = QuantaAISettingsState.instance.state.let { it.host to it.token }
+    private var clientKey: Pair<String, String> =
+        FrontendQuantaSettingsState.instance.state.let { it.openAiUrl to it.openAiToken }
 
     @Volatile
     private var modelKey: Pair<Boolean, String> =
-        QuantaAISettingsState.instance.state.let { (it.dynamicModelEnabled == true) to it.aiChatModel }
+        FrontendQuantaSettingsState.instance.state.let { (it.dynamicModelEnabled == true) to it.model }
 
-    private var lastResponseId: String? = QuantaAISettingsState.instance.state.mainLastResponseId
+    private var lastResponseId: String? = FrontendQuantaSettingsState.instance.state.mainLastResponseId
     private var currentSessionId: String = UUID.randomUUID().toString()
 
     private val toolInvoker: ToolInvoker = DefaultToolInvoker()
@@ -190,7 +186,7 @@ class OpenAIService(
             } catch (_: Throwable) {
                 // Fallback to running git in project base dir
                 try {
-                    val basePath = project.basePath
+                    val basePath = PathUtils.projectRootPath(project)
                     if (basePath != null) {
                         val pb = ProcessBuilder("git", "rev-parse", "--abbrev-ref", "HEAD")
                         pb.directory(java.io.File(basePath))
@@ -245,6 +241,15 @@ class OpenAIService(
         try {
             project.service<ToolWindowService>().addToolingMessage(label, text)
         } catch (_: Throwable) {
+        }
+        if (role.equals("assistant", ignoreCase = true) && text.isNotBlank()) {
+            try {
+                project.service<SessionMemoryService>().refreshFromCurrentState(
+                    reason = "assistant_turn",
+                    assistantText = text,
+                )
+            } catch (_: Throwable) {
+            }
         }
     }
 
@@ -350,6 +355,11 @@ class OpenAIService(
         summaryLastRunAtMs[key] = now
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
+                project.service<SessionMemoryService>().refreshFromCurrentState(
+                    reason = "proactive_refresh",
+                    explicitNote = "Conversation approaching token limits; refreshing persisted memory.",
+                    force = true,
+                )
                 val summary = generateSummaryWithLlm(key)
                 if (summary.isNotBlank()) {
                     storeSummaryForKey(key, summary)
@@ -451,7 +461,7 @@ class OpenAIService(
 
         val filesCount =
             try {
-                val basePath = project.basePath
+                val basePath = PathUtils.projectRootPath(project)
                 if (basePath != null) {
                     val root =
                         com.intellij.openapi.vfs.LocalFileSystem
@@ -664,7 +674,7 @@ class OpenAIService(
         if (changed) {
             thisLogger().info(
                 "Budgeted requestInputs: beforeItems=$beforeSize beforeApproxChars=$beforeChars " +
-                    "afterItems=${inputs.size} afterApproxChars=${approxTotalChars(inputs)}",
+                        "afterItems=${inputs.size} afterApproxChars=${approxTotalChars(inputs)}",
             )
         }
         return changed
@@ -917,12 +927,99 @@ class OpenAIService(
         return aggregated.toString().trim() to localPrevId
     }
 
+    private fun parseMemoryFactCommand(prefix: String, text: String): Pair<String, String?>? {
+        val body = text.trim().removePrefix(prefix).trim()
+        if (body.isBlank()) return null
+        val parts = body.split("| supersedes ", limit = 2)
+        val fact = parts[0].trim()
+        val supersedes = parts.getOrNull(1)?.trim()?.ifBlank { null }
+        if (fact.isBlank()) return null
+        return fact to supersedes
+    }
+
+    private fun handleLocalMemoryCommand(text: String): Boolean {
+        val raw = text.trim()
+        val normalized = raw.lowercase()
+        val memory = project.service<SessionMemoryService>()
+        return when {
+            normalized == "refresh summary" || normalized == "/refresh summary" -> {
+                memory.refreshFromCurrentState(reason = "user_command_refresh", userText = raw, force = true)
+                project.service<ToolWindowService>()
+                    .addToolingMessage("Session memory", "Session summaries refreshed on disk.")
+                true
+            }
+
+            normalized == "compact with memory" || normalized == "/compact with memory" -> {
+                val brief = memory.compactConversationHistory()
+                resetThreadStatePreservingHistory()
+                project.service<ToolWindowService>().addToolingMessage(
+                    "Session memory",
+                    if (brief.isBlank()) "Session memory compacted, but no brief was available yet." else "Conversation compacted with persisted session memory.",
+                )
+                true
+            }
+
+            normalized == "show session brief" || normalized == "/show session brief" -> {
+                project.service<ToolWindowService>().addToolingMessage(
+                    "Session brief",
+                    memory.loadBrief(maxChars = 8_000).ifBlank { "No session brief recorded yet." },
+                )
+                true
+            }
+
+            normalized == "restore from session memory" || normalized == "/restore from session memory" -> {
+                memory.refreshFromCurrentState(
+                    reason = "user_command_restore",
+                    explicitNote = "Restored state from persisted session memory.",
+                    force = true
+                )
+                resetThreadStatePreservingHistory()
+                project.service<ToolWindowService>().addToolingMessage(
+                    "Session memory",
+                    memory.loadBrief(maxChars = 8_000)
+                        .ifBlank { "Session memory restored, but the brief is still empty." },
+                )
+                true
+            }
+
+            normalized.startsWith("pin fact ") || normalized.startsWith("/pin fact ") -> {
+                val parsed =
+                    parseMemoryFactCommand(if (normalized.startsWith("/pin fact ")) "/pin fact" else "pin fact", raw)
+                if (parsed != null) {
+                    memory.pinFact(parsed.first, parsed.second)
+                    project.service<ToolWindowService>()
+                        .addToolingMessage("Session memory", "Pinned fact: ${parsed.first}")
+                }
+                true
+            }
+
+            normalized.startsWith("mark root cause ") || normalized.startsWith("/mark root cause ") -> {
+                val parsed =
+                    parseMemoryFactCommand(
+                        if (normalized.startsWith("/mark root cause ")) "/mark root cause" else "mark root cause",
+                        raw,
+                    )
+                if (parsed != null) {
+                    memory.markRootCause(parsed.first, parsed.second)
+                    project.service<ToolWindowService>()
+                        .addToolingMessage("Session memory", "Root cause marked: ${parsed.first}")
+                }
+                true
+            }
+
+            else -> false
+        }
+    }
+
     fun sendMessage(
         text: String,
         includeEditorContext: Boolean = true,
         messageCallback: (OpenAIResponse) -> Unit = {},
         toolCallback: () -> Unit = {},
     ) {
+        if (handleLocalMemoryCommand(text)) {
+            return
+        }
         operationInProgress = true
 
         pcs.firePropertyChange("inProgress", false, true)
@@ -935,7 +1032,7 @@ class OpenAIService(
                 if (ctx != null) {
                     val header =
                         "Current file open: ${ctx.filePathRelative}, file version: ${ctx.version} - " +
-                            "you must always reread file if version changed"
+                                "you must always reread file if version changed"
 
                     val caretLine = ctx.caretLine
                     val caretCol = ctx.caretColumn
@@ -952,7 +1049,7 @@ class OpenAIService(
                     ) {
                         sb.append(
                             "\nSelection starts at line ${ctx.selectionStartLine}, column ${ctx.selectionStartColumn} " +
-                                "and ends at line ${ctx.selectionEndLine}, column ${ctx.selectionEndLine}\n",
+                                    "and ends at line ${ctx.selectionEndLine}, column ${ctx.selectionEndLine}\n",
                         )
                         val sel = ctx.selectedText
                         if (sel != null) {
@@ -979,31 +1076,50 @@ class OpenAIService(
                 val needBaseContext = (lastResponseId == null) || (!initialContextInjectedThisIdeSession)
                 val key = conversationKeyForMain()
 
-                // Ensure a summary exists; if none, build a heuristic one from persisted messages.
-                val existingSummary =
+                val memoryBrief: String =
                     try {
-                        summaryForKey(key)
+                        project.service<SessionMemoryService>().run {
+                            ensureInitialized()
+                            loadBrief(maxChars = 4_000)
+                        }
                     } catch (_: Throwable) {
-                        null
-                    }.orEmpty()
+                        ""
+                    }
 
                 val ensuredSummary =
-                    if (existingSummary.isNotBlank()) {
-                        existingSummary
+                    if (memoryBrief.isNotBlank()) {
+                        memoryBrief
                     } else {
-                        try {
-                            val h = buildHeuristicSummaryForKey(key)
-                            if (h.isNotBlank()) storeSummaryForKey(key, h)
-                            h
-                        } catch (_: Throwable) {
-                            ""
+                        val existingSummary =
+                            try {
+                                summaryForKey(key)
+                            } catch (_: Throwable) {
+                                null
+                            }.orEmpty()
+
+                        if (existingSummary.isNotBlank()) {
+                            existingSummary
+                        } else {
+                            try {
+                                val h = buildHeuristicSummaryForKey(key)
+                                if (h.isNotBlank()) storeSummaryForKey(key, h)
+                                h
+                            } catch (_: Throwable) {
+                                ""
+                            }
                         }
                     }
 
                 if (ensuredSummary.isNotBlank()) {
                     val h = ensuredSummary.hashCode()
                     if (needBaseContext || lastInjectedSummaryHash == null || lastInjectedSummaryHash != h) {
-                        requestInputs.add(systemMessage("Conversation summary (auto):\n" + ensuredSummary))
+                        val label =
+                            if (memoryBrief.isNotBlank()) {
+                                "Session memory brief (.quantadance/session/session-brief.md):\n"
+                            } else {
+                                "Conversation summary (auto):\n"
+                            }
+                        requestInputs.add(systemMessage(label + ensuredSummary))
                         lastInjectedSummaryHash = h
                     }
                 }
@@ -1118,14 +1234,14 @@ class OpenAIService(
                         requestInputs.add(
                             systemMessage(
                                 "Plan execution policy: the session plan is ACTIVE. " +
-                                    "Proceed autonomously through unchecked tasks from top to bottom. " +
-                                    "Prefer delegation: coordinate work by sending tasks to sub-agents " +
-                                    "(Developer Agent / Test Agent / Project Analyst) and integrate their replies. " +
-                                    "Only do work yourself when coordination-only or trivial. " +
-                                    "Do NOT ask the user questions unless truly blocked. " +
-                                    "If blocked, set nextStep=WAIT_USER, set planNeedsUserConfirmation=true, " +
-                                    "and put exactly one question in planBlockingQuestion. " +
-                                    "Otherwise, keep nextStep=CONTINUE until all tasks are [x], then DONE.",
+                                        "Proceed autonomously through unchecked tasks from top to bottom. " +
+                                        "Prefer delegation: coordinate work by sending tasks to sub-agents " +
+                                        "(Developer Agent / Test Agent / Project Analyst) and integrate their replies. " +
+                                        "Only do work yourself when coordination-only or trivial. " +
+                                        "Do NOT ask the user questions unless truly blocked. " +
+                                        "If blocked, set nextStep=WAIT_USER, set planNeedsUserConfirmation=true, " +
+                                        "and put exactly one question in planBlockingQuestion. " +
+                                        "Otherwise, keep nextStep=CONTINUE until all tasks are [x], then DONE.",
                             ),
                         )
                     } catch (_: Throwable) {
@@ -1143,8 +1259,8 @@ class OpenAIService(
                             requestInputs.add(
                                 systemMessage(
                                     "Tool policy: tools are DISABLED by default. If you need tools, set nextStep=CONTINUE and " +
-                                        "requestedTools=[<ClassSimpleName>, ...]. " +
-                                        "Do not claim you executed tools unless tool outputs are present.",
+                                            "requestedTools=[<ClassSimpleName>, ...]. " +
+                                            "Do not claim you executed tools unless tool outputs are present.",
                                 ),
                             )
                             toolPolicyHintInjectedThisIdeSession = true
@@ -1198,7 +1314,7 @@ class OpenAIService(
                             }
                             thisLogger().info(
                                 "RequestInputs: items=${requestInputs.size} approxChars=$totalChars maxItemChars=$maxItemChars " +
-                                    "previousIdNull=${previousIdForThisTurn == null} session=$currentSessionId",
+                                        "previousIdNull=${previousIdForThisTurn == null} session=$currentSessionId",
                             )
                         } catch (_: Throwable) {
                         }
@@ -1299,7 +1415,7 @@ class OpenAIService(
                                                         requestInputs.add(
                                                             systemMessage(
                                                                 "Continue executing the ACTIVE plan autonomously. " +
-                                                                    "Do not ask the user questions unless truly blocked.",
+                                                                        "Do not ask the user questions unless truly blocked.",
                                                             ),
                                                         )
                                                         return@forEach
@@ -1313,8 +1429,8 @@ class OpenAIService(
                                                         .orEmpty()
                                                 val wantsTools =
                                                     message.nextStep?.uppercase() == "CONTINUE" &&
-                                                        requested.isNotEmpty() &&
-                                                        !toolEscalatedThisTurn
+                                                            requested.isNotEmpty() &&
+                                                            !toolEscalatedThisTurn
 
                                                 if (!wantsTools) {
                                                     persistAndShow("assistant", managerLabel, message.summaryMessage)
@@ -1357,7 +1473,7 @@ class OpenAIService(
                                                                 "Tools enabled for this turn: ${
                                                                     filtered.sorted().joinToString()
                                                                 }. " +
-                                                                    "Proceed to call tools as needed.",
+                                                                        "Proceed to call tools as needed.",
                                                             ),
                                                         )
                                                     } else {
@@ -1384,7 +1500,7 @@ class OpenAIService(
                                                             project.service<ToolWindowService>().addToolingMessage(
                                                                 managerLabel,
                                                                 "Response incomplete but maxContinuations=$maxContinuations" +
-                                                                    " reached; stopping",
+                                                                        " reached; stopping",
                                                             )
                                                         }
                                                     }
@@ -1449,16 +1565,16 @@ class OpenAIService(
                         val msg = e.message.orEmpty()
                         val isContextWindow =
                             msg.contains("exceeds context window", ignoreCase = true) ||
-                                msg.contains("context window", ignoreCase = true)
+                                    msg.contains("context window", ignoreCase = true)
 
                         if (isContextWindow && !retriedAfterContextReset) {
                             // Step 4: summarize + rewrite local history + reset previousId and retry once with minimal context.
                             // Goal: user should not notice the context-window failure.
                             thisLogger().warn(
                                 "CONTEXT_WINDOW_EXCEEDED: attempting soft reset (retry once). " +
-                                    "items=${requestInputs.size} " +
-                                    "previousIdNull=${previousIdForThisTurn == null} " +
-                                    "session=$currentSessionId message=$msg",
+                                        "items=${requestInputs.size} " +
+                                        "previousIdNull=${previousIdForThisTurn == null} " +
+                                        "session=$currentSessionId message=$msg",
                                 e,
                             )
                             try {
@@ -1470,6 +1586,16 @@ class OpenAIService(
                             }
 
                             val key = conversationKeyForMain()
+                            val sessionMemory = project.service<SessionMemoryService>()
+                            try {
+                                sessionMemory.refreshFromCurrentState(
+                                    reason = "before_context_compaction",
+                                    explicitNote = "Refreshing persisted memory before context-window reset.",
+                                    userText = text,
+                                    force = true,
+                                )
+                            } catch (_: Throwable) {
+                            }
 
                             // Force a rolling summary that represents the whole conversation.
                             // Prefer LLM summary (more accurate), fallback to heuristic if needed.
@@ -1478,6 +1604,8 @@ class OpenAIService(
                                     generateSummaryWithLlm(key)
                                 } catch (_: Throwable) {
                                     ""
+                                }.ifBlank {
+                                    sessionMemory.loadBrief(maxChars = 2_000)
                                 }.ifBlank {
                                     try {
                                         buildHeuristicSummaryForKey(key)
@@ -1508,7 +1636,7 @@ class OpenAIService(
                                             QuantaAISettingsState.PersistedMessage(
                                                 System.currentTimeMillis(),
                                                 "system",
-                                                "Conversation summary (auto, rewritten after context-window reset):\n" + summaryText,
+                                                "Session memory brief (rewritten after context-window reset):\n" + summaryText,
                                                 null,
                                             ),
                                             QuantaAISettingsState.PersistedMessage(
@@ -1556,7 +1684,7 @@ class OpenAIService(
                         if (isContextWindow) {
                             thisLogger().warn(
                                 "CONTEXT_WINDOW_EXCEEDED: items=${requestInputs.size} previousIdNull=${previousIdForThisTurn == null} " +
-                                    "session=$currentSessionId message=$msg",
+                                        "session=$currentSessionId message=$msg",
                                 e,
                             )
                         } else {

@@ -1,0 +1,24 @@
+package com.github.quanta_dance.quanta.plugins.intellij.frontend.contracts
+
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.WorkspaceFileReadResult
+import com.intellij.openapi.components.Service
+import com.intellij.openapi.components.Service.Level
+import com.intellij.openapi.project.Project
+import fleet.rpc.client.durable
+
+@Service(Level.PROJECT)
+class FrontendWorkspaceFileReadService(
+    private val project: Project,
+) {
+    companion object {
+        fun getInstance(project: Project): FrontendWorkspaceFileReadService =
+            project.getService(FrontendWorkspaceFileReadService::class.java)
+    }
+
+    suspend fun readCurrentFile(path: String): WorkspaceFileReadResult = durable {
+        val result = FrontendWorkspaceFileClient(
+            FrontendWorkspaceFileRemoteAdapter(project),
+        ).read(path)
+        result.copy(source = "backend")
+    }
+}

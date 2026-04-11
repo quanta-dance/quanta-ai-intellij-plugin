@@ -77,7 +77,7 @@ class ToolWindowService(
     ) {
         val enabled =
             try {
-                com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState.instance.state.debugEnabled
+                com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendQuantaSettingsState.instance.state.debugEnabled
             } catch (_: Throwable) {
                 false
             }
@@ -189,7 +189,8 @@ class ToolWindowService(
 
     private fun restorePersistedChat() {
         try {
-            val state = com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState.instance.state
+            val state =
+                com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendQuantaSettingsState.instance.state
             val projectService = project.service<OpenAIService>()
 
             // Use same conversation key logic as OpenAIService via reflection

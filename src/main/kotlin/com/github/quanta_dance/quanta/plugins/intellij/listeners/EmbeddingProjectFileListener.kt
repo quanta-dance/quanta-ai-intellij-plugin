@@ -5,6 +5,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.listeners
 
 import com.github.quanta_dance.quanta.plugins.intellij.project.EmbeddingManager
 import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
+import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
@@ -26,10 +27,11 @@ class EmbeddingProjectFileListener(private val project: Project) {
                 override fun beforeDocumentSaving(document: Document) {
                     try {
                         val virtualFile = FileDocumentManager.getInstance().getFile(document)
-                        if (virtualFile != null && project.basePath != null) {
-                            val projectPath = project.basePath!!
+                        val projectPath = PathUtils.projectRootPath(project)
+                        if (virtualFile != null && projectPath != null) {
                             val relPath =
-                                java.nio.file.Paths.get(projectPath).relativize(java.nio.file.Paths.get(virtualFile.path))
+                                java.nio.file.Paths.get(projectPath)
+                                    .relativize(java.nio.file.Paths.get(virtualFile.path))
                                     .toString()
                             val text = document.text
                             EmbeddingManager.getInstance(project).enqueueFileForIndexing(relPath, text)

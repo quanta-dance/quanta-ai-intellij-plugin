@@ -1,0 +1,24 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
+package com.github.quanta_dance.quanta.plugins.intellij.backend.openai
+
+import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQuantaSettingsState
+import com.intellij.openapi.project.Project
+import com.openai.client.OpenAIClient
+import com.openai.client.okhttp.OpenAIOkHttpClient
+
+/**
+ * Provider for obtaining OpenAIClient instances configured from the backend plugin state.
+ */
+object OpenAIClientProvider {
+    fun get(project: Project): OpenAIClient {
+        val state = BackendQuantaSettingsState.instance.settings
+        return OpenAIOkHttpClient
+            .builder()
+            .apiKey(state.openAiToken)
+            .baseUrl(state.openAiUrl)
+            .maxRetries(2)
+            .build()
+    }
+}
