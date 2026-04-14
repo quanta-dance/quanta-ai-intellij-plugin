@@ -6,7 +6,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.tools.catalog
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ToolsRegistry.toolsFor
-import com.github.quanta_dance.quanta.plugins.intellij.mcp.McpClientService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.McpClientService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project

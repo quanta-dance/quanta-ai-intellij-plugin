@@ -20,7 +20,7 @@ class QuantaAISettingsState : PersistentStateComponent<QuantaAISettingsState.Sta
         val role: String,
         val model: String? = null,
         val instructions: String? = null,
-        val previousId: String? = null,
+        var previousId: String? = null,
     )
 
     @Serializable
@@ -34,18 +34,20 @@ class QuantaAISettingsState : PersistentStateComponent<QuantaAISettingsState.Sta
     @Serializable
     data class AgentInboxMessage(
         val timestamp: Long,
-        val from: String,
+        val from: String?,
         val text: String,
-        val kind: String,
+        val kind: String?,
     )
 
     @Serializable
     data class State(
         var agenticEnabled: Boolean? = true,
+        var maxAutomaticTurns: Int = 10,
         var agents: MutableList<AgentProfile> = mutableListOf(),
         var conversations: MutableMap<String, MutableList<PersistedMessage>> = mutableMapOf(),
         var conversationSummaries: MutableMap<String, String> = mutableMapOf(),
         var agentInboxes: MutableMap<String, MutableList<AgentInboxMessage>> = mutableMapOf(),
+        var mainLastResponseId: String? = null,
     )
 
     companion object {

@@ -17,7 +17,7 @@ import com.intellij.openapi.components.Storage
 )
 class BackendQuantaSettingsState : PersistentStateComponent<BackendQuantaSettingsState.State> {
     data class State(
-        var openAiUrl: String = QuantaAISettingsState.let { "https://api.openai.com/v1/" },
+        var openAiUrl: String = "https://api.openai.com/v1/",
         var openAiToken: String = "",
         var model: String = "gpt-5-nano",
         var aiChatModel: String = "gpt-5-nano",
@@ -26,6 +26,7 @@ class BackendQuantaSettingsState : PersistentStateComponent<BackendQuantaSetting
         var maxTokens: Long? = 2048,
         var dynamicModelEnabled: Boolean? = false,
         var agenticEnabled: Boolean? = true,
+        var maxAutomaticTurns: Int = 10,
         var terminalToolEnabled: Boolean? = false,
         var terminalAllowedCommandsCsv: String = "git status,git diff,git add,git commit",
         var extraInstructions: String? = "",

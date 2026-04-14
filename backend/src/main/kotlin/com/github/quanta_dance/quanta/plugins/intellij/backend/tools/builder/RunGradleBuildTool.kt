@@ -24,7 +24,8 @@ class RunGradleBuildTool : ToolInterface<String> {
 
     override fun execute(project: Project): String {
         val basePath = project.basePath ?: return "Project base path not found"
-        val tasksList = (tasks?.trim()?.takeIf { it.isNotEmpty() } ?: "compileKotlin compileJava").split(" ").filter { it.isNotBlank() }
+        val tasksList = (tasks?.trim()?.takeIf { it.isNotEmpty() } ?: "compileKotlin compileJava").split(" ")
+            .filter { it.isNotBlank() }
 
         val gradlewName = if (SystemInfo.isWindows) "gradlew.bat" else "gradlew"
         val gradlew = File(basePath, gradlewName)
@@ -38,7 +39,8 @@ class RunGradleBuildTool : ToolInterface<String> {
 
         val tool =
             try {
-                project.service<ToolWindowService>().startToolingMessage("Gradle build", "tasks=${args.joinToString(" ")}")
+                project.service<ToolWindowService>()
+                    .startToolingMessage("Gradle build", "tasks=${args.joinToString(" ")}")
             } catch (_: Throwable) {
                 null
             }
