@@ -12,6 +12,7 @@ import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
+import com.intellij.openapi.util.IconLoader
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.ui.content.ContentFactory
@@ -33,7 +34,7 @@ class QuantaAIToolWindowFactory : ToolWindowFactory {
 
         // New Session action — clears current dialog and starts a new session (with user confirmation)
         val newSessionAction =
-            object : AnAction("New Session") {
+            object : AnAction("New Session", "Start a new session", IconLoader.getIcon("/pluginIcon.svg", javaClass)) {
                 override fun actionPerformed(e: AnActionEvent) {
                     try {
                         // Ask user to confirm starting a new session to avoid accidental loss of conversation
@@ -50,9 +51,9 @@ class QuantaAIToolWindowFactory : ToolWindowFactory {
                         if (!confirmed) return
 
                         // TODO: restore this functionality in new UI
-                    //    val service = project.service<OpenAIService>()
-                  //      val newId = service.newSession()
-                 //       project.service<ToolWindowService>().addToolingMessage("AI", "New session started: $newId")
+                        //    val service = project.service<OpenAIService>()
+                        //      val newId = service.newSession()
+                        //       project.service<ToolWindowService>().addToolingMessage("AI", "New session started: $newId")
                     } catch (ex: Throwable) {
                         try {
                             project.service<ToolWindowService>()

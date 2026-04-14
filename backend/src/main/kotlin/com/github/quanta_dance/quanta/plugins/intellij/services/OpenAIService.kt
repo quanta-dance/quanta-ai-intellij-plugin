@@ -4,17 +4,11 @@
 package com.github.quanta_dance.quanta.plugins.intellij.services
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.DefaultToolInvoker
-import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.ModelSelector
-import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.OpenAIClientProvider
-import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.ResponseBuilder
-import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.ToolInvoker
-import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.ToolRouter
+import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.*
+import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQuantaSettingsState
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ToolsRegistry
 import com.github.quanta_dance.quanta.plugins.intellij.models.OpenAIResponse
-import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQuantaSettingsState
 import com.github.quanta_dance.quanta.plugins.intellij.project.CurrentFileContextProvider
-import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.github.quanta_dance.quanta.plugins.intellij.project.ProjectVersionUtil
 import com.github.quanta_dance.quanta.plugins.intellij.services.ui.DelayedSpinner
 import com.github.quanta_dance.quanta.plugins.intellij.services.ui.Notifications
@@ -782,7 +776,7 @@ class OpenAIService(
         reportUsageToUi: Boolean = true,
     ): Pair<StructuredResponse<OpenAIResponse>, String?> {
         val createParams =
-            responseBuilder.buildStructuredResponseParams()
+            responseBuilder.buildStructuredResponseParams(inputs)
         val structResponse = oAI.responses().create(createParams)
 
         try {
@@ -995,6 +989,13 @@ class OpenAIService(
         messageCallback: (OpenAIResponse) -> Unit = {},
         toolCallback: () -> Unit = {},
     ) {
+        QDLog.info(thisLogger()) {
+            "OpenAIService.sendMessage start includeEditorContext=$includeEditorContext text=${
+                text.take(
+                    200
+                )
+            }"
+        }
         if (handleLocalMemoryCommand(text)) {
             return
         }
@@ -1303,8 +1304,10 @@ class OpenAIService(
 
                         // Tools are disabled by default. When the model requests tools (requestedTools), we silently retry once
                         // with only those tools enabled by passing allow-lists to createResponse.
+                        QDLog.info(thisLogger()) {
+                            "OpenAIService.sendMessage calling createResponse inputs=${requestInputs.size} prevIdNull=${previousIdForThisTurn == null} includeMcp=$includeMcpThisAttempt tools=${allowedBuiltInNamesThisAttempt?.size} mcp=${allowedMcpNamesThisAttempt?.size}"
+                        }
                         val (structResponse, newId) =
-
                             createResponse(
                                 requestInputs,
                                 previousIdForThisTurn,
@@ -1313,13 +1316,20 @@ class OpenAIService(
                                 allowedBuiltInNames = allowedBuiltInNamesThisAttempt,
                                 allowedMcpNames = allowedMcpNamesThisAttempt,
                             )
+                        QDLog.info(thisLogger()) { "OpenAIService.sendMessage createResponse returned id=$newId" }
                         previousIdForThisTurn = newId
                         delayedSpinner.stopSuccess()
 
                         requestInputs.clear()
                         val pendingToolOutputs = mutableListOf<com.openai.models.responses.ResponseInputItem>()
 
-                        structResponse.output().map { item ->
+                        QDLog.info(thisLogger()) { "OpenAIService.sendMessage output size=${structResponse.output().size}" }
+                        structResponse.output().mapIndexed { index, item ->
+                            QDLog.info(thisLogger()) {
+                                "OpenAIService.sendMessage output[$index] class=${item.javaClass.name} text='${
+                                    item.toString().take(200)
+                                }'"
+                            }
                             when {
                                 item.isReasoning() -> {
                                     val reasoning = item.asReasoning()
@@ -1334,12 +1344,17 @@ class OpenAIService(
                                     val functionCall: com.openai.models.responses.ResponseFunctionToolCall =
                                         item.asFunctionCall()
                                     val callId = functionCall.callId()
-                                    if (!processedCallIds.add(callId)) return@map
+                                    if (!processedCallIds.add(callId)) return@mapIndexed
                                     project
                                         .service<ToolWindowService>()
                                         .addToolingMessage(managerLabel, "Calling tool: ${functionCall.name()}")
                                     val functionResult = toolRouter.route(functionCall)
                                     val safeResult = truncateToolOutput(functionResult)
+                                    QDLog.info(thisLogger()) {
+                                        "OpenAIService.sendMessage toolResult name=${functionCall.name()} result='${
+                                            safeResult?.toString()?.take(160)
+                                        }'"
+                                    }
                                     pendingToolOutputs.add(
                                         com.openai.models.responses.ResponseInputItem.ofFunctionCallOutput(
                                             com.openai.models.responses.ResponseInputItem.FunctionCallOutput
@@ -1354,7 +1369,43 @@ class OpenAIService(
                                 item.isMessage() -> {
                                     item.message().map { m ->
                                         m.content().forEach { c ->
-                                            val message = c.asOutputText()
+                                            val message =
+                                                try {
+                                                    c.asOutputText()
+                                                } catch (_: Throwable) {
+                                                    null
+                                                }
+
+                                            if (message == null) {
+                                                val fallbackText = c.toString()
+                                                if (fallbackText.isNotBlank()) {
+                                                    persistAndShow("assistant", managerLabel, fallbackText)
+                                                }
+                                                return@forEach
+                                            }
+
+                                            val visibleText = message.summaryMessage.ifBlank { message.ttsSummary }
+                                                .ifBlank { message.toString() }
+                                            QDLog.info(thisLogger()) {
+                                                "OpenAIService.sendMessage parsed output visibleText='${
+                                                    visibleText.take(
+                                                        200
+                                                    )
+                                                }' summary='${message.summaryMessage.take(80)}' tts='${
+                                                    message.ttsSummary.take(
+                                                        80
+                                                    )
+                                                }'"
+                                            }
+                                            if (visibleText.isNotBlank()) {
+                                                persistAndShow("assistant", managerLabel, visibleText)
+                                                try {
+                                                    messageCallback(message)
+                                                } catch (_: Throwable) {
+                                                }
+                                            } else {
+                                                QDLog.warn(thisLogger()) { "OpenAIService.sendMessage parsed empty visibleText" }
+                                            }
 
                                             // Capture draft team shaping proposals (applied only when user approves)
                                             try {
@@ -1410,6 +1461,10 @@ class OpenAIService(
 
                                                 if (!wantsTools) {
                                                     persistAndShow("assistant", managerLabel, message.summaryMessage)
+                                                    try {
+                                                        messageCallback(message)
+                                                    } catch (_: Throwable) {
+                                                    }
 
                                                     message.ttsSummary?.also { summary ->
                                                         if (!spokeThisTurn) {
@@ -1494,6 +1549,11 @@ class OpenAIService(
                                                     "nextStep=${message.nextStep} continuationCount=$continuationCount/$maxContinuations"
                                                 }
 
+                                                try {
+                                                    messageCallback(message)
+                                                } catch (_: Throwable) {
+                                                }
+
                                                 // Option 3: 3-state conversation control
                                                 if (message.nextStep?.uppercase() == "CONTINUE") {
                                                     if (continuationCount < maxContinuations) {
@@ -1519,7 +1579,11 @@ class OpenAIService(
                                 item.isImageGenerationCall() -> {}
 
                                 else -> {
-                                    thisLogger().warn("Unknown item type received.")
+                                    QDLog.warn(thisLogger()) {
+                                        "OpenAIService.sendMessage unknown item type class=${item.javaClass.name} item=${
+                                            item.toString().take(200)
+                                        }"
+                                    }
                                 }
                             }
                         }
@@ -1660,7 +1724,18 @@ class OpenAIService(
                                 e,
                             )
                         } else {
-                            thisLogger().warn("Unexpected Error: ", e)
+                            QDLog.error(thisLogger(), { "Unexpected Error" }, e)
+                            e.printStackTrace(System.err)
+                        }
+                        try {
+                            val fallback =
+                                OpenAIResponse(
+                                    summaryMessage = if (msg.isNotBlank()) msg else "Unexpected error",
+                                    ttsSummary = if (msg.isNotBlank()) msg else "Unexpected error",
+                                )
+                            QDLog.info(thisLogger()) { "OpenAIService.sendMessage fallback callback: ${fallback.summaryMessage}" }
+                            messageCallback(fallback)
+                        } catch (_: Throwable) {
                         }
                         Notifications.show(project, msg, NotificationType.ERROR)
                         break

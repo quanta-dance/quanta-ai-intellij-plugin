@@ -13,8 +13,9 @@ object Notifications {
         content: String,
         type: NotificationType = NotificationType.INFORMATION,
     ) {
-        val notificationGroup = NotificationGroupManager.getInstance().getNotificationGroup("Plugin Notifications")
-        val notification = notificationGroup.createNotification(content, type)
-        notification.notify(project)
+        val notificationGroup =
+            runCatching { NotificationGroupManager.getInstance().getNotificationGroup("Plugin Notifications") }
+                .getOrNull()
+        notificationGroup?.createNotification(content, type)?.notify(project)
     }
 }

@@ -1,16 +1,13 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.openai
 
-import com.github.quanta_dance.quanta.plugins.intellij.models.OpenAIResponse
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQuantaSettingsState
-import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.ModelSelector
+import com.github.quanta_dance.quanta.plugins.intellij.models.OpenAIResponse
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolProgressEvent
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolProgressKind
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolProgressService
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.openai.models.ChatModel
-import com.openai.models.Reasoning
-import com.openai.models.ReasoningEffort
 import com.openai.models.responses.ResponseCreateParams
 import com.openai.models.responses.ResponseInputItem
 import com.openai.models.responses.StructuredResponseCreateParams
@@ -22,11 +19,14 @@ class ResponseBuilder(private val project: Project) {
         return if (extra.isNotEmpty()) base + "\n\n# User Custom Instructions\n" + extra else base
     }
 
-    fun buildStructuredResponseParams(): StructuredResponseCreateParams<OpenAIResponse> {
-        val builder = StructuredResponseCreateParams.builder<OpenAIResponse>()
-        builder.model(ChatModel.of(ModelSelector.effectiveModel(ModelSelector.initialModel())))
-        builder.instructions(mergedInstructions())
-        return builder.build()
+    fun buildStructuredResponseParams(inputs: List<ResponseInputItem>): StructuredResponseCreateParams<OpenAIResponse> {
+        val rawParams =
+            ResponseCreateParams.builder()
+                .model(ChatModel.of(ModelSelector.effectiveModel(ModelSelector.initialModel())))
+                .instructions(mergedInstructions())
+                .inputOfResponse(inputs)
+                .build()
+        return StructuredResponseCreateParams(OpenAIResponse::class.java, rawParams)
     }
 
     fun publishProgress(toolName: String, message: String) {

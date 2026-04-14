@@ -5,6 +5,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.services
 
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
+import java.io.PrintStream
 
 object QDLog {
     private fun isDevMode(): Boolean =
@@ -50,7 +51,14 @@ object QDLog {
         msg: () -> String,
         t: Throwable? = null,
     ) {
-        if (t != null) logger.warn(msg(), t) else logger.warn(msg())
+        val text = msg()
+        if (t != null) {
+            logger.warn(text, t)
+        } else {
+            logger.warn(text)
+        }
+        kotlin.io.println(text)
+        t?.printStackTrace(PrintStream(System.err))
     }
 
     fun error(
@@ -58,6 +66,13 @@ object QDLog {
         msg: () -> String,
         t: Throwable? = null,
     ) {
-        if (t != null) logger.error(msg(), t) else logger.error(msg())
+        val text = msg()
+        if (t != null) {
+            logger.error(text, t)
+        } else {
+            logger.error(text)
+        }
+        kotlin.io.println(text)
+        t?.printStackTrace(PrintStream(System.err))
     }
 }
