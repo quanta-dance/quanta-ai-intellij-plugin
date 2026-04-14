@@ -1,4 +1,4 @@
-<idea-plugin url="https://github.com/quanta-dance/quanta-ai-intelliJ-plugin" require-restart="false">
+<idea-plugin url="https://github.com/quanta-dance/quanta-ai-intelliJ-plugin" require-restart="false" icon="/pluginIcon.svg">
     <id>com.github.quanta_dance.quanta-ai-intellij-plugin</id>
     <name>Quanta AI</name>
     <vendor url="https://github.com/quanta-dance">Quanta Dance Tech.</vendor>

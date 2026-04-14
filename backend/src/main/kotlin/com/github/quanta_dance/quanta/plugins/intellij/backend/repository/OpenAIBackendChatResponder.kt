@@ -17,6 +17,7 @@ class OpenAIBackendChatResponder(
     fun generateResponse(
         messages: List<ChatTurn>,
         systemInstructions: String = mergedInstructions(),
+        contextMessage: String? = null,
     ): String {
         val settings = BackendQuantaSettingsState.instance.settings
         apiKey = settings.openAiToken
@@ -27,7 +28,6 @@ class OpenAIBackendChatResponder(
             return "OpenAI is not configured on the backend yet. Set OPENAI_API_KEY to enable real responses."
         }
 
-
         try {
             val client =
                 OpenAIOkHttpClient.builder()
@@ -36,15 +36,14 @@ class OpenAIBackendChatResponder(
                     .maxRetries(2)
                     .build()
 
-
-        val params = buildRequest(messages, systemInstructions)
-        val text = StringBuilder()
-        client.responses().createStreaming(params).use { streamResponse ->
-            for (event in streamResponse.stream()) {
-                event.outputTextDelta().ifPresent { delta -> text.append(delta.delta()) }
+            val params = buildRequest(messages, systemInstructions, contextMessage)
+            val text = StringBuilder()
+            client.responses().createStreaming(params).use { streamResponse ->
+                for (event in streamResponse.stream()) {
+                    event.outputTextDelta().ifPresent { delta -> text.append(delta.delta()) }
+                }
             }
-        }
-        return text.toString().trim().takeIf { it.isNotBlank() } ?: "I couldn't extract a response from OpenAI."
+            return text.toString().trim().takeIf { it.isNotBlank() } ?: "I couldn't extract a response from OpenAI."
         } catch (e: Throwable) {
             println(messages.joinToString("\n"))
         }
@@ -57,7 +56,11 @@ class OpenAIBackendChatResponder(
         return if (extra.isNotEmpty()) base + "\n\n# User Custom Instructions\n" + extra else base
     }
 
-    private fun buildRequest(messages: List<ChatTurn>, systemInstructions: String): ResponseCreateParams {
+    private fun buildRequest(
+        messages: List<ChatTurn>,
+        systemInstructions: String,
+        contextMessage: String?
+    ): ResponseCreateParams {
         val input = buildList<ResponseInputItem> {
             add(
                 ResponseInputItem.ofEasyInputMessage(
@@ -67,6 +70,16 @@ class OpenAIBackendChatResponder(
                         .build(),
                 ),
             )
+            if (!contextMessage.isNullOrBlank()) {
+                add(
+                    ResponseInputItem.ofEasyInputMessage(
+                        EasyInputMessage.builder()
+                            .role(EasyInputMessage.Role.SYSTEM)
+                            .content(contextMessage)
+                            .build(),
+                    ),
+                )
+            }
             messages.forEach { turn ->
                 add(
                     ResponseInputItem.ofEasyInputMessage(

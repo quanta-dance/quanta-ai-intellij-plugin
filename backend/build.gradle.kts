@@ -38,6 +38,8 @@ dependencies {
     implementation(platform("io.modelcontextprotocol.sdk:mcp-bom:0.14.0"))
     implementation("io.modelcontextprotocol:kotlin-sdk:0.7.2")
 
+    testImplementation(kotlin("test"))
+    testImplementation("io.mockk:mockk:1.13.12")
 }
 
 kotlin {

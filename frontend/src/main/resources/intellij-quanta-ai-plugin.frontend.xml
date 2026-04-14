@@ -14,7 +14,8 @@
         <toolWindow
                 factoryClass="com.github.quanta_dance.quanta.plugins.intellij.frontend.toolwindow.QuantaFrontendToolWindowFactory"
                 id="Quanta AI"
-                anchor="right"/>
+                anchor="right"
+                icon="/icons/pluginIcon.svg"/>
         <applicationConfigurable
                 parentId="tools"
                 id="com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendQuantaPluginConfigurable"
