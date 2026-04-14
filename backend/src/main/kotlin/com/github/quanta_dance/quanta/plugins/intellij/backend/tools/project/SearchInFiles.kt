@@ -7,6 +7,9 @@ import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolProgressEvent
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolProgressKind
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolProgressService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.github.quanta_dance.quanta.plugins.intellij.tools.models.SearchInFilesResult
 import com.intellij.find.FindModel
@@ -26,6 +29,7 @@ import java.nio.file.Paths
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.jvm.java
 
 @JsonClassDescription(
     "Search for a text query across project files using IDE Find-in-Files (regex supported). " +
@@ -59,7 +63,9 @@ class SearchInFiles : ToolInterface<SearchInFilesResult> {
         if (q.isEmpty()) return SearchInFilesResult(emptyList(), modelSummary = null)
 
         try {
-            project.getService(ToolWindowService::class.java).addToolingMessage("Search in Files", "Query: $q")
+            project.getService(ToolProgressService::class.java).publish(
+                ToolProgressEvent("Search in Files", ToolProgressKind.START, "Query: $q"),
+            )
         } catch (_: Throwable) {
         }
 
@@ -207,15 +213,16 @@ class SearchInFiles : ToolInterface<SearchInFilesResult> {
             // Must NOT be inside read action
             FindInProjectUtil.findUsages(model, project, processor, presentation)
             try {
-                project.getService(ToolWindowService::class.java).addToolingMessage(
-                    "Search in Files",
-                    "Completed findUsages (mode=${if (treatAsRegex) "regex" else "literal"}): files=${fileOffsets.size}",
-                )
+                project.getService(com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService::class.java)
+                    .addToolingMessage(
+                        "Search in Files",
+                        "Completed findUsages (mode=${if (treatAsRegex) "regex" else "literal"}): files=${fileOffsets.size}",
+                    )
             } catch (_: Throwable) {
             }
         } catch (e: Throwable) {
             try {
-                project.getService(ToolWindowService::class.java)
+                project.getService(com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService::class.java)
                     .addToolingMessage("Search in Files - failed", e.message ?: "findUsages failed")
             } catch (_: Throwable) {
             }
@@ -325,10 +332,11 @@ class SearchInFiles : ToolInterface<SearchInFilesResult> {
                 display.append("$path : line ${first.line} : ${first.snippet} (matches=${matches.size})\n")
             }
             if (grouped.size > 5) display.append("...+${grouped.size - 5} more files\n")
-            project.getService(ToolWindowService::class.java).addToolingMessage("Search results", display.toString())
+            project.getService(com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService::class.java)
+                .addToolingMessage("Search results", display.toString())
         } catch (e: Throwable) {
             try {
-                project.getService(ToolWindowService::class.java)
+                project.getService(com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService::class.java)
                     .addToolingMessage("Search results - failed to prepare display", e.message ?: "display failed")
             } catch (_: Throwable) {
             }

@@ -35,7 +35,8 @@ class RunGradleTestsTool : ToolInterface<RunTestsResult> {
     var reportsDir: String? = null
 
     override fun execute(project: Project): RunTestsResult {
-        val basePath = project.basePath ?: return RunTestsResult(false, 0, 0, 0, emptyList(), null, "Project base path not found")
+        val basePath =
+            project.basePath ?: return RunTestsResult(false, 0, 0, 0, emptyList(), null, "Project base path not found")
         val tasksList = (tasks?.trim()?.takeIf { it.isNotEmpty() } ?: "test").split(" ").filter { it.isNotBlank() }
 
         val gradlewName = if (SystemInfo.isWindows) "gradlew.bat" else "gradlew"
@@ -91,7 +92,8 @@ class RunGradleTestsTool : ToolInterface<RunTestsResult> {
         // Heuristics:
         val progressRegex = Regex("^.+?>\\s*(.+?)\\s+(PASSED|FAILED|SKIPPED)\\s*$")
         val taskRegex = Regex("^>\\s*Task\\s*:(.+)$")
-        val summaryRegex = Regex("(\\d+)\\s+tests?\\s+completed,\\s+(\\d+)\\s+failed,\\s+(\\d+)\\s+skipped", RegexOption.IGNORE_CASE)
+        val summaryRegex =
+            Regex("(\\d+)\\s+tests?\\s+completed,\\s+(\\d+)\\s+failed,\\s+(\\d+)\\s+skipped", RegexOption.IGNORE_CASE)
 
         fun rebuildPanelText(): String {
             val elapsedSec = ((System.currentTimeMillis() - start) / 1000)

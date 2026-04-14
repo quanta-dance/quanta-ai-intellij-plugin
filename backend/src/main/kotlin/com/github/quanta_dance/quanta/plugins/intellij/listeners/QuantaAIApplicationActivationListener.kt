@@ -3,8 +3,8 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.listeners
 
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.OpenAIPrewarmService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.McpClientService
-import com.github.quanta_dance.quanta.plugins.intellij.services.OpenAIPrewarmService
 import com.github.quanta_dance.quanta.plugins.intellij.services.OpenAIService
 import com.github.quanta_dance.quanta.plugins.intellij.services.SessionMemoryService
 import com.intellij.openapi.components.service

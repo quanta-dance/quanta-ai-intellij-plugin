@@ -7,6 +7,9 @@ import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolProgressEvent
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolProgressKind
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolProgressService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
 import com.intellij.codeInsight.actions.OptimizeImportsProcessor

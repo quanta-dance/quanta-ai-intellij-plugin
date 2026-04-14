@@ -1,56 +1,48 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
-
 package com.github.quanta_dance.quanta.plugins.intellij.services
 
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
 
 @Service(Service.Level.PROJECT)
-class ToolWindowService(@Suppress("unused") private val project: Project) {
-    fun addToolingMessage(
-        toolName: String,
-        arguments: String,
-    ) {
+class ToolWindowService(
+    @Suppress("unused") private val project: Project,
+) {
+    class ToolExecHandle {
+        fun setText(@Suppress("unused") text: String) = Unit
+
+        fun stopSuccess() = Unit
+
+        fun stopError(@Suppress("unused") errorText: String) = Unit
     }
 
-    fun startToolingMessage(
-        toolName: String,
-        arguments: String,
-    ): SpinnerHandle {
-        addToolingMessage(toolName, arguments)
-        return SpinnerHandle()
-    }
+    fun addToolingMessage(
+        @Suppress("unused") toolName: String,
+        @Suppress("unused") arguments: String,
+    ) = Unit
+
+    fun addImage(
+        @Suppress("unused") title: String,
+        @Suppress("unused") url: String,
+    ) = Unit
+
+    fun addSuggestions(@Suppress("unused") suggestions: List<com.github.quanta_dance.quanta.plugins.intellij.models.Suggestion>?) =
+        Unit
 
     fun addDebugMessage(
-        tag: String,
-        text: String,
-    ) {
-    }
+        @Suppress("unused") tag: String,
+        @Suppress("unused") text: String,
+    ) = Unit
 
-    fun addSuggestions(suggestions: List<com.github.quanta_dance.quanta.plugins.intellij.models.Suggestion>) {
-    }
+    fun clear() = Unit
 
-    fun addImage(title: String, url: String) {
-    }
+    fun startToolingMessage(
+        @Suppress("unused") toolName: String,
+        @Suppress("unused") initialText: String,
+    ): ToolExecHandle = ToolExecHandle()
 
-    fun stopSuccess(text: String = "") {
-    }
+    fun startSpinner(@Suppress("unused") text: String): ToolExecHandle = ToolExecHandle()
 
-    fun stopError(text: String = "") {
-    }
+    fun setToolWindowFactory(@Suppress("unused") toolPanel: Any) = Unit
 
-    fun setText(text: String = "") {
-    }
-
-    fun startSpinner(text: String): SpinnerHandle = SpinnerHandle()
-
-    class SpinnerHandle {
-        fun stopSuccess(text: String = "") {}
-        fun stopError(text: String = "") {}
-        fun setText(text: String = "") {}
-    }
-
-    fun clear() {
-    }
+    fun addUserMessage(@Suppress("unused") message: String): Any? = null
 }
