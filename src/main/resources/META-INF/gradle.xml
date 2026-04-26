@@ -1,0 +1,5 @@
+<!-- Optional Gradle integration for Quanta AI.
+     This file is loaded only when the Gradle plugin (com.intellij.gradle) is present. -->
+<idea-plugin>
+    <!-- No Gradle-specific extension points are required at the moment. -->
+</idea-plugin>

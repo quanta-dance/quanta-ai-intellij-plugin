@@ -15,9 +15,10 @@ class QuantaAIApplicationActivationListener : ProjectActivity {
         // Prewarm OpenAI client and DNS on project open to reduce first-turn latency
         project.service<OpenAIPrewarmService>().prewarm()
 
-        // Start a new AI session on project open to avoid stale threads and keep manager/sub-agents in sync
+        // Reset server-side thread pointers on project open to avoid stale threads,
+        // but preserve persisted chat history and tool window restore.
         try {
-            project.service<OpenAIService>().newSession()
+            project.service<OpenAIService>().resetThreadStatePreservingHistory()
         } catch (_: Throwable) {
         }
 

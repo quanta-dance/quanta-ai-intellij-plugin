@@ -15,7 +15,7 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import java.io.BufferedInputStream
 import java.io.FileOutputStream
-import java.net.URL
+import java.net.URI
 
 @JsonClassDescription("Generate image with provided prompt")
 class GenerateImage : ToolInterface<String> {
@@ -63,14 +63,15 @@ class GenerateImage : ToolInterface<String> {
                     try {
                         PathUtils.resolveWithinProject(projectBase, fp)
                     } catch (e: IllegalArgumentException) {
-                        project.service<ToolWindowService>()
+                        project
+                            .service<ToolWindowService>()
                             .addToolingMessage("Save Image - rejected", e.message ?: "Invalid path")
                         QDLog.warn(logger, { "Invalid path for GenerateImage: $fp" }, e)
                         throw e
                     }
 
                 // download the URL
-                BufferedInputStream(URL(url).openStream()).use { bis ->
+                BufferedInputStream(URI(url).toURL().openStream()).use { bis ->
                     val ioFile = resolved.toFile()
                     ioFile.parentFile?.let { parent -> if (!parent.exists()) parent.mkdirs() }
                     FileOutputStream(ioFile).use { fos ->

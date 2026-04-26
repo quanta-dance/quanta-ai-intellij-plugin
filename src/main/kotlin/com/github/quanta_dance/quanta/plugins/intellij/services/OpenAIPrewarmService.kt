@@ -10,14 +10,15 @@ import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
 import com.openai.client.OpenAIClient
 import java.net.URI
-import java.net.URL
 import java.util.concurrent.Executors
 
 /**
  * DNS/connection prewarm helper: resolves API host and initializes the OpenAI client off the UI thread.
  */
 @Service(Service.Level.PROJECT)
-class OpenAIPrewarmService(private val project: Project) {
+class OpenAIPrewarmService(
+    private val project: Project,
+) {
     private val executor = Executors.newSingleThreadExecutor { r -> Thread(r, "openai-prewarm") }
 
     fun prewarm() {
@@ -32,7 +33,8 @@ class OpenAIPrewarmService(private val project: Project) {
                     }
                 val host =
                     uri?.host ?: try {
-                        URL(hostUrl).host
+                        // Try adding https scheme if bare host provided
+                        URI("https://$hostUrl").host
                     } catch (_: Throwable) {
                         null
                     }

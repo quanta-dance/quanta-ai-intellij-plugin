@@ -30,6 +30,15 @@ class QuantaAISettingsState : PersistentStateComponent<QuantaAISettingsState.Qua
         var previousId: String? = null,
     )
 
+    // Persisted inbox message structure (agent-to-agent / manager-to-agent notifications)
+    data class AgentInboxMessage(
+        var timestamp: Long = System.currentTimeMillis(),
+        var from: String? = null,
+        var text: String = "",
+        // e.g. "notification" | "roster_update"
+        var kind: String? = null,
+    )
+
     // default configuration
     data class QuantaAIState(
         var host: String = DEFAULT_HOST,
@@ -48,15 +57,38 @@ class QuantaAISettingsState : PersistentStateComponent<QuantaAISettingsState.Qua
         // Persistence for main and agents conversations
         var mainLastResponseId: String? = null,
         var agents: MutableList<PersistedAgent> = mutableListOf(),
+        // Stored conversations keyed by conversation id (e.g., "main@<branch>")
+        var conversations: MutableMap<String, MutableList<PersistedMessage>> = mutableMapOf(),
+        // Optional rolling summaries per conversation key (used to keep context small)
+        var conversationSummaries: MutableMap<String, String> = mutableMapOf(),
+        // Per-agent inboxes (asynchronous notifications). Key: agentId
+        var agentInboxes: MutableMap<String, MutableList<AgentInboxMessage>> = mutableMapOf(),
+        // Developer-only: show additional debug details in the tool window UI (default off)
+        var debugEnabled: Boolean = false,
+        // Max automatic turns (CONTINUE loops) allowed per user turn. Clamped to [1..100].
+        var maxAutomaticTurns: Int = 10,
+        // UX: when enabled, the IDE will focus/navigate to files after AI changes or suggestion clicks.
+        // When disabled, changes still apply but the editor focus/caret should not jump automatically.
+        var followEnabled: Boolean = true,
         // Security: Terminal tool availability (default disabled)
         var terminalToolEnabled: Boolean? = false,
+        // Security: allowed terminal command prefixes (strict token-prefix match), comma-separated.
+        // Each entry may contain spaces. Examples: "git status", "git diff", "git add", "git commit", "./gradlew"
+        var terminalAllowedCommandsCsv: String = "git status,git diff,git add,git commit",
+    )
+
+    // Persisted message structure
+    data class PersistedMessage(
+        var timestamp: Long = System.currentTimeMillis(),
+        // "user" | "assistant" | "system"
+        var role: String = "",
+        var text: String = "",
+        var responseId: String? = null,
     )
 
     private var state = QuantaAIState()
 
-    override fun getState(): QuantaAIState {
-        return state
-    }
+    override fun getState(): QuantaAIState = state
 
     override fun loadState(state: QuantaAIState) {
         this.state = state

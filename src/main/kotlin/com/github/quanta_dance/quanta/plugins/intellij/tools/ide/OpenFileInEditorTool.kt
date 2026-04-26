@@ -6,6 +6,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.tools.ide
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
+import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState
 import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
 import com.github.quanta_dance.quanta.plugins.intellij.tools.ToolInterface
 import com.intellij.openapi.application.ApplicationManager
@@ -109,7 +110,10 @@ class OpenFileInEditorTool : ToolInterface<String> {
                     } else {
                         OpenFileDescriptor(project, vFile, 0)
                     }
-                val editor = FileEditorManager.getInstance(project).openTextEditor(descriptor, focus)
+                val followEnabled = QuantaAISettingsState.instance.state.followEnabled
+                val effectiveFocus = focus && followEnabled
+                val editor = FileEditorManager.getInstance(project).openTextEditor(descriptor, effectiveFocus)
+
                 opened = editor != null
 
                 if (editor != null && wantSelection) {

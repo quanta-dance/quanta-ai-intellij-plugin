@@ -43,7 +43,11 @@ object DynamicMcpToolProvider {
 
                 val description =
                     buildString {
-                        append("MCP method '").append(method).append("' on server '").append(server).append("'. ")
+                        append("MCP method '")
+                            .append(method)
+                            .append("' on server '")
+                            .append(server)
+                            .append("'. ")
                         t.description?.let { if (it.isNotBlank()) append(it).append(' ') }
                     }
 
@@ -54,18 +58,19 @@ object DynamicMcpToolProvider {
                 }
 
                 val fnTool =
-                    FunctionTool.builder()
+                    FunctionTool
+                        .builder()
                         .name(fnName)
                         .description(description)
                         .parameters(
-                            FunctionTool.Parameters.builder()
+                            FunctionTool.Parameters
+                                .builder()
                                 .putAdditionalProperty("type", JsonValue.from("object"))
                                 .putAdditionalProperty("properties", JsonValue.from(map))
                                 .putAdditionalProperty("required", JsonValue.from(t.inputSchema.required.orEmpty()))
                                 .putAdditionalProperty("additionalProperties", JsonValue.from(false))
                                 .build(),
-                        )
-                        .strict(false)
+                        ).strict(false)
                         .build()
 
                 try {
@@ -79,9 +84,7 @@ object DynamicMcpToolProvider {
         return out
     }
 
-    fun jsonElementToJsonNode(elem: JsonElement): JsonNode {
-        return jacksonObjectMapper().readTree(elem.toString())
-    }
+    fun jsonElementToJsonNode(elem: JsonElement): JsonNode = jacksonObjectMapper().readTree(elem.toString())
 
     fun resolve(name: String): Pair<String, String>? = nameMap[name]
 }

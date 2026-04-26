@@ -10,7 +10,6 @@ import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowServic
 import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
 import com.github.quanta_dance.quanta.plugins.intellij.tools.ToolInterface
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.application.WriteIntentReadAction
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileEditor.FileDocumentManager
@@ -69,7 +68,8 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
             try {
                 PathUtils.resolveWithinProject(base, rel).toFile()
             } catch (e: IllegalArgumentException) {
-                project.service<ToolWindowService>()
+                project
+                    .service<ToolWindowService>()
                     .addToolingMessage("ReadPsiBlockAtPosition - invalid path", e.message ?: "Invalid path")
                 return err(e.message ?: "Invalid path")
             }
@@ -89,7 +89,7 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
 
             val psiDocMgr = PsiDocumentManager.getInstance(project)
             if (!psiDocMgr.isCommitted(doc)) {
-                WriteIntentReadAction.run<RuntimeException> {
+                ApplicationManager.getApplication().runWriteAction {
                     try {
                         psiDocMgr.commitDocument(doc)
                     } catch (_: Throwable) {
@@ -154,7 +154,11 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
         return text.lines().mapIndexed { i, line -> "%05d %s".format(base + i, line) }.joinToString("\n")
     }
 
-    private data class Window(val text: String, val firstLine: Int, val lastLine: Int)
+    private data class Window(
+        val text: String,
+        val firstLine: Int,
+        val lastLine: Int,
+    )
 
     private fun windowAroundOffset(
         raw: String,
@@ -234,10 +238,19 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
         }
 
         return when (prefer) {
-            "function" -> ktFunction?.let { parentOfType(it) }?.let { it to "function" } ?: firstMatchAuto()
-            "method" -> psiMethod?.let { parentOfType(it) }?.let { it to "method" } ?: firstMatchAuto()
-            "class" -> (ktClass?.let { parentOfType(it) } ?: psiClass?.let { parentOfType(it) })?.let { it to "class" } ?: firstMatchAuto()
-            "field" ->
+            "function" -> {
+                ktFunction?.let { parentOfType(it) }?.let { it to "function" } ?: firstMatchAuto()
+            }
+
+            "method" -> {
+                psiMethod?.let { parentOfType(it) }?.let { it to "method" } ?: firstMatchAuto()
+            }
+
+            "class" -> {
+                (ktClass?.let { parentOfType(it) } ?: psiClass?.let { parentOfType(it) })?.let { it to "class" } ?: firstMatchAuto()
+            }
+
+            "field" -> {
                 (
                     ktProperty?.let {
                         parentOfType(
@@ -245,8 +258,15 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
                         )
                     } ?: psiField?.let { parentOfType(it) }
                 )?.let { it to "field" } ?: firstMatchAuto()
-            "object" -> ktObject?.let { parentOfType(it) }?.let { it to "object" } ?: firstMatchAuto()
-            else -> firstMatchAuto()
+            }
+
+            "object" -> {
+                ktObject?.let { parentOfType(it) }?.let { it to "object" } ?: firstMatchAuto()
+            }
+
+            else -> {
+                firstMatchAuto()
+            }
         }
     }
 

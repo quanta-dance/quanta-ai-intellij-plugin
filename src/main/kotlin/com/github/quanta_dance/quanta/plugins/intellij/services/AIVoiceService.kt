@@ -88,7 +88,7 @@ class AIVoiceService(private val project: Project) {
             SpeechCreateParams.builder()
                 .input(message)
                 .model(SpeechModel.GPT_4O_MINI_TTS)
-                .voice(SpeechCreateParams.Voice.ASH)
+                .voice(SpeechCreateParams.Voice.UnionMember1.ASH)
                 .responseFormat(SpeechCreateParams.ResponseFormat.MP3)
                 .build()
         return client.async().audio().speech().create(params).thenAcceptAsync { response ->

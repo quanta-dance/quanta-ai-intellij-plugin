@@ -232,6 +232,208 @@ class PatchFilePlatformTest : BasePlatformTestCase() {
         assertEquals(listOf("AA", "b", "CC", "DD"), lines.take(4))
     }
 
+    fun testExpectedTextIgnoresTrailingWhitespace() {
+        val initial =
+            """
+            |alpha
+            |beta
+            |gamma
+            """.trimMargin()
+        val psi = createUnderProject("src/W.kt", initial)
+        commitAndSave(psi)
+        val doc = PsiDocumentManager.getInstance(project).getDocument(psi)!!
+
+        val tool =
+            com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile().apply {
+                filePath = "src/W.kt"
+                patches =
+                    listOf(
+                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                            fromLine = 2,
+                            toLine = 2,
+                            newContent = "BETA",
+                            // current line is "beta"; expectedText includes trailing spaces which should be ignored
+                            expectedText = "beta   \t",
+                        ),
+                    )
+                expectedFileHashSha256 = normalizedSha256(doc.text)
+                stopOnMismatch = true
+                validateAfterUpdate = false
+            }
+
+        val res = tool.execute(project)
+        commitAndSave(psi)
+        assertTrue(res.contains("Patched 1 range(s)"), "Patch should apply despite trailing whitespace in expectedText: $res")
+        assertEquals(listOf("alpha", "BETA", "gamma"), doc.text.split("\n").take(3))
+    }
+
+    fun testExpectedTextIgnoresDocumentTrailingWhitespace() {
+        val initial = "alpha\n" + "beta   \t\n" + "gamma\n"
+        val psi = createUnderProject("src/W2.kt", initial)
+        commitAndSave(psi)
+        val doc = PsiDocumentManager.getInstance(project).getDocument(psi)!!
+
+        val tool =
+            com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile().apply {
+                filePath = "src/W2.kt"
+                patches =
+                    listOf(
+                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                            fromLine = 2,
+                            toLine = 2,
+                            newContent = "BETA",
+                            expectedText = "beta",
+                        ),
+                    )
+                expectedFileHashSha256 = normalizedSha256(doc.text)
+                stopOnMismatch = true
+                validateAfterUpdate = false
+            }
+
+        val res = tool.execute(project)
+        commitAndSave(psi)
+        assertTrue(res.contains("Patched 1 range(s)"), "Patch should apply despite trailing whitespace in document: $res")
+        assertEquals(listOf("alpha", "BETA", "gamma"), doc.text.split("\n").take(3))
+    }
+
+    fun testExpectedTextStillStrictForLeadingAndInternalWhitespace() {
+        val initial =
+            """
+            |val x = 1
+            |val y = 2
+            """.trimMargin()
+        val psi = createUnderProject("src/W3.kt", initial)
+        commitAndSave(psi)
+        val doc = PsiDocumentManager.getInstance(project).getDocument(psi)!!
+
+        val tool =
+            com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile().apply {
+                filePath = "src/W3.kt"
+                patches =
+                    listOf(
+                        // internal whitespace difference should still mismatch
+                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                            fromLine = 1,
+                            toLine = 1,
+                            newContent = "VAL X = 1",
+                            expectedText = "val  x = 1",
+                        ),
+                        // leading whitespace difference should still mismatch
+                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                            fromLine = 2,
+                            toLine = 2,
+                            newContent = "VAL Y = 2",
+                            expectedText = "  val y = 2",
+                        ),
+                    )
+                expectedFileHashSha256 = normalizedSha256(doc.text)
+                stopOnMismatch = true
+                validateAfterUpdate = false
+            }
+
+        val res = tool.execute(project)
+        commitAndSave(psi)
+        assertTrue(res.contains("mismatch") && res.contains("Aborted"), "Should still abort on leading/internal whitespace mismatch: $res")
+        assertEquals(initial, doc.text)
+    }
+
+    fun testExpectedTextNormalizesCrlfVsLf() {
+        // Create content with CRLF endings
+        val initial = "a\r\n" + "b\r\n" + "c\r\n"
+        val psi = createUnderProject("src/W4.kt", initial)
+        commitAndSave(psi)
+        val doc = PsiDocumentManager.getInstance(project).getDocument(psi)!!
+
+        val tool =
+            com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile().apply {
+                filePath = "src/W4.kt"
+                patches =
+                    listOf(
+                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                            fromLine = 2,
+                            toLine = 2,
+                            newContent = "B",
+                            expectedText = "b",
+                        ),
+                    )
+                expectedFileHashSha256 = normalizedSha256(doc.text)
+                stopOnMismatch = true
+                validateAfterUpdate = false
+            }
+
+        val res = tool.execute(project)
+        commitAndSave(psi)
+        assertTrue(res.contains("Patched 1 range(s)"), "Patch should apply across CRLF/LF normalization: $res")
+        assertEquals(listOf("a", "B", "c"), doc.text.split("\n").take(3))
+    }
+
+    fun testSoftWindowRelocatesWhenLinesShiftBetweenCalls() {
+        val initial =
+            """
+            |one
+            |two
+            |three
+            |four
+            """.trimMargin()
+        val psi = createUnderProject("src/Shift.kt", initial)
+        commitAndSave(psi)
+        val doc = PsiDocumentManager.getInstance(project).getDocument(psi)!!
+
+        // Call #1: insert a new top line by replacing line 1 with two lines.
+        val tool1 =
+            com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile().apply {
+                filePath = "src/Shift.kt"
+                patches =
+                    listOf(
+                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                            fromLine = 1,
+                            toLine = 1,
+                            newContent = "ZERO\none",
+                            expectedText = "one",
+                        ),
+                    )
+                expectedFileHashSha256 = normalizedSha256(doc.text)
+                stopOnMismatch = true
+                validateAfterUpdate = false
+            }
+        val res1 = tool1.execute(project)
+        commitAndSave(psi)
+        assertTrue(res1.contains("Patched 1 range(s)"), "First patch should apply: $res1")
+
+        // Now the file is shifted by +1 line. We simulate a stale patch request that still targets old line 3 ("three").
+        val tool2 =
+            com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile().apply {
+                filePath = "src/Shift.kt"
+                patches =
+                    listOf(
+                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                            // stale: original "three" was line 3, but is now line 4
+                            fromLine = 3,
+                            toLine = 3,
+                            newContent = "THREE",
+                            expectedText = "three",
+                        ),
+                    )
+                // do not require file hash match; rely on smart expectedText relocation
+                expectedFileHashSha256 = normalizedSha256("force mismatch")
+                allowProceedIfGuardsMatch = true
+                stopOnMismatch = true
+                validateAfterUpdate = false
+                softWindowRadiusLines = 10
+                // Relax relocation gating for this test: expectedText is short/single-line
+                requireMultilineExpectedTextForRelocation = false
+                minExpectedTextCharsForRelocation = 1
+            }
+        val res2 = tool2.execute(project)
+        commitAndSave(psi)
+
+        assertTrue(res2.contains("Patched 1 range(s)"), "Second patch should apply via relocation: $res2")
+        assertTrue(res2.contains("Relocations"), "Result should mention relocation: $res2")
+
+        val lines = doc.text.split("\n")
+        assertEquals(listOf("ZERO", "one", "two", "THREE", "four"), lines.take(5))
+    }
+
     fun testStartLineBeyondDocumentSkippedWhenAllowed() {
         val initial =
             """

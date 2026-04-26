@@ -49,7 +49,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.seconds
 
 @Service(Service.Level.PROJECT)
-class McpClientService(private val project: Project) : Disposable {
+class McpClientService(
+    private val project: Project,
+) : Disposable {
     private val log = Logger.getInstance(McpClientService::class.java)
 
     @Volatile
@@ -304,9 +306,17 @@ class McpClientService(private val project: Project) : Disposable {
                         StreamableHttpClientTransport(httpClient, url = url)
                     }
 
-                    scheme == "ws" || scheme == "wss" -> WebSocketClientTransport(httpClient, url)
-                    scheme == "http" || scheme == "https" -> StreamableHttpClientTransport(httpClient, url = url)
-                    else -> error("Unsupported URL scheme: $scheme")
+                    scheme == "ws" || scheme == "wss" -> {
+                        WebSocketClientTransport(httpClient, url)
+                    }
+
+                    scheme == "http" || scheme == "https" -> {
+                        StreamableHttpClientTransport(httpClient, url = url)
+                    }
+
+                    else -> {
+                        error("Unsupported URL scheme: $scheme")
+                    }
                 }
 
             runBlocking { client.connect(transport) }
@@ -400,13 +410,14 @@ class McpClientService(private val project: Project) : Disposable {
             if (v == null || expectedType == null) return@forEach
             try {
                 when (expectedType) {
-                    "number", "integer" ->
+                    "number", "integer" -> {
                         if (v is String) {
                             val num = extractFirstNumber(v)
                             if (num != null) args[key] = if (expectedType == "integer") num.toLong() else num.toDouble()
                         }
+                    }
 
-                    "boolean" ->
+                    "boolean" -> {
                         if (v is String) {
                             val b =
                                 when (v.trim().lowercase()) {
@@ -416,8 +427,11 @@ class McpClientService(private val project: Project) : Disposable {
                                 }
                             if (b != null) args[key] = b
                         }
+                    }
 
-                    "string" -> if (v is Number || v is Boolean) args[key] = v.toString()
+                    "string" -> {
+                        if (v is Number || v is Boolean) args[key] = v.toString()
+                    }
                 }
             } catch (_: Throwable) {
             }
@@ -481,15 +495,17 @@ class McpClientService(private val project: Project) : Disposable {
             val duration = System.currentTimeMillis() - started
             val contents = result?.content ?: emptyList()
             val text =
-                contents.mapNotNull {
-                    try {
-                        val cls = it::class.java
-                        val getter = cls.methods.firstOrNull { m -> m.name == "getText" && m.parameterCount == 0 }
-                        getter?.invoke(it) as? String
-                    } catch (_: Throwable) {
-                        null
-                    }
-                }.joinToString("\n").trim()
+                contents
+                    .mapNotNull {
+                        try {
+                            val cls = it::class.java
+                            val getter = cls.methods.firstOrNull { m -> m.name == "getText" && m.parameterCount == 0 }
+                            getter?.invoke(it) as? String
+                        } catch (_: Throwable) {
+                            null
+                        }
+                    }.joinToString("\n")
+                    .trim()
             project.service<ToolWindowService>().addToolingMessage(
                 "MCP $server.$toolName",
                 "Completed in ${duration}ms. Args: ${
@@ -502,7 +518,8 @@ class McpClientService(private val project: Project) : Disposable {
             )
             text.ifEmpty { "MCP call $server.$toolName returned no textual content" }
         } catch (_: TimeoutCancellationException) {
-            project.service<ToolWindowService>()
+            project
+                .service<ToolWindowService>()
                 .addToolingMessage("MCP $server.$toolName", "Timed out after ${timeoutMs}ms")
             "MCP call timed out after ${timeoutMs}ms"
         } catch (e: Exception) {

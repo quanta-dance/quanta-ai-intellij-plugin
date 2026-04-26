@@ -7,6 +7,7 @@ import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
+import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState
 import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
 import com.github.quanta_dance.quanta.plugins.intellij.tools.ToolInterface
 import com.intellij.codeInsight.actions.OptimizeImportsProcessor
@@ -25,6 +26,7 @@ import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiManager
 import com.intellij.psi.codeStyle.CodeStyleManager
 import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 
 @JsonClassDescription(
     "Create or Update specified file. Supports full replacement via 'content' or partial line-range updates via 'patches'. " +
@@ -71,10 +73,10 @@ class CreateOrUpdateFile : ToolInterface<String> {
     var stopOnMismatch: Boolean = true
 
     @field:JsonPropertyDescription(
-        "Optional expected file version before patching (PSI/Document/VFS). " +
-            "If differs, no changes are applied.",
+        "Optional expected SHA-256 hash of normalized file content (\\r\\n/\\r -> \\n)." +
+            " If provided and matches current, patches can proceed.",
     )
-    var expectedFileVersion: Long? = null
+    var expectedFileHashSha256: String? = null
 
     // PSI post-processing
     @field:JsonPropertyDescription("If true, reformat the PSI file after update.")
@@ -85,6 +87,12 @@ class CreateOrUpdateFile : ToolInterface<String> {
 
     companion object {
         private val logger = Logger.getInstance(CreateOrUpdateFile::class.java)
+    }
+
+    private fun sha256Normalized(text: String): String {
+        val norm = text.replace("\r\n", "\n").replace("\r", "\n")
+        val md = MessageDigest.getInstance("SHA-256")
+        return md.digest(norm.toByteArray()).joinToString("") { b -> "%02x".format(b) }
     }
 
     private fun flushPsiAndVfs(
@@ -125,7 +133,8 @@ class CreateOrUpdateFile : ToolInterface<String> {
             try {
                 PathUtils.resolveWithinProject(projectBase, filePath)
             } catch (e: IllegalArgumentException) {
-                project.service<ToolWindowService>()
+                project
+                    .service<ToolWindowService>()
                     .addToolingMessage("Modify File - rejected", e.message ?: "Invalid path")
                 QDLog.warn(logger, { "Invalid path for CreateOrUpdateFile: $filePath" }, e)
                 return e.message ?: "Invalid path"
@@ -140,7 +149,8 @@ class CreateOrUpdateFile : ToolInterface<String> {
                     patches = patchList.map { p -> PatchFile.Patch(p.fromLine, p.toLine, p.newContent, p.expectedText) }
                     validateAfterUpdate = this@CreateOrUpdateFile.validateAfterUpdate
                     stopOnMismatch = this@CreateOrUpdateFile.stopOnMismatch
-                    expectedFileVersion = this@CreateOrUpdateFile.expectedFileVersion
+                    expectedFileHashSha256 = this@CreateOrUpdateFile.expectedFileHashSha256
+
                     reformatAfterUpdate = this@CreateOrUpdateFile.reformatAfterUpdate
                     optimizeImportsAfterUpdate = this@CreateOrUpdateFile.optimizeImportsAfterUpdate
                 }
@@ -154,7 +164,7 @@ class CreateOrUpdateFile : ToolInterface<String> {
         }
 
         var result: String = "File successfully updated"
-        var lastModified: Long = 0
+        var fileHashSha256: String? = null
         var updatedVirtualFile: VirtualFile? = null
 
         ApplicationManager.getApplication().invokeAndWait {
@@ -177,7 +187,8 @@ class CreateOrUpdateFile : ToolInterface<String> {
                     if (document != null) {
                         try {
                             document.setText(content ?: "")
-                            PsiDocumentManager.getInstance(project)
+                            PsiDocumentManager
+                                .getInstance(project)
                                 .commitDocument(document)
                             FileDocumentManager.getInstance().saveDocument(document)
                         } catch (e: Throwable) {
@@ -205,15 +216,25 @@ class CreateOrUpdateFile : ToolInterface<String> {
                     }
 
                     try {
-                        FileEditorManager.getInstance(project)
-                            .openTextEditor(OpenFileDescriptor(project, virtualFile), true)
+                        val focus = QuantaAISettingsState.instance.state.followEnabled
+                        FileEditorManager
+                            .getInstance(project)
+                            .openTextEditor(OpenFileDescriptor(project, virtualFile), focus)
                     } catch (_: Throwable) {
                     }
+
                     project.service<ToolWindowService>().addToolingMessage("File updated", relToBase)
-                    lastModified = psiFile?.modificationStamp ?: 0
+                    try {
+                        val currentText =
+                            FileDocumentManager.getInstance().getDocument(virtualFile)?.text
+                                ?: virtualFile.inputStream.use { it.readBytes().toString(StandardCharsets.UTF_8) }
+                        fileHashSha256 = sha256Normalized(currentText)
+                    } catch (_: Throwable) {
+                    }
                 } catch (e: Throwable) {
                     QDLog.warn(logger, { "Failed to update file $relToBase" }, e)
-                    project.service<ToolWindowService>()
+                    project
+                        .service<ToolWindowService>()
                         .addToolingMessage("Modify File - failed", e.message ?: "Write action failed")
                     throw e
                 }
@@ -225,7 +246,8 @@ class CreateOrUpdateFile : ToolInterface<String> {
                 flushPsiAndVfs(project, updatedVirtualFile)
             } else {
                 PsiDocumentManager.getInstance(project).commitAllDocuments()
-                FileDocumentManager.getInstance()
+                FileDocumentManager
+                    .getInstance()
                     .saveAllDocuments()
                 val ioFile = resolved.toFile()
                 val vFile = LocalFileSystem.getInstance().refreshAndFindFileByIoFile(ioFile)
@@ -248,15 +270,20 @@ class CreateOrUpdateFile : ToolInterface<String> {
         if (validateAfterUpdate) {
             result += "\n" + runPsiValidation(project, relToBase)
         }
-        QDLog.info(logger) { "Update file $relToBase: $result, file version: $lastModified" }
+        if (!fileHashSha256.isNullOrBlank()) {
+            result += "\nfileHashSha256=$fileHashSha256"
+        }
+        QDLog.info(logger) {
+            "Update file $relToBase: $result, fileHashSha256=${fileHashSha256 ?: ""}"
+        }
         return result
     }
 
     private fun runPsiValidation(
         project: Project,
         relToBase: String,
-    ): String {
-        return try {
+    ): String =
+        try {
             val validator = ValidateClassFileTool().apply { filePath = relToBase }
             val errors =
                 ApplicationManager.getApplication().runReadAction<List<String>> { validator.findErrors(project) }
@@ -275,5 +302,4 @@ class CreateOrUpdateFile : ToolInterface<String> {
             QDLog.warn(logger, { "Validation unavailable for $relToBase" }, e)
             "Validation: skipped (${e.message})"
         }
-    }
 }

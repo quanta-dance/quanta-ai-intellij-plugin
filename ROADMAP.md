@@ -105,7 +105,7 @@ Contributions welcome: If you want to pick up an item, please open/claim an issu
   - [x] Overlap detection (rejectOverlappingPatches=true by default) to avoid ambiguous edits.
 
 - Threading
-  - [x] Respect IntelliJ read/write action rules; commit documents safely (WriteIntentReadAction when required).
+  - [x] Respect IntelliJ read/write action rules; commit documents safely.
 
 ## How to Contribute
 

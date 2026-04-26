@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.github.quanta_dance.quanta.plugins.intellij.tools.ToolInterface
 import com.intellij.openapi.components.service
+import com.intellij.openapi.externalSystem.importing.ImportSpecBuilder
 import com.intellij.openapi.externalSystem.service.execution.ProgressExecutionMode
 import com.intellij.openapi.externalSystem.util.ExternalSystemUtil
 import com.intellij.openapi.project.Project
@@ -33,13 +34,18 @@ class GradleSyncTool : ToolInterface<String> {
         }
 
         linked.forEach { path ->
-            ExternalSystemUtil.refreshProject(
-                project,
-                GradleConstants.SYSTEM_ID,
-                path,
-                refreshDependencies,
-                ProgressExecutionMode.IN_BACKGROUND_ASYNC,
-            )
+            val specBuilder =
+                ImportSpecBuilder(project, GradleConstants.SYSTEM_ID)
+                    .use(ProgressExecutionMode.IN_BACKGROUND_ASYNC)
+                    .withPreviewMode(false)
+                    .withImportProjectData(true)
+
+            if (refreshDependencies) {
+                // Gradle import args; best-effort to refresh dependency resolution.
+                specBuilder.withArguments("--refresh-dependencies")
+            }
+
+            ExternalSystemUtil.refreshProject(path, specBuilder)
         }
         project.service<ToolWindowService>().addToolingMessage("Gradle Sync", "Queued sync for ${linked.size} project(s) in background")
         return "Queued Gradle sync for ${linked.size} project(s) in background."

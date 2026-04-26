@@ -7,6 +7,8 @@ import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.quanta_dance.quanta.plugins.intellij.mcp.DynamicMcpToolProvider
 import com.github.quanta_dance.quanta.plugins.intellij.mcp.McpClientService
+import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
+import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.github.quanta_dance.quanta.plugins.intellij.services.ui.Notifications
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.components.service
@@ -23,6 +25,12 @@ class ToolRouter(
 
     fun route(functionCall: ResponseFunctionToolCall): Any {
         val name = functionCall.name()
+        try {
+            QDLog.debug(log) { "Tool route: name=$name" }
+            project.service<ToolWindowService>().addDebugMessage("tool_route", "name=$name")
+        } catch (_: Throwable) {
+        }
+
         // Try dynamic MCP resolution (name is the tool id as exposed to OpenAI)
         DynamicMcpToolProvider.resolve(name)?.let { (server, method) ->
             val argsJson = functionCall.arguments()
@@ -52,6 +60,10 @@ class ToolRouter(
                 else -> result
             }
         } catch (e: Throwable) {
+            try {
+                QDLog.warn(log, { "Tool call failed: name=${functionCall.name()} err=${e.message}" }, e)
+            } catch (_: Throwable) {
+            }
             log.error("Tool '${functionCall.name()}' failed: ${e.message}", e)
             Notifications.show(project, e.message.orEmpty(), NotificationType.ERROR)
             mapOf("status" to "error", "tool" to functionCall.name(), "code" to "unhandled_exception")

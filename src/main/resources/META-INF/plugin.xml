@@ -1,5 +1,5 @@
 <!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
-<idea-plugin url="https://github.com/quanta-dance/quanta-ai-intelliJ-plugin" require-restart="false">
+<idea-plugin url="https://github.com/quanta-dance/quanta-ai-intellij-plugin" require-restart="false">
     <!-- Unique identifier of the plugin. It should be FQN. It cannot be changed between the plugin versions. -->
     <id>com.github.quanta_dance.quanta-ai-intellij-plugin</id>
 
@@ -42,6 +42,25 @@
   ]]></description>
 
     <change-notes><![CDATA[
+      <h3>Unreleased</h3>
+      <ul>
+        <li>Wired AGENTS.md into new-session startup for main chat (OpenAIService) and agent sessions (AgentManagerService) so agents receive project instructions immediately.</li>
+        <li>Added ReadFileContent enhancements: fromLine/toLine parameters and platform tests to allow focused file slices and safer truncation behavior.</li>
+        <li>Implemented request-level safety and instrumentation in OpenAIService: request logging, budgeting (trim request inputs), and proactive summarization to avoid context-window errors.</li>
+        <li>Agentic proactive summarization: per-agent transcript persistence, rolling summaries, and one-time soft-reset-and-retry on context-window errors.</li>
+        <li>Added new tools and patch behavior: PatchFile guards (SHA-only), bottom-to-top application, overlap detection, and optional reformat/optimize imports after updates.</li>
+        <li>New tool: ReadPsiBlockAtPosition — returns enclosing function/method/class/field/object with structured metadata for targeted analysis.</li>
+      </ul>
+
+      <h3>Recent (since last release)</h3>
+      <ul>
+        <li>Updated OpenAI client and various dependency improvements.</li>
+        <li>UI updates: follow plan and choose model buttons; plan and subagents features; configurable terminal commands.</li>
+        <li>Token and debugging features: token counters, debug options, and feature flag for saving tokens on input context.</li>
+        <li>Replaced git4idea with jgit for repository interactions and fixed multiple agent communication issues and deprecations.</li>
+      </ul>
+
+      <h3>Previously documented</h3>
       <ul>
         <li>Switched patch guards to SHA‑only (normalized) with per‑patch expectedText; removed version/timestamp gating.</li>
         <li>PatchFile: bottom‑to‑top application; overlap detection (default on); optional reformat/optimize imports after updates.</li>
@@ -50,16 +69,14 @@
         <li>New tool ReadPsiBlockAtPosition: returns enclosing function/method/class/field/object at a position with structured metadata.</li>
         <li>Agent/session: new session resets agent context; startup noise removed; all tools exposed by default (Terminal gated by setting).</li>
         <li>Per‑agent tool allow‑lists for finer control; string tool outputs wrapped for cleaner logs.</li>
-        <li>GradleSyncTool: background sync and proper schema properties.</li>
       </ul>
     ]]></change-notes>
 
     <depends>com.intellij.modules.platform</depends>
-    <depends>com.intellij.modules.vcs</depends>
-    <depends>Git4Idea</depends>
     <depends optional="true" config-file="java.xml">com.intellij.java</depends>
-    <depends>com.intellij.gradle</depends>
+    <depends optional="true" config-file="gradle.xml">com.intellij.gradle</depends>
     <resource-bundle>messages.QuantaAIBundle</resource-bundle>
+
 
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow factoryClass="com.github.quanta_dance.quanta.plugins.intellij.toolWindow.QuantaAIToolWindowFactory"
