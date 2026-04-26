@@ -10,11 +10,12 @@ plugins {
 
 val openAiRuntime by configurations.creating
 
-configurations.configureEach {
-    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-serialization-core")
-    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-serialization-core-jvm")
-    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-serialization-json")
-    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-serialization-json-jvm")
+repositories {
+    mavenCentral()
+
+    intellijPlatform {
+        defaultRepositories()
+    }
 }
 
 dependencies {
@@ -24,13 +25,13 @@ dependencies {
         bundledPlugin("com.intellij.java")
         bundledPlugin("com.intellij.gradle")
 
-        compileOnly(libs.kotlin.serialization.core.jvm)
-        compileOnly(libs.kotlin.serialization.json.jvm)
+        implementation(libs.kotlin.serialization.core.jvm)
+        implementation(libs.kotlin.serialization.json.jvm)
 
         composeUI()
     }
 
-    implementation(project(":shared"))
+    compileOnly(project(":shared"))
     implementation(libs.openai)
     implementation("com.openai:openai-java-client-okhttp:4.31.0")
     openAiRuntime(libs.openai)
@@ -41,25 +42,23 @@ dependencies {
 kotlin {
     jvmToolchain(21)
 }
-
-tasks {
-    withType<PrepareSandboxTask> {
-        runtimeClasspath.from(openAiRuntime)
-    }
-
-    withType<JavaCompile> {
-        sourceCompatibility = "21"
-        targetCompatibility = "21"
-    }
-
-    withType<org.gradle.jvm.tasks.Jar>().configureEach {
-        duplicatesStrategy = org.gradle.api.file.DuplicatesStrategy.EXCLUDE
-        from(
-            openAiRuntime
-                .filter { it.name.endsWith(".jar") }
-                .map { zipTree(it) },
-        )
-        exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
-        exclude("kotlinx/serialization/**")
-    }
-}
+//
+//tasks {
+//    withType<PrepareSandboxTask> {
+//        runtimeClasspath.from(openAiRuntime)
+//    }
+//
+//    withType<JavaCompile> {
+//        sourceCompatibility = "21"
+//        targetCompatibility = "21"
+//    }
+//
+//    withType<org.gradle.jvm.tasks.Jar>().configureEach {
+//        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+//        from(
+//            openAiRuntime
+//                .filter { it.name.endsWith(".jar") }
+//                .map { zipTree(it) },
+//        )
+//    }
+//}

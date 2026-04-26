@@ -1,19 +1,22 @@
 import org.jetbrains.intellij.platform.gradle.tasks.PrepareSandboxTask
 
 plugins {
+    kotlin("jvm")
+    kotlin("plugin.serialization")
+   // id("org.jetbrains.intellij.platform.module")
     id("rpc")
-    id("org.jetbrains.kotlin.jvm")
-    id("org.jetbrains.kotlin.plugin.serialization")
 }
 
-val openAiRuntime by configurations.creating
+repositories {
+    mavenCentral()
 
-configurations.configureEach {
-    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-serialization-core")
-    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-serialization-core-jvm")
-    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-serialization-json")
-    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-serialization-json-jvm")
+    intellijPlatform {
+        defaultRepositories()
+    }
 }
+
+val quantaRuntime by configurations.creating
+
 
 dependencies {
     intellijPlatform {
@@ -26,15 +29,19 @@ dependencies {
         bundledPlugin("com.intellij.gradle")
     }
 
-    implementation(project(":shared"))
+    compileOnly(project(":shared"))
+
+    implementation(libs.kotlin.serialization.core.jvm)
+    implementation(libs.kotlin.serialization.json.jvm)
     implementation(libs.openai)
     implementation("com.openai:openai-java-client-okhttp:4.31.0")
-    openAiRuntime(libs.openai)
-    openAiRuntime("com.openai:openai-java-client-okhttp:4.31.0")
-    implementation("com.fasterxml.jackson.core:jackson-databind:2.17.2")
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.2")
-    //   implementation("org.xerial:sqlite-jdbc:3.46.1.3")
-    // MCP SDK (use its BOM to keep modules aligned)
+
+    quantaRuntime(libs.openai)
+    quantaRuntime("com.openai:openai-java-client-okhttp:4.31.0")
+    quantaRuntime("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.2")
+
+    // MCP SDK: BOM for alignment and then the specific SDK
     implementation(platform("io.modelcontextprotocol.sdk:mcp-bom:0.14.0"))
     implementation("io.modelcontextprotocol:kotlin-sdk:0.7.2")
 
@@ -43,27 +50,29 @@ dependencies {
 }
 
 kotlin {
+    // This single line replaces both the 'java' and 'kotlin' toolchain blocks
     jvmToolchain(21)
 }
+//
+//tasks.withType<PrepareSandboxTask> {
+//    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+//    into("lib") {
+//        from(
+//            configurations.runtimeClasspath
+//                .filter { it.name.endsWith(".jar") }
+//                .map { zipTree(it) }
+//        )
+//    }
+//}
 
+// Optional: Only keep this if you need to build a fat JAR specifically.
+// Otherwise, the IntelliJ Platform plugin handles JAR creation for you.
 tasks {
-    withType<PrepareSandboxTask> {
-        runtimeClasspath.from(openAiRuntime)
-    }
-
-    withType<JavaCompile> {
-        sourceCompatibility = "21"
-        targetCompatibility = "21"
-    }
-
-    withType<org.gradle.jvm.tasks.Jar>().configureEach {
-        duplicatesStrategy = org.gradle.api.file.DuplicatesStrategy.EXCLUDE
-        from(
-            openAiRuntime
-                .filter { it.name.endsWith(".jar") }
-                .map { zipTree(it) },
-        )
-        exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
-        exclude("kotlinx/serialization/**")
+    withType<Jar>().configureEach {
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+        val runtimeFiles = quantaRuntime
+            .filter { it.name.endsWith(".jar") }
+            .map { zipTree(it) }
+        from(runtimeFiles)
     }
 }

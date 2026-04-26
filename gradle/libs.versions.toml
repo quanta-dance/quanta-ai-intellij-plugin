@@ -3,25 +3,23 @@
 junit = "4.13.2"
 
 # plugins
-kotlin = "2.1.20"
+kotlin = "2.3.0"
 # https://github.com/JetBrains/intellij-platform-gradle-plugin
-intellij-platform = "2025.3"
+intellij-platform = "2026.1"
 intellij-gradle-plugin = "2.14.0"
-comp = "2.1.20"
-intellij-rpc-plugin = "2.1.20-0.1"
-kotlin-serialization-plugin = "2.1.20"
-kotlin-serialization = "1.7.3"
+intellij-rpc-plugin = "2.3.0-0.2"
+kotlin-serialization = "1.11.0"
 
 [libraries]
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 kotlin-serialization-core-jvm = { module = "org.jetbrains.kotlinx:kotlinx-serialization-core-jvm", version.ref = "kotlin-serialization" }
-kotlin-serialization-json-jvm = { module = "org.jetbrains.kotlinx:kotlinx-serialization-core-jvm", version.ref = "kotlin-serialization" }
+kotlin-serialization-json-jvm = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json-jvm", version.ref = "kotlin-serialization" }
 javazoom = { group = "javazoom", name = "jlayer", version = "1.0.1" }
-openai = { group = "com.openai", name = "openai-java", version = "4.31.0" }
+openai = { group = "com.openai", name = "openai-java", version = "4.32.0" }
 
 [plugins]
 intellij-platform = { id = "org.jetbrains.intellij.platform", version.ref = "intellij-gradle-plugin" }
 kotlin = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
-kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin-serialization-plugin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 rpc = { id = "rpc", version.ref = "intellij-rpc-plugin" }
-compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "comp" }
+compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
