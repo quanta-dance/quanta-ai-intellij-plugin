@@ -9,13 +9,19 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.agents.Agent
 import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.agents.AgentWakeService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.repository.ChatMessageFactory
 import com.github.quanta_dance.quanta.plugins.intellij.backend.repository.OpenAIBackendChatResponder
+import com.github.quanta_dance.quanta.plugins.intellij.backend.repository.OpenAIBackendChatResponder.ChatTurn
+import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.Instructions
 import com.github.quanta_dance.quanta.plugins.intellij.project.CurrentFileContextProvider
+import com.github.quanta_dance.quanta.plugins.intellij.services.OpenAIService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatMessageDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.toChatMessageDto
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
+import com.openai.models.responses.EasyInputMessage
+import com.openai.models.responses.Response
+import com.openai.models.responses.ResponseInputItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,6 +35,7 @@ class ChatConversationService(
 ) {
     private val chatMessageFactory = ChatMessageFactory("Quanta AI", "AI Manager")
     private val openAIBackendChatResponder = OpenAIBackendChatResponder()
+    private val openAIService: OpenAIService get() = project.service()
     private val registry: AgentRegistryService get() = project.service()
     private val inbox: AgentInboxService get() = project.service()
     private val lifecycle: AgentLifecycleService get() = project.service()
@@ -41,48 +48,93 @@ class ChatConversationService(
     suspend fun sendUserMessage(messageContent: String) {
         withContext(Dispatchers.IO) {
             try {
-                _messages.value += chatMessageFactory.createUserMessage(messageContent)
-                val history = _messages.value.map { message ->
-                    val role = if (message.isMyMessage) "user" else "assistant"
-                    OpenAIBackendChatResponder.ChatTurn(role = role, content = message.content)
-                }
-                val contextMessage = buildContextMessage()
-                val responseText =
-                    openAIBackendChatResponder.generateResponse(
-                        messages = history,
-                        contextMessage = contextMessage,
-                    )
-                _messages.value += chatMessageFactory.createAIMessage(responseText)
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                _messages.value += chatMessageFactory.createAIMessage(
-                    "Sorry, I couldn't reach OpenAI from the backend. Please check backend configuration."
+                appendUserMessage(messageContent)
+                val inputs = buildRequestInputs()
+                val (responseText, _) = openAIService.agentTurn(
+                    inputs = inputs,
+                    previousId = null,
+                    agentLabel = "AI Manager",
                 )
+                appendAiMessage(responseText)
+            } catch (e: Throwable) {
+                if (e is CancellationException) throw e
+                val errorText = buildString {
+                    append("Backend error: ")
+                    append(e::class.java.simpleName)
+                    val message = e.message?.trim().orEmpty()
+                    if (message.isNotEmpty()) {
+                        append(" - ").append(message)
+                    }
+                    append(e.stackTrace.joinToString("\n"))
+                }
+                appendAiMessage(errorText)
             }
         }
     }
 
+    private fun buildRequestInputs(): MutableList<ResponseInputItem> =
+        buildList {
+            buildContextMessage()?.let { contextMessage ->
+                add(
+                    ResponseInputItem.ofEasyInputMessage(
+                        EasyInputMessage.builder()
+                            .role(EasyInputMessage.Role.SYSTEM)
+                            .content(contextMessage)
+                            .build(),
+                    ),
+                )
+            }
+            buildHistory().forEach { turn ->
+                add(
+                    ResponseInputItem.ofEasyInputMessage(
+                        EasyInputMessage.builder()
+                            .role(if (turn.role == "user") EasyInputMessage.Role.USER else EasyInputMessage.Role.ASSISTANT)
+                            .content(turn.content)
+                            .build(),
+                    ),
+                )
+            }
+        }.toMutableList()
+
+    private fun appendUserMessage(messageContent: String) {
+        _messages.value += chatMessageFactory.createUserMessage(messageContent)
+    }
+
+    private fun appendAiMessage(messageContent: String) {
+        _messages.value += chatMessageFactory.createAIMessage(messageContent)
+    }
+
+    private fun buildHistory(): List<ChatTurn> =
+        _messages.value.map { message ->
+            val role = if (message.isMyMessage) "user" else "assistant"
+            ChatTurn(role = role, content = message.content)
+        }
+
     private fun buildContextMessage(): String? {
         val ctx = runCatching { CurrentFileContextProvider(project).getCurrent() }.getOrNull() ?: return null
+        val header =
+            "Current file open: ${ctx.filePathRelative}, file version: ${ctx.version} - " +
+                    "you must always reread file if version changed"
+
         return buildString {
-            append("Current IDE context:\n")
-            append("- filePath: ").append(ctx.filePathRelative).append('\n')
-            append("- version: ").append(ctx.version).append('\n')
-            if (ctx.caretLine != null) {
-                append("- caret: line ").append(ctx.caretLine).append(", column ").append(ctx.caretColumn ?: 0)
-                    .append('\n')
+            append(header)
+            val caretLine = ctx.caretLine
+            val caretCol = ctx.caretColumn
+            if (caretLine != null && caretCol != null) {
+                append(
+                    """
+                    User Caret position in the file ${ctx.filePathRelative} - Line: ${'$'}caretLine, Column (Offset): ${'$'}caretCol
+                    """.trimIndent(),
+                )
             }
-            if (!ctx.selectedText.isNullOrBlank()) {
-                append("- selection: lines ")
-                    .append(ctx.selectionStartLine ?: 0)
-                    .append(':')
-                    .append(ctx.selectionStartColumn ?: 0)
-                    .append(" to ")
-                    .append(ctx.selectionEndLine ?: 0)
-                    .append(':')
-                    .append(ctx.selectionEndColumn ?: 0)
-                    .append('\n')
-                append("- selectedText:\n")
+            if (ctx.selectedText != null && ctx.selectionStartLine != null && ctx.selectionStartColumn != null &&
+                ctx.selectionEndLine != null && ctx.selectionEndColumn != null
+            ) {
+                append(
+                    "\nSelection starts at line ${ctx.selectionStartLine}, column ${ctx.selectionStartColumn} " +
+                            "and ends at line ${ctx.selectionEndLine}, column ${ctx.selectionEndColumn}\n",
+                )
+                append("Selected text snippet is:\n")
                 append(ctx.selectedText)
             }
         }

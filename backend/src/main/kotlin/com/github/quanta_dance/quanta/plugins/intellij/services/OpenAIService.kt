@@ -5,9 +5,11 @@ package com.github.quanta_dance.quanta.plugins.intellij.services
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.*
+import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.ToolExecutionService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.models.OpenAIResponse
+import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.models.TeamAgentSpec
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQuantaSettingsState
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ToolsRegistry
-import com.github.quanta_dance.quanta.plugins.intellij.models.OpenAIResponse
 import com.github.quanta_dance.quanta.plugins.intellij.project.CurrentFileContextProvider
 import com.github.quanta_dance.quanta.plugins.intellij.project.ProjectVersionUtil
 import com.github.quanta_dance.quanta.plugins.intellij.services.ui.DelayedSpinner
@@ -65,7 +67,7 @@ class OpenAIService(
     private val managerLabel: String = "AI(manager)"
 
     @Volatile
-    private var pendingTeamAddAgents: List<com.github.quanta_dance.quanta.plugins.intellij.models.TeamAgentSpec>? = null
+    private var pendingTeamAddAgents: List<TeamAgentSpec>? = null
 
     @Volatile
     private var pendingTeamRemoveRoles: List<String>? = null
@@ -431,7 +433,7 @@ class OpenAIService(
                     m.content().forEach { c ->
                         try {
                             val t = c.asOutputText().summaryMessage
-                            if (t.isNotBlank()) out.append(t).append('\n')
+                            if (t!!.isNotBlank()) out.append(t).append('\n')
                         } catch (_: Throwable) {
                         }
                     }
@@ -553,45 +555,6 @@ class OpenAIService(
         return text.take(maxChars) + "\n... (truncated, originalChars=${text.length})"
     }
 
-    private fun truncateToolOutput(
-        value: Any?,
-        maxJsonChars: Int = 4000,
-        maxStringChars: Int = 2000,
-        depth: Int = 0,
-    ): Any? {
-        if (value == null) return null
-        if (depth > 6) return "<truncated: max depth reached>"
-
-        val simplified: Any =
-            when (value) {
-                is String -> if (value.length <= maxStringChars) value else value.take(maxStringChars) + "... (truncated)"
-                is Map<*, *> ->
-                    value.entries
-                        .take(80)
-                        .associate { (k, v) ->
-                            val key = k?.toString() ?: "<null>"
-                            key to truncateToolOutput(v, maxJsonChars, maxStringChars, depth + 1)
-                        }
-
-                is List<*> -> value.take(80).map { truncateToolOutput(it, maxJsonChars, maxStringChars, depth + 1) }
-                else -> value
-            }
-
-        return try {
-            val json = mapper.writeValueAsString(simplified)
-            if (json.length <= maxJsonChars) {
-                simplified
-            } else {
-                mapOf(
-                    "truncated" to true,
-                    "preview" to json.take(maxJsonChars) + "... (truncated)",
-                    "originalChars" to json.length,
-                )
-            }
-        } catch (_: Throwable) {
-            simplified
-        }
-    }
 
     private companion object {
         // Internal feature flag (not user-configurable). Default OFF.
@@ -842,19 +805,10 @@ class OpenAIService(
                         val functionCall: com.openai.models.responses.ResponseFunctionToolCall = item.asFunctionCall()
                         val callId = functionCall.callId()
                         if (!processedCallIds.add(callId)) return@map
-                        project
-                            .service<ToolWindowService>()
-                            .addToolingMessage(agentLabel, "Calling tool: ${functionCall.name()}")
-                        val functionResult = toolRouter.route(functionCall)
-                        val safeResult = truncateToolOutput(functionResult)!!
+                        val toolOutput =
+                            project.service<ToolExecutionService>().executeToolCall(functionCall, agentLabel)
                         pendingToolOutputs.add(
-                            com.openai.models.responses.ResponseInputItem.ofFunctionCallOutput(
-                                com.openai.models.responses.ResponseInputItem.FunctionCallOutput
-                                    .builder()
-                                    .callId(callId)
-                                    .outputAsJson(safeResult ?: emptyMap<String, Any>())
-                                    .build(),
-                            ),
+                            ResponseInputItem.ofFunctionCallOutput(toolOutput),
                         )
                     }
 
@@ -1345,24 +1299,13 @@ class OpenAIService(
                                         item.asFunctionCall()
                                     val callId = functionCall.callId()
                                     if (!processedCallIds.add(callId)) return@mapIndexed
-                                    project
-                                        .service<ToolWindowService>()
-                                        .addToolingMessage(managerLabel, "Calling tool: ${functionCall.name()}")
-                                    val functionResult = toolRouter.route(functionCall)
-                                    val safeResult = truncateToolOutput(functionResult)
+                                    val toolOutput = project.service<ToolExecutionService>()
+                                        .executeToolCall(functionCall, managerLabel)
                                     QDLog.info(thisLogger()) {
-                                        "OpenAIService.sendMessage toolResult name=${functionCall.name()} result='${
-                                            safeResult?.toString()?.take(160)
-                                        }'"
+                                        "OpenAIService.sendMessage toolResult name=${functionCall.name()}"
                                     }
                                     pendingToolOutputs.add(
-                                        com.openai.models.responses.ResponseInputItem.ofFunctionCallOutput(
-                                            com.openai.models.responses.ResponseInputItem.FunctionCallOutput
-                                                .builder()
-                                                .callId(callId)
-                                                .outputAsJson(safeResult ?: emptyMap<String, Any>())
-                                                .build(),
-                                        ),
+                                        com.openai.models.responses.ResponseInputItem.ofFunctionCallOutput(toolOutput),
                                     )
                                 }
 
@@ -1384,15 +1327,15 @@ class OpenAIService(
                                                 return@forEach
                                             }
 
-                                            val visibleText = message.summaryMessage.ifBlank { message.ttsSummary }
+                                            val visibleText = message.summaryMessage!!.ifBlank { message.ttsSummary!! }
                                                 .ifBlank { message.toString() }
                                             QDLog.info(thisLogger()) {
                                                 "OpenAIService.sendMessage parsed output visibleText='${
                                                     visibleText.take(
                                                         200
                                                     )
-                                                }' summary='${message.summaryMessage.take(80)}' tts='${
-                                                    message.ttsSummary.take(
+                                                }' summary='${message.summaryMessage!!.take(80)}' tts='${
+                                                    message.ttsSummary!!.take(
                                                         80
                                                     )
                                                 }'"
@@ -1460,7 +1403,7 @@ class OpenAIService(
                                                             !toolEscalatedThisTurn
 
                                                 if (!wantsTools) {
-                                                    persistAndShow("assistant", managerLabel, message.summaryMessage)
+                                                    persistAndShow("assistant", managerLabel, message.summaryMessage!!)
                                                     try {
                                                         messageCallback(message)
                                                     } catch (_: Throwable) {
@@ -1533,7 +1476,7 @@ class OpenAIService(
                                                 }
                                             } else {
                                                 // Baseline mode: expose all tools by default.
-                                                persistAndShow("assistant", managerLabel, message.summaryMessage)
+                                                persistAndShow("assistant", managerLabel, message.summaryMessage!!)
 
                                                 message.ttsSummary?.also { summary ->
                                                     if (!spokeThisTurn) {

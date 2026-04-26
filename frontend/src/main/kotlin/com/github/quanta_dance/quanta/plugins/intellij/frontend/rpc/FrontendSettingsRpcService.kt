@@ -4,20 +4,37 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaSettings
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.QuantaSettingsDto
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.Service.Level
+import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
-import fleet.rpc.client.durable
-import kotlinx.coroutines.CoroutineScope
 
 @Service(Level.PROJECT)
 class FrontendSettingsRpcService(
     private val project: Project,
 ) {
+    private val logger = thisLogger()
+
     companion object {
         fun getInstance(project: Project): FrontendSettingsRpcService =
             project.getService(FrontendSettingsRpcService::class.java)
     }
 
     suspend fun updateSettings(settings: QuantaSettingsDto) {
-        QuantaSettingsApi.getInstance().updateSettings(settings)
+        logger.info(
+            "Quanta AI frontend settings RPC update requested for project=${project.name}: " +
+                    "model=${settings.model}, aiChatModel=${settings.aiChatModel}, openAiUrl=${settings.openAiUrl}, " +
+                    "voiceEnabled=${settings.voiceEnabled}, dynamicModelEnabled=${settings.dynamicModelEnabled}, " +
+                    "agenticEnabled=${settings.agenticEnabled}, terminalToolEnabled=${settings.terminalToolEnabled}",
+        )
+
+        try {
+            val api = QuantaSettingsApi.getInstance()
+            logger.info("Quanta AI backend settings API resolved: ${api::class.java.name}")
+            api.updateSettings(settings)
+            logger.info("Quanta AI backend settings API update completed")
+        } catch (error: Throwable) {
+            logger.warn("Quanta AI backend settings API update failed", error)
+            logger.warn("Quanta AI backend settings API failure type=${error::class.qualifiedName}, message=${error.message}")
+            throw error
+        }
     }
 }
