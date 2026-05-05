@@ -188,14 +188,13 @@ class ToolWindowService(
     }
 
     private fun scrollToBottom() {
-        val scrollFollowEnabled =
-            try {
-                com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState.instance.state.scrollFollowEnabled
-            } catch (_: Throwable) {
-                true
-            }
-        if (!scrollFollowEnabled) return
-        messageScrollPane?.verticalScrollBar?.value = messageScrollPane?.verticalScrollBar?.maximum!!
+        val scrollPane = messageScrollPane ?: return
+        val vsb = scrollPane.verticalScrollBar
+        val viewport = scrollPane.viewport
+        val viewHeight = viewport?.viewRect?.height ?: 0
+        val atBottom = vsb.value >= (vsb.maximum - viewHeight)
+        if (!atBottom) return
+        vsb.value = vsb.maximum
     }
 
     private fun restorePersistedChat() {

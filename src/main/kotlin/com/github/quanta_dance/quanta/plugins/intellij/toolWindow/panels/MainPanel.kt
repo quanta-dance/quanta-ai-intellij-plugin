@@ -12,7 +12,6 @@ import com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettings
 import com.github.quanta_dance.quanta.plugins.intellij.toolWindow.actions.AgenticModeToggleAction
 import com.github.quanta_dance.quanta.plugins.intellij.toolWindow.actions.FollowToggleAction
 import com.github.quanta_dance.quanta.plugins.intellij.toolWindow.actions.MicAction
-import com.github.quanta_dance.quanta.plugins.intellij.toolWindow.actions.ScrollFollowToggleAction
 import com.github.quanta_dance.quanta.plugins.intellij.toolWindow.actions.SpeakerAction
 import com.github.quanta_dance.quanta.plugins.intellij.toolWindow.actions.StopAgentsAction
 import com.intellij.icons.AllIcons
@@ -140,7 +139,6 @@ class MainPanel(var project: Project) : JPanel(BorderLayout()) {
             val group =
                 DefaultActionGroup().apply {
                     add(FollowToggleAction())
-                    add(ScrollFollowToggleAction())
                     add(MicAction())
                     add(SpeakerAction())
                     add(AgenticModeToggleAction())
