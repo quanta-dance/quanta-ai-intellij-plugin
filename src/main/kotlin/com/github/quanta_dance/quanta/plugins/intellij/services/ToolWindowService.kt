@@ -36,7 +36,7 @@ class ToolWindowService(
             mainToolPanel?.removeAll()
             mainToolPanel?.revalidate()
             mainToolPanel?.repaint()
-            messageScrollPane?.verticalScrollBar?.value = messageScrollPane?.verticalScrollBar?.maximum!!
+            scrollToBottom()
         }
     }
 
@@ -50,7 +50,7 @@ class ToolWindowService(
             mainToolPanel?.revalidate()
             mainToolPanel?.repaint()
             // Scroll to bottom safely
-            messageScrollPane?.verticalScrollBar?.value = messageScrollPane?.verticalScrollBar?.maximum ?: 0
+            scrollToBottom()
             messagePanel.repaint()
             messagePanel.validate()
         }
@@ -67,7 +67,7 @@ class ToolWindowService(
             mainToolPanel?.add(ToolExecCardPanel(toolName, arguments))
             mainToolPanel?.revalidate()
             mainToolPanel?.repaint()
-            messageScrollPane?.verticalScrollBar?.value = messageScrollPane?.verticalScrollBar?.maximum!!
+            scrollToBottom()
         }
     }
 
@@ -118,7 +118,7 @@ class ToolWindowService(
                 container.revalidate()
                 container.repaint()
                 SwingUtilities.invokeLater {
-                    messageScrollPane?.verticalScrollBar?.value = messageScrollPane?.verticalScrollBar?.maximum!!
+                    scrollToBottom()
                 }
             }
         }
@@ -129,7 +129,7 @@ class ToolWindowService(
                 container.revalidate()
                 container.repaint()
                 SwingUtilities.invokeLater {
-                    messageScrollPane?.verticalScrollBar?.value = messageScrollPane?.verticalScrollBar?.maximum!!
+                    scrollToBottom()
                 }
             }
         }
@@ -146,7 +146,7 @@ class ToolWindowService(
             container.revalidate()
             container.repaint()
             SwingUtilities.invokeLater {
-                messageScrollPane?.verticalScrollBar?.value = messageScrollPane?.verticalScrollBar?.maximum!!
+                scrollToBottom()
             }
         }
         return ToolExecHandle(container, panel)
@@ -160,7 +160,7 @@ class ToolWindowService(
             mainToolPanel?.add(ImageCardPanel(title, url))
             mainToolPanel?.revalidate()
             mainToolPanel?.repaint()
-            messageScrollPane?.verticalScrollBar?.value = messageScrollPane?.verticalScrollBar?.maximum!!
+            scrollToBottom()
         }
     }
 
@@ -172,7 +172,7 @@ class ToolWindowService(
             }
             mainToolPanel?.revalidate()
             mainToolPanel?.repaint()
-            messageScrollPane?.verticalScrollBar?.value = messageScrollPane?.verticalScrollBar?.maximum!!
+            scrollToBottom()
         }
     }
 
@@ -185,6 +185,17 @@ class ToolWindowService(
             restoredOnce = true
             restorePersistedChat()
         }
+    }
+
+    private fun scrollToBottom() {
+        val scrollFollowEnabled =
+            try {
+                com.github.quanta_dance.quanta.plugins.intellij.settings.QuantaAISettingsState.instance.state.scrollFollowEnabled
+            } catch (_: Throwable) {
+                true
+            }
+        if (!scrollFollowEnabled) return
+        messageScrollPane?.verticalScrollBar?.value = messageScrollPane?.verticalScrollBar?.maximum!!
     }
 
     private fun restorePersistedChat() {
@@ -252,7 +263,7 @@ class ToolWindowService(
             container.revalidate()
             container.repaint()
             SwingUtilities.invokeLater {
-                messageScrollPane?.verticalScrollBar?.value = messageScrollPane?.verticalScrollBar?.maximum!!
+                scrollToBottom()
             }
         }
         timer.scheduleAtFixedRate(

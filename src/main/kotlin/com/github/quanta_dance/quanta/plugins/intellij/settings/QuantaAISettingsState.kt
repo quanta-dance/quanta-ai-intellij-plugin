@@ -70,6 +70,9 @@ class QuantaAISettingsState : PersistentStateComponent<QuantaAISettingsState.Qua
         // UX: when enabled, the IDE will focus/navigate to files after AI changes or suggestion clicks.
         // When disabled, changes still apply but the editor focus/caret should not jump automatically.
         var followEnabled: Boolean = true,
+        // UX: when enabled, the tool window message scroll pane auto-scrolls to the latest message.
+        // When disabled, new messages still appear but scroll position stays where the user left it.
+        var scrollFollowEnabled: Boolean = true,
         // Security: Terminal tool availability (default disabled)
         var terminalToolEnabled: Boolean? = false,
         // Security: allowed terminal command prefixes (strict token-prefix match), comma-separated.
