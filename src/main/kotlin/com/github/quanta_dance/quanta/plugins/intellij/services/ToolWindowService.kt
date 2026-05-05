@@ -31,12 +31,15 @@ class ToolWindowService(
     @Volatile
     private var restoredOnce: Boolean = false
 
+    @Volatile
+    private var userScrolledUp: Boolean = false
+
     fun clear() {
         ApplicationManager.getApplication().invokeLater {
             mainToolPanel?.removeAll()
             mainToolPanel?.revalidate()
             mainToolPanel?.repaint()
-            messageScrollPane?.verticalScrollBar?.value = messageScrollPane?.verticalScrollBar?.maximum!!
+            scrollToBottom()
         }
     }
 
@@ -50,7 +53,7 @@ class ToolWindowService(
             mainToolPanel?.revalidate()
             mainToolPanel?.repaint()
             // Scroll to bottom safely
-            messageScrollPane?.verticalScrollBar?.value = messageScrollPane?.verticalScrollBar?.maximum ?: 0
+            scrollToBottom()
             messagePanel.repaint()
             messagePanel.validate()
         }
@@ -67,7 +70,7 @@ class ToolWindowService(
             mainToolPanel?.add(ToolExecCardPanel(toolName, arguments))
             mainToolPanel?.revalidate()
             mainToolPanel?.repaint()
-            messageScrollPane?.verticalScrollBar?.value = messageScrollPane?.verticalScrollBar?.maximum!!
+            scrollToBottom()
         }
     }
 
@@ -118,7 +121,7 @@ class ToolWindowService(
                 container.revalidate()
                 container.repaint()
                 SwingUtilities.invokeLater {
-                    messageScrollPane?.verticalScrollBar?.value = messageScrollPane?.verticalScrollBar?.maximum!!
+                    scrollToBottom()
                 }
             }
         }
@@ -129,7 +132,7 @@ class ToolWindowService(
                 container.revalidate()
                 container.repaint()
                 SwingUtilities.invokeLater {
-                    messageScrollPane?.verticalScrollBar?.value = messageScrollPane?.verticalScrollBar?.maximum!!
+                    scrollToBottom()
                 }
             }
         }
@@ -146,7 +149,7 @@ class ToolWindowService(
             container.revalidate()
             container.repaint()
             SwingUtilities.invokeLater {
-                messageScrollPane?.verticalScrollBar?.value = messageScrollPane?.verticalScrollBar?.maximum!!
+                scrollToBottom()
             }
         }
         return ToolExecHandle(container, panel)
@@ -160,7 +163,7 @@ class ToolWindowService(
             mainToolPanel?.add(ImageCardPanel(title, url))
             mainToolPanel?.revalidate()
             mainToolPanel?.repaint()
-            messageScrollPane?.verticalScrollBar?.value = messageScrollPane?.verticalScrollBar?.maximum!!
+            scrollToBottom()
         }
     }
 
@@ -172,7 +175,7 @@ class ToolWindowService(
             }
             mainToolPanel?.revalidate()
             mainToolPanel?.repaint()
-            messageScrollPane?.verticalScrollBar?.value = messageScrollPane?.verticalScrollBar?.maximum!!
+            scrollToBottom()
         }
     }
 
@@ -180,11 +183,53 @@ class ToolWindowService(
         this.messageScrollPane = toolPanel.messageScrollPane
         this.mainToolPanel = toolPanel.messagePanel
 
+        setupScrollListener()
+
         // Restore chat history when UI is ready (only once per tool window creation)
         if (!restoredOnce) {
             restoredOnce = true
             restorePersistedChat()
         }
+    }
+
+    private fun setupScrollListener() {
+        val scrollPane = messageScrollPane ?: return
+        val vsb = scrollPane.verticalScrollBar
+
+        vsb.addAdjustmentListener { e ->
+            val viewport = scrollPane.viewport
+            val viewHeight = viewport?.viewRect?.height ?: 0
+
+            // Check if user scrolled back to bottom
+            if (viewHeight > 0 && vsb.value >= (vsb.maximum - viewHeight)) {
+                userScrolledUp = false
+            }
+
+            // Check if user scrolled up (away from bottom)
+            if (viewHeight > 0 && vsb.value < (vsb.maximum - viewHeight)) {
+                userScrolledUp = true
+            }
+        }
+    }
+
+    private fun scrollToBottom() {
+        // If user explicitly scrolled up, don't interrupt
+        if (userScrolledUp) return
+
+        val scrollPane = messageScrollPane ?: return
+        val vsb = scrollPane.verticalScrollBar
+        val viewport = scrollPane.viewport
+        val viewHeight = viewport?.viewRect?.height ?: 0
+
+        // If viewport height is 0 (not yet rendered), scroll to bottom
+        if (viewHeight == 0) {
+            vsb.value = vsb.maximum
+            return
+        }
+
+        val atBottom = vsb.value >= (vsb.maximum - viewHeight)
+        if (!atBottom) return
+        vsb.value = vsb.maximum
     }
 
     private fun restorePersistedChat() {
@@ -252,7 +297,7 @@ class ToolWindowService(
             container.revalidate()
             container.repaint()
             SwingUtilities.invokeLater {
-                messageScrollPane?.verticalScrollBar?.value = messageScrollPane?.verticalScrollBar?.maximum!!
+                scrollToBottom()
             }
         }
         timer.scheduleAtFixedRate(
