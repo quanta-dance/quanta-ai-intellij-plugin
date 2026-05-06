@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
 
-package com.github.quanta_dance.quanta.plugins.intellij.tools.ide
+package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
@@ -17,6 +17,8 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.psi.*
+import java.io.File
+import java.nio.file.Paths
 
 @JsonClassDescription("Validate a class file and return any compilation errors.")
 class ValidateClassFileTool : ToolInterface<List<String>> {
@@ -54,10 +56,10 @@ class ValidateClassFileTool : ToolInterface<List<String>> {
         if (basePath.isNullOrBlank()) return listOf("Project base path not found.")
 
         // Refresh and find VFS file by absolute path to avoid stale baseDir-based lookups
-        val absPath = java.nio.file.Paths.get(basePath, filePath).toString()
+        val absPath = Paths.get(basePath, filePath).toString()
         val vFile =
             try {
-                val ioFile = java.io.File(absPath)
+                val ioFile = File(absPath)
                 VfsUtil.markDirtyAndRefresh(true, true, true, ioFile)
                 LocalFileSystem.getInstance().refreshAndFindFileByIoFile(ioFile)
             } catch (t: Throwable) {

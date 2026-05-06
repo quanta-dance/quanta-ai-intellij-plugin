@@ -39,7 +39,7 @@ dependencies {
 
     quantaRuntime(libs.openai)
     quantaRuntime("com.openai:openai-java-client-okhttp:4.31.0")
-    quantaRuntime("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.2")
+    quantaRuntime("org.eclipse.jgit:org.eclipse.jgit:6.10.0.202406032230-r")
 
     // MCP SDK: BOM for alignment and then the specific SDK
     implementation(platform("io.modelcontextprotocol.sdk:mcp-bom:0.14.0"))

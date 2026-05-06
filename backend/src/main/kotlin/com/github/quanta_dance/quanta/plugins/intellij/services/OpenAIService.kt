@@ -5,7 +5,6 @@ package com.github.quanta_dance.quanta.plugins.intellij.services
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.*
-import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.ToolExecutionService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.models.OpenAIResponse
 import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.models.TeamAgentSpec
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQuantaSettingsState
@@ -303,8 +302,7 @@ class OpenAIService(
                 .filter { it.role == "user" }
                 .take(3)
                 .mapNotNull {
-                    it.text
-                        ?.trim()
+                    it.text.trim()
                         ?.take(400)
                         ?.ifBlank { null }
                 }
@@ -388,7 +386,7 @@ class OpenAIService(
             buildString {
                 tail.forEach { m ->
                     val role = m.role.ifBlank { "unknown" }
-                    val text = (m.text ?: "").trim().take(800)
+                    val text = m.text.trim().take(800)
                     if (text.isNotBlank()) {
                         append(role.uppercase()).append(": ").append(text.replace("\n", " ")).append('\n')
                     }
@@ -433,7 +431,7 @@ class OpenAIService(
                     m.content().forEach { c ->
                         try {
                             val t = c.asOutputText().summaryMessage
-                            if (t!!.isNotBlank()) out.append(t).append('\n')
+                            if (t.isNotBlank()) out.append(t).append('\n')
                         } catch (_: Throwable) {
                         }
                     }
@@ -738,9 +736,24 @@ class OpenAIService(
         usageTag: String = "main",
         reportUsageToUi: Boolean = true,
     ): Pair<StructuredResponse<OpenAIResponse>, String?> {
+        QDLog.info(thisLogger()) {
+            "OpenAIService.createResponse: inputs=${inputs.size}, previousId=${previousId ?: "<none>"}, includeMcp=$includeMcp, allowedBuiltInNames=${allowedBuiltInNames?.size ?: "all"}, allowedMcpNames=${allowedMcpNames?.size ?: "all"}"
+        }
         val createParams =
-            responseBuilder.buildStructuredResponseParams(inputs)
+            responseBuilder.buildStructuredResponseParams(
+                inputs = inputs,
+                includeMcp = includeMcp,
+                previousResponseId = previousId,
+            )
+        QDLog.info(thisLogger()) { "OpenAIService.createResponse: request built, sending to OpenAI" }
         val structResponse = oAI.responses().create(createParams)
+        QDLog.info(thisLogger()) {
+            "OpenAIService.createResponse: response received id=${runCatching { structResponse.id() }.getOrNull()} outputSize=${
+                runCatching { structResponse.output().size }.getOrDefault(
+                    -1
+                )
+            }"
+        }
 
         try {
             val usage = structResponse.usage().orElse(null)
@@ -807,6 +820,9 @@ class OpenAIService(
                         if (!processedCallIds.add(callId)) return@map
                         val toolOutput =
                             project.service<ToolExecutionService>().executeToolCall(functionCall, agentLabel)
+                        QDLog.info(thisLogger()) {
+                            "OpenAIService.agentTurn: executed tool call name=${functionCall.name()} callId=$callId"
+                        }
                         pendingToolOutputs.add(
                             ResponseInputItem.ofFunctionCallOutput(toolOutput),
                         )
@@ -1327,15 +1343,15 @@ class OpenAIService(
                                                 return@forEach
                                             }
 
-                                            val visibleText = message.summaryMessage!!.ifBlank { message.ttsSummary!! }
+                                            val visibleText = message.summaryMessage.ifBlank { message.ttsSummary }
                                                 .ifBlank { message.toString() }
                                             QDLog.info(thisLogger()) {
                                                 "OpenAIService.sendMessage parsed output visibleText='${
                                                     visibleText.take(
                                                         200
                                                     )
-                                                }' summary='${message.summaryMessage!!.take(80)}' tts='${
-                                                    message.ttsSummary!!.take(
+                                                }' summary='${message.summaryMessage.take(80)}' tts='${
+                                                    message.ttsSummary.take(
                                                         80
                                                     )
                                                 }'"
@@ -1403,13 +1419,13 @@ class OpenAIService(
                                                             !toolEscalatedThisTurn
 
                                                 if (!wantsTools) {
-                                                    persistAndShow("assistant", managerLabel, message.summaryMessage!!)
+                                                    persistAndShow("assistant", managerLabel, message.summaryMessage)
                                                     try {
                                                         messageCallback(message)
                                                     } catch (_: Throwable) {
                                                     }
 
-                                                    message.ttsSummary?.also { summary ->
+                                                    message.ttsSummary.also { summary ->
                                                         if (!spokeThisTurn) {
                                                             project.service<AIVoiceService>().say(summary)
                                                             spokeThisTurn = true
@@ -1476,7 +1492,7 @@ class OpenAIService(
                                                 }
                                             } else {
                                                 // Baseline mode: expose all tools by default.
-                                                persistAndShow("assistant", managerLabel, message.summaryMessage!!)
+                                                persistAndShow("assistant", managerLabel, message.summaryMessage)
 
                                                 message.ttsSummary?.also { summary ->
                                                     if (!spokeThisTurn) {

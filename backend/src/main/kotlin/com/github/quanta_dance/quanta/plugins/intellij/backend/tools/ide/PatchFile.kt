@@ -1,15 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
 
-package com.github.quanta_dance.quanta.plugins.intellij.tools.ide
+package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
-import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolProgressEvent
-import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolProgressKind
-import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolProgressService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
 import com.intellij.codeInsight.actions.OptimizeImportsProcessor
@@ -17,6 +14,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.editor.Document
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
@@ -151,7 +149,7 @@ class PatchFile : ToolInterface<String> {
     )
 
     private fun lineEndOffsetOrEof(
-        document: com.intellij.openapi.editor.Document,
+        document: Document,
         line0: Int,
     ): Int {
         // Include the line separator after the end line when possible.
@@ -166,7 +164,7 @@ class PatchFile : ToolInterface<String> {
     }
 
     private fun sliceForLines(
-        document: com.intellij.openapi.editor.Document,
+        document: Document,
         startLine0: Int,
         endLine0: Int,
     ): Pair<TextRange, String> {
@@ -177,7 +175,7 @@ class PatchFile : ToolInterface<String> {
     }
 
     private fun resolveRange(
-        document: com.intellij.openapi.editor.Document,
+        document: Document,
         patch: Patch,
         patchIndex1: Int,
         mismatchesOut: MutableList<String>?,

@@ -1,4 +1,4 @@
-package com.github.quanta_dance.quanta.plugins.intellij.tools.refactor
+package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.refactor
 
 /*
 CodeRefactorSuggester Class Explanation:
