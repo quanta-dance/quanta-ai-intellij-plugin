@@ -3,6 +3,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.tools
 
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.PatchFile
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.psi.PsiDocumentManager
@@ -55,11 +56,11 @@ class PatchFilePlatformTest : BasePlatformTestCase() {
         val doc = PsiDocumentManager.getInstance(project).getDocument(psi)!!
 
         val tool =
-            com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile().apply {
+            PatchFile().apply {
                 filePath = "src/A.kt"
                 patches =
                     listOf(
-                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                        PatchFile.Patch(
                             fromLine = 2,
                             toLine = 2,
                             newContent = "LINE2",
@@ -88,17 +89,17 @@ class PatchFilePlatformTest : BasePlatformTestCase() {
         val doc = PsiDocumentManager.getInstance(project).getDocument(psi)!!
 
         val tool =
-            com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile().apply {
+            PatchFile().apply {
                 filePath = "src/B.kt"
                 patches =
                     listOf(
-                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                        PatchFile.Patch(
                             fromLine = 2,
                             toLine = 2,
                             newContent = "B",
                             expectedText = "MISMATCH",
                         ),
-                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                        PatchFile.Patch(
                             fromLine = 3,
                             toLine = 3,
                             newContent = "C",
@@ -126,11 +127,11 @@ class PatchFilePlatformTest : BasePlatformTestCase() {
         val doc = PsiDocumentManager.getInstance(project).getDocument(psi)!!
 
         val tool =
-            com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile().apply {
+            PatchFile().apply {
                 filePath = "src/C.kt"
                 patches =
                     listOf(
-                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                        PatchFile.Patch(
                             fromLine = 1,
                             toLine = 1,
                             newContent = "X",
@@ -160,19 +161,19 @@ class PatchFilePlatformTest : BasePlatformTestCase() {
         val doc = PsiDocumentManager.getInstance(project).getDocument(psi)!!
 
         val tool =
-            com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile().apply {
+            PatchFile().apply {
                 filePath = "src/D.kt"
                 patches =
                     listOf(
                         // mismatch
-                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                        PatchFile.Patch(
                             fromLine = 2,
                             toLine = 2,
                             newContent = "TWO",
                             expectedText = "MIS",
                         ),
                         // ok
-                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                        PatchFile.Patch(
                             fromLine = 4,
                             toLine = 4,
                             newContent = "FOUR",
@@ -204,17 +205,17 @@ class PatchFilePlatformTest : BasePlatformTestCase() {
         val doc = PsiDocumentManager.getInstance(project).getDocument(psi)!!
 
         val tool =
-            com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile().apply {
+            PatchFile().apply {
                 filePath = "src/E.kt"
                 patches =
                     listOf(
-                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                        PatchFile.Patch(
                             fromLine = 3,
                             toLine = 4,
                             newContent = "CC\nDD",
                             expectedText = "c\nd",
                         ),
-                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                        PatchFile.Patch(
                             fromLine = 1,
                             toLine = 1,
                             newContent = "AA",
@@ -244,11 +245,11 @@ class PatchFilePlatformTest : BasePlatformTestCase() {
         val doc = PsiDocumentManager.getInstance(project).getDocument(psi)!!
 
         val tool =
-            com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile().apply {
+            PatchFile().apply {
                 filePath = "src/W.kt"
                 patches =
                     listOf(
-                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                        PatchFile.Patch(
                             fromLine = 2,
                             toLine = 2,
                             newContent = "BETA",
@@ -274,11 +275,11 @@ class PatchFilePlatformTest : BasePlatformTestCase() {
         val doc = PsiDocumentManager.getInstance(project).getDocument(psi)!!
 
         val tool =
-            com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile().apply {
+            PatchFile().apply {
                 filePath = "src/W2.kt"
                 patches =
                     listOf(
-                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                        PatchFile.Patch(
                             fromLine = 2,
                             toLine = 2,
                             newContent = "BETA",
@@ -307,19 +308,19 @@ class PatchFilePlatformTest : BasePlatformTestCase() {
         val doc = PsiDocumentManager.getInstance(project).getDocument(psi)!!
 
         val tool =
-            com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile().apply {
+            PatchFile().apply {
                 filePath = "src/W3.kt"
                 patches =
                     listOf(
                         // internal whitespace difference should still mismatch
-                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                        PatchFile.Patch(
                             fromLine = 1,
                             toLine = 1,
                             newContent = "VAL X = 1",
                             expectedText = "val  x = 1",
                         ),
                         // leading whitespace difference should still mismatch
-                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                        PatchFile.Patch(
                             fromLine = 2,
                             toLine = 2,
                             newContent = "VAL Y = 2",
@@ -345,11 +346,11 @@ class PatchFilePlatformTest : BasePlatformTestCase() {
         val doc = PsiDocumentManager.getInstance(project).getDocument(psi)!!
 
         val tool =
-            com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile().apply {
+            PatchFile().apply {
                 filePath = "src/W4.kt"
                 patches =
                     listOf(
-                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                        PatchFile.Patch(
                             fromLine = 2,
                             toLine = 2,
                             newContent = "B",
@@ -381,11 +382,11 @@ class PatchFilePlatformTest : BasePlatformTestCase() {
 
         // Call #1: insert a new top line by replacing line 1 with two lines.
         val tool1 =
-            com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile().apply {
+            PatchFile().apply {
                 filePath = "src/Shift.kt"
                 patches =
                     listOf(
-                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                        PatchFile.Patch(
                             fromLine = 1,
                             toLine = 1,
                             newContent = "ZERO\none",
@@ -402,11 +403,11 @@ class PatchFilePlatformTest : BasePlatformTestCase() {
 
         // Now the file is shifted by +1 line. We simulate a stale patch request that still targets old line 3 ("three").
         val tool2 =
-            com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile().apply {
+            PatchFile().apply {
                 filePath = "src/Shift.kt"
                 patches =
                     listOf(
-                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                        PatchFile.Patch(
                             // stale: original "three" was line 3, but is now line 4
                             fromLine = 3,
                             toLine = 3,
@@ -445,17 +446,17 @@ class PatchFilePlatformTest : BasePlatformTestCase() {
         val doc = PsiDocumentManager.getInstance(project).getDocument(psi)!!
 
         val tool =
-            com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile().apply {
+            PatchFile().apply {
                 filePath = "src/F.kt"
                 patches =
                     listOf(
                         // beyond doc
-                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                        PatchFile.Patch(
                             fromLine = 10,
                             toLine = 10,
                             newContent = "TEN",
                         ),
-                        com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile.Patch(
+                        PatchFile.Patch(
                             fromLine = 2,
                             toLine = 2,
                             newContent = "Y",

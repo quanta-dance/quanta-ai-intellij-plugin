@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
 
-package com.github.quanta_dance.quanta.plugins.intellij.tools.project
+package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.project
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
@@ -213,7 +213,7 @@ class SearchInFiles : ToolInterface<SearchInFilesResult> {
             // Must NOT be inside read action
             FindInProjectUtil.findUsages(model, project, processor, presentation)
             try {
-                project.getService(com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService::class.java)
+                project.getService(ToolWindowService::class.java)
                     .addToolingMessage(
                         "Search in Files",
                         "Completed findUsages (mode=${if (treatAsRegex) "regex" else "literal"}): files=${fileOffsets.size}",
@@ -222,7 +222,7 @@ class SearchInFiles : ToolInterface<SearchInFilesResult> {
             }
         } catch (e: Throwable) {
             try {
-                project.getService(com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService::class.java)
+                project.getService(ToolWindowService::class.java)
                     .addToolingMessage("Search in Files - failed", e.message ?: "findUsages failed")
             } catch (_: Throwable) {
             }
@@ -332,11 +332,11 @@ class SearchInFiles : ToolInterface<SearchInFilesResult> {
                 display.append("$path : line ${first.line} : ${first.snippet} (matches=${matches.size})\n")
             }
             if (grouped.size > 5) display.append("...+${grouped.size - 5} more files\n")
-            project.getService(com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService::class.java)
+            project.getService(ToolWindowService::class.java)
                 .addToolingMessage("Search results", display.toString())
         } catch (e: Throwable) {
             try {
-                project.getService(com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService::class.java)
+                project.getService(ToolWindowService::class.java)
                     .addToolingMessage("Search results - failed to prepare display", e.message ?: "display failed")
             } catch (_: Throwable) {
             }

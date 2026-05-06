@@ -3,11 +3,32 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.backend.tools
 
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.catalog.ListToolsCatalogTool
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.*
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.CreateOrUpdateFile
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.project.GetProjectDetails
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.McpListServerToolsTool
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.McpListServersTool
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.project.SearchInFiles
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.project.SearchProjectEmbeddings
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.project.UpsertProjectEmbedding
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.session.ScheduleTaskTool
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.session.SessionPlanTool
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.system.RequestModelSwitch
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.system.TerminalCommandTool
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.intellij.openapi.project.Project
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
 object ToolsRegistry {
+    enum class Group { GENERIC, GRADLE, GO }
+
+    data class ToolEntry(
+        val clazz: Class<out ToolInterface<out Any>>,
+        val group: Group = Group.GENERIC,
+    )
+
     private data class CacheEntry(
         val signature: String,
         val tools: List<Class<out ToolInterface<out Any>>>,
@@ -15,10 +36,10 @@ object ToolsRegistry {
 
     private val cache = ConcurrentHashMap<Project, CacheEntry>()
 
-    private fun classAvailable(name: String, project: Project?): Boolean {
+    private fun javaPsiAvailable(project: Project?): Boolean {
         fun tryLoad(loader: ClassLoader?): Boolean =
             try {
-                loader?.loadClass(name)
+                loader?.loadClass("com.intellij.psi.JavaPsiFacade")
                 true
             } catch (_: Throwable) {
                 false
@@ -26,82 +47,206 @@ object ToolsRegistry {
         if (tryLoad(this::class.java.classLoader)) return true
         if (project != null && tryLoad(project::class.java.classLoader)) return true
         return try {
-            Class.forName(name)
+            Class.forName("com.intellij.psi.JavaPsiFacade")
             true
         } catch (_: Throwable) {
             false
         }
     }
 
-    private fun loadTool(name: String): Class<out ToolInterface<out Any>>? =
-        runCatching {
-            @Suppress("UNCHECKED_CAST")
-            Class.forName(name) as Class<out ToolInterface<out Any>>
-        }.getOrNull()
+    private fun gradlePluginAvailable(project: Project?): Boolean {
+        fun tryLoad(loader: ClassLoader?): Boolean =
+            try {
+                loader?.loadClass("org.jetbrains.plugins.gradle.util.GradleConstants")
+                true
+            } catch (_: Throwable) {
+                false
+            }
+        if (tryLoad(this::class.java.classLoader)) return true
+        if (project != null && tryLoad(project::class.java.classLoader)) return true
+        return try {
+            Class.forName("org.jetbrains.plugins.gradle.util.GradleConstants")
+            true
+        } catch (_: Throwable) {
+            false
+        }
+    }
 
-    private fun computeSignature(project: Project): String =
-        listOf(
-            "javaPsi=${classAvailable("com.intellij.psi.JavaPsiFacade", project)}",
-            "gradle=${classAvailable("org.jetbrains.plugins.gradle.util.GradleConstants", project)}",
-            "go=${classAvailable("com.github.quanta_dance.quanta.plugins.intellij.tools.go.RunGoTestsTool", project)}",
-        ).joinToString("|")
+    private fun baseEntries(project: Project?): List<ToolEntry> {
+        val settings = com.github.quanta_dance.quanta.plugins.intellij.services.QuantaAISettingsState.instance.state
+        val agentic = settings.agenticEnabled ?: true
+        val terminalEnabled = false //settings.terminalToolEnabled == true
+        val list =
+            mutableListOf(
+                ToolEntry(ListToolsCatalogTool::class.java, Group.GENERIC),
+                ToolEntry(GetProjectDetails::class.java, Group.GENERIC),
+                ToolEntry(SearchInFiles::class.java, Group.GENERIC),
+                ToolEntry(SearchProjectEmbeddings::class.java, Group.GENERIC),
+                ToolEntry(UpsertProjectEmbedding::class.java, Group.GENERIC),
+                ToolEntry(CreateOrUpdateFile::class.java, Group.GENERIC),
+                ToolEntry(ReadFile::class.java, Group.GENERIC),
+                ToolEntry(ReadPsiBlockAtPosition::class.java, Group.GENERIC),
+                ToolEntry(ListFiles::class.java, Group.GENERIC),
+                ToolEntry(GetFileReferencesAndDependencies::class.java, Group.GENERIC),
+                ToolEntry(OpenFileInEditorTool::class.java, Group.GENERIC),
+                ToolEntry(PatchFile::class.java, Group.GENERIC),
+                ToolEntry(DeleteFileTool::class.java, Group.GENERIC),
+                ToolEntry(CopyFileOrDirectoryTool::class.java, Group.GENERIC),
+                ToolEntry(ValidateClassFileTool::class.java, Group.GENERIC),
+                ToolEntry(RequestModelSwitch::class.java, Group.GENERIC),
+                ToolEntry(McpListServersTool::class.java, Group.GENERIC),
+                ToolEntry(McpListServerToolsTool::class.java, Group.GENERIC),
+                ToolEntry(SessionPlanTool::class.java, Group.GENERIC),
+                ToolEntry(ScheduleTaskTool::class.java, Group.GENERIC),
+            )
+
+        if (terminalEnabled) list.add(ToolEntry(TerminalCommandTool::class.java, Group.GENERIC))
+        list.add(
+            ToolEntry(
+                com.github.quanta_dance.quanta.plugins.intellij.backend.tools.media.GenerateImage::class.java,
+                Group.GENERIC
+            )
+        )
+        list.add(
+            ToolEntry(
+                com.github.quanta_dance.quanta.plugins.intellij.backend.tools.media.SoundGeneratorTool::class.java,
+                Group.GENERIC
+            )
+        )
+
+        if (agentic) {
+            list.add(
+                ToolEntry(
+                    com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent.AgentCreateTool::class.java,
+                    Group.GENERIC
+                )
+            )
+            list.add(
+                ToolEntry(
+                    com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent.AgentSendMessageTool::class.java,
+                    Group.GENERIC
+                )
+            )
+            list.add(
+                ToolEntry(
+                    com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent.AgentPostMessageTool::class.java,
+                    Group.GENERIC
+                )
+            )
+            list.add(
+                ToolEntry(
+                    com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent.AgentReadInboxTool::class.java,
+                    Group.GENERIC
+                )
+            )
+            list.add(
+                ToolEntry(
+                    com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent.AgentRemoveTool::class.java,
+                    Group.GENERIC
+                )
+            )
+        }
+        if (javaPsiAvailable(project)) list.add(
+            ToolEntry(
+                com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.InspectDependencies::class.java,
+                Group.GENERIC
+            )
+        )
+        return list
+    }
 
     fun toolsFor(project: Project): List<Class<out ToolInterface<out Any>>> {
-        val sig = computeSignature(project)
-        cache[project]?.takeIf { it.signature == sig }?.let { return it.tools }
+        val settings = com.github.quanta_dance.quanta.plugins.intellij.services.QuantaAISettingsState.instance.state
+        val agentic = settings.agenticEnabled ?: true
+        val basePath = project.basePath
+        val gradle = basePath?.let { detectGradle(File(it)) } ?: false
+        val go = basePath?.let { detectGo(File(it)) } ?: false
+        val javaPsi = javaPsiAvailable(project)
+        val signature =
+            buildString {
+                append("agentic=").append(agentic).append(';')
+                append("gradle=").append(gradle).append(';')
+                append("go=").append(go).append(';')
+                append("javaPsi=").append(javaPsi).append(';')
+               // append("terminal=").append(settings.terminalToolEnabled == true).append(';')
+                append("base=").append(basePath ?: "<none>")
+            }
+        cache[project]?.takeIf { it.signature == signature }?.let { return it.tools }
 
-        val names = mutableListOf<String>()
-        names += listOf(
-            "com.github.quanta_dance.quanta.plugins.intellij.tools.project.GetProjectDetails",
-            "com.github.quanta_dance.quanta.plugins.intellij.tools.project.SearchInFiles",
-            "com.github.quanta_dance.quanta.plugins.intellij.tools.project.SearchProjectEmbeddings",
-            "com.github.quanta_dance.quanta.plugins.intellij.tools.project.UpsertProjectEmbedding",
-            "com.github.quanta_dance.quanta.plugins.intellij.backend.tools.catalog.ListToolsCatalogTool",
-            "com.github.quanta_dance.quanta.plugins.intellij.tools.media.GenerateImage",
-            "com.github.quanta_dance.quanta.plugins.intellij.tools.media.SoundGeneratorTool",
-            "com.github.quanta_dance.quanta.plugins.intellij.tools.session.SessionPlanTool",
-            "com.github.quanta_dance.quanta.plugins.intellij.tools.session.ScheduleTaskTool",
-            "com.github.quanta_dance.quanta.plugins.intellij.tools.system.RequestModelSwitch",
-            "com.github.quanta_dance.quanta.plugins.intellij.tools.system.TerminalCommandTool",
-            "com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.McpListServersTool",
-            "com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.McpListServerToolsTool",
-        )
-        if (classAvailable("com.intellij.psi.JavaPsiFacade", project)) {
-            names += listOf(
-                "com.github.quanta_dance.quanta.plugins.intellij.tools.ide.CreateOrUpdateFile",
-                "com.github.quanta_dance.quanta.plugins.intellij.tools.ide.OpenFileInEditorTool",
-                "com.github.quanta_dance.quanta.plugins.intellij.tools.ide.CopyFileOrDirectoryTool",
-                "com.github.quanta_dance.quanta.plugins.intellij.tools.ide.DeleteFileTool",
-                "com.github.quanta_dance.quanta.plugins.intellij.tools.ide.ListFiles",
-                "com.github.quanta_dance.quanta.plugins.intellij.tools.ide.ReadFileContent",
-                "com.github.quanta_dance.quanta.plugins.intellij.tools.ide.PatchFile",
-                "com.github.quanta_dance.quanta.plugins.intellij.tools.ide.ValidateClassFileTool",
-                "com.github.quanta_dance.quanta.plugins.intellij.tools.refactor.CodeRefactorSuggester",
-                "com.github.quanta_dance.quanta.plugins.intellij.tools.ide.ReadPsiBlockAtPositionTool",
-                "com.github.quanta_dance.quanta.plugins.intellij.tools.ide.GetFileReferencesAndDependenciesTool",
+        val entries = baseEntries(project).toMutableList()
+        if (gradle && gradlePluginAvailable(project)) {
+            entries.add(
+                ToolEntry(
+                    com.github.quanta_dance.quanta.plugins.intellij.backend.tools.builder.GradleSyncTool::class.java,
+                    Group.GRADLE
+                )
+            )
+            entries.add(
+                ToolEntry(
+                    com.github.quanta_dance.quanta.plugins.intellij.backend.tools.builder.GetTestInfoTool::class.java,
+                    Group.GRADLE
+                )
+            )
+            entries.add(
+                ToolEntry(
+                    com.github.quanta_dance.quanta.plugins.intellij.backend.tools.builder.RunGradleBuildTool::class.java,
+                    Group.GRADLE
+                )
+            )
+            entries.add(
+                ToolEntry(
+                    com.github.quanta_dance.quanta.plugins.intellij.backend.tools.builder.RunGradleTestsTool::class.java,
+                    Group.GRADLE
+                )
             )
         }
-        if (classAvailable("org.jetbrains.plugins.gradle.util.GradleConstants", project)) {
-            names += listOf(
-                "com.github.quanta_dance.quanta.plugins.intellij.tools.builder.GetTestInfoTool",
-                "com.github.quanta_dance.quanta.plugins.intellij.tools.builder.GradleSyncTool",
-                "com.github.quanta_dance.quanta.plugins.intellij.tools.builder.RunGradleBuildTool",
-                "com.github.quanta_dance.quanta.plugins.intellij.tools.builder.RunGradleTestsTool",
-            )
-        }
-        if (classAvailable("com.github.quanta_dance.quanta.plugins.intellij.tools.go.RunGoTestsTool", project)) {
-            names += "com.github.quanta_dance.quanta.plugins.intellij.tools.go.RunGoTestsTool"
-        }
-        names += listOf(
-            "com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentCreateTool",
-            "com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentRemoveTool",
-            "com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentSendMessageTool",
-            "com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentReadInboxTool",
-            "com.github.quanta_dance.quanta.plugins.intellij.tools.agent.AgentPostMessageTool",
-        )
 
-        val list = names.mapNotNull(::loadTool)
-        cache[project] = CacheEntry(sig, list)
-        return list
+        val tools =
+            if (basePath == null) {
+                entries.map { it.clazz }
+            } else {
+                entries.filter { e ->
+                    when (e.group) {
+                        Group.GENERIC -> true
+                        Group.GRADLE -> gradle
+                        Group.GO -> go
+                    }
+                }.map { it.clazz }
+            }
+
+        cache[project] = CacheEntry(signature, tools)
+        return tools
+    }
+
+    private fun detectGradle(root: File): Boolean =
+        File(root, "gradlew").exists() || File(root, "gradlew.bat").exists() ||
+                File(root, "build.gradle").exists() || File(root, "build.gradle.kts").exists()
+
+    private fun detectGo(root: File): Boolean {
+        if (File(root, "go.mod").exists()) return true
+        val maxDirs = 5000
+        val dq: ArrayDeque<File> = ArrayDeque()
+        dq.add(root)
+        var visited = 0
+        while (dq.isNotEmpty() && visited < maxDirs) {
+            val dir = dq.removeFirst()
+            visited++
+            if (!dir.isDirectory) continue
+            val mod = File(dir, "go.mod")
+            if (mod.exists()) return true
+            val children = dir.listFiles() ?: continue
+            for (c in children) {
+                if (c.isDirectory) {
+                    val name = c.name.lowercase()
+                    if (name == ".git" || name == ".idea" || name == "build" || name == "out" || name == "node_modules") continue
+                    dq.addLast(c)
+                }
+            }
+        }
+        val dirs = listOf(root, File(root, "cmd"), File(root, "pkg"), File(root, "internal"))
+        return dirs.any { dir ->
+            dir.exists() && dir.isDirectory && dir.listFiles()
+                ?.any { it.isFile && it.extension.equals("go", true) } == true
+        }
     }
 }

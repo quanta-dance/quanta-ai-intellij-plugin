@@ -3,7 +3,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.tools
 
-import com.github.quanta_dance.quanta.plugins.intellij.tools.ide.ReadFileContent
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.ReadFile
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import java.io.File
@@ -28,8 +28,9 @@ class ReadFileContentPlatformTest : BasePlatformTestCase() {
         createUnderProject("src/read/A.txt", "one\ntwo\n")
 
         val tool =
-            ReadFileContent().apply {
-                filePath = "src/read/A.txt"
+            ReadFile(
+                filePath = "src/read/A.txt",
+            ).apply {
                 fromLine = 0
             }
         val res = tool.execute(project)
@@ -41,8 +42,9 @@ class ReadFileContentPlatformTest : BasePlatformTestCase() {
         createUnderProject("src/read/B.txt", (1..10).joinToString("\n") { "line$it" })
 
         val tool =
-            ReadFileContent().apply {
-                filePath = "src/read/B.txt"
+            ReadFile(
+                filePath = "src/read/B.txt",
+            ).apply {
                 includeLineNumbers = true
                 fromLine = 3
                 toLine = 5
@@ -64,8 +66,9 @@ class ReadFileContentPlatformTest : BasePlatformTestCase() {
         createUnderProject("src/read/C.txt", "a\nb\nc\n")
 
         val tool =
-            ReadFileContent().apply {
-                filePath = "src/read/C.txt"
+            ReadFile(
+                filePath = "src/read/C.txt",
+            ).apply {
                 toLine = 2
                 maxChars = 50_000
             }
@@ -80,8 +83,9 @@ class ReadFileContentPlatformTest : BasePlatformTestCase() {
         createUnderProject("src/read/D.txt", content)
 
         val tool =
-            ReadFileContent().apply {
-                filePath = "src/read/D.txt"
+            ReadFile(
+                filePath = "src/read/D.txt",
+            ).apply {
                 includeLineNumbers = true
                 fromLine = 10
                 toLine = 20
@@ -92,6 +96,9 @@ class ReadFileContentPlatformTest : BasePlatformTestCase() {
         val res = tool.execute(project)
         assertEquals("", res.error)
         // Should start from line 10 even after truncation.
-        assertTrue(res.content.startsWith("00010 "), "Expected content to start with original line 10, got: ${res.content.take(20)}")
+        assertTrue(
+            res.content.startsWith("00010 "),
+            "Expected content to start with original line 10, got: ${res.content.take(20)}"
+        )
     }
 }

@@ -1,4 +1,4 @@
-package com.github.quanta_dance.quanta.plugins.intellij.tools.builder
+package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.builder
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription

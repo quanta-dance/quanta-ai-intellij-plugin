@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
 
-package com.github.quanta_dance.quanta.plugins.intellij.tools.ide
+package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
@@ -16,33 +16,34 @@ import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
 
-@JsonClassDescription("Open a project file in the editor and optionally move the caret to a line/column or select a range")
-class OpenFileInEditorTool : ToolInterface<String> {
-    @field:JsonPropertyDescription("Relative to the project root path to the file to open.")
-    var filePath: String? = null
+@JsonClassDescription("Open a project file in the editor. REQUIRED ARGUMENT: filePath. Use filePath, not path. Example: {\"filePath\": \"README.md\"}. Optionally move the caret to a line/column or select a range.")
+data class OpenFileInEditorTool(
+    @field:JsonPropertyDescription("REQUIRED. Use this exact field name: filePath. Relative to the project root path to the file to open. Example: README.md")
+    val filePath: String,
 
     @field:JsonPropertyDescription("1-based line number to place the caret at. If null or <= 0, the file is opened without moving caret.")
-    var line: Int? = null
+    val line: Int? = null,
 
     @field:JsonPropertyDescription("0-based column to place the caret at. Ignored if 'line' is not provided or <= 0.")
-    var column: Int? = null
+    val column: Int? = null,
 
     @field:JsonPropertyDescription("If true, activates the editor after opening. Default: true")
-    var focus: Boolean = true
+    val focus: Boolean = true,
 
     @field:JsonPropertyDescription(
         "Optional selection start line (1-based). If provided with end, selection takes precedence over caret movement.",
     )
-    var selectionStartLine: Int? = null
+    val selectionStartLine: Int? = null,
 
     @field:JsonPropertyDescription("Optional selection start column (0-based)")
-    var selectionStartColumn: Int? = null
+    val selectionStartColumn: Int? = null,
 
     @field:JsonPropertyDescription("Optional selection end line (1-based)")
-    var selectionEndLine: Int? = null
+    val selectionEndLine: Int? = null,
 
     @field:JsonPropertyDescription("Optional selection end column (0-based)")
-    var selectionEndColumn: Int? = null
+    val selectionEndColumn: Int? = null,
+) : ToolInterface<String> {
 
     private fun addMsg(
         project: Project,

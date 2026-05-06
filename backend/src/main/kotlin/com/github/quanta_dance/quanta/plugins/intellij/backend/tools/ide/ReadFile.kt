@@ -4,7 +4,6 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
-import com.fasterxml.jackson.annotation.JsonProperty
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.project.CurrentFileContextProvider
 import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
@@ -22,37 +21,36 @@ import com.intellij.openapi.vfs.isFile
 import java.security.MessageDigest
 
 @JsonClassDescription(
-    "Read the content of requested file. Supports optional truncation and windowed reading around caret/selection for the current file.",
+    "Read the content of a file. REQUIRED ARGUMENT: filePath. Use filePath, not path. Example: {\"filePath\": \"README.md\"}. Supports optional truncation and windowed reading around caret/selection for the current file.",
 )
-class ReadFileContent : ToolInterface<ReadFileResult> {
-    @field:JsonProperty(required = true)
-    @field:JsonPropertyDescription("Relative to the project root path to the requested file.")
-    var filePath: String = ""
+data class ReadFile(
+    @field:JsonPropertyDescription("REQUIRED. Use this exact field name: filePath. Relative to the project root path to the requested file. Example: README.md")
+    val filePath: String,
 
     @field:JsonPropertyDescription("If true, returns content with prefixed line numbers. Default false.")
-    var includeLineNumbers: Boolean = false
+    var includeLineNumbers: Boolean = false,
 
     @field:JsonPropertyDescription("Maximum characters to return; if exceeded, tool truncates per strategy. Default 6000.")
-    var maxChars: Int = 6_000
+    var maxChars: Int = 6_000,
 
     @field:JsonPropertyDescription("Preferred truncation strategy when file exceeds maxChars: head | tail | window. Default window.")
-    var strategy: String = "window"
+    var strategy: String = "window",
 
     @field:JsonPropertyDescription(
         "If true, and the file is the current editor file with caret/selection, " +
                 "return a window around caret/selection when truncating.",
     )
-    var preferWindowIfCurrentFile: Boolean = true
+    var preferWindowIfCurrentFile: Boolean = true,
 
     @field:JsonPropertyDescription("Window radius in lines (before and after caret or selection) when strategy=window. Default 300.")
-    var windowRadiusLines: Int = 300
+    var windowRadiusLines: Int = 300,
 
     @field:JsonPropertyDescription(
         "Optional 1-based starting line (inclusive). If set, content is first sliced to start from this line. " +
                 "When provided together with toLine, returns that exact line range. " +
                 "Takes precedence over strategy/window behavior.",
     )
-    var fromLine: Int? = null
+    var fromLine: Int? = null,
 
     @field:JsonPropertyDescription(
         "Optional 1-based ending line (inclusive). If set, content is first sliced to end at this line. " +
@@ -60,9 +58,11 @@ class ReadFileContent : ToolInterface<ReadFileResult> {
                 "Takes precedence over strategy/window behavior.",
     )
     var toLine: Int? = null
+) : ToolInterface<ReadFileResult> {
+
 
     companion object {
-        private val logger = Logger.getInstance(ReadFileContent::class.java)
+        private val logger = Logger.getInstance(ReadFile::class.java)
     }
 
     private fun addMsg(
