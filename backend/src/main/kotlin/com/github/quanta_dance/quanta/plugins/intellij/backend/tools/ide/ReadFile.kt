@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
 
-package com.github.quanta_dance.quanta.plugins.intellij.tools.ide
+package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
+import com.fasterxml.jackson.annotation.JsonProperty
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.project.CurrentFileContextProvider
 import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
@@ -24,8 +25,9 @@ import java.security.MessageDigest
     "Read the content of requested file. Supports optional truncation and windowed reading around caret/selection for the current file.",
 )
 class ReadFileContent : ToolInterface<ReadFileResult> {
+    @field:JsonProperty(required = true)
     @field:JsonPropertyDescription("Relative to the project root path to the requested file.")
-    var filePath: String? = null
+    var filePath: String = ""
 
     @field:JsonPropertyDescription("If true, returns content with prefixed line numbers. Default false.")
     var includeLineNumbers: Boolean = false
@@ -165,6 +167,11 @@ class ReadFileContent : ToolInterface<ReadFileResult> {
     }
 
     override fun execute(project: Project): ReadFileResult {
+        if (filePath.isBlank()) {
+            addMsg(project, "Read file content - rejected", "filePath is required")
+            return ReadFileResult("", "", "filePath is required")
+        }
+
         val basePath =
             PathUtils.projectRootPath(project) ?: return ReadFileResult("", "", "Project base path not found.")
         val resolved =
@@ -263,9 +270,9 @@ class ReadFileContent : ToolInterface<ReadFileResult> {
                     else -> { // window
                         // Windowing is only meaningful for the current file when no explicit range was requested.
                         if (!explicitRangeRequested && preferWindowIfCurrentFile && isCurrentTarget) {
-                            val cStart = currentCtx?.selectionStartLine
-                            val cEnd = currentCtx?.selectionEndLine
-                            val caret = currentCtx?.caretLine
+                            val cStart = currentCtx.selectionStartLine
+                            val cEnd = currentCtx.selectionEndLine
+                            val caret = currentCtx.caretLine
 
                             val startLine0: Int
                             val endLine0: Int
