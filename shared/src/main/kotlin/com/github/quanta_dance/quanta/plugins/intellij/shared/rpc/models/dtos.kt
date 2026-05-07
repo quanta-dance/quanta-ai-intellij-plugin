@@ -1,8 +1,8 @@
 package com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models
 
+import com.github.quanta_dance.quanta.plugins.intellij.shared.LocalDateTimeSerializer
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
 import kotlinx.serialization.Serializable
-import com.github.quanta_dance.quanta.plugins.intellij.shared.LocalDateTimeSerializer
 import java.time.LocalDateTime
 
 @Serializable
@@ -13,7 +13,8 @@ data class ChatMessageDto(
     val isMyMessage: Boolean,
     @Serializable(with = LocalDateTimeSerializer::class)
     val timestamp: LocalDateTime,
-    val type: ChatMessage.ChatMessageType
+    val type: ChatMessage.ChatMessageType,
+    val voiceSummary: String? = null,
 )
 
 fun ChatMessageDto.toChatMessage(): ChatMessage {
@@ -23,7 +24,8 @@ fun ChatMessageDto.toChatMessage(): ChatMessage {
         author = author,
         isMyMessage = isMyMessage,
         timestamp = timestamp,
-        type = type
+        type = type,
+        voiceSummary = voiceSummary,
     )
 }
 
@@ -34,6 +36,7 @@ fun ChatMessage.toChatMessageDto(): ChatMessageDto {
         author = author,
         isMyMessage = isMyMessage,
         timestamp = timestamp,
-        type = type
+        type = type,
+        voiceSummary = voiceSummary,
     )
 }

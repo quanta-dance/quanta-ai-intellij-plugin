@@ -56,8 +56,14 @@ class ChatConversationService(
                     inputs = inputs,
                     previousId = null,
                     agentLabel = "AI Manager",
-                    onAssistantMessage = { txt ->
-                        replaceMessage(thinkingMessageId, chatMessageFactory.createAIMessage(txt))
+                    onAssistantMessage = { assistantMessage ->
+                        replaceMessage(
+                            thinkingMessageId,
+                            chatMessageFactory.createAIMessage(
+                                content = assistantMessage.text,
+                                voiceSummary = assistantMessage.ttsSummary,
+                            ),
+                        )
                         firstAssistantMessageShown = true
                         thinkingMessageId = appendAiThinkingMessage()
                     },

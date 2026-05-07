@@ -16,28 +16,21 @@ import androidx.compose.ui.input.key.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.github.quanta_dance.quanta.plugins.intellij.frontend.ui.MessageBubble
-import com.github.quanta_dance.quanta.plugins.intellij.frontend.ui.PromptInput
-import com.github.quanta_dance.quanta.plugins.intellij.frontend.ui.SearchState
-import com.github.quanta_dance.quanta.plugins.intellij.frontend.ui.currentSearchResultIndex
-import com.github.quanta_dance.quanta.plugins.intellij.frontend.ui.currentSelectedSearchResultId
-import com.github.quanta_dance.quanta.plugins.intellij.frontend.ui.hasResults
-import com.github.quanta_dance.quanta.plugins.intellij.frontend.ui.isSearching
-import com.github.quanta_dance.quanta.plugins.intellij.frontend.ui.searchQuery
-import com.github.quanta_dance.quanta.plugins.intellij.frontend.ui.totalResults
-import kotlinx.coroutines.flow.distinctUntilChanged
-import org.jetbrains.jewel.foundation.theme.JewelTheme
-import org.jetbrains.jewel.ui.Orientation
-import org.jetbrains.jewel.ui.component.*
-import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.ModularPluginFrontendBundle
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel.ChatViewModel
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel.MessageInputState
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendQuantaPluginConfigurable
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendQuantaSettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.ui.*
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.voice.FrontendAIVoiceService
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import org.jetbrains.jewel.foundation.theme.JewelTheme
+import org.jetbrains.jewel.ui.Orientation
+import org.jetbrains.jewel.ui.component.*
 
 @Composable
 fun ChatApp(project: Project, viewModel: ChatViewModel, voiceService: FrontendAIVoiceService) {
@@ -47,6 +40,7 @@ fun ChatApp(project: Project, viewModel: ChatViewModel, voiceService: FrontendAI
     val voiceEnabled = FrontendQuantaSettingsState.instance.state.voiceEnabled
     val listState = rememberLazyListState()
     val textFieldState = rememberTextFieldState()
+    var lastSpokenMessageId by remember { mutableStateOf<String?>(null) }
 
     // Auto-scroll to the bottom when new messages arrive (only when not searching)
     LaunchedEffect(chatMessages.lastOrNull()?.id) {
@@ -66,10 +60,25 @@ fun ChatApp(project: Project, viewModel: ChatViewModel, voiceService: FrontendAI
         }
     }
 
-    LaunchedEffect(chatMessages.lastOrNull()?.id, voiceEnabled) {
-        val lastMessage = chatMessages.lastOrNull()
-        if (voiceEnabled && lastMessage != null && !lastMessage.isMyMessage) {
-            val summary = lastMessage.content.trim().replace(Regex("\\s+"), " ")
+    LaunchedEffect(chatMessages, voiceEnabled) {
+        if (!voiceEnabled) return@LaunchedEffect
+
+        val candidate =
+            chatMessages
+                .asReversed()
+                .firstOrNull { message -> !message.isMyMessage && message.isTextMessage() }
+                ?: return@LaunchedEffect
+
+        if (lastSpokenMessageId == candidate.id) return@LaunchedEffect
+
+        val hasThinkingIndicator = chatMessages.any { it.isAIThinkingMessage() }
+        delay(if (hasThinkingIndicator) 900 else 150)
+
+        if (lastSpokenMessageId == candidate.id) return@LaunchedEffect
+
+        val summary = candidate.voiceSummary?.trim()?.replace(Regex("\\s+"), " ").orEmpty()
+        if (summary.isNotEmpty()) {
+            lastSpokenMessageId = candidate.id
             voiceService.say(summary)
         }
     }

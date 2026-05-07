@@ -46,13 +46,15 @@ class ChatMessageFactory(
     fun createAIMessage(
         content: String,
         timestamp: LocalDateTime = LocalDateTime.now(),
+        voiceSummary: String? = null,
     ): ChatMessage {
         return ChatMessage(
             content = content,
             author = aiCompanionName,
             timestamp = timestamp,
             isMyMessage = false,
-            type = ChatMessage.ChatMessageType.TEXT
+            type = ChatMessage.ChatMessageType.TEXT,
+            voiceSummary = voiceSummary,
         )
     }
 

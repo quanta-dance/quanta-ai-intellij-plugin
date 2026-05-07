@@ -2,6 +2,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.shared.rpc
 
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.SynthesizedSpeechDto
 import com.intellij.platform.project.ProjectId
 import com.intellij.platform.rpc.RemoteApiProviderService
 import fleet.rpc.RemoteApi
@@ -18,5 +19,7 @@ interface QuantaBackendApi : RemoteApi<Unit> {
 
     suspend fun ping(): String
 
-   // projectId: ProjectId
+    suspend fun synthesizeSpeech(projectId: ProjectId, text: String): SynthesizedSpeechDto
+
+    suspend fun stopSpeech(projectId: ProjectId)
 }

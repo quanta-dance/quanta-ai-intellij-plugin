@@ -21,7 +21,6 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.ui.components.JBScrollPane
-import com.openai.models.ChatModel
 import java.awt.BorderLayout
 import java.awt.Component
 import java.awt.FlowLayout
@@ -101,15 +100,15 @@ class MainPanel(var project: Project) : JPanel(BorderLayout()) {
 
     private val models =
         arrayOf(
-            ChatModel.GPT_5_4.toString(),
-            ChatModel.GPT_5_4_MINI.toString(),
-            ChatModel.GPT_5_4_NANO.toString(),
-            ChatModel.GPT_5_2.toString(),
-            ChatModel.GPT_5_1_CODEX.toString(),
-            ChatModel.GPT_5_1.toString(),
-            ChatModel.GPT_5.toString(),
-            ChatModel.GPT_5_MINI.toString(),
-            ChatModel.GPT_5_NANO.toString(),
+            "gpt-5.4", // ChatModel.GPT_5_4.toString(),
+            "gpt-5.4-mini", //ChatModel.GPT_5_4_MINI.toString(),
+            "gpt-5.4-nano", //ChatModel.GPT_5_4_NANO.toString(),
+            "gpt-5.2", //ChatModel.GPT_5_2.toString(),
+            "gpt-5.1-codex", //ChatModel.GPT_5_1_CODEX.toString(),
+            "gpt-5.1", //ChatModel.GPT_5_1.toString(),
+            "gpt-5", //ChatModel.GPT_5.toString(),
+            "gpt-5-mini", //ChatModel.GPT_5_MINI.toString(),
+            "gpt-5-nano", //ChatModel.GPT_5_NANO.toString(),
         )
 
     private val modelSelector =
