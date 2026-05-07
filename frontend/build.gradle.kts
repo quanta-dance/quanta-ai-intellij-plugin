@@ -1,5 +1,3 @@
-import org.jetbrains.intellij.platform.gradle.tasks.PrepareSandboxTask
-
 plugins {
     id("rpc")
     id("org.jetbrains.kotlin.jvm")
@@ -8,7 +6,7 @@ plugins {
 
 }
 
-val openAiRuntime by configurations.creating
+val quantaRuntime by configurations.creating
 
 repositories {
     mavenCentral()
@@ -32,33 +30,21 @@ dependencies {
     }
 
     compileOnly(project(":shared"))
-    implementation(libs.openai)
-    implementation("com.openai:openai-java-client-okhttp:4.31.0")
-    openAiRuntime(libs.openai)
-    openAiRuntime("com.openai:openai-java-client-okhttp:4.31.0")
     implementation(libs.javazoom)
+
+    quantaRuntime(libs.javazoom)
 }
 
 kotlin {
     jvmToolchain(21)
 }
-//
-//tasks {
-//    withType<PrepareSandboxTask> {
-//        runtimeClasspath.from(openAiRuntime)
-//    }
-//
-//    withType<JavaCompile> {
-//        sourceCompatibility = "21"
-//        targetCompatibility = "21"
-//    }
-//
-//    withType<org.gradle.jvm.tasks.Jar>().configureEach {
-//        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-//        from(
-//            openAiRuntime
-//                .filter { it.name.endsWith(".jar") }
-//                .map { zipTree(it) },
-//        )
-//    }
-//}
+
+tasks {
+    withType<Jar>().configureEach {
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+        val runtimeFiles = quantaRuntime
+            .filter { it.name.endsWith(".jar") }
+            .map { zipTree(it) }
+        from(runtimeFiles)
+    }
+}

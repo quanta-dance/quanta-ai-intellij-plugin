@@ -4,33 +4,45 @@
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.voice
 
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.QDLog
-import com.github.quanta_dance.quanta.plugins.intellij.frontend.openai.FrontendOpenAIClientProvider
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendQuantaSettingsState
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.sound.Player
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaBackendApi
+import com.intellij.notification.NotificationGroupManager
+import com.intellij.notification.NotificationType
 import com.intellij.openapi.components.Service
-import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
-import com.openai.core.MultipartField
-import com.openai.models.audio.AudioModel
-import com.openai.models.audio.speech.SpeechCreateParams
-import com.openai.models.audio.speech.SpeechModel
-import com.openai.models.audio.transcriptions.TranscriptionCreateParams
-import java.io.BufferedInputStream
-import java.io.InputStream
-import java.util.concurrent.CompletableFuture
+import com.intellij.platform.project.projectId
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import java.io.ByteArrayInputStream
+import java.util.*
 
 @Service(Service.Level.PROJECT)
 class FrontendAIVoiceService(private val project: Project) {
     private var process: Process? = null
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     companion object {
         private val logger = Logger.getInstance(FrontendAIVoiceService::class.java)
     }
 
+    private fun markPlayback(stage: String, details: String) {
+        QDLog.info(logger) { "FrontendAIVoiceService[$stage]: $details" }
+//        runCatching {
+//            NotificationGroupManager
+//                .getInstance()
+//                .getNotificationGroup("Plugin Notifications")
+//                .createNotification("Voice/$stage", details, NotificationType.INFORMATION)
+//                .notify(project)
+//        }
+    }
+
     fun stopTalking() {
         try {
-            QDLog.debug(logger) { "Stopping voice service..." }
+            QDLog.info(logger) { "FrontendAIVoiceService.stopTalking: stopping local playback/process" }
             process?.destroy()
         } catch (_: Throwable) {
         }
@@ -38,13 +50,19 @@ class FrontendAIVoiceService(private val project: Project) {
             Player.stop()
         } catch (_: Throwable) {
         }
-
+        scope.launch {
+            runCatching {
+                QuantaBackendApi.getInstance().stopSpeech(project.projectId())
+            }.onFailure { e ->
+                QDLog.warn(logger, { "FrontendAIVoiceService.stopTalking: backend stopSpeech failed: ${e.message}" }, e)
+            }
+        }
     }
 
     fun say(message: String) {
         if (!FrontendQuantaSettingsState.instance.state.voiceEnabled) return
         stopTalking()
-        QDLog.debug(logger) { "Muting mic while speaking" }
+        markPlayback("say", "requested speech for ${message.take(80)}")
 
         val useLocalMacTts =
             System.getProperty("os.name").contains("Mac", ignoreCase = true) &&
@@ -57,8 +75,6 @@ class FrontendAIVoiceService(private val project: Project) {
                         process?.waitFor()
                     } catch (e: Exception) {
                         QDLog.error(logger, { "Local TTS process failed" }, e)
-                    } finally {
-
                     }
                 }
             th.isDaemon = true
@@ -66,30 +82,27 @@ class FrontendAIVoiceService(private val project: Project) {
             return
         }
 
-        val client = FrontendOpenAIClientProvider.get(project)
-        val promise = CompletableFuture<Unit>()
-        val params =
-            SpeechCreateParams.builder()
-                .input(message)
-                .model(SpeechModel.GPT_4O_MINI_TTS)
-                .voice(SpeechCreateParams.Voice.UnionMember1.ASH)
-                .responseFormat(SpeechCreateParams.ResponseFormat.MP3)
-                .build()
-        client.async().audio().speech().create(params).thenAcceptAsync { response ->
-            try {
-                response.body().let { inputStream ->
-                    if (inputStream == null) throw IllegalStateException("No MP3 response stream")
-                    BufferedInputStream(inputStream).use { stream ->
-                        Player.playMp3(stream)
-                    }
+        scope.launch {
+            runCatching {
+                markPlayback("rpc", "calling backend synthesizeSpeech")
+                val response = QuantaBackendApi.getInstance().synthesizeSpeech(project.projectId(), message)
+                if (response.audioBase64.isBlank()) {
+                    QDLog.warn(logger) { "FrontendAIVoiceService.say: backend returned empty audio payload" }
+                    markPlayback("rpc", "backend returned empty audio payload")
+                    return@runCatching
                 }
-            } catch (e: Exception) {
-                QDLog.error(logger, { "Speech synthesis/playback failed" }, e)
-            } finally {
-                promise.complete(Unit)
-
+                val audioBytes = Base64.getDecoder().decode(response.audioBase64)
+                markPlayback("rpc", "received ${audioBytes.size} audio bytes from backend")
+                playAudioBytes(audioBytes)
+            }.onFailure { e ->
+                QDLog.error(logger, { "Backend speech synthesis/playback failed" }, e)
             }
         }
-        promise.join()
+    }
+
+    private fun playAudioBytes(audioBytes: ByteArray) {
+        Player.playMp3(ByteArrayInputStream(audioBytes)) {
+            markPlayback("jlayer", "playback finished")
+        }
     }
 }

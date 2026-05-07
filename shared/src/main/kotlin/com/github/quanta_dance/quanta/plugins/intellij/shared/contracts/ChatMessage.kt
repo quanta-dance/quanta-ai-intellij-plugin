@@ -1,8 +1,8 @@
 package com.github.quanta_dance.quanta.plugins.intellij.shared.contracts
 
+import com.github.quanta_dance.quanta.plugins.intellij.shared.Searchable
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage.ChatMessageType.AI_THINKING
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage.ChatMessageType.TEXT
-import com.github.quanta_dance.quanta.plugins.intellij.shared.Searchable
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.*
@@ -15,7 +15,8 @@ data class ChatMessage(
     val author: String,
     val isMyMessage: Boolean = false,
     val timestamp: LocalDateTime = LocalDateTime.now(),
-    val type: ChatMessageType = TEXT
+    val type: ChatMessageType = TEXT,
+    val voiceSummary: String? = null,
 ) : Searchable {
 
     enum class ChatMessageType {

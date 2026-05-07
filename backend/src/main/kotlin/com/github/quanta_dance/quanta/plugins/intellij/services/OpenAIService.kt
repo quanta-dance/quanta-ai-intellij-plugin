@@ -772,6 +772,11 @@ class OpenAIService(
         return structResponse to id
     }
 
+    data class AssistantTurnMessage(
+        val text: String,
+        val ttsSummary: String? = null,
+    )
+
     fun agentTurn(
         inputs: MutableList<ResponseInputItem>,
         previousId: String?,
@@ -782,7 +787,7 @@ class OpenAIService(
         agentLabel: String = "AI(agent)",
         allowedBuiltInNames: Set<String>? = null,
         allowedMcpNames: Set<String>? = null,
-        onAssistantMessage: ((String) -> Unit)? = null,
+        onAssistantMessage: ((AssistantTurnMessage) -> Unit)? = null,
     ): Pair<String, String?> {
         var localPrevId = previousId
         val aggregated = StringBuilder()
@@ -836,7 +841,12 @@ class OpenAIService(
                                 val txt = message.summaryMessage
                                 if (txt.isNotBlank()) {
                                     persistAndShow("assistant", agentLabel, txt)
-                                    onAssistantMessage?.invoke(txt)
+                                    onAssistantMessage?.invoke(
+                                        AssistantTurnMessage(
+                                            text = txt,
+                                            ttsSummary = message.ttsSummary?.trim()?.ifBlank { null },
+                                        ),
+                                    )
                                 }
 
                                 aggregated.append(txt).append('\n')
@@ -1428,8 +1438,14 @@ class OpenAIService(
                                                     }
 
                                                     message.ttsSummary.also { summary ->
-                                                        if (!spokeThisTurn) {
-                                                            project.service<AIVoiceService>().say(summary)
+                                                        if (!spokeThisTurn && summary.isNotBlank()) {
+                                                            QDLog.info(thisLogger()) {
+                                                                "OpenAIService: ttsSummary available for frontend playback: ${
+                                                                    summary.take(
+                                                                        80
+                                                                    )
+                                                                }"
+                                                            }
                                                             spokeThisTurn = true
                                                         }
                                                     }
