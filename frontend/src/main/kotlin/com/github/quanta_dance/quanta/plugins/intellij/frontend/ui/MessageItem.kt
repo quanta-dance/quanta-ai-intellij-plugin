@@ -13,7 +13,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.ChatAppColors
-import com.github.quanta_dance.quanta.plugins.intellij.frontend.components.PulsingText
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.components.TypingIndicator
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.Text
@@ -23,63 +23,91 @@ fun MessageBubble(
     message: ChatMessage,
     modifier: Modifier = Modifier,
     isMatchingSearch: Boolean = false,
-    isHighlightedInSearch: Boolean = false
+    isHighlightedInSearch: Boolean = false,
 ) {
-    val isMyMessage = message.isMyMessage
-    val messageShape = RoundedCornerShape(
-        topStart = 16.dp,
-        topEnd = 16.dp,
-        bottomStart = if (isMyMessage) 16.dp else 6.dp,
-        bottomEnd = if (isMyMessage) 6.dp else 16.dp
-    )
-    val messageBackgroundColor = when {
-        isHighlightedInSearch && isMyMessage -> ChatAppColors.MessageBubble.mySearchHighlightedBackground
-        isHighlightedInSearch && !isMyMessage -> ChatAppColors.MessageBubble.othersSearchHighlightedBackground
-        isMyMessage -> ChatAppColors.MessageBubble.myBackground
-        else -> ChatAppColors.MessageBubble.othersBackground
+    if (message.isAIThinkingMessage()) {
+        ThinkingMessageRow(message = message, modifier = modifier)
+        return
     }
 
+    val isMyMessage = message.isMyMessage
+    val messageShape = RoundedCornerShape(
+        topStart = 14.dp,
+        topEnd = 14.dp,
+        bottomStart = if (isMyMessage) 14.dp else 5.dp,
+        bottomEnd = if (isMyMessage) 5.dp else 14.dp,
+    )
+    val messageBackgroundColor =
+        when {
+            isHighlightedInSearch && isMyMessage -> ChatAppColors.MessageBubble.mySearchHighlightedBackground
+            isHighlightedInSearch && !isMyMessage -> ChatAppColors.MessageBubble.othersSearchHighlightedBackground
+            isMyMessage -> ChatAppColors.MessageBubble.myBackground
+            else -> ChatAppColors.MessageBubble.othersBackground
+        }
+
     Row(
-        modifier = modifier
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        horizontalArrangement = if (isMyMessage) Arrangement.End else Arrangement.Start
+        modifier =
+            modifier
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+        horizontalArrangement = if (isMyMessage) Arrangement.End else Arrangement.Start,
     ) {
         SelectionContainer {
             Column(
-                modifier = Modifier
-                    .widthIn(min = 120.dp, max = 420.dp)
-                    .wrapContentSize()
-                    .background(messageBackgroundColor, messageShape)
-                    .messageBorder(messageShape, isMyMessage, isHighlightedInSearch, isMatchingSearch)
-                    .padding(16.dp)
+                modifier =
+                    Modifier
+                        .widthIn(min = 120.dp, max = 420.dp)
+                        .wrapContentSize()
+                        .background(messageBackgroundColor, messageShape)
+                        .messageBorder(messageShape, isMyMessage, isHighlightedInSearch, isMatchingSearch)
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
             ) {
-                AuthorName(message)
-
-                if (message.isTextMessage()) {
-                    MessageContent(message)
-
-                    TimeStampLabel(message)
-                } else if (message.isAIThinkingMessage()) {
-                    PulsingText(message.content, isLoading = true)
-                } else {
-                    Unit
-                }
+                MessageHeader(message)
+                MessageContent(message)
             }
         }
     }
 }
 
 @Composable
-private fun TimeStampLabel(message: ChatMessage) {
+private fun ThinkingMessageRow(
+    message: ChatMessage,
+    modifier: Modifier = Modifier,
+) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.End,
-        verticalAlignment = Alignment.CenterVertically
+        modifier = modifier.padding(horizontal = 14.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.Start,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TypingIndicator(
+            modifier = Modifier.wrapContentSize(),
+            color = ChatAppColors.Text.timestamp,
+        )
+    }
+}
+
+@Composable
+private fun MessageHeader(message: ChatMessage) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+        horizontalArrangement = Arrangement.Start,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = message.formattedTime(),
-            style = JewelTheme.editorTextStyle.copy(fontSize = 12.sp),
-            color = ChatAppColors.Text.timestamp
+            style = JewelTheme.editorTextStyle.copy(fontSize = 10.sp),
+            color = ChatAppColors.Text.timestamp,
+        )
+
+        Spacer(modifier = Modifier.width(6.dp))
+
+        Text(
+            text = if (message.isMyMessage) "Me" else message.author,
+            style =
+                JewelTheme.defaultTextStyle.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp,
+                    color = ChatAppColors.Text.authorName,
+                ),
         )
     }
 }
@@ -88,26 +116,13 @@ private fun TimeStampLabel(message: ChatMessage) {
 private fun MessageContent(message: ChatMessage) {
     Text(
         text = message.content,
-        style = JewelTheme.defaultTextStyle.copy(
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Normal,
-            color = ChatAppColors.Text.normal,
-            lineHeight = 20.sp
-        ),
-        modifier = Modifier.padding(bottom = 8.dp)
-    )
-}
-
-@Composable
-private fun AuthorName(message: ChatMessage) {
-    Text(
-        text = if (message.isMyMessage) "Me" else message.author,
-        style = JewelTheme.defaultTextStyle.copy(
-            fontWeight = FontWeight.Bold,
-            fontSize = 12.sp,
-            color = ChatAppColors.Text.authorName
-        ),
-        modifier = Modifier.padding(bottom = 6.dp)
+        style =
+            JewelTheme.defaultTextStyle.copy(
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Normal,
+                color = ChatAppColors.Text.normal,
+                lineHeight = 17.sp,
+            ),
     )
 }
 
@@ -116,15 +131,17 @@ private fun Modifier.messageBorder(
     shape: Shape,
     isMyMessage: Boolean,
     isHighlightedInSearch: Boolean,
-    isMatchingSearch: Boolean
-) = border(
-    width = if (isMyMessage) 0.dp else 1.dp,
-    color = when {
-        isHighlightedInSearch -> ChatAppColors.MessageBubble.searchHighlightedBackgroundBorder
-        isMatchingSearch && isMyMessage -> ChatAppColors.MessageBubble.matchingMyBorder
-        isMatchingSearch && !isMyMessage -> ChatAppColors.MessageBubble.matchingOthersBorder
-        isMyMessage -> ChatAppColors.MessageBubble.myBackgroundBorder
-        else -> ChatAppColors.MessageBubble.othersBackgroundBorder
-    },
-    shape = shape
-)
+    isMatchingSearch: Boolean,
+) =
+    border(
+        width = if (isMyMessage) 0.dp else 1.dp,
+        color =
+            when {
+                isHighlightedInSearch -> ChatAppColors.MessageBubble.searchHighlightedBackgroundBorder
+                isMatchingSearch && isMyMessage -> ChatAppColors.MessageBubble.matchingMyBorder
+                isMatchingSearch && !isMyMessage -> ChatAppColors.MessageBubble.matchingOthersBorder
+                isMyMessage -> ChatAppColors.MessageBubble.myBackgroundBorder
+                else -> ChatAppColors.MessageBubble.othersBackgroundBorder
+            },
+        shape = shape,
+    )
