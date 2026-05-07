@@ -782,6 +782,7 @@ class OpenAIService(
         agentLabel: String = "AI(agent)",
         allowedBuiltInNames: Set<String>? = null,
         allowedMcpNames: Set<String>? = null,
+        onAssistantMessage: ((String) -> Unit)? = null,
     ): Pair<String, String?> {
         var localPrevId = previousId
         val aggregated = StringBuilder()
@@ -835,6 +836,7 @@ class OpenAIService(
                                 val txt = message.summaryMessage
                                 if (txt.isNotBlank()) {
                                     persistAndShow("assistant", agentLabel, txt)
+                                    onAssistantMessage?.invoke(txt)
                                 }
 
                                 aggregated.append(txt).append('\n')

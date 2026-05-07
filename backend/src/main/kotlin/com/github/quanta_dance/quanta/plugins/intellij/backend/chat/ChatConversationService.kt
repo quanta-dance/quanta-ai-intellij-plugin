@@ -10,17 +10,16 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.agents.Agent
 import com.github.quanta_dance.quanta.plugins.intellij.backend.repository.ChatMessageFactory
 import com.github.quanta_dance.quanta.plugins.intellij.backend.repository.OpenAIBackendChatResponder
 import com.github.quanta_dance.quanta.plugins.intellij.backend.repository.OpenAIBackendChatResponder.ChatTurn
-import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.Instructions
 import com.github.quanta_dance.quanta.plugins.intellij.project.CurrentFileContextProvider
 import com.github.quanta_dance.quanta.plugins.intellij.services.OpenAIService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage.ChatMessageType.AI_THINKING
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatMessageDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.toChatMessageDto
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.openai.models.responses.EasyInputMessage
-import com.openai.models.responses.Response
 import com.openai.models.responses.ResponseInputItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -47,17 +46,32 @@ class ChatConversationService(
 
     suspend fun sendUserMessage(messageContent: String) {
         withContext(Dispatchers.IO) {
+            var thinkingMessageId: String
+            var firstAssistantMessageShown = false
             try {
                 appendUserMessage(messageContent)
                 val inputs = buildRequestInputs()
+                thinkingMessageId = appendAiThinkingMessage()
                 val (responseText, _) = openAIService.agentTurn(
                     inputs = inputs,
                     previousId = null,
                     agentLabel = "AI Manager",
+                    onAssistantMessage = { txt ->
+                        replaceMessage(thinkingMessageId, chatMessageFactory.createAIMessage(txt))
+                        firstAssistantMessageShown = true
+                        thinkingMessageId = appendAiThinkingMessage()
+                    },
                 )
-                appendAiMessage(responseText)
+                if (!firstAssistantMessageShown) {
+                    replaceMessage(thinkingMessageId, chatMessageFactory.createAIMessage(responseText))
+                } else {
+                    clearThinkingMessages()
+                }
             } catch (e: Throwable) {
-                if (e is CancellationException) throw e
+                if (e is CancellationException) {
+                    clearThinkingMessages()
+                    throw e
+                }
                 val errorText = buildString {
                     append("Backend error: ")
                     append(e::class.java.simpleName)
@@ -67,6 +81,7 @@ class ChatConversationService(
                     }
                     append(e.stackTrace.joinToString("\n"))
                 }
+                clearThinkingMessages()
                 appendAiMessage(errorText)
             }
         }
@@ -104,11 +119,42 @@ class ChatConversationService(
         _messages.value += chatMessageFactory.createAIMessage(messageContent)
     }
 
+    private fun appendAiThinkingMessage(): String {
+        val message =
+            ChatMessage(
+                content = "AI is thinking…",
+                author = "AI Manager",
+                type = AI_THINKING,
+            )
+        _messages.value += message
+        return message.id
+    }
+
+    private fun replaceMessage(
+        messageId: String,
+        newMessage: ChatMessage,
+    ) {
+        _messages.value =
+            _messages.value.map { message ->
+                if (message.id == messageId) {
+                    newMessage.copy(id = messageId)
+                } else {
+                    message
+                }
+            }
+    }
+
+    private fun clearThinkingMessages() {
+        _messages.value = _messages.value.filterNot { it.type == AI_THINKING }
+    }
+
     private fun buildHistory(): List<ChatTurn> =
-        _messages.value.map { message ->
-            val role = if (message.isMyMessage) "user" else "assistant"
-            ChatTurn(role = role, content = message.content)
-        }
+        _messages.value
+            .filterNot { it.type == AI_THINKING }
+            .map { message ->
+                val role = if (message.isMyMessage) "user" else "assistant"
+                ChatTurn(role = role, content = message.content)
+            }
 
     private fun buildContextMessage(): String? {
         val ctx = runCatching { CurrentFileContextProvider(project).getCurrent() }.getOrNull() ?: return null
@@ -127,16 +173,14 @@ class ChatConversationService(
                     """.trimIndent(),
                 )
             }
-            if (ctx.selectedText != null && ctx.selectionStartLine != null && ctx.selectionStartColumn != null &&
-                ctx.selectionEndLine != null && ctx.selectionEndColumn != null
-            ) {
-                append(
-                    "\nSelection starts at line ${ctx.selectionStartLine}, column ${ctx.selectionStartColumn} " +
-                            "and ends at line ${ctx.selectionEndLine}, column ${ctx.selectionEndColumn}\n",
-                )
-                append("Selected text snippet is:\n")
+            if (ctx.selectedText != null) {
+                append("\nSelected text:\n")
                 append(ctx.selectedText)
             }
         }
+    }
+
+    fun clearConversation() {
+        _messages.value = emptyList()
     }
 }
