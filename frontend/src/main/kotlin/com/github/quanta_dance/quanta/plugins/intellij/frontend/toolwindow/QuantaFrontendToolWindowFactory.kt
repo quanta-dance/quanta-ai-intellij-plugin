@@ -35,6 +35,11 @@ class QuantaFrontendToolWindowFactory : ToolWindowFactory {
 
         toolWindow.setTitleActions(
             listOf(
+                object : AnAction("New Chat", "Start a new chat session", com.intellij.icons.AllIcons.General.Add) {
+                    override fun actionPerformed(e: AnActionEvent) {
+                        viewModel.onCreateNewSession()
+                    }
+                },
                 object : AnAction("Search", "Search messages", com.intellij.icons.AllIcons.Actions.Find) {
                     override fun actionPerformed(e: AnActionEvent) {
                         val handler = viewModel.searchChatMessagesHandler()

@@ -15,6 +15,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.services.OpenAIService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage.ChatMessageType.AI_THINKING
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatMessageDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.toChatMessageDto
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
@@ -41,13 +42,40 @@ class ChatConversationService(
     private val wake: AgentWakeService get() = project.service()
     private val persistence: ChatConversationStateService get() = project.service()
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
+    private val _sessions = MutableStateFlow<List<ChatSessionDto>>(emptyList())
 
     init {
-        _messages.value = persistence.loadMessages()
+        persistence.ensureSessionExists()
+        _messages.value = persistence.loadActiveMessages()
+        _sessions.value = persistence.listSessions()
+        openAIService.switchToSession(persistence.getActiveSessionId(), persistence.getActiveLastResponseId())
     }
 
     fun messagesFlow(): Flow<List<ChatMessageDto>> =
         _messages.map { messagesList -> messagesList.map { it.toChatMessageDto() } }
+
+    fun sessionsFlow(): Flow<List<ChatSessionDto>> = _sessions
+
+    fun createNewSession() {
+        val sessionId = persistence.createSession()
+        _messages.value = emptyList()
+        _sessions.value = persistence.listSessions()
+        openAIService.switchToSession(sessionId, null)
+    }
+
+    fun activateSession(sessionId: String) {
+        if (!persistence.activateSession(sessionId)) return
+        _messages.value = persistence.loadActiveMessages()
+        _sessions.value = persistence.listSessions()
+        openAIService.switchToSession(sessionId, persistence.getActiveLastResponseId())
+    }
+
+    fun deleteSession(sessionId: String) {
+        val nextSessionId = persistence.deleteSession(sessionId)
+        _messages.value = persistence.loadActiveMessages()
+        _sessions.value = persistence.listSessions()
+        openAIService.switchToSession(nextSessionId, persistence.getActiveLastResponseId())
+    }
 
     suspend fun sendUserMessage(messageContent: String) {
         withContext(Dispatchers.IO) {
@@ -101,6 +129,7 @@ class ChatConversationService(
                 } else {
                     clearThinkingMessages()
                 }
+                persistMessages()
             } catch (e: Throwable) {
                 if (e is CancellationException) {
                     clearThinkingMessages()
@@ -202,6 +231,7 @@ class ChatConversationService(
                 type = AI_THINKING,
             )
         _messages.value += message
+        persistMessages()
         return message.id
     }
 
@@ -259,10 +289,12 @@ class ChatConversationService(
 
     fun clearConversation() {
         _messages.value = emptyList()
-        persistence.clear()
+        persistence.clearActiveSession()
+        persistMessages()
     }
 
     private fun persistMessages() {
-        persistence.saveMessages(_messages.value)
+        persistence.saveActiveMessages(_messages.value, openAIService.getLastResponseId())
+        _sessions.value = persistence.listSessions()
     }
 }

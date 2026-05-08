@@ -2,6 +2,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.rpc
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.ChatConversationService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatMessageDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
 import kotlinx.coroutines.flow.Flow
@@ -18,6 +19,14 @@ class BackendChatRepositoryModel(
     private val conversationService = project.getService(ChatConversationService::class.java)
 
     fun getMessagesFlow(): Flow<List<ChatMessageDto>> = conversationService.messagesFlow()
+
+    fun getSessionsFlow(): Flow<List<ChatSessionDto>> = conversationService.sessionsFlow()
+
+    fun createNewSession() = conversationService.createNewSession()
+
+    fun activateSession(sessionId: String) = conversationService.activateSession(sessionId)
+
+    fun deleteSession(sessionId: String) = conversationService.deleteSession(sessionId)
 
     suspend fun sendMessage(messageContent: String) = conversationService.sendUserMessage(messageContent)
 }

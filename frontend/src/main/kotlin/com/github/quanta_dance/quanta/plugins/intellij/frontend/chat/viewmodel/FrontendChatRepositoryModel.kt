@@ -1,6 +1,8 @@
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel
 
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.ChatRepositoryRpcApi
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.toChatMessage
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.Service.Level
@@ -25,7 +27,7 @@ class FrontendChatRepositoryModel(
 
     override val messagesFlow: StateFlow<List<ChatMessage>> = flow {
         durable {
-            com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.ChatRepositoryRpcApi
+            ChatRepositoryRpcApi
                 .getInstance()
                 .getMessagesFlow(project.projectId())
                 .collect { valueFromBackend ->
@@ -34,9 +36,30 @@ class FrontendChatRepositoryModel(
         }
     }.stateIn(coroutineScope, initialValue = emptyList(), started = SharingStarted.Lazily)
 
+    override val sessionsFlow: StateFlow<List<ChatSessionDto>> = flow {
+        durable {
+            ChatRepositoryRpcApi
+                .getInstance()
+                .getSessionsFlow(project.projectId())
+                .collect { emit(it) }
+        }
+    }.stateIn(coroutineScope, initialValue = emptyList(), started = SharingStarted.Lazily)
+
     override suspend fun sendMessage(messageContent: String) {
-        com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.ChatRepositoryRpcApi
+        ChatRepositoryRpcApi
             .getInstance()
             .sendMessage(project.projectId(), messageContent)
+    }
+
+    override suspend fun createNewSession() {
+        ChatRepositoryRpcApi.getInstance().createNewSession(project.projectId())
+    }
+
+    override suspend fun activateSession(sessionId: String) {
+        ChatRepositoryRpcApi.getInstance().activateSession(project.projectId(), sessionId)
+    }
+
+    override suspend fun deleteSession(sessionId: String) {
+        ChatRepositoryRpcApi.getInstance().deleteSession(project.projectId(), sessionId)
     }
 }
