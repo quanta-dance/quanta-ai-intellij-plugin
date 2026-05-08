@@ -2,24 +2,51 @@ package com.github.quanta_dance.quanta.plugins.intellij.frontend.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.input.pointer.pointerMoveFilter
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.ChatAppColors
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.ChatAppIcons
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.components.TypingIndicator
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaBackendApi
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.FrontendLogDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.FrontendLogLevel
+import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.project.Project
+import com.intellij.platform.project.projectId
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import org.jetbrains.jewel.foundation.theme.JewelTheme
+import org.jetbrains.jewel.ui.component.Icon
 import org.jetbrains.jewel.ui.component.Text
+
+private val logger = Logger.getInstance("ToolExecutionLink")
+private val linkLogScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
 @Composable
 fun MessageBubble(
+    project: Project,
     message: ChatMessage,
     modifier: Modifier = Modifier,
     isMatchingSearch: Boolean = false,
@@ -39,6 +66,7 @@ fun MessageBubble(
     )
     val messageBackgroundColor =
         when {
+            message.isToolMessage() -> Color.Gray.copy(alpha = 0.18f)
             isHighlightedInSearch && isMyMessage -> ChatAppColors.MessageBubble.mySearchHighlightedBackground
             isHighlightedInSearch && !isMyMessage -> ChatAppColors.MessageBubble.othersSearchHighlightedBackground
             isMyMessage -> ChatAppColors.MessageBubble.myBackground
@@ -51,22 +79,189 @@ fun MessageBubble(
                 .padding(horizontal = 8.dp, vertical = 4.dp),
         horizontalArrangement = if (isMyMessage) Arrangement.End else Arrangement.Start,
     ) {
-        SelectionContainer {
-            Column(
-                modifier =
-                    Modifier
-                        .widthIn(min = 120.dp, max = 420.dp)
-                        .wrapContentSize()
-                        .background(messageBackgroundColor, messageShape)
-                        .messageBorder(messageShape, isMyMessage, isHighlightedInSearch, isMatchingSearch)
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-            ) {
-                MessageHeader(message)
-                MessageContent(message)
+        Column(
+            modifier =
+                Modifier
+                    .widthIn(min = 120.dp, max = 420.dp)
+                    .wrapContentSize()
+                    .background(messageBackgroundColor, messageShape)
+                    .messageBorder(messageShape, isMyMessage, isHighlightedInSearch, isMatchingSearch)
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+        ) {
+            MessageHeader(message)
+            if (message.toolItems.isNotEmpty()) {
+                ToolExecutionGroup(project = project, toolItems = message.toolItems)
+                if (message.content.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+            if (message.content.isNotBlank()) {
+                SelectionContainer {
+                    MessageContent(message)
+                }
             }
         }
     }
 }
+
+@Composable
+private fun ToolExecutionGroup(
+    project: Project,
+    toolItems: List<ToolExecutionItem>,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        toolItems.forEach { item ->
+            ToolExecutionRow(project = project, item = item)
+        }
+    }
+}
+
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+private fun ToolExecutionRow(
+    project: Project,
+    item: ToolExecutionItem,
+) {
+    var hovered by remember(item.callId) { mutableStateOf(false) }
+    val handPointer = remember { PointerIcon(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)) }
+    val scope = rememberCoroutineScope()
+    val statusIcon =
+        when (item.status) {
+            ToolExecutionStatus.EXECUTING -> ChatAppIcons.ToolStatus.running
+            ToolExecutionStatus.SUCCEEDED -> ChatAppIcons.ToolStatus.success
+            ToolExecutionStatus.FAILED -> ChatAppIcons.ToolStatus.failed
+        }
+    val filePath = item.filePath
+    val fileName = filePath?.substringAfterLast('/')?.substringAfterLast('\\')
+    val hasFileLink = !filePath.isNullOrBlank() && !fileName.isNullOrBlank() && item.displayText.contains(fileName)
+    val displayPrefix = if (hasFileLink) item.displayText.substringBefore(fileName) else item.displayText
+    Box {
+        if (hovered && !filePath.isNullOrBlank()) {
+            Box(
+                modifier = Modifier
+                    .offset(y = (-28).dp)
+                    .zIndex(1f)
+                    .background(Color(0xFF2B2B2B), RoundedCornerShape(6.dp))
+                    .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(6.dp))
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+            ) {
+                Text(
+                    text = filePath,
+                    style = JewelTheme.defaultTextStyle.copy(fontSize = 11.sp, color = Color.White),
+                )
+            }
+        }
+
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .background(Color.White.copy(alpha = 0.06f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(
+                    key = statusIcon,
+                    contentDescription = item.status.name,
+                    modifier = Modifier.size(14.dp),
+                )
+                if (hasFileLink) {
+                    Text(
+                        text = displayPrefix,
+                        style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, fontWeight = FontWeight.Medium),
+                    )
+                    Box(
+                        modifier = Modifier
+                            .pointerHoverIcon(handPointer)
+                            .pointerMoveFilter(
+                                onEnter = {
+                                    hovered = true
+                                    false
+                                },
+                                onExit = {
+                                    hovered = false
+                                    false
+                                },
+                            )
+                            .clickable {
+                                frontendLinkLog(
+                                    project,
+                                    FrontendLogLevel.INFO,
+                                    "ToolExecutionRow.click filePath=$filePath"
+                                )
+                                scope.launch {
+                                    runCatching {
+                                        QuantaBackendApi.getInstance().openProjectFile(project.projectId(), filePath!!)
+                                    }.onFailure { error ->
+                                        frontendLinkLog(
+                                            project,
+                                            FrontendLogLevel.ERROR,
+                                            "ToolExecutionRow.openProjectFile failed: ${error.message}"
+                                        )
+                                    }
+                                }
+                            },
+                    ) {
+                        Text(
+                            text = fileName,
+                            style = JewelTheme.defaultTextStyle.copy(
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFF69B7FF),
+                                textDecoration = TextDecoration.Underline,
+                            ),
+                        )
+                    }
+                } else {
+                    Text(
+                        text = item.displayText,
+                        style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, fontWeight = FontWeight.Medium),
+                    )
+                }
+            }
+            val secondary =
+                when {
+                    item.status == ToolExecutionStatus.FAILED && !item.errorText.isNullOrBlank() -> item.errorText
+                    else -> null
+                }
+            if (!secondary.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = secondary,
+                    style = JewelTheme.defaultTextStyle.copy(fontSize = 11.sp, color = ChatAppColors.Text.timestamp),
+                )
+            }
+        }
+    }
+}
+
+private fun frontendLinkLog(
+    project: Project,
+    level: FrontendLogLevel,
+    message: String,
+) {
+    when (level) {
+        FrontendLogLevel.DEBUG -> QDLog.debug(logger) { message }
+        FrontendLogLevel.INFO -> QDLog.info(logger) { message }
+        FrontendLogLevel.WARN -> QDLog.warn(logger) { message }
+        FrontendLogLevel.ERROR -> QDLog.error(logger, { message }, null)
+    }
+    linkLogScope.launch {
+        runCatching {
+            QuantaBackendApi.getInstance().logFrontend(
+                project.projectId(),
+                FrontendLogDto(level = level, message = message),
+            )
+        }
+    }
+}
+
 
 @Composable
 private fun ThinkingMessageRow(
@@ -88,26 +283,24 @@ private fun ThinkingMessageRow(
 @Composable
 private fun MessageHeader(message: ChatMessage) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
-        horizontalArrangement = Arrangement.Start,
+        modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = message.formattedTime(),
-            style = JewelTheme.editorTextStyle.copy(fontSize = 10.sp),
-            color = ChatAppColors.Text.timestamp,
+            text = message.author,
+            style = JewelTheme.defaultTextStyle.copy(
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 12.sp,
+                color = ChatAppColors.Text.authorName,
+            ),
         )
-
-        Spacer(modifier = Modifier.width(6.dp))
-
         Text(
-            text = if (message.isMyMessage) "Me" else message.author,
-            style =
-                JewelTheme.defaultTextStyle.copy(
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 11.sp,
-                    color = ChatAppColors.Text.authorName,
-                ),
+            text = message.formattedTime(),
+            style = JewelTheme.defaultTextStyle.copy(
+                fontSize = 11.sp,
+                color = ChatAppColors.Text.timestamp,
+            ),
         )
     }
 }
@@ -116,13 +309,10 @@ private fun MessageHeader(message: ChatMessage) {
 private fun MessageContent(message: ChatMessage) {
     Text(
         text = message.content,
-        style =
-            JewelTheme.defaultTextStyle.copy(
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Normal,
-                color = ChatAppColors.Text.normal,
-                lineHeight = 17.sp,
-            ),
+        style = JewelTheme.defaultTextStyle.copy(
+            fontSize = 13.sp,
+            lineHeight = 18.sp,
+        ),
     )
 }
 
@@ -132,9 +322,13 @@ private fun Modifier.messageBorder(
     isMyMessage: Boolean,
     isHighlightedInSearch: Boolean,
     isMatchingSearch: Boolean,
-) =
+): Modifier =
     border(
-        width = if (isMyMessage) 0.dp else 1.dp,
+        width = when {
+            isHighlightedInSearch -> 2.dp
+            isMatchingSearch -> 1.5.dp
+            else -> 1.dp
+        },
         color =
             when {
                 isHighlightedInSearch -> ChatAppColors.MessageBubble.searchHighlightedBackgroundBorder

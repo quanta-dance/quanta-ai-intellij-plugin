@@ -1,6 +1,7 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.repository
 
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem
 
 import java.time.LocalDateTime
 
@@ -47,6 +48,7 @@ class ChatMessageFactory(
         content: String,
         timestamp: LocalDateTime = LocalDateTime.now(),
         voiceSummary: String? = null,
+        toolItems: List<ToolExecutionItem> = emptyList(),
     ): ChatMessage {
         return ChatMessage(
             content = content,
@@ -55,6 +57,21 @@ class ChatMessageFactory(
             isMyMessage = false,
             type = ChatMessage.ChatMessageType.TEXT,
             voiceSummary = voiceSummary,
+            toolItems = toolItems,
+        )
+    }
+
+    fun createAIToolMessage(
+        toolItems: List<ToolExecutionItem>,
+        timestamp: LocalDateTime = LocalDateTime.now(),
+    ): ChatMessage {
+        return ChatMessage(
+            content = "",
+            author = aiCompanionName,
+            timestamp = timestamp,
+            isMyMessage = false,
+            type = ChatMessage.ChatMessageType.TOOL,
+            toolItems = toolItems,
         )
     }
 

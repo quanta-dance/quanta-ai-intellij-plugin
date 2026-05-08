@@ -1,8 +1,7 @@
 package com.github.quanta_dance.quanta.plugins.intellij.shared.contracts
 
 import com.github.quanta_dance.quanta.plugins.intellij.shared.Searchable
-import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage.ChatMessageType.AI_THINKING
-import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage.ChatMessageType.TEXT
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage.ChatMessageType.*
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.*
@@ -17,10 +16,12 @@ data class ChatMessage(
     val timestamp: LocalDateTime = LocalDateTime.now(),
     val type: ChatMessageType = TEXT,
     val voiceSummary: String? = null,
+    val toolItems: List<ToolExecutionItem> = emptyList(),
 ) : Searchable {
 
     enum class ChatMessageType {
         AI_THINKING,
+        TOOL,
         TEXT;
     }
 
@@ -33,6 +34,8 @@ data class ChatMessage(
     fun isTextMessage(): Boolean = this.type == TEXT
 
     fun isAIThinkingMessage(): Boolean = this.type == AI_THINKING
+
+    fun isToolMessage(): Boolean = this.type == TOOL
 
     override fun matches(query: String): Boolean {
         if (query.isBlank()) return false

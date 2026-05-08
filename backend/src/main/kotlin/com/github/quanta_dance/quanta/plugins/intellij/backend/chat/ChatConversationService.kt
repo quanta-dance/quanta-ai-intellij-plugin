@@ -47,6 +47,7 @@ class ChatConversationService(
     suspend fun sendUserMessage(messageContent: String) {
         withContext(Dispatchers.IO) {
             var thinkingMessageId: String
+            var toolMessageId: String? = null
             var firstAssistantMessageShown = false
             try {
                 appendUserMessage(messageContent)
@@ -57,19 +58,41 @@ class ChatConversationService(
                     previousId = null,
                     agentLabel = "AI Manager",
                     onAssistantMessage = { assistantMessage ->
+                        val visibleContent =
+                            if (assistantMessage.isReasoning) {
+                                "Reasoning\n${assistantMessage.text}"
+                            } else {
+                                assistantMessage.text
+                            }
                         replaceMessage(
                             thinkingMessageId,
                             chatMessageFactory.createAIMessage(
-                                content = assistantMessage.text,
+                                content = visibleContent,
                                 voiceSummary = assistantMessage.ttsSummary,
                             ),
                         )
                         firstAssistantMessageShown = true
                         thinkingMessageId = appendAiThinkingMessage()
                     },
+                    onToolUpdate = { update ->
+                        val targetId =
+                            toolMessageId ?: appendAiToolMessage(
+                                toolItems = emptyList(),
+                                beforeMessageId = thinkingMessageId,
+                            ).also { toolMessageId = it }
+                        val existingItems = currentToolItems(targetId)
+                        val mergedItems = mergeToolItems(existingItems, update.item)
+                        replaceMessage(
+                            targetId,
+                            chatMessageFactory.createAIToolMessage(mergedItems),
+                        )
+                    },
                 )
                 if (!firstAssistantMessageShown) {
-                    replaceMessage(thinkingMessageId, chatMessageFactory.createAIMessage(responseText))
+                    replaceMessage(
+                        thinkingMessageId,
+                        chatMessageFactory.createAIMessage(responseText),
+                    )
                 } else {
                     clearThinkingMessages()
                 }
@@ -123,6 +146,44 @@ class ChatConversationService(
 
     private fun appendAiMessage(messageContent: String) {
         _messages.value += chatMessageFactory.createAIMessage(messageContent)
+    }
+
+    private fun appendAiToolMessage(
+        toolItems: List<com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem>,
+        beforeMessageId: String? = null,
+    ): String {
+        val message = chatMessageFactory.createAIToolMessage(toolItems)
+        _messages.value =
+            if (beforeMessageId == null) {
+                _messages.value + message
+            } else {
+                val idx = _messages.value.indexOfFirst { it.id == beforeMessageId }
+                if (idx < 0) {
+                    _messages.value + message
+                } else {
+                    buildList {
+                        addAll(_messages.value.take(idx))
+                        add(message)
+                        addAll(_messages.value.drop(idx))
+                    }
+                }
+            }
+        return message.id
+    }
+
+    private fun currentToolItems(messageId: String): List<com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem> =
+        _messages.value.firstOrNull { it.id == messageId }?.toolItems.orEmpty()
+
+    private fun mergeToolItems(
+        existing: List<com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem>,
+        incoming: com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem,
+    ): List<com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem> {
+        val idx = existing.indexOfFirst { it.callId == incoming.callId }
+        return if (idx >= 0) {
+            existing.toMutableList().apply { this[idx] = incoming }
+        } else {
+            existing + incoming
+        }
     }
 
     private fun appendAiThinkingMessage(): String {

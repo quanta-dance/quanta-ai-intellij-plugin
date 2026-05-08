@@ -1,6 +1,7 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.rpc
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.contracts.BackendWorkspaceFileService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.OpenFileInEditorTool
 import com.github.quanta_dance.quanta.plugins.intellij.services.AIVoiceService
 import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.services.SpeechToTextService
@@ -98,6 +99,11 @@ class QuantaBackendRpcApi : QuantaBackendApi {
     override suspend fun cancelMicrophoneSession(projectId: ProjectId, sessionId: String) {
         val backendProject = projectId.findProjectOrNull() ?: return
         backendProject.service<SpeechToTextService>().cancelSession(sessionId)
+    }
+
+    override suspend fun openProjectFile(projectId: ProjectId, relativePath: String) {
+        val backendProject = projectId.findProjectOrNull() ?: return
+        OpenFileInEditorTool(filePath = relativePath, focus = true).execute(backendProject)
     }
 }
 
