@@ -15,7 +15,7 @@ junit = { group = "junit", name = "junit", version.ref = "junit" }
 kotlin-serialization-core-jvm = { module = "org.jetbrains.kotlinx:kotlinx-serialization-core-jvm", version.ref = "kotlin-serialization" }
 kotlin-serialization-json-jvm = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json-jvm", version.ref = "kotlin-serialization" }
 javazoom = { group = "javazoom", name = "jlayer", version = "1.0.1" }
-openai = { group = "com.openai", name = "openai-java", version = "4.32.0" }
+openai = { group = "com.openai", name = "openai-java", version = "4.35.0" }
 
 [plugins]
 intellij-platform = { id = "org.jetbrains.intellij.platform", version.ref = "intellij-gradle-plugin" }

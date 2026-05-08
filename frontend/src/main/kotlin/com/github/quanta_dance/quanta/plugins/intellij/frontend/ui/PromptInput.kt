@@ -1,5 +1,6 @@
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.TextFieldState
@@ -29,6 +30,9 @@ fun PromptInput(
     voiceEnabled: Boolean = true,
     micEnabled: Boolean = false,
     micActive: Boolean = false,
+    currentModel: String = "",
+    availableModels: List<String> = emptyList(),
+    onModelSelected: (String) -> Unit = {},
     onToggleMic: () -> Unit = {},
     onToggleVoiceFeedback: () -> Unit = {},
     onInputChanged: (String) -> Unit = {},
@@ -109,6 +113,27 @@ fun PromptInput(
                 is MessageInputState.SendFailed,
                 is MessageInputState.Sent -> {
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (availableModels.isNotEmpty()) {
+                            key(currentModel) {
+                                ComboBox(
+                                    labelText = currentModel,
+                                    modifier = Modifier.widthIn(min = 120.dp).padding(end = 6.dp),
+                                    popupContent = {
+                                        Column {
+                                            availableModels.forEach { model ->
+                                                Text(
+                                                    text = model,
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .clickable { onModelSelected(model) }
+                                                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                                                )
+                                            }
+                                        }
+                                    },
+                                )
+                            }
+                        }
                         IconButton(onClick = onToggleMic) {
                             Icon(
                                 key = when {
@@ -156,6 +181,27 @@ fun PromptInput(
 
                 is MessageInputState.Sending -> {
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (availableModels.isNotEmpty()) {
+                            key(currentModel) {
+                                ComboBox(
+                                    labelText = currentModel,
+                                    modifier = Modifier.widthIn(min = 120.dp).padding(end = 6.dp),
+                                    popupContent = {
+                                        Column {
+                                            availableModels.forEach { model ->
+                                                Text(
+                                                    text = model,
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .clickable { onModelSelected(model) }
+                                                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                                                )
+                                            }
+                                        }
+                                    },
+                                )
+                            }
+                        }
                         IconButton(onClick = onToggleMic) {
                             Icon(
                                 key = when {

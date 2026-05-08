@@ -14,6 +14,7 @@ class FrontendQuantaSettingsState : PersistentStateComponent<FrontendQuantaSetti
         var openAiToken: String = "",
         var model: String = DEFAULT_MODEL,
         var aiChatModel: String = DEFAULT_MODEL,
+        var availableChatModels: List<String> = emptyList(),
         var voiceEnabled: Boolean = true,
         var voiceByLocalTTS: Boolean = false,
         var maxTokens: Long? = 2048,

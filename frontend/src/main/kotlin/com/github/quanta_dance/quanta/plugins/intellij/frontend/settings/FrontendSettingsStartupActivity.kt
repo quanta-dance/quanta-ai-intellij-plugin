@@ -41,6 +41,8 @@ class FrontendSettingsStartupActivity : ProjectActivity {
                     "Quanta AI frontend settings sync attempt ${attemptIndex + 1} starting for project=${project.name}",
                 )
                 rpc.updateSettings(currentState.toDto())
+                val backendSettings = rpc.getSettings()
+                FrontendQuantaSettingsState.instance.loadState(backendSettings.toFrontendState())
                 logger.info(
                     "Quanta AI frontend settings synced to backend on startup after attempt ${attemptIndex + 1}",
                 )

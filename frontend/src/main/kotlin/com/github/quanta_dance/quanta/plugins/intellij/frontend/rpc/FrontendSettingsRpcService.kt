@@ -18,6 +18,11 @@ class FrontendSettingsRpcService(
             project.getService(FrontendSettingsRpcService::class.java)
     }
 
+    suspend fun getSettings(): QuantaSettingsDto {
+        val api = QuantaSettingsApi.getInstance()
+        return api.getSettings()
+    }
+
     suspend fun updateSettings(settings: QuantaSettingsDto) {
         logger.info(
             "Quanta AI frontend settings RPC update requested for project=${project.name}: " +

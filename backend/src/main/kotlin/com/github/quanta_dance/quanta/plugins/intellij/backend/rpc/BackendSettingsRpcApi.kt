@@ -3,10 +3,29 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.rpc
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQuantaSettingsState
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaSettingsApi
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.QuantaSettingsDto
+import com.openai.models.ChatModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 class BackendSettingsRpcApi : QuantaSettingsApi {
+    companion object {
+        private val AVAILABLE_CHAT_MODELS =
+            listOf(
+                //ChatModel.GPT_5_5.toString(),
+                //ChatModel.GPT_5_5_MINI.toString(),
+                //ChatModel.GPT_5_5_NANO.toString(),
+                ChatModel.GPT_5_4.toString(),
+                ChatModel.GPT_5_4_MINI.toString(),
+                ChatModel.GPT_5_4_NANO.toString(),
+                ChatModel.GPT_5_2.toString(),
+                ChatModel.GPT_5_1_CODEX.toString(),
+                ChatModel.GPT_5_1.toString(),
+                ChatModel.GPT_5.toString(),
+                ChatModel.GPT_5_MINI.toString(),
+                ChatModel.GPT_5_NANO.toString(),
+            )
+    }
+
     override suspend fun getSettings(): QuantaSettingsDto =
         withContext(Dispatchers.IO) {
             val settings = BackendQuantaSettingsState.instance.settings
@@ -15,6 +34,7 @@ class BackendSettingsRpcApi : QuantaSettingsApi {
                 openAiToken = settings.openAiToken,
                 model = settings.model,
                 aiChatModel = settings.aiChatModel,
+                availableChatModels = AVAILABLE_CHAT_MODELS,
                 voiceEnabled = settings.voiceEnabled,
                 voiceByLocalTTS = settings.voiceByLocalTTS,
                 maxTokens = settings.maxTokens,

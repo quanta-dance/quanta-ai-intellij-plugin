@@ -7,11 +7,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.frontend.toolwindow.pane
 //import com.github.quanta_dance.quanta.plugins.intellij.services.SessionPlanService
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.services.ToolWindowService
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendQuantaSettingsState
-import com.github.quanta_dance.quanta.plugins.intellij.frontend.toolwindow.actions.AgenticModeToggleAction
-import com.github.quanta_dance.quanta.plugins.intellij.frontend.toolwindow.actions.FollowToggleAction
-import com.github.quanta_dance.quanta.plugins.intellij.frontend.toolwindow.actions.MicAction
-import com.github.quanta_dance.quanta.plugins.intellij.frontend.toolwindow.actions.SpeakerAction
-import com.github.quanta_dance.quanta.plugins.intellij.frontend.toolwindow.actions.StopAgentsAction
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.toolwindow.actions.*
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionToolbar
@@ -26,23 +22,7 @@ import java.awt.Component
 import java.awt.FlowLayout
 import java.awt.event.ActionEvent
 import java.awt.event.KeyEvent
-import java.awt.event.MouseAdapter
-import java.awt.event.MouseEvent
-import java.beans.PropertyChangeListener
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicBoolean
-import javax.swing.AbstractAction
-import javax.swing.BorderFactory
-import javax.swing.Box
-import javax.swing.BoxLayout
-import javax.swing.JButton
-import javax.swing.JLabel
-import javax.swing.JPanel
-import javax.swing.JScrollPane
-import javax.swing.JTextArea
-import javax.swing.KeyStroke
-import javax.swing.Timer
-import javax.swing.UIManager
+import javax.swing.*
 
 // TODO: this is legacy class and must be rework into ChatApp
 class MainPanel(var project: Project) : JPanel(BorderLayout()) {
@@ -98,25 +78,13 @@ class MainPanel(var project: Project) : JPanel(BorderLayout()) {
             font = font.deriveFont((font.size2D - 2f).coerceAtLeast(10f))
         }
 
-    private val models =
-        arrayOf(
-            "gpt-5.4", // ChatModel.GPT_5_4.toString(),
-            "gpt-5.4-mini", //ChatModel.GPT_5_4_MINI.toString(),
-            "gpt-5.4-nano", //ChatModel.GPT_5_4_NANO.toString(),
-            "gpt-5.2", //ChatModel.GPT_5_2.toString(),
-            "gpt-5.1-codex", //ChatModel.GPT_5_1_CODEX.toString(),
-            "gpt-5.1", //ChatModel.GPT_5_1.toString(),
-            "gpt-5", //ChatModel.GPT_5.toString(),
-            "gpt-5-mini", //ChatModel.GPT_5_MINI.toString(),
-            "gpt-5-nano", //ChatModel.GPT_5_NANO.toString(),
-        )
-
     private val modelSelector =
-        ComboBox(models).apply {
+        ComboBox(FrontendQuantaSettingsState.instance.state.availableChatModels.toTypedArray()).apply {
             isFocusable = false
             font = font.deriveFont((font.size2D - 2f).coerceAtLeast(10f))
+            val models = FrontendQuantaSettingsState.instance.state.availableChatModels
             val current = FrontendQuantaSettingsState.instance.state.aiChatModel
-            selectedItem = if (models.contains(current)) current else models.last()
+            selectedItem = if (models.contains(current)) current else models.firstOrNull()
             toolTipText = "Current model for requests (or max model cap when dynamic switching is enabled)."
             addActionListener {
                 val selected = (selectedItem as? String).orEmpty().trim()
@@ -172,7 +140,7 @@ class MainPanel(var project: Project) : JPanel(BorderLayout()) {
         add(bottom, BorderLayout.SOUTH)
 
         // TODO: this shall be fixed with new ChatApp
-/*
+        /*
         val agentService = project.service<AgentManagerService>()
         agentService.addPropertyChangeListener(
             PropertyChangeListener { evt ->
@@ -316,7 +284,7 @@ class MainPanel(var project: Project) : JPanel(BorderLayout()) {
         val promptText = promptTextArea.text
         if (promptText.isNotEmpty()) {
             project.service<ToolWindowService>().addUserMessage(promptText)
-        //    project.service<OpenAIService>().sendMessage(promptText) { }
+            //    project.service<OpenAIService>().sendMessage(promptText) { }
             promptTextArea.text = ""
         }
     }
