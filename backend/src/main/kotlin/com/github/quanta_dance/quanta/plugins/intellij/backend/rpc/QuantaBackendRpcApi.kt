@@ -2,10 +2,12 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.rpc
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.contracts.BackendWorkspaceFileService
 import com.github.quanta_dance.quanta.plugins.intellij.services.AIVoiceService
+import com.github.quanta_dance.quanta.plugins.intellij.services.SpeechToTextService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.WorkspaceFileReadRequest
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.WorkspaceFileWriteRequest
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaBackendApi
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.WorkspaceFileRpcApi
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.MicrophoneTranscriptionResultDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.SynthesizedSpeechDto
 import com.intellij.openapi.components.service
 import com.intellij.platform.project.ProjectId
@@ -29,6 +31,40 @@ class QuantaBackendRpcApi : QuantaBackendApi {
     override suspend fun stopSpeech(projectId: ProjectId) {
         val backendProject = projectId.findProjectOrNull() ?: return
         backendProject.service<AIVoiceService>().stopTalking()
+    }
+
+    override suspend fun startMicrophoneSession(projectId: ProjectId, sessionId: String) {
+        val backendProject = projectId.findProjectOrNull() ?: return
+        backendProject.service<SpeechToTextService>().startSession(sessionId)
+    }
+
+    override suspend fun appendMicrophoneAudioChunk(
+        projectId: ProjectId,
+        sessionId: String,
+        chunkBase64: String,
+    ) {
+        val backendProject = projectId.findProjectOrNull() ?: return
+        val chunkBytes = Base64.getDecoder().decode(chunkBase64)
+        backendProject.service<SpeechToTextService>().appendAudioChunk(sessionId, chunkBytes)
+    }
+
+    override suspend fun finishMicrophoneSession(
+        projectId: ProjectId,
+        sessionId: String,
+    ): MicrophoneTranscriptionResultDto {
+        val backendProject =
+            projectId.findProjectOrNull() ?: return MicrophoneTranscriptionResultDto(sessionId = sessionId)
+        val transcript = backendProject.service<SpeechToTextService>().finishSession(sessionId)
+        return MicrophoneTranscriptionResultDto(
+            sessionId = sessionId,
+            transcript = transcript,
+            submitted = transcript.isNotBlank(),
+        )
+    }
+
+    override suspend fun cancelMicrophoneSession(projectId: ProjectId, sessionId: String) {
+        val backendProject = projectId.findProjectOrNull() ?: return
+        backendProject.service<SpeechToTextService>().cancelSession(sessionId)
     }
 }
 

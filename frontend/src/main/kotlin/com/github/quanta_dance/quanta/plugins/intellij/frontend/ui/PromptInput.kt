@@ -29,6 +29,7 @@ fun PromptInput(
     hint: String = "Whats on your mind...",
     voiceEnabled: Boolean = true,
     micEnabled: Boolean = false,
+    micActive: Boolean = false,
     onToggleMic: () -> Unit = {},
     onToggleVoiceFeedback: () -> Unit = {},
     onInputChanged: (String) -> Unit = {},
@@ -112,7 +113,11 @@ fun PromptInput(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton(onClick = onToggleMic) {
                             Icon(
-                                key = if (micEnabled) ChatAppIcons.Header.micOn else ChatAppIcons.Header.micOff,
+                                key = when {
+                                    micActive -> ChatAppIcons.Header.micActive
+                                    micEnabled -> ChatAppIcons.Header.micOn
+                                    else -> ChatAppIcons.Header.micOff
+                                },
                                 contentDescription = "Toggle Microphone"
                             )
                         }
@@ -155,7 +160,11 @@ fun PromptInput(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton(onClick = onToggleMic) {
                             Icon(
-                                key = if (micEnabled) ChatAppIcons.Header.micOn else ChatAppIcons.Header.micOff,
+                                key = when {
+                                    micActive -> ChatAppIcons.Header.micActive
+                                    micEnabled -> ChatAppIcons.Header.micOn
+                                    else -> ChatAppIcons.Header.micOff
+                                },
                                 contentDescription = "Toggle Microphone"
                             )
                         }
