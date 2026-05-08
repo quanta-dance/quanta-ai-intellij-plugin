@@ -1,6 +1,5 @@
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.ui
 
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.TextFieldState
@@ -59,7 +58,6 @@ fun PromptInput(
 
     Column(
         modifier
-            .border(1.dp, ChatAppColors.Prompt.border, RoundedCornerShape(8.dp))
             .clip(RoundedCornerShape(8.dp))
             .padding(8.dp),
     ) {

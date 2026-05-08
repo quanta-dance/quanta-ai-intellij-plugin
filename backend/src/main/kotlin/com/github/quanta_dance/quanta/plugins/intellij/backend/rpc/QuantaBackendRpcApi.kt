@@ -2,20 +2,35 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.rpc
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.contracts.BackendWorkspaceFileService
 import com.github.quanta_dance.quanta.plugins.intellij.services.AIVoiceService
+import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.services.SpeechToTextService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.WorkspaceFileReadRequest
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.WorkspaceFileWriteRequest
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaBackendApi
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.WorkspaceFileRpcApi
-import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.MicrophoneTranscriptionResultDto
-import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.SynthesizedSpeechDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.*
 import com.intellij.openapi.components.service
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.platform.project.ProjectId
 import com.intellij.platform.project.findProjectOrNull
 import java.util.*
 
 class QuantaBackendRpcApi : QuantaBackendApi {
+    companion object {
+        private val logger = Logger.getInstance(QuantaBackendRpcApi::class.java)
+    }
+
     override suspend fun ping(): String = "pong-from-backend"
+
+    override suspend fun logFrontend(projectId: ProjectId, entry: FrontendLogDto) {
+        val message = "[Frontend][${entry.level}] ${entry.message}"
+        when (entry.level) {
+            FrontendLogLevel.DEBUG -> QDLog.debug(logger) { message }
+            FrontendLogLevel.INFO -> QDLog.info(logger) { message }
+            FrontendLogLevel.WARN -> QDLog.warn(logger) { message }
+            FrontendLogLevel.ERROR -> QDLog.error(logger, { message }, null)
+        }
+    }
 
     override suspend fun synthesizeSpeech(
         projectId: ProjectId,
@@ -26,6 +41,24 @@ class QuantaBackendRpcApi : QuantaBackendApi {
         return SynthesizedSpeechDto(
             audioBase64 = Base64.getEncoder().encodeToString(audioBytes),
         )
+    }
+
+    override suspend fun startSpeechStream(projectId: ProjectId, sessionId: String, text: String) {
+        val backendProject = projectId.findProjectOrNull() ?: return
+        backendProject.service<AIVoiceService>().startSpeechStream(sessionId, text)
+    }
+
+    override suspend fun pollSpeechChunk(
+        projectId: ProjectId,
+        sessionId: String,
+        afterSequence: Int,
+    ): SpeechChunkDto {
+        val backendProject = projectId.findProjectOrNull() ?: return SpeechChunkDto(
+            sessionId = sessionId,
+            sequence = afterSequence,
+            isLast = true
+        )
+        return backendProject.service<AIVoiceService>().pollSpeechChunk(sessionId, afterSequence)
     }
 
     override suspend fun stopSpeech(projectId: ProjectId) {

@@ -33,7 +33,6 @@ object QDLog {
     ) {
         val text = msg()
         logger.info(text)
-        kotlin.io.println("[QDLog][INFO] $text")
         if (isDevMode()) {
             // Echo INFO to console during runIde/internal mode for easier dev debugging
             kotlin.io.println(text)
@@ -58,7 +57,6 @@ object QDLog {
         } else {
             logger.warn(text)
         }
-        kotlin.io.println("[QDLog][WARN] $text")
         t?.printStackTrace(PrintStream(System.err))
     }
 
@@ -73,7 +71,6 @@ object QDLog {
         } else {
             logger.error(text)
         }
-        kotlin.io.println("[QDLog][ERROR] $text")
         t?.printStackTrace(PrintStream(System.err))
     }
 }
