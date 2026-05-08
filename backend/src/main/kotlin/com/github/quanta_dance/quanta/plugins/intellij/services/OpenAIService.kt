@@ -699,6 +699,19 @@ class OpenAIService(
 
     fun getCurrentSessionId(): String = currentSessionId
 
+    fun getLastResponseId(): String? = lastResponseId
+
+    fun switchToSession(
+        sessionId: String,
+        lastResponseId: String?,
+    ) {
+        currentSessionId = sessionId
+        this.lastResponseId = lastResponseId
+        QuantaAISettingsState.instance.state.mainLastResponseId = lastResponseId
+        lastCtxHash = null
+        initialContextInjectedThisIdeSession = false
+    }
+
     fun stopAndClearSession() {
         stopProcessing()
         newSession()

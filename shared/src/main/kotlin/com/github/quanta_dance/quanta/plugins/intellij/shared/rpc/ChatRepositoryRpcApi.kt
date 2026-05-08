@@ -1,6 +1,7 @@
 package com.github.quanta_dance.quanta.plugins.intellij.shared.rpc
 
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatMessageDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
 import com.intellij.platform.project.ProjectId
 import com.intellij.platform.rpc.RemoteApiProviderService
 import fleet.rpc.RemoteApi
@@ -25,6 +26,14 @@ interface ChatRepositoryRpcApi : RemoteApi<Unit> {
      * Updates with new messages as they are received or edited.
      */
     suspend fun getMessagesFlow(projectId: ProjectId): Flow<List<ChatMessageDto>>
+
+    suspend fun getSessionsFlow(projectId: ProjectId): Flow<List<ChatSessionDto>>
+
+    suspend fun createNewSession(projectId: ProjectId)
+
+    suspend fun activateSession(projectId: ProjectId, sessionId: String)
+
+    suspend fun deleteSession(projectId: ProjectId, sessionId: String)
 
     /**
      * Sends a message with the provided content.

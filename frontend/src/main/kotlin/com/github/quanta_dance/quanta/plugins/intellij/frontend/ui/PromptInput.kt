@@ -37,7 +37,7 @@ fun PromptInput(
     onToggleVoiceFeedback: () -> Unit = {},
     onInputChanged: (String) -> Unit = {},
     onSend: (String) -> Unit = {},
-    onStop: (String) -> Unit = {}
+    onStop: (String) -> Unit = {},
 ) {
     val isSending = promptInputState.isSending
     var skipInputChangeUpdate by remember { mutableStateOf(false) }
@@ -74,12 +74,10 @@ fun PromptInput(
                 .onPreviewKeyEvent { keyEvent ->
                     if (keyEvent.key == Key.Enter && keyEvent.type == KeyEventType.KeyDown) {
                         if (keyEvent.isShiftPressed) {
-                            // Shift+Enter for new line - let default behavior handle it
                             skipInputChangeUpdate = true
                             textFieldState.setTextAndPlaceCursorAtEnd("${textFieldState.text}\n")
                             false
                         } else {
-                            // Enter to send/update message
                             val message = textFieldState.text
                             if (message.isNotBlank()) {
                                 if (isSending) {
@@ -105,7 +103,7 @@ fun PromptInput(
                 .fillMaxWidth()
                 .padding(top = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.End
+            horizontalArrangement = Arrangement.End,
         ) {
             when (promptInputState) {
                 MessageInputState.Disabled,
@@ -141,14 +139,14 @@ fun PromptInput(
                                     micEnabled -> ChatAppIcons.Header.micOn
                                     else -> ChatAppIcons.Header.micOff
                                 },
-                                contentDescription = "Toggle Microphone"
+                                contentDescription = "Toggle Microphone",
                             )
                         }
 
                         IconButton(onClick = onToggleVoiceFeedback) {
                             Icon(
                                 key = if (voiceEnabled) ChatAppIcons.Header.speakerOn else ChatAppIcons.Header.speakerOff,
-                                contentDescription = "Toggle Voice Feedback"
+                                contentDescription = "Toggle Voice Feedback",
                             )
                         }
 
@@ -164,17 +162,17 @@ fun PromptInput(
                                 Row(
                                     Modifier.padding(4.dp),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceEvenly
+                                    horizontalArrangement = Arrangement.SpaceEvenly,
                                 ) {
                                     Text("Send")
                                     Icon(
                                         modifier = Modifier.size(JewelTheme.iconButtonStyle.metrics.minSize.height),
                                         key = ChatAppIcons.Prompt.send,
                                         contentDescription = "Send",
-                                        tint = if (promptInputState != MessageInputState.Disabled) ChatAppColors.Icon.enabledIconTint else ChatAppColors.Icon.disabledIconTint
+                                        tint = if (promptInputState != MessageInputState.Disabled) ChatAppColors.Icon.enabledIconTint else ChatAppColors.Icon.disabledIconTint,
                                     )
                                 }
-                            }
+                            },
                         )
                     }
                 }
@@ -209,7 +207,7 @@ fun PromptInput(
                                     micEnabled -> ChatAppIcons.Header.micOn
                                     else -> ChatAppIcons.Header.micOff
                                 },
-                                contentDescription = "Toggle Microphone"
+                                contentDescription = "Toggle Microphone",
                             )
                         }
 
@@ -219,7 +217,7 @@ fun PromptInput(
                         }) {
                             Icon(
                                 key = if (localVoiceEnabled) ChatAppIcons.Header.speakerOn else ChatAppIcons.Header.speakerOff,
-                                contentDescription = "Toggle Voice Feedback"
+                                contentDescription = "Toggle Voice Feedback",
                             )
                         }
 
@@ -230,17 +228,17 @@ fun PromptInput(
                                 Row(
                                     Modifier.padding(4.dp),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceEvenly
+                                    horizontalArrangement = Arrangement.SpaceEvenly,
                                 ) {
                                     Text("Stop")
                                     Icon(
                                         modifier = Modifier.size(JewelTheme.iconButtonStyle.metrics.minSize.height),
                                         key = ChatAppIcons.Prompt.stop,
                                         contentDescription = "Stop sending",
-                                        tint = ChatAppColors.Icon.stopIconTint
+                                        tint = ChatAppColors.Icon.stopIconTint,
                                     )
                                 }
-                            }
+                            },
                         )
                     }
                 }

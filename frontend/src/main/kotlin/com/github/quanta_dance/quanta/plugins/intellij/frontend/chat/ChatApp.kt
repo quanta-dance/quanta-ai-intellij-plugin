@@ -1,11 +1,15 @@
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.chat
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -13,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.ModularPluginFrontendBundle
@@ -25,6 +30,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.frontend.voice.FrontendMi
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.Messages
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import org.jetbrains.jewel.foundation.theme.JewelTheme
@@ -34,11 +40,13 @@ import org.jetbrains.jewel.ui.component.*
 @Composable
 fun ChatApp(project: Project, viewModel: ChatViewModel, voiceService: FrontendAIVoiceService) {
     val chatMessages by viewModel.chatMessagesFlow.collectAsState(emptyList())
+    val sessions by viewModel.sessionsFlow.collectAsState(emptyList())
     val searchState by viewModel.searchChatMessagesHandler().searchStateFlow.collectAsState(SearchState.Idle)
     val messageInputState by viewModel.promptInputState.collectAsState(MessageInputState.Disabled)
     var voiceEnabled by remember { mutableStateOf(FrontendQuantaSettingsState.instance.state.voiceEnabled) }
     var selectedModel by remember { mutableStateOf(FrontendQuantaSettingsState.instance.state.aiChatModel) }
     var availableModels by remember { mutableStateOf(FrontendQuantaSettingsState.instance.state.availableChatModels) }
+    val activeSession = sessions.firstOrNull { it.isActive }
     val microphoneService = remember(project) { project.service<FrontendMicrophoneService>() }
     val micEnabled by microphoneService.isListening.collectAsState(false)
     val micActive by microphoneService.isVoiceDetected.collectAsState(false)
@@ -120,6 +128,13 @@ fun ChatApp(project: Project, viewModel: ChatViewModel, voiceService: FrontendAI
                 onPreviousResult = { viewModel.searchChatMessagesHandler().onNavigateToPreviousSearchResult() }
             )
 
+            SessionTabs(
+                project = project,
+                sessions = sessions,
+                onSessionSelected = { sessionId -> viewModel.onActivateSession(sessionId) },
+                onSessionDeleted = { sessionId -> viewModel.onDeleteSession(sessionId) },
+            )
+
             // Message area
             ChatList(
                 project = project,
@@ -160,6 +175,68 @@ fun ChatApp(project: Project, viewModel: ChatViewModel, voiceService: FrontendAI
             )
         }
     )
+}
+
+@Composable
+private fun SessionTabs(
+    project: Project,
+    sessions: List<com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto>,
+    onSessionSelected: (String) -> Unit,
+    onSessionDeleted: (String) -> Unit,
+) {
+    if (sessions.isEmpty()) return
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        sessions.forEach { session ->
+            val active = session.isActive
+            Row(
+                modifier = Modifier
+                    .background(
+                        if (active) ChatAppColors.MessageBubble.othersBackground else ChatAppColors.Panel.background,
+                        RoundedCornerShape(10.dp),
+                    )
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Box(
+                    modifier = Modifier.clickable { onSessionSelected(session.id) },
+                ) {
+                    Text(
+                        text = session.title,
+                        style = JewelTheme.defaultTextStyle.copy(
+                            fontSize = 12.sp,
+                            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                        ),
+                    )
+                }
+                Icon(
+                    key = ChatAppIcons.Header.close,
+                    contentDescription = "Delete session",
+                    modifier = Modifier.size(12.dp).clickable {
+                        val confirmed =
+                            Messages.showYesNoDialog(
+                                project,
+                                "Delete chat '${session.title}'?",
+                                "Delete Chat",
+                                "Delete",
+                                "Cancel",
+                                Messages.getQuestionIcon(),
+                            ) == Messages.YES
+                        if (confirmed) {
+                            onSessionDeleted(session.id)
+                        }
+                    },
+                )
+            }
+        }
+    }
 }
 
 @Composable
