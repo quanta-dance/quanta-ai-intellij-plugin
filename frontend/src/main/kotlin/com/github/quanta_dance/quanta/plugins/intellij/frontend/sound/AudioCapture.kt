@@ -5,21 +5,12 @@ package com.github.quanta_dance.quanta.plugins.intellij.frontend.sound
 
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.QDLog
 import com.intellij.openapi.diagnostic.Logger
-
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.io.OutputStream
-import java.io.PipedInputStream
-import java.io.PipedOutputStream
 import java.util.concurrent.atomic.AtomicBoolean
-import javax.sound.sampled.AudioFileFormat
-import javax.sound.sampled.AudioFormat
-import javax.sound.sampled.AudioInputStream
-import javax.sound.sampled.AudioSystem
-import javax.sound.sampled.DataLine
-import javax.sound.sampled.LineUnavailableException
-import javax.sound.sampled.TargetDataLine
+import javax.sound.sampled.*
 import kotlin.concurrent.thread
 
 /**
@@ -56,22 +47,31 @@ class AudioCapture(
             false,
         )
 
+    private fun averageAmplitude(
+        buffer: ByteArray,
+        length: Int,
+    ): Long {
+        if (length <= 1) return 0
+        var sum: Long = 0
+        var samples = 0
+        var i = 0
+        val limit = length - 1
+        while (i < limit) {
+            val lo = buffer[i].toInt() and 0xFF
+            val hi = buffer[i + 1].toInt()
+            val sample = ((hi shl 8) or lo).toShort().toInt()
+            sum += kotlin.math.abs(sample.toLong())
+            samples += 1
+            i += 2
+        }
+        if (samples == 0) return 0
+        return sum / samples
+    }
+
     private fun isSilent(
         buffer: ByteArray,
         length: Int,
-    ): Boolean {
-        var sum: Long = 0
-        var i = 0
-        val limit = (length - 1).coerceAtLeast(0)
-        while (i < limit) {
-            val sample = (buffer[i].toInt() and 0xFF) or (buffer[i + 1].toInt() shl 8)
-            sum += kotlin.math.abs(sample.toLong())
-            i += 2
-        }
-        if (length <= 0) return true
-        val avgAmplitude = sum / (length / 2)
-        return avgAmplitude < SILENCE_THRESHOLD
-    }
+    ): Boolean = averageAmplitude(buffer, length) < SILENCE_THRESHOLD
 
     private val line: TargetDataLine
     private val isCapturing = AtomicBoolean(false)
@@ -79,8 +79,6 @@ class AudioCapture(
     @Volatile
     private var captureThread: Thread? = null
 
-    @Volatile
-    private var currentPipeOut: PipedOutputStream? = null
 
     init {
         val info = DataLine.Info(TargetDataLine::class.java, audioFormat)
@@ -166,33 +164,41 @@ class AudioCapture(
                 try {
                     line.start()
                     val buffer = ByteArray(2048)
+                    var lastAudioLevelLogAt = 0L
                     while (isCapturing.get() && !Thread.currentThread().isInterrupted) {
                         val bytesRead = line.read(buffer, 0, buffer.size)
                         val now = System.currentTimeMillis()
 
                         if (bytesRead > 0) {
-                            val silent = isMuted || isSilent(buffer, bytesRead)
+                            val avgAmplitude = averageAmplitude(buffer, bytesRead)
+                            if (now - lastAudioLevelLogAt >= AUDIO_LEVEL_LOG_INTERVAL_MS) {
+                                QDLog.info(logger) {
+                                    "AudioCapture.level avgAmplitude=$avgAmplitude silent=${avgAmplitude < SILENCE_THRESHOLD} muted=$isMuted inSpeech=$inSpeech"
+                                }
+                                lastAudioLevelLogAt = now
+                            }
+
+                            val silent = isMuted || avgAmplitude < SILENCE_THRESHOLD
                             if (silent) {
                                 if (!inSilence) {
                                     inSilence = true
+                                    QDLog.info(logger) { "AudioCapture.silenceDetected avgAmplitude=$avgAmplitude" }
                                     onSilence()
                                     silenceStart = now
                                 }
                             } else {
-                                if (inSilence) onSpeech()
+                                if (inSilence) {
+                                    QDLog.info(logger) { "AudioCapture.speechDetected avgAmplitude=$avgAmplitude" }
+                                    onSpeech()
+                                }
                                 inSilence = false
                                 if (silenceStart != -1L) silenceStart = -1
                                 if (!inSpeech) {
                                     inSpeech = true
                                     speechStart = now
+                                    QDLog.info(logger) { "AudioCapture.streamStart avgAmplitude=$avgAmplitude" }
                                     try {
-                                        // Create a new pipe and publish the InputStream to consumer
-                                        val pos = PipedOutputStream()
-                                        currentPipeOut = pos
-                                        val pis = PipedInputStream(pos)
-                                        // Write a minimal WAV header first
-                                        writeWavHeader(pos)
-                                        onStreamStart?.invoke(pis)
+                                        onStreamStart?.invoke(ByteArrayInputStream(ByteArray(0)))
                                     } catch (t: Throwable) {
                                         QDLog.warn(logger) { "onStreamStart failed: ${t.message}" }
                                     }
@@ -206,30 +212,23 @@ class AudioCapture(
                                 } catch (t: Throwable) {
                                     QDLog.warn(logger) { "onStreamBytes failed: ${t.message}" }
                                 }
-                                // Stream raw PCM payload after header
-                                try {
-                                    currentPipeOut?.write(buffer, 0, bytesRead)
-                                    currentPipeOut?.flush()
-                                } catch (t: Throwable) {
-                                    QDLog.warn(logger) { "Pipe write failed: ${t.message}" }
-                                }
+
                             }
                         }
 
                         if (inSpeech && inSilence && silenceStart > 0 && now - silenceStart >= SPEECH_PAUSE_DURATION_MIN_MS) {
                             inSpeech = false
+                            val speechDuration = now - speechStart
+                            QDLog.info(logger) { "AudioCapture.streamEnd reason=silence speechDurationMs=$speechDuration bufferedBytes=${outputBuffer.size()}" }
                             try {
                                 onStreamEnd?.invoke()
                             } catch (_: Throwable) {
                             }
-                            try {
-                                currentPipeOut?.close()
-                            } catch (_: Throwable) {
-                            }
-                            currentPipeOut = null
-                            if (now - speechStart >= SPEECH_LENGHT_MIN_MS) {
+                            if (speechDuration >= SPEECH_LENGHT_MIN_MS) {
                                 val audio = wrapAsWav(outputBuffer.toByteArray())
                                 fullBufferCallback(audio)
+                            } else {
+                                QDLog.info(logger) { "AudioCapture.segmentDropped reason=tooShort speechDurationMs=$speechDuration" }
                             }
                             outputBuffer.reset()
                             if (!inSilence) {
@@ -245,11 +244,6 @@ class AudioCapture(
                                 onStreamEnd?.invoke()
                             } catch (_: Throwable) {
                             }
-                            try {
-                                currentPipeOut?.close()
-                            } catch (_: Throwable) {
-                            }
-                            currentPipeOut = null
                             val audio = wrapAsWav(outputBuffer.toByteArray())
                             fullBufferCallback(audio)
                             outputBuffer.reset()
@@ -293,11 +287,6 @@ class AudioCapture(
                 onStreamEnd?.invoke()
             } catch (_: Throwable) {
             }
-            try {
-                currentPipeOut?.close()
-            } catch (_: Throwable) {
-            }
-            currentPipeOut = null
         }
         outputBuffer.reset()
         if (!inSilence) {
@@ -328,21 +317,17 @@ class AudioCapture(
         }
         captureThread = null
         outputBuffer.reset()
-        try {
-            currentPipeOut?.close()
-        } catch (_: Throwable) {
-        }
-        currentPipeOut = null
         QDLog.info(logger) { "Capture stopped" }
     }
 
     companion object {
         private val logger = Logger.getInstance(AudioCapture::class.java)
-        const val SILENCE_THRESHOLD: Int = 220
+        const val SILENCE_THRESHOLD: Int = 1_200
         const val SILENCE_DURATION_MS: Int = 350
         const val SPEECH_LENGHT_MIN_MS: Int = 1200
         const val SPEECH_PAUSE_DURATION_MIN_MS: Int = 900
         const val MAX_SPEECH_SEGMENT_MS: Int = 15000
+        const val AUDIO_LEVEL_LOG_INTERVAL_MS: Long = 1000
 
         @JvmStatic
         fun main(args: Array<String>) {

@@ -12,6 +12,7 @@ object ChatAppIcons {
         val search = AllIconsKeys.Actions.Find
         val settings = AllIconsKeys.Actions.InlayGear
         val close = AllIconsKeys.Actions.Cancel
+        val micActive = PathIconKey("/icons/cwmMicOnAir.svg", ChatAppIcons::class.java)
         val micOn = AllIconsKeys.CodeWithMe.CwmMicOn
         val micOff = AllIconsKeys.CodeWithMe.CwmMicOff
         val speakerOn = PathIconKey("/icons/speakerOn.svg", ChatAppIcons::class.java)

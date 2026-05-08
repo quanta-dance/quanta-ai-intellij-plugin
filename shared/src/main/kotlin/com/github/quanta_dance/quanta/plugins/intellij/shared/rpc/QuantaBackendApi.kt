@@ -2,6 +2,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.shared.rpc
 
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.MicrophoneTranscriptionResultDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.SynthesizedSpeechDto
 import com.intellij.platform.project.ProjectId
 import com.intellij.platform.rpc.RemoteApiProviderService
@@ -22,4 +23,12 @@ interface QuantaBackendApi : RemoteApi<Unit> {
     suspend fun synthesizeSpeech(projectId: ProjectId, text: String): SynthesizedSpeechDto
 
     suspend fun stopSpeech(projectId: ProjectId)
+
+    suspend fun startMicrophoneSession(projectId: ProjectId, sessionId: String)
+
+    suspend fun appendMicrophoneAudioChunk(projectId: ProjectId, sessionId: String, chunkBase64: String)
+
+    suspend fun finishMicrophoneSession(projectId: ProjectId, sessionId: String): MicrophoneTranscriptionResultDto
+
+    suspend fun cancelMicrophoneSession(projectId: ProjectId, sessionId: String)
 }

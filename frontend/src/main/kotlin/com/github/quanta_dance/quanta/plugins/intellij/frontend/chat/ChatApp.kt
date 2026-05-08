@@ -23,7 +23,9 @@ import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.Fronten
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendQuantaSettingsState
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.ui.*
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.voice.FrontendAIVoiceService
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.voice.FrontendMicrophoneService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
+import com.intellij.openapi.components.service
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
 import kotlinx.coroutines.delay
@@ -37,7 +39,10 @@ fun ChatApp(project: Project, viewModel: ChatViewModel, voiceService: FrontendAI
     val chatMessages by viewModel.chatMessagesFlow.collectAsState(emptyList())
     val searchState by viewModel.searchChatMessagesHandler().searchStateFlow.collectAsState(SearchState.Idle)
     val messageInputState by viewModel.promptInputState.collectAsState(MessageInputState.Disabled)
-    val voiceEnabled = FrontendQuantaSettingsState.instance.state.voiceEnabled
+    var voiceEnabled by remember { mutableStateOf(FrontendQuantaSettingsState.instance.state.voiceEnabled) }
+    val microphoneService = remember(project) { project.service<FrontendMicrophoneService>() }
+    val micEnabled by microphoneService.isListening.collectAsState(false)
+    val micActive by microphoneService.isVoiceDetected.collectAsState(false)
     val listState = rememberLazyListState()
     val textFieldState = rememberTextFieldState()
     var lastSpokenMessageId by remember { mutableStateOf<String?>(null) }
@@ -118,12 +123,13 @@ fun ChatApp(project: Project, viewModel: ChatViewModel, voiceService: FrontendAI
                 textFieldState = textFieldState,
                 promptInputState = messageInputState,
                 voiceEnabled = voiceEnabled,
-                micEnabled = false,
-                onToggleMic = { },
+                micEnabled = micEnabled,
+                micActive = micActive,
+                onToggleMic = { microphoneService.toggleListening() },
                 onToggleVoiceFeedback = {
-                    FrontendQuantaSettingsState.instance.state.voiceEnabled =
-                        !FrontendQuantaSettingsState.instance.state.voiceEnabled
-                    if (!FrontendQuantaSettingsState.instance.state.voiceEnabled) {
+                    voiceEnabled = !voiceEnabled
+                    FrontendQuantaSettingsState.instance.state.voiceEnabled = voiceEnabled
+                    if (!voiceEnabled) {
                         voiceService.stopTalking()
                     }
                 },
