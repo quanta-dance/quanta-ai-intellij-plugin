@@ -23,4 +23,10 @@ object ChatAppIcons {
         val send = AllIconsKeys.RunConfigurations.TestState.Run
         val stop = AllIconsKeys.Run.Stop
     }
+
+    object ToolStatus {
+        val running = AllIconsKeys.Actions.Suspend
+        val success = AllIconsKeys.General.InspectionsOK
+        val failed = AllIconsKeys.General.Error
+    }
 }

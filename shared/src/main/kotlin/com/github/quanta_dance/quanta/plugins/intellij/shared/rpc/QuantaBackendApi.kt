@@ -39,4 +39,6 @@ interface QuantaBackendApi : RemoteApi<Unit> {
     suspend fun finishMicrophoneSession(projectId: ProjectId, sessionId: String): MicrophoneTranscriptionResultDto
 
     suspend fun cancelMicrophoneSession(projectId: ProjectId, sessionId: String)
+
+    suspend fun openProjectFile(projectId: ProjectId, relativePath: String)
 }

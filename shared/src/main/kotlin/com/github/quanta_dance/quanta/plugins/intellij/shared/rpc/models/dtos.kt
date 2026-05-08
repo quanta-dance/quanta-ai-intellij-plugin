@@ -15,6 +15,7 @@ data class ChatMessageDto(
     val timestamp: LocalDateTime,
     val type: ChatMessage.ChatMessageType,
     val voiceSummary: String? = null,
+    val toolItems: List<com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem> = emptyList(),
 )
 
 fun ChatMessageDto.toChatMessage(): ChatMessage {
@@ -26,6 +27,7 @@ fun ChatMessageDto.toChatMessage(): ChatMessage {
         timestamp = timestamp,
         type = type,
         voiceSummary = voiceSummary,
+        toolItems = toolItems,
     )
 }
 
@@ -38,5 +40,6 @@ fun ChatMessage.toChatMessageDto(): ChatMessageDto {
         timestamp = timestamp,
         type = type,
         voiceSummary = voiceSummary,
+        toolItems = toolItems,
     )
 }

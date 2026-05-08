@@ -126,6 +126,7 @@ fun ChatApp(project: Project, viewModel: ChatViewModel, voiceService: FrontendAI
 
             // Message area
             ChatList(
+                project = project,
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
@@ -167,6 +168,7 @@ fun ChatApp(project: Project, viewModel: ChatViewModel, voiceService: FrontendAI
 
 @Composable
 private fun ChatList(
+    project: Project,
     modifier: Modifier = Modifier,
     chatMessages: List<ChatMessage>,
     listState: LazyListState,
@@ -189,6 +191,7 @@ private fun ChatList(
                 ) {
                     items(chatMessages, key = { it.id }) { message ->
                         MessageBubble(
+                            project = project,
                             message = message,
                             modifier = Modifier.fillMaxWidth(),
                             isMatchingSearch = searchState.searchQuery?.let { query -> message.matches(query) }

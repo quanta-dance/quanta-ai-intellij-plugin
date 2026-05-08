@@ -3,6 +3,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.services
 
+import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.*
 import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.models.OpenAIResponse
@@ -775,6 +776,11 @@ class OpenAIService(
     data class AssistantTurnMessage(
         val text: String,
         val ttsSummary: String? = null,
+        val isReasoning: Boolean = false,
+    )
+
+    data class ToolTurnUpdate(
+        val item: com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem,
     )
 
     fun agentTurn(
@@ -788,6 +794,7 @@ class OpenAIService(
         allowedBuiltInNames: Set<String>? = null,
         allowedMcpNames: Set<String>? = null,
         onAssistantMessage: ((AssistantTurnMessage) -> Unit)? = null,
+        onToolUpdate: ((ToolTurnUpdate) -> Unit)? = null,
     ): Pair<String, String?> {
         var localPrevId = previousId
         val aggregated = StringBuilder()
@@ -820,18 +827,54 @@ class OpenAIService(
 
             structResponse.output().map { item ->
                 when {
+                    item.isReasoning() -> {
+                        val reasoning = item.asReasoning()
+                        reasoning.summary().forEach { summary ->
+                            val text = summary.text().trim()
+                            if (text.isBlank()) return@forEach
+                            aggregated.append(text).append('\n')
+                            onAssistantMessage?.invoke(
+                                AssistantTurnMessage(
+                                    text = text,
+                                    ttsSummary = null,
+                                    isReasoning = true,
+                                ),
+                            )
+                        }
+                    }
+
                     item.isFunctionCall() -> {
                         val functionCall: com.openai.models.responses.ResponseFunctionToolCall = item.asFunctionCall()
                         val callId = functionCall.callId()
                         if (!processedCallIds.add(callId)) return@map
-                        val toolOutput =
-                            project.service<ToolExecutionService>().executeToolCall(functionCall, agentLabel)
-                        QDLog.info(thisLogger()) {
-                            "OpenAIService.agentTurn: executed tool call name=${functionCall.name()} callId=$callId"
-                        }
-                        pendingToolOutputs.add(
-                            ResponseInputItem.ofFunctionCallOutput(toolOutput),
+                        val startedItem = buildToolExecutionItem(
+                            functionCall,
+                            com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus.EXECUTING
                         )
+                        onToolUpdate?.invoke(ToolTurnUpdate(startedItem))
+                        try {
+                            val toolOutput =
+                                project.service<ToolExecutionService>().executeToolCall(functionCall, agentLabel)
+                            QDLog.info(thisLogger()) {
+                                "OpenAIService.agentTurn: executed tool call name=${functionCall.name()} callId=$callId"
+                            }
+                            val completedItem = buildToolExecutionItem(
+                                functionCall,
+                                com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus.SUCCEEDED
+                            )
+                            onToolUpdate?.invoke(ToolTurnUpdate(completedItem))
+                            pendingToolOutputs.add(
+                                ResponseInputItem.ofFunctionCallOutput(toolOutput),
+                            )
+                        } catch (t: Throwable) {
+                            val failedItem = buildToolExecutionItem(
+                                functionCall,
+                                com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus.FAILED,
+                                errorText = t.message,
+                            )
+                            onToolUpdate?.invoke(ToolTurnUpdate(failedItem))
+                            throw t
+                        }
                     }
 
                     item.isMessage() -> {
@@ -845,6 +888,7 @@ class OpenAIService(
                                         AssistantTurnMessage(
                                             text = txt,
                                             ttsSummary = message.ttsSummary?.trim()?.ifBlank { null },
+                                            isReasoning = false,
                                         ),
                                     )
                                 }
@@ -879,6 +923,54 @@ class OpenAIService(
             if (hasPending) reprocess = true
         }
         return aggregated.toString().trim() to localPrevId
+    }
+
+    private fun buildToolExecutionItem(
+        functionCall: com.openai.models.responses.ResponseFunctionToolCall,
+        status: com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus,
+        errorText: String? = null,
+    ): com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem {
+        val toolName = functionCall.name()
+        val argsText = runCatching { functionCall.arguments() }.getOrDefault("")
+        val argsJson = runCatching { mapper.readTree(argsText) }.getOrNull()
+        val filePath = extractFilePath(argsJson)
+        val displayText = buildToolDisplayText(toolName, filePath)
+        return com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem(
+            callId = functionCall.callId(),
+            toolName = toolName,
+            displayText = displayText,
+            status = status,
+            filePath = filePath,
+            errorText = errorText,
+        )
+    }
+
+    private fun extractFilePath(argsJson: JsonNode?): String? {
+        if (argsJson == null) return null
+        val direct = argsJson.path("filePath").asText("").trim()
+        if (direct.isNotBlank()) return direct
+        val path = argsJson.path("path").asText("").trim()
+        if (path.isNotBlank()) return path
+        val source = argsJson.path("sourcePath").asText("").trim()
+        if (source.isNotBlank()) return source
+        return null
+    }
+
+    private fun buildToolDisplayText(toolName: String, filePath: String?): String {
+        val fileName = filePath?.substringAfterLast('/')?.substringAfterLast('\\')
+        return when {
+            toolName.contains("ReadFile", ignoreCase = true) && !fileName.isNullOrBlank() -> "Reading $fileName"
+            toolName.contains("OpenFile", ignoreCase = true) && !fileName.isNullOrBlank() -> "Opening $fileName"
+            toolName.contains("SearchInFiles", ignoreCase = true) -> "Searching files"
+            toolName.contains("ListFiles", ignoreCase = true) -> "Listing files"
+            toolName.contains("PatchFile", ignoreCase = true) && !fileName.isNullOrBlank() -> "Patching $fileName"
+            toolName.contains(
+                "CreateOrUpdateFile",
+                ignoreCase = true
+            ) && !fileName.isNullOrBlank() -> "Updating $fileName"
+
+            else -> toolName.replace(Regex("([a-z])([A-Z])"), "$1 $2")
+        }
     }
 
     private fun parseMemoryFactCommand(prefix: String, text: String): Pair<String, String?>? {
