@@ -40,6 +40,8 @@ fun ChatApp(project: Project, viewModel: ChatViewModel, voiceService: FrontendAI
     val searchState by viewModel.searchChatMessagesHandler().searchStateFlow.collectAsState(SearchState.Idle)
     val messageInputState by viewModel.promptInputState.collectAsState(MessageInputState.Disabled)
     var voiceEnabled by remember { mutableStateOf(FrontendQuantaSettingsState.instance.state.voiceEnabled) }
+    var selectedModel by remember { mutableStateOf(FrontendQuantaSettingsState.instance.state.aiChatModel) }
+    var availableModels by remember { mutableStateOf(FrontendQuantaSettingsState.instance.state.availableChatModels) }
     val microphoneService = remember(project) { project.service<FrontendMicrophoneService>() }
     val micEnabled by microphoneService.isListening.collectAsState(false)
     val micActive by microphoneService.isVoiceDetected.collectAsState(false)
@@ -62,6 +64,22 @@ fun ChatApp(project: Project, viewModel: ChatViewModel, voiceService: FrontendAI
             if (messageIndexInList >= 0) {
                 listState.animateScrollToItem(messageIndexInList)
             }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            val settings = FrontendQuantaSettingsState.instance.state
+            if (voiceEnabled != settings.voiceEnabled) {
+                voiceEnabled = settings.voiceEnabled
+            }
+            if (selectedModel != settings.aiChatModel) {
+                selectedModel = settings.aiChatModel
+            }
+            if (availableModels != settings.availableChatModels) {
+                availableModels = settings.availableChatModels
+            }
+            delay(300)
         }
     }
 
@@ -125,6 +143,12 @@ fun ChatApp(project: Project, viewModel: ChatViewModel, voiceService: FrontendAI
                 voiceEnabled = voiceEnabled,
                 micEnabled = micEnabled,
                 micActive = micActive,
+                currentModel = selectedModel,
+                availableModels = availableModels,
+                onModelSelected = { model ->
+                    selectedModel = model
+                    FrontendQuantaSettingsState.instance.state.aiChatModel = model
+                },
                 onToggleMic = { microphoneService.toggleListening() },
                 onToggleVoiceFeedback = {
                     voiceEnabled = !voiceEnabled

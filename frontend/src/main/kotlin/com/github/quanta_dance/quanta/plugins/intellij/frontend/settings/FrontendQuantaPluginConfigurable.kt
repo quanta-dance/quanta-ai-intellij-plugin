@@ -38,7 +38,7 @@ class FrontendQuantaPluginConfigurable : Configurable {
                     voiceEnabled != settings.voiceEnabled ||
                     voiceByLocalTTS != settings.voiceByLocalTTS ||
                     maxTokensValue != settings.maxTokens ||
-                    aiChatModelValue != settings.model ||
+                    aiChatModelValue != settings.aiChatModel ||
                     dynamicModelEnabled != (settings.dynamicModelEnabled ?: false) ||
                     agenticEnabled != (settings.agenticEnabled ?: true) ||
                     debugEnabled != settings.debugEnabled ||
@@ -58,7 +58,7 @@ class FrontendQuantaPluginConfigurable : Configurable {
             settings.voiceEnabled = voiceEnabled
             settings.voiceByLocalTTS = voiceByLocalTTS
             settings.maxTokens = maxTokensValue
-            settings.model = aiChatModelValue
+            settings.aiChatModel = aiChatModelValue
             settings.dynamicModelEnabled = dynamicModelEnabled
             settings.agenticEnabled = agenticEnabled
             settings.debugEnabled = debugEnabled
@@ -81,7 +81,8 @@ class FrontendQuantaPluginConfigurable : Configurable {
             voiceEnabled = settings.voiceEnabled
             voiceByLocalTTS = settings.voiceByLocalTTS
             maxTokensValue = settings.maxTokens
-            aiChatModelValue = settings.model
+            setAvailableModels(settings.availableChatModels)
+            aiChatModelValue = settings.aiChatModel
             dynamicModelEnabled = settings.dynamicModelEnabled ?: false
             agenticEnabled = settings.agenticEnabled ?: true
             debugEnabled = settings.debugEnabled
@@ -117,20 +118,7 @@ private class FrontendQuantaSettingsComponent {
     private val voiceEnabledField = JBCheckBox("Voice enabled")
     private val voiceByLocalTTSField = JBCheckBox("Use Local TTS")
     private val maxOutputTokensField = JBTextField()
-    private val modelField = ComboBox(
-        arrayOf(
-            "gpt-5.4",
-            "gpt-5.4-mini",
-            "gpt-5.4-nano",
-            "gpt-5.2",
-            "gpt-5.1-codex-max",
-            "gpt-5.1-codex",
-            "gpt-5.1",
-            "gpt-5",
-            "gpt-5-mini",
-            "gpt-5-nano",
-        ),
-    )
+    private val modelField = ComboBox<String>()
     private val dynamicModelEnabledField = JBCheckBox("Enable dynamic model switching")
     private val agenticEnabledField = JBCheckBox("Enable agentic mode")
     private val debugEnabledField = JBCheckBox("Enable debug messages in tool window")
@@ -267,9 +255,30 @@ private class FrontendQuantaSettingsComponent {
             voiceByLocalTTSField.isSelected = value
         }
 
+    fun setAvailableModels(models: List<String>) {
+        val selectedBefore = modelField.selectedItem as? String
+        modelField.removeAllItems()
+        val values =
+            if (models.isNotEmpty()) {
+                models
+            } else {
+                listOf(FrontendQuantaSettingsState.DEFAULT_MODEL)
+            }
+        values.forEach(modelField::addItem)
+        modelField.selectedItem =
+            when {
+                selectedBefore != null && values.contains(selectedBefore) -> selectedBefore
+                values.isNotEmpty() -> values.first()
+                else -> null
+            }
+    }
+
     var aiChatModelValue: String
-        get() = modelField.selectedItem as String
+        get() = (modelField.selectedItem as? String).orEmpty()
         set(value) {
+            if ((0 until modelField.itemCount).none { modelField.getItemAt(it) == value }) {
+                modelField.addItem(value)
+            }
             modelField.selectedItem = value
         }
 

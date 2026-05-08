@@ -8,6 +8,7 @@ data class QuantaSettingsDto(
     val openAiToken: String,
     val model: String,
     val aiChatModel: String,
+    val availableChatModels: List<String> = emptyList(),
     val voiceEnabled: Boolean,
     val voiceByLocalTTS: Boolean,
     val maxTokens: Long?,
