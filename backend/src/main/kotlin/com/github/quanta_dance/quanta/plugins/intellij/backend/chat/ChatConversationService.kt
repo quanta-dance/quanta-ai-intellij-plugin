@@ -39,7 +39,12 @@ class ChatConversationService(
     private val inbox: AgentInboxService get() = project.service()
     private val lifecycle: AgentLifecycleService get() = project.service()
     private val wake: AgentWakeService get() = project.service()
+    private val persistence: ChatConversationStateService get() = project.service()
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
+
+    init {
+        _messages.value = persistence.loadMessages()
+    }
 
     fun messagesFlow(): Flow<List<ChatMessageDto>> =
         _messages.map { messagesList -> messagesList.map { it.toChatMessageDto() } }
@@ -142,10 +147,12 @@ class ChatConversationService(
 
     private fun appendUserMessage(messageContent: String) {
         _messages.value += chatMessageFactory.createUserMessage(messageContent)
+        persistMessages()
     }
 
     private fun appendAiMessage(messageContent: String) {
         _messages.value += chatMessageFactory.createAIMessage(messageContent)
+        persistMessages()
     }
 
     private fun appendAiToolMessage(
@@ -168,6 +175,7 @@ class ChatConversationService(
                     }
                 }
             }
+        persistMessages()
         return message.id
     }
 
@@ -209,10 +217,12 @@ class ChatConversationService(
                     message
                 }
             }
+        persistMessages()
     }
 
     private fun clearThinkingMessages() {
         _messages.value = _messages.value.filterNot { it.type == AI_THINKING }
+        persistMessages()
     }
 
     private fun buildHistory(): List<ChatTurn> =
@@ -249,5 +259,10 @@ class ChatConversationService(
 
     fun clearConversation() {
         _messages.value = emptyList()
+        persistence.clear()
+    }
+
+    private fun persistMessages() {
+        persistence.saveMessages(_messages.value)
     }
 }

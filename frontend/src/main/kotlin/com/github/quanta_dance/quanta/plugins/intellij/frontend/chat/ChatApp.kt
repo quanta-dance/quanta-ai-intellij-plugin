@@ -13,20 +13,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.*
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.ModularPluginFrontendBundle
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel.ChatViewModel
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel.MessageInputState
-import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendQuantaPluginConfigurable
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendQuantaSettingsState
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.ui.*
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.voice.FrontendAIVoiceService
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.voice.FrontendMicrophoneService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
 import com.intellij.openapi.components.service
-import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -115,7 +112,6 @@ fun ChatApp(project: Project, viewModel: ChatViewModel, voiceService: FrontendAI
         content = {
             // Chat header with search button
             ChatHeaderWithSearchBar(
-                project = project,
                 searchState = searchState,
                 onStartSearch = { viewModel.searchChatMessagesHandler().onStartSearch() },
                 onStopSearch = { viewModel.searchChatMessagesHandler().onStopSearch() },
@@ -226,7 +222,6 @@ private fun EmptyChatListPlaceholder(
 
 @Composable
 private fun ChatHeaderWithSearchBar(
-    project: Project,
     searchState: SearchState,
     onStartSearch: () -> Unit,
     onStopSearch: () -> Unit,
@@ -236,40 +231,8 @@ private fun ChatHeaderWithSearchBar(
 ) {
     val showSearchBar = searchState.isSearching
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(ChatAppColors.Panel.background)
-            .padding(16.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        ChatHeaderTitle(modifier = Modifier.weight(1f))
-
-        IconButton(onClick = {
-            ShowSettingsUtil.getInstance().showSettingsDialog(project, FrontendQuantaPluginConfigurable::class.java)
-        }) {
-            Icon(
-                ChatAppIcons.Header.settings,
-                contentDescription = ModularPluginFrontendBundle.message("chat.settings.button")
-            )
-        }
-
-        IconButton(onClick = { if (showSearchBar) onStopSearch() else onStartSearch() }) {
-            Icon(
-                ChatAppIcons.Header.search,
-                contentDescription = if (showSearchBar)
-                    ModularPluginFrontendBundle.message("chat.close.search.button")
-                else
-                    ModularPluginFrontendBundle.message("chat.search.messages.button")
-            )
-        }
-    }
-
-    Divider(Orientation.Horizontal, modifier = Modifier.fillMaxWidth().height(1.dp))
-
-    // Search bar (shown when search is active)
     if (showSearchBar) {
+        Divider(Orientation.Horizontal, modifier = Modifier.fillMaxWidth().height(1.dp))
         ChatSearchBar(
             searchState = searchState,
             onSearchQueryChange = { query -> onSearchQueryChange(query) },
@@ -277,34 +240,7 @@ private fun ChatHeaderWithSearchBar(
             onPreviousResult = { onPreviousResult() },
             onCloseSearch = { onStopSearch() }
         )
-    }
-
-    Divider(Orientation.Horizontal, modifier = Modifier.fillMaxWidth().height(1.dp))
-}
-
-@Composable
-private fun ChatHeaderTitle(
-    modifier: Modifier = Modifier,
-    title: String = ModularPluginFrontendBundle.message("chat.header.title"),
-    subtitle: String = ModularPluginFrontendBundle.message("chat.header.subtitle")
-) {
-    Column(modifier = modifier) {
-        Text(
-            text = title,
-            style = JewelTheme.defaultTextStyle.copy(
-                fontWeight = FontWeight.Bold,
-                fontSize = 20.sp
-            )
-        )
-
-        Text(
-            text = subtitle,
-            style = JewelTheme.defaultTextStyle.copy(
-                color = ChatAppColors.Text.disabled,
-                fontSize = 14.sp
-            ),
-            modifier = Modifier.padding(top = 4.dp)
-        )
+        Divider(Orientation.Horizontal, modifier = Modifier.fillMaxWidth().height(1.dp))
     }
 }
 

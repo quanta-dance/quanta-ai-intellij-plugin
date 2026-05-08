@@ -4,8 +4,13 @@ import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.ChatApp
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel.ChatViewModel
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel.FrontendChatRepositoryModel
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.coroutines.CoroutineScopeHolder
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendQuantaPluginConfigurable
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.ui.isSearching
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.voice.FrontendAIVoiceService
+import com.intellij.openapi.actionSystem.AnAction
+import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.components.service
+import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.wm.ToolWindow
@@ -27,6 +32,27 @@ class QuantaFrontendToolWindowFactory : ToolWindowFactory {
         )
         val voiceService = project.service<FrontendAIVoiceService>()
         Disposer.register(toolWindow.disposable, viewModel)
+
+        toolWindow.setTitleActions(
+            listOf(
+                object : AnAction("Search", "Search messages", com.intellij.icons.AllIcons.Actions.Find) {
+                    override fun actionPerformed(e: AnActionEvent) {
+                        val handler = viewModel.searchChatMessagesHandler()
+                        if (handler.searchStateFlow.value.isSearching) {
+                            handler.onStopSearch()
+                        } else {
+                            handler.onStartSearch()
+                        }
+                    }
+                },
+                object : AnAction("Settings", "Open settings", com.intellij.icons.AllIcons.Actions.InlayGear) {
+                    override fun actionPerformed(e: AnActionEvent) {
+                        ShowSettingsUtil.getInstance()
+                            .showSettingsDialog(project, FrontendQuantaPluginConfigurable::class.java)
+                    }
+                },
+            ),
+        )
 
         toolWindow.addComposeTab("Quanta AI") {
             ChatApp(project, viewModel, voiceService)
