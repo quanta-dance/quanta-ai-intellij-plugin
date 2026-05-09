@@ -11,7 +11,7 @@ import com.intellij.openapi.project.Project
 
 @JsonClassDescription(
     "Manage the cooperative session plan stored at .quantadance/session/plan.md. " +
-        "Use this tool to draft a plan, activate it after user approval, mark tasks completed, or read the current plan.",
+            "Use this tool to draft a plan, activate it after user approval, mark tasks completed, or read the current plan.",
 )
 class SessionPlanTool : ToolInterface<String> {
     @field:JsonPropertyDescription("Action to perform: READ | DRAFT | ACTIVATE | COMPLETE")
@@ -49,12 +49,25 @@ class SessionPlanTool : ToolInterface<String> {
             }
 
             "ACTIVATE" -> {
-                svc.activate()
-                svc.loadText(maxChars = limit)
+                val result = svc.activate()
+                if (result.valid) {
+                    svc.loadText(maxChars = limit)
+                } else {
+                    buildString {
+                        appendLine("Plan remains DRAFT because it is not specific enough to execute safely.")
+                        result.issues.forEach { appendLine("- $it") }
+                        appendLine()
+                        append(svc.loadText(maxChars = limit))
+                    }
+                }
             }
 
             "COMPLETE" -> {
-                svc.markTasksDone((completedTasks ?: emptyList()).map { it.trim() }.filter { it.isNotBlank() })
+                val completed = (completedTasks ?: emptyList()).map { it.trim() }.filter { it.isNotBlank() }
+                svc.markTasksDone(completed)
+                if (completed.isNotEmpty() && svc.onlyPassiveTailTasksRemain()) {
+                    svc.markAllTasksDone()
+                }
                 svc.loadText(maxChars = limit)
             }
 

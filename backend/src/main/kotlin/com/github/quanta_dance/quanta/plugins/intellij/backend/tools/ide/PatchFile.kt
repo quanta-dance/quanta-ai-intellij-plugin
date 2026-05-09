@@ -5,6 +5,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
+import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.ToolFriendlyException
 import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
@@ -341,151 +342,160 @@ class PatchFile : ToolInterface<String> {
         var result = StringBuilder()
         var lastModified: Long = 0
 
-        ApplicationManager.getApplication().invokeAndWait {
-            WriteCommandAction.runWriteCommandAction(project) {
-                val vFile =
-                    PathUtils.resolveVirtualFileWithinProject(project, relToBase)
-                        ?: run {
+        try {
+            ApplicationManager.getApplication().invokeAndWait {
+                WriteCommandAction.runWriteCommandAction(project) {
+                    val vFile =
+                        PathUtils.resolveVirtualFileWithinProject(project, relToBase)
+                            ?: run {
+                                project.service<ToolWindowService>()
+                                    .addToolingMessage("Patch File - error", "Error opening file")
+                                return@runWriteCommandAction
+                            }
+
+                    val docManager = FileDocumentManager.getInstance()
+                    val document =
+                        try {
+                            docManager.getDocument(vFile) ?: docManager.getDocument(vFile)!!
+                        } catch (e: Throwable) {
                             project.service<ToolWindowService>()
-                                .addToolingMessage("Patch File - error", "Error opening file")
+                                .addToolingMessage("Patch File - error", e.message ?: "Error opening file")
                             return@runWriteCommandAction
                         }
 
-                val docManager = FileDocumentManager.getInstance()
-                val document =
-                    try {
-                        docManager.getDocument(vFile) ?: docManager.getDocument(vFile)!!
-                    } catch (e: Throwable) {
-                        project.service<ToolWindowService>()
-                            .addToolingMessage("Patch File - error", e.message ?: "Error opening file")
-                        return@runWriteCommandAction
-                    }
+                    val sorted =
+                        patchList.mapIndexed { idx, p -> Range(p.fromLine, p.toLine, idx) }
+                            .sortedWith(compareByDescending<Range> { it.from }.thenBy { it.to })
 
-                val sorted =
-                    patchList.mapIndexed { idx, p -> Range(p.fromLine, p.toLine, idx) }
-                        .sortedWith(compareByDescending<Range> { it.from }.thenBy { it.to })
-
-                if (rejectOverlappingPatches) {
-                    val overlaps = findOverlaps(sorted)
-                    if (overlaps.isNotEmpty()) {
-                        result.append("Rejected: overlapping patches: ")
-                        result.append(overlaps.joinToString("; ") { "${it.first.index}-${it.second.index}" })
-                        project.service<ToolWindowService>()
-                            .addToolingMessage("Patch File - rejected", result.toString())
-                        return@runWriteCommandAction
-                    }
-                }
-
-                val relocationNotes = mutableListOf<String>()
-
-                val normalized = sha256Normalized(document.text)
-                val hashProvided = expectedFileHashSha256 != null
-                val hashMatched = !hashProvided || expectedFileHashSha256 == normalized
-
-                if (hashProvided && !hashMatched && !allowProceedIfGuardsMatch) {
-                    result
-                        .append("Aborted: Content hash mismatch for ")
-                        .append(relToBase)
-                        .append(" and guards did not allow proceed.")
-                    project.service<ToolWindowService>()
-                        .addToolingMessage("Patch File - aborted", result.toString())
-                    return@runWriteCommandAction
-                }
-
-                // Preflight: resolve all patches first so we can abort without partial application.
-                val resolved = mutableListOf<Pair<Patch, ResolvedRange>>()
-                val mismatches = mutableListOf<String>()
-                for ((index, r) in sorted.withIndex()) {
-                    val patch = patchList[r.index]
-                    val rr = resolveRange(document, patch, index + 1, mismatches, relocationNotes)
-                    if (rr == null) {
-                        if (stopOnMismatch) {
-                            result
-                                .append("Aborted: Patched 0 range(s) in ")
-                                .append(relToBase)
-                                .append(" with ")
-                                .append(mismatches.size)
-                                .append(" mismatch(es). Details: \n")
-                                .append(mismatches.joinToString("\n"))
+                    if (rejectOverlappingPatches) {
+                        val overlaps = findOverlaps(sorted)
+                        if (overlaps.isNotEmpty()) {
+                            result.append("Rejected: overlapping patches: ")
+                            result.append(overlaps.joinToString("; ") { "${it.first.index}-${it.second.index}" })
                             project.service<ToolWindowService>()
-                                .addToolingMessage("Patch File - aborted", result.toString())
+                                .addToolingMessage("Patch File - rejected", result.toString())
                             return@runWriteCommandAction
                         }
-
-                        continue
                     }
-                    resolved.add(patch to rr)
-                }
 
-                var applied = 0
-                var alreadyApplied = 0
-                for ((patch, rr) in resolved) {
-                    val effectiveNewContent =
-                        if (rr.endOffset < document.textLength && !patch.newContent.endsWith("\n")) {
-                            patch.newContent + "\n"
-                        } else {
-                            patch.newContent
+                    val relocationNotes = mutableListOf<String>()
+
+                    val normalized = sha256Normalized(document.text)
+                    val hashProvided = expectedFileHashSha256 != null
+                    val hashMatched = !hashProvided || expectedFileHashSha256 == normalized
+
+                    if (hashProvided && !hashMatched && !allowProceedIfGuardsMatch) {
+                        result
+                            .append("Aborted: Content hash mismatch for ")
+                            .append(relToBase)
+                            .append(" and guards did not allow proceed.")
+                        project.service<ToolWindowService>()
+                            .addToolingMessage("Patch File - aborted", result.toString())
+                        return@runWriteCommandAction
+                    }
+
+                    // Preflight: resolve all patches first so we can abort without partial application.
+                    val resolved = mutableListOf<Pair<Patch, ResolvedRange>>()
+                    val mismatches = mutableListOf<String>()
+                    for ((index, r) in sorted.withIndex()) {
+                        val patch = patchList[r.index]
+                        val rr = resolveRange(document, patch, index + 1, mismatches, relocationNotes)
+                        if (rr == null) {
+                            if (stopOnMismatch) {
+                                result
+                                    .append("Aborted: Patched 0 range(s) in ")
+                                    .append(relToBase)
+                                    .append(" with ")
+                                    .append(mismatches.size)
+                                    .append(" mismatch(es). Details: \n")
+                                    .append(mismatches.joinToString("\n"))
+                                project.service<ToolWindowService>()
+                                    .addToolingMessage("Patch File - aborted", result.toString())
+                                return@runWriteCommandAction
+                            }
+
+                            continue
+                        }
+                        resolved.add(patch to rr)
+                    }
+
+                    var applied = 0
+                    var alreadyApplied = 0
+                    for ((patch, rr) in resolved) {
+                        val effectiveNewContent =
+                            if (rr.endOffset < document.textLength && !patch.newContent.endsWith("\n")) {
+                                patch.newContent + "\n"
+                            } else {
+                                patch.newContent
+                            }
+
+                        // Idempotence: if the resolved slice already equals newContent (after normalization), skip.
+                        val currentSlice = document.getText(TextRange(rr.startOffset, rr.endOffset))
+                        if (normalizeForCompare(currentSlice) == normalizeForCompare(effectiveNewContent)) {
+                            alreadyApplied++
+                            continue
                         }
 
-                    // Idempotence: if the resolved slice already equals newContent (after normalization), skip.
-                    val currentSlice = document.getText(TextRange(rr.startOffset, rr.endOffset))
-                    if (normalizeForCompare(currentSlice) == normalizeForCompare(effectiveNewContent)) {
-                        alreadyApplied++
-                        continue
+                        document.replaceString(rr.startOffset, rr.endOffset, effectiveNewContent)
+                        applied++
                     }
 
-                    document.replaceString(rr.startOffset, rr.endOffset, effectiveNewContent)
-                    applied++
-                }
-
-                try {
-                    PsiDocumentManager.getInstance(project).commitDocument(document)
-                } catch (_: Throwable) {
-                }
-                docManager.saveDocument(document)
-
-                if (reformatAfterUpdate || optimizeImportsAfterUpdate) {
                     try {
-                        val psi = PsiManager.getInstance(project).findFile(vFile)
-                        if (psi != null) {
-                            if (reformatAfterUpdate) CodeStyleManager.getInstance(project).reformat(psi)
-                            if (optimizeImportsAfterUpdate) OptimizeImportsProcessor(project, psi).run()
-                        }
+                        PsiDocumentManager.getInstance(project).commitDocument(document)
                     } catch (_: Throwable) {
                     }
-                }
+                    docManager.saveDocument(document)
 
-                try {
-                    FileEditorManager.getInstance(project).openTextEditor(OpenFileDescriptor(project, vFile), true)
-                } catch (_: Throwable) {
-                }
+                    if (reformatAfterUpdate || optimizeImportsAfterUpdate) {
+                        try {
+                            val psi = PsiManager.getInstance(project).findFile(vFile)
+                            if (psi != null) {
+                                if (reformatAfterUpdate) CodeStyleManager.getInstance(project).reformat(psi)
+                                if (optimizeImportsAfterUpdate) OptimizeImportsProcessor(project, psi).run()
+                            }
+                        } catch (_: Throwable) {
+                        }
+                    }
 
-                lastModified = PsiManager.getInstance(project).findFile(vFile)?.modificationStamp ?: 0
+                    try {
+                        FileEditorManager.getInstance(project).openTextEditor(OpenFileDescriptor(project, vFile), true)
+                    } catch (_: Throwable) {
+                    }
 
-                if (mismatches.isEmpty()) {
-                    result
-                        .append("Patched ")
-                        .append(applied)
-                        .append(" range(s) in ")
-                        .append(relToBase)
-                } else {
-                    result
-                        .append("Patched ")
-                        .append(applied)
-                        .append(" range(s) in ")
-                        .append(relToBase)
-                        .append(" with ")
-                        .append(mismatches.size)
-                        .append(" mismatch(es). Details: \n")
-                        .append(mismatches.joinToString("\n"))
-                }
-                if (alreadyApplied > 0) {
-                    result.append("\nNo-op: ").append(alreadyApplied).append(" range(s) already matched newContent")
-                }
-                if (relocationNotes.isNotEmpty()) {
-                    result.append("\nRelocations:\n").append(relocationNotes.distinct().joinToString("\n"))
+                    lastModified = PsiManager.getInstance(project).findFile(vFile)?.modificationStamp ?: 0
+
+                    if (mismatches.isEmpty()) {
+                        result
+                            .append("Patched ")
+                            .append(applied)
+                            .append(" range(s) in ")
+                            .append(relToBase)
+                    } else {
+                        result
+                            .append("Patched ")
+                            .append(applied)
+                            .append(" range(s) in ")
+                            .append(relToBase)
+                            .append(" with ")
+                            .append(mismatches.size)
+                            .append(" mismatch(es). Details: \n")
+                            .append(mismatches.joinToString("\n"))
+                    }
+                    if (alreadyApplied > 0) {
+                        result.append("\nNo-op: ").append(alreadyApplied).append(" range(s) already matched newContent")
+                    }
+                    if (relocationNotes.isNotEmpty()) {
+                        result.append("\nRelocations:\n").append(relocationNotes.distinct().joinToString("\n"))
+                    }
                 }
             }
+        } catch (e: Throwable) {
+            if (e is com.intellij.openapi.progress.ProcessCanceledException || e is java.util.concurrent.CancellationException) {
+                val cancelMessage = "Environment cancelled patching $relToBase before completion. Retry may succeed."
+                project.service<ToolWindowService>().addToolingMessage("Patch File - cancelled", cancelMessage)
+                throw ToolFriendlyException(cancelMessage, code = "cancelled", retriable = true)
+            }
+            throw e
         }
 
         try {

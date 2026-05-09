@@ -5,7 +5,6 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.openai
 
 import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.ToolInvoker
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.DynamicMcpToolProvider
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.McpClientService
 import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
@@ -14,6 +13,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.services.ui.Notifications
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
 import com.openai.models.responses.ResponseFunctionToolCall
 
@@ -61,13 +61,47 @@ class ToolRouter(
                 else -> result
             }
         } catch (e: Throwable) {
+            if (e is ToolFriendlyException) {
+                val message = e.message?.takeIf { it.isNotBlank() } ?: "Tool failed"
+                QDLog.info(log) { "Tool call failed (friendly): name=${functionCall.name()} code=${e.code} err=$message" }
+                return mapOf(
+                    "status" to "error",
+                    "tool" to functionCall.name(),
+                    "code" to e.code,
+                    "message" to message,
+                    "errorText" to message,
+                    "summary" to message,
+                    "retriable" to e.retriable,
+                )
+            }
+            if (e is ProcessCanceledException || e is java.util.concurrent.CancellationException) {
+                val cancelMessage =
+                    e.message?.takeIf { it.isNotBlank() }
+                        ?: "Execution of ${functionCall.name()} was cancelled before completion. Retry may succeed."
+                QDLog.info(log) { "Tool call cancelled: name=${functionCall.name()} err=$cancelMessage" }
+                return mapOf(
+                    "status" to "error",
+                    "tool" to functionCall.name(),
+                    "code" to "cancelled",
+                    "message" to cancelMessage,
+                    "errorText" to cancelMessage,
+                    "summary" to cancelMessage,
+                    "retriable" to true,
+                )
+            }
             try {
                 QDLog.warn(log, { "Tool call failed: name=${functionCall.name()} err=${e.message}" }, e)
             } catch (_: Throwable) {
             }
             log.error("Tool '${functionCall.name()}' failed: ${e.message}", e)
             Notifications.show(project, e.message.orEmpty(), NotificationType.ERROR)
-            mapOf("status" to "error", "tool" to functionCall.name(), "code" to "unhandled_exception")
+            mapOf(
+                "status" to "error",
+                "tool" to functionCall.name(),
+                "code" to "unhandled_exception",
+                "message" to (e.message ?: "Unhandled exception"),
+                "errorText" to (e.message ?: "Unhandled exception"),
+            )
         }
     }
 

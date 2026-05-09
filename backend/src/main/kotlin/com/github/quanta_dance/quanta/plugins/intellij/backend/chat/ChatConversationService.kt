@@ -17,6 +17,8 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMess
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatMessageDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.toChatMessageDto
+import com.intellij.configurationStore.StoreUtil
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
@@ -307,5 +309,12 @@ class ChatConversationService(
     private fun persistMessages() {
         persistence.saveActiveMessages(_messages.value, openAIService.getLastResponseId())
         _sessions.value = persistence.listSessions()
+        runCatching {
+            ApplicationManager.getApplication().invokeLater {
+                runCatching {
+                    StoreUtil.saveSettings(project, false)
+                }
+            }
+        }
     }
 }

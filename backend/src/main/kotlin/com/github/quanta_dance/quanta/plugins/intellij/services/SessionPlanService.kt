@@ -64,9 +64,44 @@ class SessionPlanService(private val project: Project) {
         )
     }
 
-    fun activate() {
+    data class ActivationCheck(
+        val valid: Boolean,
+        val issues: List<String> = emptyList(),
+    )
+
+    fun validateForActivation(): ActivationCheck {
         val parsed = parse(loadText(maxChars = 64_000))
-        if (parsed.tasks.isEmpty() && parsed.goal.isBlank() && parsed.definitionOfDone.isBlank()) return
+        val issues = mutableListOf<String>()
+        if (parsed.goal.isBlank()) issues += "Goal is missing."
+        if (parsed.definitionOfDone.isBlank()) issues += "Definition of done is missing."
+        if (parsed.tasks.isEmpty()) issues += "At least one task is required."
+        val vaguePatterns = listOf(
+            "affected package",
+            "affected file",
+            "as needed",
+            "if needed",
+            "as appropriate",
+            "relevant package",
+            "relevant file",
+            "determine the smallest safe",
+            "independently and determine",
+        )
+        parsed.tasks.forEach { task ->
+            val lower = task.lowercase()
+            if (vaguePatterns.any { lower.contains(it) }) {
+                issues += "Task is too vague for safe activation: '$task'"
+            }
+        }
+        return ActivationCheck(valid = issues.isEmpty(), issues = issues)
+    }
+
+    fun activate(): ActivationCheck {
+        val parsed = parse(loadText(maxChars = 64_000))
+        if (parsed.tasks.isEmpty() && parsed.goal.isBlank() && parsed.definitionOfDone.isBlank()) {
+            return ActivationCheck(valid = false, issues = listOf("Plan is empty."))
+        }
+        val validation = validateForActivation()
+        if (!validation.valid) return validation
         savePlan(
             status = "ACTIVE",
             goal = parsed.goal,
@@ -74,6 +109,7 @@ class SessionPlanService(private val project: Project) {
             tasks = parsed.tasks,
             checked = parsed.checked,
         )
+        return ActivationCheck(valid = true)
     }
 
     fun markTasksDone(completed: List<String>): Boolean {
@@ -111,6 +147,21 @@ class SessionPlanService(private val project: Project) {
     fun hasUncheckedTasks(): Boolean {
         val parsed = parse(loadText(maxChars = 32_000))
         return parsed.tasks.indices.any { !parsed.checked.contains(it) }
+    }
+
+    fun getUncheckedTasks(): List<String> {
+        val parsed = parse(loadText(maxChars = 32_000))
+        return parsed.tasks.filterIndexed { idx, _ -> !parsed.checked.contains(idx) }
+    }
+
+    fun onlyPassiveTailTasksRemain(): Boolean {
+        val remaining = getUncheckedTasks().map { it.trim().lowercase() }
+        if (remaining.isEmpty()) return false
+        return remaining.all { task ->
+            task.startsWith("update or add tests only if") ||
+                    task.startsWith("review the final set of changes") ||
+                    task.startsWith("review")
+        }
     }
 
     fun applyDraftFromResponse(
