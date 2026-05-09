@@ -3,7 +3,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.chat
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus
-import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.*
 import com.intellij.openapi.components.*
 import java.time.LocalDateTime
 import java.util.*
@@ -33,6 +33,42 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
         var type: String = ChatMessage.ChatMessageType.TEXT.name,
         var voiceSummary: String? = null,
         var toolItems: MutableList<PersistedToolItem> = mutableListOf(),
+        var parentMessageId: String? = null,
+    )
+
+    data class PersistedDelegatedTask(
+        var id: String = "",
+        var title: String = "",
+        var createdByAgentId: String? = null,
+        var createdByRole: String? = null,
+        var assignedAgentIds: MutableList<String> = mutableListOf(),
+        var assignedRoles: MutableList<String> = mutableListOf(),
+        var dependsOnTaskIds: MutableList<String> = mutableListOf(),
+        var status: String = DelegatedTaskStatusDto.QUEUED.name,
+        var summary: String? = null,
+        var result: String? = null,
+        var relatedMessageId: String? = null,
+        var relatedPlanTask: String? = null,
+        var createdAtEpochMs: Long = 0,
+        var updatedAtEpochMs: Long = 0,
+    )
+
+    data class PersistedChannelEvent(
+        var id: String = "",
+        var sessionId: String = "",
+        var threadId: String? = null,
+        var parentEventId: String? = null,
+        var relatedTaskId: String? = null,
+        var relatedMessageId: String? = null,
+        var kind: String = AgentChannelEventKindDto.MANAGER_MESSAGE.name,
+        var authorType: String = AgentChannelAuthorTypeDto.MANAGER.name,
+        var authorId: String? = null,
+        var authorRole: String? = null,
+        var visibility: String = AgentChannelVisibilityDto.CHANNEL.name,
+        var text: String = "",
+        var toolItems: MutableList<PersistedToolItem> = mutableListOf(),
+        var status: String? = null,
+        var createdAtEpochMs: Long = 0,
     )
 
     data class PersistedChatSession(
@@ -41,6 +77,8 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
         var updatedAtEpochMs: Long = System.currentTimeMillis(),
         var lastResponseId: String? = null,
         var messages: MutableList<PersistedChatMessage> = mutableListOf(),
+        var delegatedTasks: MutableList<PersistedDelegatedTask> = mutableListOf(),
+        var channelEvents: MutableList<PersistedChannelEvent> = mutableListOf(),
     )
 
     data class State(
@@ -143,11 +181,128 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
                                 detailText = item.detailText,
                             )
                         },
+                    parentMessageId = saved.parentMessageId,
                 )
             }.getOrNull()
         }
 
     fun getActiveLastResponseId(): String? = getActiveSession()?.lastResponseId
+
+    fun loadActiveDelegatedTasks(): List<DelegatedTaskDto> =
+        getActiveSession()?.delegatedTasks.orEmpty().map { saved ->
+            DelegatedTaskDto(
+                id = saved.id,
+                title = saved.title,
+                createdByAgentId = saved.createdByAgentId,
+                createdByRole = saved.createdByRole,
+                assignedAgentIds = saved.assignedAgentIds,
+                assignedRoles = saved.assignedRoles,
+                dependsOnTaskIds = saved.dependsOnTaskIds,
+                status = runCatching { DelegatedTaskStatusDto.valueOf(saved.status) }.getOrDefault(
+                    DelegatedTaskStatusDto.QUEUED
+                ),
+                summary = saved.summary,
+                result = saved.result,
+                relatedMessageId = saved.relatedMessageId,
+                relatedPlanTask = saved.relatedPlanTask,
+                createdAtEpochMs = saved.createdAtEpochMs,
+                updatedAtEpochMs = saved.updatedAtEpochMs,
+            )
+        }
+
+    fun saveActiveDelegatedTasks(tasks: List<DelegatedTaskDto>) {
+        val session = getOrCreateActiveSession()
+        session.delegatedTasks = tasks.map { task ->
+            PersistedDelegatedTask(
+                id = task.id,
+                title = task.title,
+                createdByAgentId = task.createdByAgentId,
+                createdByRole = task.createdByRole,
+                assignedAgentIds = task.assignedAgentIds.toMutableList(),
+                assignedRoles = task.assignedRoles.toMutableList(),
+                dependsOnTaskIds = task.dependsOnTaskIds.toMutableList(),
+                status = task.status.name,
+                summary = task.summary,
+                result = task.result,
+                relatedMessageId = task.relatedMessageId,
+                relatedPlanTask = task.relatedPlanTask,
+                createdAtEpochMs = task.createdAtEpochMs,
+                updatedAtEpochMs = task.updatedAtEpochMs,
+            )
+        }.toMutableList()
+        session.updatedAtEpochMs = System.currentTimeMillis()
+    }
+
+    fun loadActiveChannelEvents(): List<AgentChannelEventDto> =
+        getActiveSession()?.channelEvents.orEmpty().map { saved ->
+            AgentChannelEventDto(
+                id = saved.id,
+                sessionId = saved.sessionId,
+                threadId = saved.threadId,
+                parentEventId = saved.parentEventId,
+                relatedTaskId = saved.relatedTaskId,
+                relatedMessageId = saved.relatedMessageId,
+                kind = runCatching { AgentChannelEventKindDto.valueOf(saved.kind) }.getOrDefault(
+                    AgentChannelEventKindDto.MANAGER_MESSAGE
+                ),
+                authorType = runCatching { AgentChannelAuthorTypeDto.valueOf(saved.authorType) }.getOrDefault(
+                    AgentChannelAuthorTypeDto.MANAGER
+                ),
+                authorId = saved.authorId,
+                authorRole = saved.authorRole,
+                visibility = runCatching { AgentChannelVisibilityDto.valueOf(saved.visibility) }.getOrDefault(
+                    AgentChannelVisibilityDto.CHANNEL
+                ),
+                text = saved.text,
+                toolItems = saved.toolItems.map { item ->
+                    ToolExecutionItem(
+                        callId = item.callId,
+                        toolName = item.toolName,
+                        displayText = item.displayText,
+                        status = ToolExecutionStatus.valueOf(item.status),
+                        filePath = item.filePath,
+                        errorText = item.errorText,
+                        detailText = item.detailText,
+                    )
+                },
+                status = saved.status?.let { runCatching { DelegatedTaskStatusDto.valueOf(it) }.getOrNull() },
+                createdAtEpochMs = saved.createdAtEpochMs,
+            )
+        }
+
+    fun saveActiveChannelEvents(events: List<AgentChannelEventDto>) {
+        val session = getOrCreateActiveSession()
+        session.channelEvents = events.map { event ->
+            PersistedChannelEvent(
+                id = event.id,
+                sessionId = event.sessionId,
+                threadId = event.threadId,
+                parentEventId = event.parentEventId,
+                relatedTaskId = event.relatedTaskId,
+                relatedMessageId = event.relatedMessageId,
+                kind = event.kind.name,
+                authorType = event.authorType.name,
+                authorId = event.authorId,
+                authorRole = event.authorRole,
+                visibility = event.visibility.name,
+                text = event.text,
+                toolItems = event.toolItems.map { item ->
+                    PersistedToolItem(
+                        callId = item.callId,
+                        toolName = item.toolName,
+                        displayText = item.displayText,
+                        status = item.status.name,
+                        filePath = item.filePath,
+                        errorText = item.errorText,
+                        detailText = item.detailText,
+                    )
+                }.toMutableList(),
+                status = event.status?.name,
+                createdAtEpochMs = event.createdAtEpochMs,
+            )
+        }.toMutableList()
+        session.updatedAtEpochMs = System.currentTimeMillis()
+    }
 
     fun saveActiveMessages(
         messages: List<ChatMessage>,
@@ -176,6 +331,7 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
                                 detailText = item.detailText,
                             )
                         }.toMutableList(),
+                    parentMessageId = message.parentMessageId,
                 )
             }.toMutableList()
         session.lastResponseId = lastResponseId

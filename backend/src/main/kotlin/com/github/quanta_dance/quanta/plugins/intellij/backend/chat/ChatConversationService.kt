@@ -11,14 +11,13 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.repository.ChatMe
 import com.github.quanta_dance.quanta.plugins.intellij.backend.repository.OpenAIBackendChatResponder
 import com.github.quanta_dance.quanta.plugins.intellij.backend.repository.OpenAIBackendChatResponder.ChatTurn
 import com.github.quanta_dance.quanta.plugins.intellij.project.CurrentFileContextProvider
+import com.github.quanta_dance.quanta.plugins.intellij.services.AgentManagerService
 import com.github.quanta_dance.quanta.plugins.intellij.services.OpenAIService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage.ChatMessageType.AI_THINKING
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatMessageDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.toChatMessageDto
-import com.intellij.configurationStore.StoreUtil
-import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
@@ -35,9 +34,10 @@ import kotlin.coroutines.cancellation.CancellationException
 class ChatConversationService(
     private val project: Project,
 ) {
-    private val chatMessageFactory = ChatMessageFactory("Quanta AI", "AI Manager")
+    private val chatMessageFactory = ChatMessageFactory("Quanta AI", "Me")
     private val openAIBackendChatResponder = OpenAIBackendChatResponder()
     private val openAIService: OpenAIService get() = project.service()
+    private val agentManager: AgentManagerService get() = project.service()
     private val registry: AgentRegistryService get() = project.service()
     private val inbox: AgentInboxService get() = project.service()
     private val lifecycle: AgentLifecycleService get() = project.service()
@@ -51,6 +51,27 @@ class ChatConversationService(
         _messages.value = persistence.loadActiveMessages()
         _sessions.value = persistence.listSessions()
         openAIService.switchToSession(persistence.getActiveSessionId(), persistence.getActiveLastResponseId())
+        agentManager.addPropertyChangeListener { event ->
+            when (event.propertyName) {
+                "agent_task_started" -> {
+                    val payload = event.newValue as? Map<*, *> ?: return@addPropertyChangeListener
+                    val agentId = payload["agentId"] as? String ?: return@addPropertyChangeListener
+                    appendAgentThreadMessage(
+                        agentId = agentId,
+                        content = "Started delegated task",
+                    )
+                }
+
+                "agent_task_finished" -> {
+                    val result =
+                        event.newValue as? AgentManagerService.AgentTaskResult ?: return@addPropertyChangeListener
+                    appendAgentThreadMessage(
+                        agentId = result.agentId,
+                        content = result.text ?: result.error ?: "Completed delegated task",
+                    )
+                }
+            }
+        }
     }
 
     fun messagesFlow(): Flow<List<ChatMessageDto>> =
@@ -178,6 +199,19 @@ class ChatConversationService(
 
     private fun appendUserMessage(messageContent: String) {
         _messages.value += chatMessageFactory.createUserMessage(messageContent)
+        persistMessages()
+    }
+
+    private fun appendAgentThreadMessage(
+        agentId: String,
+        content: String,
+    ) {
+        val agent = registry.getAgentsSnapshot().firstOrNull { it.id == agentId }
+        val parentMessageId = _messages.value.lastOrNull { it.isMyMessage }?.id
+        _messages.value += chatMessageFactory.createAIMessage(
+            content = content,
+            parentMessageId = parentMessageId,
+        ).copy(author = agent?.role ?: "Agent")
         persistMessages()
     }
 
@@ -309,12 +343,5 @@ class ChatConversationService(
     private fun persistMessages() {
         persistence.saveActiveMessages(_messages.value, openAIService.getLastResponseId())
         _sessions.value = persistence.listSessions()
-        runCatching {
-            ApplicationManager.getApplication().invokeLater {
-                runCatching {
-                    StoreUtil.saveSettings(project, false)
-                }
-            }
-        }
     }
 }

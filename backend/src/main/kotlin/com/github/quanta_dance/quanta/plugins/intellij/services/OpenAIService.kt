@@ -827,13 +827,15 @@ class OpenAIService(
         var reprocess = true
         var continuationCount = 0
         var forcePlanPersistenceAttempts = 0
+        var lastPlanLoopSignature: String? = null
+        var repeatedPlanLoopSignatureCount = 0
         val configuredContinuations =
             try {
                 QuantaAISettingsState.instance.state.maxAutomaticTurns.coerceIn(1, 100)
             } catch (_: Throwable) {
                 5
             }
-        val maxContinuations = if (planIsActive) maxOf(configuredContinuations, 300) else configuredContinuations
+        val maxContinuations = if (planIsActive) maxOf(configuredContinuations, 30) else configuredContinuations
         val maxPlanPersistenceAttempts = 5
 
         while (reprocess) {
@@ -1023,6 +1025,40 @@ class OpenAIService(
                                         false
                                     }
 
+                                val currentPlanLoopSignature =
+                                    buildString {
+                                        append(message.nextStep?.uppercase().orEmpty())
+                                        append('|').append(effectivePlanStatus.orEmpty())
+                                        append('|').append(message.planNeedsUserConfirmation == true)
+                                        append('|').append(
+                                            message.planCompletedTasks?.sorted()?.joinToString("||").orEmpty()
+                                        )
+                                        append('|').append(normalizePlanLoopSummary(txt))
+                                    }
+                                if (activePlanStillHasWork) {
+                                    if (currentPlanLoopSignature == lastPlanLoopSignature) {
+                                        repeatedPlanLoopSignatureCount++
+                                    } else {
+                                        lastPlanLoopSignature = currentPlanLoopSignature
+                                        repeatedPlanLoopSignatureCount = 0
+                                    }
+                                    if (repeatedPlanLoopSignatureCount >= 2 && pendingToolOutputs.isEmpty()) {
+                                        if (continuationCount < maxContinuations) {
+                                            continuationCount++
+                                            reprocess = true
+                                            inputs.add(
+                                                systemMessage(
+                                                    "You are repeating the same ACTIVE-plan response without making progress. Do not restate prior analysis or ask the user to confirm routine next steps. Execute the next concrete action now, or if truly blocked ask exactly one specific external-dependency question.",
+                                                ),
+                                            )
+                                            return@forEach
+                                        }
+                                    }
+                                } else {
+                                    lastPlanLoopSignature = currentPlanLoopSignature
+                                    repeatedPlanLoopSignatureCount = 0
+                                }
+
                                 if (planIsActive && message.nextStep?.uppercase() == "WAIT_USER") {
                                     val blockingQuestion = message.planBlockingQuestion?.trim().orEmpty()
                                     val hardBlocked =
@@ -1193,6 +1229,13 @@ class OpenAIService(
             else -> toolName.replace(Regex("([a-z])([A-Z])"), "$1 $2")
         }
     }
+
+    private fun normalizePlanLoopSummary(text: String): String =
+        text.lowercase()
+            .replace(Regex("\\s+"), " ")
+            .replace(Regex("[^a-z0-9 _|:-]"), "")
+            .trim()
+            .take(240)
 
     private fun isRoutineConfirmationQuestion(question: String): Boolean {
         val q = question.trim().lowercase()
@@ -1459,6 +1502,8 @@ class OpenAIService(
                 // Reset continuation counter at the start of a user-initiated turn so continuations don't carry over from prior turns
                 var continuationCount = 0
                 var forcePlanPersistenceAttempts = 0
+                var lastPlanLoopSignature: String? = null
+                var repeatedPlanLoopSignatureCount = 0
                 val configuredContinuations =
                     try {
                         QuantaAISettingsState.instance.state.maxAutomaticTurns.coerceIn(1, 100)
@@ -1466,7 +1511,7 @@ class OpenAIService(
                         10
                     }
                 val maxContinuations =
-                    if (planService.isActive()) maxOf(configuredContinuations, 300) else configuredContinuations
+                    if (planService.isActive()) maxOf(configuredContinuations, 30) else configuredContinuations
                 val maxPlanPersistenceAttempts = 5
 
                 // Persist user input for this turn (per-branch). UI may already show it elsewhere, so we persist only.
@@ -1838,6 +1883,41 @@ class OpenAIService(
                                                 } catch (_: Throwable) {
                                                     false
                                                 }
+
+                                            val currentPlanLoopSignature =
+                                                buildString {
+                                                    append(message.nextStep?.uppercase().orEmpty())
+                                                    append('|').append(effectivePlanStatus.orEmpty())
+                                                    append('|').append(message.planNeedsUserConfirmation == true)
+                                                    append('|').append(
+                                                        message.planCompletedTasks?.sorted()?.joinToString("||")
+                                                            .orEmpty()
+                                                    )
+                                                    append('|').append(normalizePlanLoopSummary(visibleText))
+                                                }
+                                            if (activePlanStillHasWork) {
+                                                if (currentPlanLoopSignature == lastPlanLoopSignature) {
+                                                    repeatedPlanLoopSignatureCount++
+                                                } else {
+                                                    lastPlanLoopSignature = currentPlanLoopSignature
+                                                    repeatedPlanLoopSignatureCount = 0
+                                                }
+                                                if (repeatedPlanLoopSignatureCount >= 2 && requestInputs.none { it.isFunctionCallOutput() }) {
+                                                    if (continuationCount < maxContinuations) {
+                                                        continuationCount++
+                                                        reprocess = true
+                                                        requestInputs.add(
+                                                            systemMessage(
+                                                                "You are repeating the same ACTIVE-plan response without making progress. Do not restate prior analysis or ask the user to confirm routine next steps. Execute the next concrete action now, or if truly blocked ask exactly one specific external-dependency question.",
+                                                            ),
+                                                        )
+                                                        return@forEach
+                                                    }
+                                                }
+                                            } else {
+                                                lastPlanLoopSignature = currentPlanLoopSignature
+                                                repeatedPlanLoopSignatureCount = 0
+                                            }
 
                                             // Enforce ACTIVE plan autonomy: do not allow WAIT_USER unless explicitly blocked.
                                             if (planIsActive && message.nextStep?.uppercase() == "WAIT_USER") {

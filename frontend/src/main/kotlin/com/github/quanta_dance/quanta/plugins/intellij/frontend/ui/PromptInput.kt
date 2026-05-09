@@ -47,8 +47,10 @@ fun PromptInput(
     currentPlanText: String = "",
     currentModel: String = "",
     availableModels: List<String> = emptyList(),
+    agenticEnabled: Boolean = true,
     onModelSelected: (String) -> Unit = {},
     onToggleMic: () -> Unit = {},
+    onToggleAgenticMode: () -> Unit = {},
     onToggleVoiceFeedback: () -> Unit = {},
     onInputChanged: (String) -> Unit = {},
     onSend: (String) -> Unit = {},
@@ -229,6 +231,18 @@ fun PromptInput(
                             )
                         }
 
+                        OutlinedButton(
+                            modifier = Modifier.padding(horizontal = 4.dp),
+                            onClick = onToggleAgenticMode,
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Text(if (agenticEnabled) "Agentic On" else "Agentic Mode")
+                            }
+                        }
+
                         IconButton(onClick = onToggleVoiceFeedback) {
                             Icon(
                                 key = if (voiceEnabled) ChatAppIcons.Header.speakerOn else ChatAppIcons.Header.speakerOff,
@@ -295,6 +309,18 @@ fun PromptInput(
                                 },
                                 contentDescription = "Toggle Microphone",
                             )
+                        }
+
+                        OutlinedButton(
+                            modifier = Modifier.padding(horizontal = 4.dp),
+                            onClick = onToggleAgenticMode,
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Text(if (agenticEnabled) "Agentic On" else "Agentic Mode")
+                            }
                         }
 
                         IconButton(onClick = {

@@ -304,6 +304,9 @@ class CreateOrUpdateFile : ToolInterface<String> {
                 }
             summary.lines().first()
         } catch (e: Throwable) {
+            if (e is ProcessCanceledException || e is java.util.concurrent.CancellationException) {
+                return "Validation: cancelled by environment before completion. Retry may succeed."
+            }
             QDLog.warn(logger, { "Validation unavailable for $relToBase" }, e)
             "Validation: skipped (${e.message})"
         }
