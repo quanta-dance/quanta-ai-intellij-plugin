@@ -2,15 +2,13 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.shared.rpc
 
-import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.FrontendLogDto
-import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.MicrophoneTranscriptionResultDto
-import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.SpeechChunkDto
-import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.SynthesizedSpeechDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.*
 import com.intellij.platform.project.ProjectId
 import com.intellij.platform.rpc.RemoteApiProviderService
 import fleet.rpc.RemoteApi
 import fleet.rpc.Rpc
 import fleet.rpc.remoteApiDescriptor
+import kotlinx.coroutines.flow.Flow
 
 @Rpc
 interface QuantaBackendApi : RemoteApi<Unit> {
@@ -23,6 +21,10 @@ interface QuantaBackendApi : RemoteApi<Unit> {
     suspend fun ping(): String
 
     suspend fun logFrontend(projectId: ProjectId, entry: FrontendLogDto)
+
+    suspend fun getCurrentPlanStatus(projectId: ProjectId): ChatPlanStatusDto
+
+    suspend fun getPlanStatusFlow(projectId: ProjectId): Flow<ChatPlanStatusDto>
 
     suspend fun synthesizeSpeech(projectId: ProjectId, text: String): SynthesizedSpeechDto
 

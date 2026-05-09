@@ -29,4 +29,11 @@ object ChatAppIcons {
         val success = AllIconsKeys.General.InspectionsOK
         val failed = AllIconsKeys.General.Error
     }
+
+    object PlanStatus {
+        val draft = AllIconsKeys.Actions.InlayGear
+        val active = AllIconsKeys.Actions.Execute
+        val done = AllIconsKeys.General.InspectionsOK
+        val noPlan = AllIconsKeys.General.Information
+    }
 }

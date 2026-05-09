@@ -1,6 +1,7 @@
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel
 
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
 import com.intellij.openapi.Disposable
 import kotlinx.coroutines.CancellationException
@@ -12,6 +13,7 @@ import kotlinx.coroutines.launch
 interface ChatViewModelApi : Disposable {
     val chatMessagesFlow: StateFlow<List<ChatMessage>>
     val sessionsFlow: StateFlow<List<ChatSessionDto>>
+    val planStatusFlow: StateFlow<ChatPlanStatusDto>
 
     fun onPromptInputChanged(input: String)
 
@@ -39,6 +41,8 @@ class ChatViewModel(
 
     private val _sessionsFlow = MutableStateFlow(emptyList<ChatSessionDto>())
     override val sessionsFlow: StateFlow<List<ChatSessionDto>> = _sessionsFlow.asStateFlow()
+
+    override val planStatusFlow: StateFlow<ChatPlanStatusDto> = repository.planStatusFlow
 
     private val _promptInputState = MutableStateFlow<MessageInputState>(MessageInputState.Disabled)
     override val promptInputState: StateFlow<MessageInputState> = _promptInputState.asStateFlow()

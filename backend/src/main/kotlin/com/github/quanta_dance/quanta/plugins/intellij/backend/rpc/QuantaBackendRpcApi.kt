@@ -2,9 +2,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.rpc
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.contracts.BackendWorkspaceFileService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.OpenFileInEditorTool
-import com.github.quanta_dance.quanta.plugins.intellij.services.AIVoiceService
-import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
-import com.github.quanta_dance.quanta.plugins.intellij.services.SpeechToTextService
+import com.github.quanta_dance.quanta.plugins.intellij.services.*
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.WorkspaceFileReadRequest
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.WorkspaceFileWriteRequest
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaBackendApi
@@ -14,6 +12,7 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.platform.project.ProjectId
 import com.intellij.platform.project.findProjectOrNull
+import kotlinx.coroutines.flow.Flow
 import java.util.*
 
 class QuantaBackendRpcApi : QuantaBackendApi {
@@ -31,6 +30,19 @@ class QuantaBackendRpcApi : QuantaBackendApi {
             FrontendLogLevel.WARN -> QDLog.warn(logger) { message }
             FrontendLogLevel.ERROR -> QDLog.error(logger, { message }, null)
         }
+    }
+
+    override suspend fun getCurrentPlanStatus(projectId: ProjectId): ChatPlanStatusDto {
+        val backendProject = projectId.findProjectOrNull() ?: return ChatPlanStatusDto()
+        return SessionPlanService(backendProject).getCurrentPlanStatus()
+    }
+
+    override suspend fun getPlanStatusFlow(projectId: ProjectId): Flow<ChatPlanStatusDto> {
+        val backendProject = projectId.findProjectOrNull() ?: return kotlinx.coroutines.flow.emptyFlow()
+        val statusService = backendProject.service<SessionPlanStatusService>()
+        val planService = SessionPlanService(backendProject)
+        statusService.publish(planService.getCurrentPlanStatus())
+        return statusService.statusFlow
     }
 
     override suspend fun synthesizeSpeech(

@@ -2,6 +2,8 @@ package com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel
 
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.ChatRepositoryRpcApi
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaBackendApi
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.toChatMessage
 import com.intellij.openapi.components.Service
@@ -44,6 +46,15 @@ class FrontendChatRepositoryModel(
                 .collect { emit(it) }
         }
     }.stateIn(coroutineScope, initialValue = emptyList(), started = SharingStarted.Lazily)
+
+    override val planStatusFlow: StateFlow<ChatPlanStatusDto> = flow {
+        durable {
+            QuantaBackendApi
+                .getInstance()
+                .getPlanStatusFlow(project.projectId())
+                .collect { emit(it) }
+        }
+    }.stateIn(coroutineScope, initialValue = ChatPlanStatusDto(), started = SharingStarted.Lazily)
 
     override suspend fun sendMessage(messageContent: String) {
         ChatRepositoryRpcApi

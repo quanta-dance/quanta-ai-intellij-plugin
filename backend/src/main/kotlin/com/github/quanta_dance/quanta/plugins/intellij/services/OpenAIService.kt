@@ -654,6 +654,9 @@ class OpenAIService(
         }
         lastCtxHash = null
         initialContextInjectedThisIdeSession = false
+        lastInjectedSummaryHash = null
+        lastInjectedAgentsMdHash = null
+        lastInjectedAgentsRosterHash = null
 
         // Reset agents thread pointers as well; keep their transcripts.
         try {
@@ -670,6 +673,9 @@ class OpenAIService(
         QuantaAISettingsState.instance.state.mainLastResponseId = null
         lastCtxHash = null
         initialContextInjectedThisIdeSession = false
+        lastInjectedSummaryHash = null
+        lastInjectedAgentsMdHash = null
+        lastInjectedAgentsRosterHash = null
 
         // Reset global token usage counters
         try {
@@ -710,6 +716,9 @@ class OpenAIService(
         QuantaAISettingsState.instance.state.mainLastResponseId = lastResponseId
         lastCtxHash = null
         initialContextInjectedThisIdeSession = false
+        lastInjectedSummaryHash = null
+        lastInjectedAgentsMdHash = null
+        lastInjectedAgentsRosterHash = null
     }
 
     fun stopAndClearSession() {
@@ -810,6 +819,7 @@ class OpenAIService(
         onToolUpdate: ((ToolTurnUpdate) -> Unit)? = null,
     ): Pair<String, String?> {
         var localPrevId = previousId
+        injectBaseContextForAgentTurn(inputs, localPrevId)
         val aggregated = StringBuilder()
         val processedCallIds = mutableSetOf<String>()
         var reprocess = true
@@ -938,6 +948,39 @@ class OpenAIService(
         return aggregated.toString().trim() to localPrevId
     }
 
+    private fun injectBaseContextForAgentTurn(
+        inputs: MutableList<ResponseInputItem>,
+        previousId: String?,
+    ) {
+        val needBaseContext = (previousId == null) || (!initialContextInjectedThisIdeSession)
+
+        try {
+            val ctx = ProjectAgentsFileManager(project).readAgentsFile(maxChars = 8_000)
+            if (ctx.isNotBlank()) {
+                val h = ctx.hashCode()
+                if (needBaseContext || lastInjectedAgentsMdHash == null || lastInjectedAgentsMdHash != h) {
+                    inputs.add(0, systemMessage("AGENTS.md:\n" + ctx))
+                    lastInjectedAgentsMdHash = h
+                }
+            }
+        } catch (_: Throwable) {
+        }
+
+        try {
+            val roster = buildAgentsRosterContext()
+            val h = roster.hashCode()
+            if (needBaseContext || lastInjectedAgentsRosterHash == null || lastInjectedAgentsRosterHash != h) {
+                inputs.add(0, systemMessage(roster))
+                lastInjectedAgentsRosterHash = h
+            }
+        } catch (_: Throwable) {
+        }
+
+        if (needBaseContext) {
+            initialContextInjectedThisIdeSession = true
+        }
+    }
+
     private fun buildToolExecutionItem(
         functionCall: com.openai.models.responses.ResponseFunctionToolCall,
         status: com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus,
@@ -1011,6 +1054,10 @@ class OpenAIService(
             normalized == "compact with memory" || normalized == "/compact with memory" -> {
                 val brief = memory.compactConversationHistory()
                 resetThreadStatePreservingHistory()
+                runCatching {
+                    project.service<com.github.quanta_dance.quanta.plugins.intellij.backend.chat.ChatConversationService>()
+                        .compactConversationWithBrief(brief)
+                }
                 project.service<ToolWindowService>().addToolingMessage(
                     "Session memory",
                     if (brief.isBlank()) "Session memory compacted, but no brief was available yet." else "Conversation compacted with persisted session memory.",
@@ -1220,19 +1267,21 @@ class OpenAIService(
                     initialContextInjectedThisIdeSession = true
                 }
 
+                val planService = SessionPlanService(project)
+
                 // Reset continuation counter at the start of a user-initiated turn so continuations don't carry over from prior turns
                 var continuationCount = 0
-                val maxContinuations =
+                val configuredContinuations =
                     try {
                         QuantaAISettingsState.instance.state.maxAutomaticTurns.coerceIn(1, 100)
                     } catch (_: Throwable) {
                         10
                     }
+                val maxContinuations =
+                    if (planService.isActive()) maxOf(configuredContinuations, 100) else configuredContinuations
 
                 // Persist user input for this turn (per-branch). UI may already show it elsewhere, so we persist only.
                 persistOnly("user", text)
-
-                val planService = SessionPlanService(project)
                 val normalized = text.trim().lowercase()
                 // Cooperative activation: user must explicitly approve the drafted plan.
                 if (normalized == "approve" || normalized == "approve plan" || normalized == "approve the plan") {
@@ -1483,14 +1532,38 @@ class OpenAIService(
                                                 QDLog.warn(thisLogger()) { "OpenAIService.sendMessage parsed empty visibleText" }
                                             }
 
-                                            // Capture draft team shaping proposals (applied only when user approves)
+                                            val planServiceForTurn = SessionPlanService(project)
+                                            var effectivePlanStatus = message.planStatus?.uppercase()
+
+                                            // Capture or update plan content from response.
                                             try {
-                                                if (
-                                                    message.planStatus?.uppercase() == "DRAFT" &&
-                                                    message.planNeedsUserConfirmation == true
-                                                ) {
-                                                    pendingTeamAddAgents = message.teamAddAgents
-                                                    pendingTeamRemoveRoles = message.teamRemoveRoles
+                                                when (effectivePlanStatus) {
+                                                    "DRAFT" -> {
+                                                        planServiceForTurn.applyDraftFromResponse(
+                                                            goal = message.planGoal,
+                                                            definitionOfDone = message.planDefinitionOfDone,
+                                                            tasks = message.planTasks,
+                                                        )
+                                                        if (message.planNeedsUserConfirmation == true) {
+                                                            pendingTeamAddAgents = message.teamAddAgents
+                                                            pendingTeamRemoveRoles = message.teamRemoveRoles
+                                                        }
+                                                    }
+
+                                                    "ACTIVE" -> {
+                                                        if (!planServiceForTurn.isActive()) {
+                                                            planServiceForTurn.applyDraftFromResponse(
+                                                                goal = message.planGoal,
+                                                                definitionOfDone = message.planDefinitionOfDone,
+                                                                tasks = message.planTasks,
+                                                            )
+                                                            planServiceForTurn.activate()
+                                                        }
+                                                    }
+
+                                                    "DONE" -> {
+                                                        planServiceForTurn.markAllTasksDone()
+                                                    }
                                                 }
                                             } catch (_: Throwable) {
                                             }
@@ -1502,16 +1575,24 @@ class OpenAIService(
                                                         ?.mapNotNull { it.trim().ifBlank { null } }
                                                         .orEmpty()
                                                 if (completed.isNotEmpty()) {
-                                                    SessionPlanService(project).markTasksDone(completed)
+                                                    planServiceForTurn.markTasksDone(completed)
                                                 }
+                                                effectivePlanStatus = planServiceForTurn.getStatus().uppercase()
                                             } catch (_: Throwable) {
                                             }
+
+                                            val activePlanStillHasWork =
+                                                try {
+                                                    (planServiceForTurn.isActive() || effectivePlanStatus == "ACTIVE") &&
+                                                            planServiceForTurn.hasUncheckedTasks()
+                                                } catch (_: Throwable) {
+                                                    false
+                                                }
 
                                             // Enforce ACTIVE plan autonomy: do not allow WAIT_USER unless explicitly blocked.
                                             if (planIsActive && message.nextStep?.uppercase() == "WAIT_USER") {
                                                 val blocked = message.planNeedsUserConfirmation == true
                                                 if (!blocked) {
-                                                    // Override to continue execution without user input.
                                                     if (continuationCount < maxContinuations) {
                                                         continuationCount++
                                                         reprocess = true
@@ -1523,6 +1604,19 @@ class OpenAIService(
                                                         )
                                                         return@forEach
                                                     }
+                                                }
+                                            }
+
+                                            if (activePlanStillHasWork && message.nextStep?.uppercase() != "WAIT_USER") {
+                                                if (continuationCount < maxContinuations && effectivePlanStatus != "DONE") {
+                                                    continuationCount++
+                                                    reprocess = true
+                                                    requestInputs.add(
+                                                        systemMessage(
+                                                            "The session plan is ACTIVE and still has unchecked tasks. Continue executing until tasks are completed or you are truly blocked.",
+                                                        ),
+                                                    )
+                                                    return@forEach
                                                 }
                                             }
 

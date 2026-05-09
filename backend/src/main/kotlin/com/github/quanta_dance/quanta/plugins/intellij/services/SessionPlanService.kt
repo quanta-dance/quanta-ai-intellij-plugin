@@ -3,6 +3,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.services
 
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
 import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.service
@@ -107,11 +108,54 @@ class SessionPlanService(private val project: Project) {
         return parsed.status.equals("ACTIVE", ignoreCase = true)
     }
 
+    fun hasUncheckedTasks(): Boolean {
+        val parsed = parse(loadText(maxChars = 32_000))
+        return parsed.tasks.indices.any { !parsed.checked.contains(it) }
+    }
+
+    fun applyDraftFromResponse(
+        goal: String?,
+        definitionOfDone: String?,
+        tasks: List<String>?,
+    ): Boolean {
+        val normalizedTasks = tasks.orEmpty().map { it.trim() }.filter { it.isNotBlank() }
+        val normalizedGoal = goal?.trim().orEmpty()
+        val normalizedDod = definitionOfDone?.trim().orEmpty()
+        if (normalizedTasks.isEmpty() && normalizedGoal.isBlank() && normalizedDod.isBlank()) return false
+        saveDraft(normalizedGoal, normalizedDod, normalizedTasks)
+        return true
+    }
+
+    fun markAllTasksDone(): Boolean {
+        val parsed = parse(loadText(maxChars = 64_000))
+        if (parsed.tasks.isEmpty()) return false
+        savePlan(
+            status = "DONE",
+            goal = parsed.goal,
+            definitionOfDone = parsed.definitionOfDone,
+            tasks = parsed.tasks,
+            checked = parsed.tasks.indices.toSet(),
+        )
+        return true
+    }
+
     fun hasPlan(): Boolean = loadText(maxChars = 200).isNotBlank()
 
     fun getStatus(): String {
         val parsed = parse(loadText(maxChars = 32_000))
         return parsed.status.trim().ifBlank { "DRAFT" }
+    }
+
+    fun getCurrentPlanStatus(): ChatPlanStatusDto {
+        val text = loadText(maxChars = 8_000)
+        val status =
+            text.lineSequence()
+                .map { it.trim() }
+                .firstOrNull { it.startsWith("Status:", ignoreCase = true) }
+                ?.substringAfter(':')
+                ?.trim()
+                .orEmpty()
+        return ChatPlanStatusDto(status = status, text = text)
     }
 
     private data class ParsedPlan(
@@ -209,6 +253,9 @@ class SessionPlanService(private val project: Project) {
             io.writeText(content)
             QDLog.info(log) { "Session plan written: ${io.absolutePath} (chars=${content.length})" }
             refresh(io)
+            runCatching {
+                project.service<SessionPlanStatusService>().publish(getCurrentPlanStatus())
+            }
             try {
                 project.service<SessionMemoryService>().refreshFromCurrentState(
                     reason = "plan_update",
