@@ -822,14 +822,19 @@ class OpenAIService(
         injectBaseContextForAgentTurn(inputs, localPrevId)
         val aggregated = StringBuilder()
         val processedCallIds = mutableSetOf<String>()
+        val planService = SessionPlanService(project)
+        val planIsActive = runCatching { planService.isActive() }.getOrDefault(false)
         var reprocess = true
         var continuationCount = 0
-        val maxContinuations =
+        var forcePlanPersistenceAttempts = 0
+        val configuredContinuations =
             try {
                 QuantaAISettingsState.instance.state.maxAutomaticTurns.coerceIn(1, 100)
             } catch (_: Throwable) {
                 5
             }
+        val maxContinuations = if (planIsActive) maxOf(configuredContinuations, 300) else configuredContinuations
+        val maxPlanPersistenceAttempts = 5
 
         while (reprocess) {
             reprocess = false
@@ -847,6 +852,7 @@ class OpenAIService(
             localPrevId = newId
             inputs.clear()
             val pendingToolOutputs = mutableListOf<ResponseInputItem>()
+            var sessionPlanToolCalledThisTurn = false
 
             structResponse.output().map { item ->
                 when {
@@ -870,6 +876,9 @@ class OpenAIService(
                         val functionCall: com.openai.models.responses.ResponseFunctionToolCall = item.asFunctionCall()
                         val callId = functionCall.callId()
                         if (!processedCallIds.add(callId)) return@map
+                        if (functionCall.name().contains("SessionPlan", ignoreCase = true)) {
+                            sessionPlanToolCalledThisTurn = true
+                        }
                         val startedItem = buildToolExecutionItem(
                             functionCall,
                             com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus.EXECUTING
@@ -912,6 +921,141 @@ class OpenAIService(
                             m.content().forEach { c ->
                                 val message = c.asOutputText()
                                 val txt = message.summaryMessage
+                                QDLog.info(thisLogger()) {
+                                    "OpenAIService.agentTurn outputText: nextStep=${message.nextStep} planStatus=${message.planStatus} planNeedsUserConfirmation=${message.planNeedsUserConfirmation} completedTasks=${message.planCompletedTasks?.size ?: 0} summary='${
+                                        txt.take(
+                                            160
+                                        )
+                                    }'"
+                                }
+
+                                aggregated.append(txt).append('\n')
+
+                                var effectivePlanStatus = message.planStatus?.uppercase()
+                                val hasBlankPlanMetadataInActiveMode =
+                                    planIsActive &&
+                                            effectivePlanStatus.isNullOrBlank() &&
+                                            message.planGoal.isNullOrBlank() &&
+                                            message.planDefinitionOfDone.isNullOrBlank() &&
+                                            message.planTasks.isNullOrEmpty()
+
+                                if (hasBlankPlanMetadataInActiveMode) {
+                                    if (forcePlanPersistenceAttempts < maxPlanPersistenceAttempts) {
+                                        forcePlanPersistenceAttempts++
+                                        continuationCount++
+                                        reprocess = true
+                                        inputs.add(
+                                            systemMessage(
+                                                "The session plan is ACTIVE, but your response omitted required structured plan fields. Return complete plan metadata and/or call SessionPlanTool before concluding the turn. Do not return DONE with blank planStatus/planGoal/planTasks while the plan is still active.",
+                                            ),
+                                        )
+                                        return@forEach
+                                    }
+                                }
+
+                                if (
+                                    planIsActive &&
+                                    !sessionPlanToolCalledThisTurn &&
+                                    (message.planStatus?.uppercase() == "DONE" || !message.planCompletedTasks.isNullOrEmpty())
+                                ) {
+                                    if (forcePlanPersistenceAttempts < maxPlanPersistenceAttempts) {
+                                        forcePlanPersistenceAttempts++
+                                        continuationCount++
+                                        reprocess = true
+                                        inputs.add(
+                                            systemMessage(
+                                                "The session plan is ACTIVE. Before finishing or marking tasks complete, you MUST call SessionPlanTool to persist the current plan state. Do not only report planStatus/planCompletedTasks in your response fields. Update the plan file first, then continue.",
+                                            ),
+                                        )
+                                        return@forEach
+                                    }
+                                }
+
+                                try {
+                                    when (effectivePlanStatus) {
+                                        "DRAFT" -> planService.applyDraftFromResponse(
+                                            goal = message.planGoal,
+                                            definitionOfDone = message.planDefinitionOfDone,
+                                            tasks = message.planTasks,
+                                        )
+
+                                        "ACTIVE" -> {
+                                            if (!planService.isActive()) {
+                                                planService.applyDraftFromResponse(
+                                                    goal = message.planGoal,
+                                                    definitionOfDone = message.planDefinitionOfDone,
+                                                    tasks = message.planTasks,
+                                                )
+                                                planService.activate()
+                                            }
+                                        }
+
+                                        "DONE" -> planService.markAllTasksDone()
+                                    }
+                                } catch (_: Throwable) {
+                                }
+
+                                try {
+                                    val completed = message.planCompletedTasks
+                                        ?.mapNotNull { it.trim().ifBlank { null } }
+                                        .orEmpty()
+                                    if (completed.isNotEmpty()) {
+                                        planService.markTasksDone(completed)
+                                    }
+                                    effectivePlanStatus = planService.getStatus().uppercase()
+                                } catch (_: Throwable) {
+                                }
+
+                                if (message.nextStep?.uppercase() == "DONE" && effectivePlanStatus != "DONE") {
+                                    try {
+                                        if (planService.onlyPassiveTailTasksRemain()) {
+                                            planService.markAllTasksDone()
+                                            effectivePlanStatus = planService.getStatus().uppercase()
+                                        }
+                                    } catch (_: Throwable) {
+                                    }
+                                }
+
+                                val activePlanStillHasWork =
+                                    try {
+                                        (planService.isActive() || effectivePlanStatus == "ACTIVE") && planService.hasUncheckedTasks()
+                                    } catch (_: Throwable) {
+                                        false
+                                    }
+
+                                if (planIsActive && message.nextStep?.uppercase() == "WAIT_USER") {
+                                    val blockingQuestion = message.planBlockingQuestion?.trim().orEmpty()
+                                    val hardBlocked =
+                                        message.planNeedsUserConfirmation == true &&
+                                                blockingQuestion.isNotBlank() &&
+                                                !isRoutineConfirmationQuestion(blockingQuestion)
+                                    if (!hardBlocked) {
+                                        if (continuationCount < maxContinuations) {
+                                            continuationCount++
+                                            reprocess = true
+                                            inputs.add(
+                                                systemMessage(
+                                                    "Continue executing the ACTIVE plan autonomously. Do not ask the user questions unless truly blocked by a missing external dependency or unavailable information. Do not stop for routine confirmations such as asking permission to continue, apply safe changes, inspect files, or run the next planned step.",
+                                                ),
+                                            )
+                                            return@forEach
+                                        }
+                                    }
+                                }
+
+                                if (activePlanStillHasWork && message.nextStep?.uppercase() != "WAIT_USER") {
+                                    if (continuationCount < maxContinuations && effectivePlanStatus != "DONE") {
+                                        continuationCount++
+                                        reprocess = true
+                                        inputs.add(
+                                            systemMessage(
+                                                "The session plan is ACTIVE and still has unchecked tasks. Continue executing until tasks are completed or you are truly blocked. Avoid asking for simple confirmations while the plan can still be executed safely.",
+                                            ),
+                                        )
+                                        return@forEach
+                                    }
+                                }
+
                                 if (txt.isNotBlank()) {
                                     persistAndShow("assistant", agentLabel, txt)
                                     onAssistantMessage?.invoke(
@@ -922,8 +1066,6 @@ class OpenAIService(
                                         ),
                                     )
                                 }
-
-                                aggregated.append(txt).append('\n')
 
                                 // Option 3: 3-state conversation control
                                 if (message.nextStep?.uppercase() == "CONTINUE") {
@@ -1032,7 +1174,7 @@ class OpenAIService(
                 val action = argsJson?.path("action")?.asText("")?.trim()?.uppercase().orEmpty()
                 when (action) {
                     "ACTIVATE" -> "Session Plan: Active"
-                    "COMPLETE" -> "Session Plan: Done"
+                    "COMPLETE" -> "Session Plan: Update"
                     "DRAFT" -> "Session Plan: Draft"
                     else -> "Session Plan"
                 }
@@ -1050,6 +1192,28 @@ class OpenAIService(
 
             else -> toolName.replace(Regex("([a-z])([A-Z])"), "$1 $2")
         }
+    }
+
+    private fun isRoutineConfirmationQuestion(question: String): Boolean {
+        val q = question.trim().lowercase()
+        if (q.isBlank()) return false
+        val patterns = listOf(
+            "should i",
+            "do you want",
+            "would you like",
+            "shall i",
+            "may i",
+            "can i continue",
+            "can i proceed",
+            "please confirm",
+            "confirm that i should",
+            "before i continue",
+            "before proceeding",
+            "before i make changes",
+            "before applying",
+            "before running",
+        )
+        return patterns.any { q.contains(it) }
     }
 
     private fun parseMemoryFactCommand(prefix: String, text: String): Pair<String, String?>? {
@@ -1294,6 +1458,7 @@ class OpenAIService(
 
                 // Reset continuation counter at the start of a user-initiated turn so continuations don't carry over from prior turns
                 var continuationCount = 0
+                var forcePlanPersistenceAttempts = 0
                 val configuredContinuations =
                     try {
                         QuantaAISettingsState.instance.state.maxAutomaticTurns.coerceIn(1, 100)
@@ -1301,7 +1466,8 @@ class OpenAIService(
                         10
                     }
                 val maxContinuations =
-                    if (planService.isActive()) maxOf(configuredContinuations, 100) else configuredContinuations
+                    if (planService.isActive()) maxOf(configuredContinuations, 300) else configuredContinuations
+                val maxPlanPersistenceAttempts = 5
 
                 // Persist user input for this turn (per-branch). UI may already show it elsewhere, so we persist only.
                 persistOnly("user", text)
@@ -1354,7 +1520,16 @@ class OpenAIService(
                     }
 
                     try {
-                        planService.activate()
+                        val activation = planService.activate()
+                        if (!activation.valid) {
+                            project.service<ToolWindowService>().addToolingMessage(
+                                "Session plan",
+                                buildString {
+                                    append("Plan remains draft: ")
+                                    append(activation.issues.joinToString("; "))
+                                },
+                            )
+                        }
                     } catch (_: Throwable) {
                     }
                 }
@@ -1481,6 +1656,7 @@ class OpenAIService(
 
                         requestInputs.clear()
                         val pendingToolOutputs = mutableListOf<com.openai.models.responses.ResponseInputItem>()
+                        var sessionPlanToolCalledThisTurn = false
 
                         QDLog.info(thisLogger()) { "OpenAIService.sendMessage output size=${structResponse.output().size}" }
                         structResponse.output().mapIndexed { index, item ->
@@ -1504,6 +1680,9 @@ class OpenAIService(
                                         item.asFunctionCall()
                                     val callId = functionCall.callId()
                                     if (!processedCallIds.add(callId)) return@mapIndexed
+                                    if (functionCall.name().contains("SessionPlan", ignoreCase = true)) {
+                                        sessionPlanToolCalledThisTurn = true
+                                    }
                                     val toolResult = project.service<ToolExecutionService>()
                                         .executeToolCall(functionCall, managerLabel)
                                     QDLog.info(thisLogger()) {
@@ -1557,6 +1736,44 @@ class OpenAIService(
 
                                             val planServiceForTurn = SessionPlanService(project)
                                             var effectivePlanStatus = message.planStatus?.uppercase()
+                                            val hasBlankPlanMetadataInActiveMode =
+                                                planIsActive &&
+                                                        effectivePlanStatus.isNullOrBlank() &&
+                                                        message.planGoal.isNullOrBlank() &&
+                                                        message.planDefinitionOfDone.isNullOrBlank() &&
+                                                        message.planTasks.isNullOrEmpty()
+
+                                            if (hasBlankPlanMetadataInActiveMode) {
+                                                if (forcePlanPersistenceAttempts < maxPlanPersistenceAttempts) {
+                                                    forcePlanPersistenceAttempts++
+                                                    continuationCount++
+                                                    reprocess = true
+                                                    requestInputs.add(
+                                                        systemMessage(
+                                                            "The session plan is ACTIVE, but your response omitted required structured plan fields. Return complete plan metadata and/or call SessionPlanTool before concluding the turn. Do not return DONE with blank planStatus/planGoal/planTasks while the plan is still active.",
+                                                        ),
+                                                    )
+                                                    return@forEach
+                                                }
+                                            }
+
+                                            if (
+                                                planIsActive &&
+                                                !sessionPlanToolCalledThisTurn &&
+                                                (message.planStatus?.uppercase() == "DONE" || !message.planCompletedTasks.isNullOrEmpty())
+                                            ) {
+                                                if (forcePlanPersistenceAttempts < maxPlanPersistenceAttempts) {
+                                                    forcePlanPersistenceAttempts++
+                                                    continuationCount++
+                                                    reprocess = true
+                                                    requestInputs.add(
+                                                        systemMessage(
+                                                            "The session plan is ACTIVE. Before finishing or marking tasks complete, you MUST call SessionPlanTool to persist the current plan state. Do not only report planStatus/planCompletedTasks in your response fields. Update the plan file first, then continue.",
+                                                        ),
+                                                    )
+                                                    return@forEach
+                                                }
+                                            }
 
                                             // Capture or update plan content from response.
                                             try {
@@ -1604,6 +1821,16 @@ class OpenAIService(
                                             } catch (_: Throwable) {
                                             }
 
+                                            if (message.nextStep?.uppercase() == "DONE" && effectivePlanStatus != "DONE") {
+                                                try {
+                                                    if (planServiceForTurn.onlyPassiveTailTasksRemain()) {
+                                                        planServiceForTurn.markAllTasksDone()
+                                                        effectivePlanStatus = planServiceForTurn.getStatus().uppercase()
+                                                    }
+                                                } catch (_: Throwable) {
+                                                }
+                                            }
+
                                             val activePlanStillHasWork =
                                                 try {
                                                     (planServiceForTurn.isActive() || effectivePlanStatus == "ACTIVE") &&
@@ -1614,15 +1841,20 @@ class OpenAIService(
 
                                             // Enforce ACTIVE plan autonomy: do not allow WAIT_USER unless explicitly blocked.
                                             if (planIsActive && message.nextStep?.uppercase() == "WAIT_USER") {
-                                                val blocked = message.planNeedsUserConfirmation == true
-                                                if (!blocked) {
+                                                val blockingQuestion = message.planBlockingQuestion?.trim().orEmpty()
+                                                val hardBlocked =
+                                                    message.planNeedsUserConfirmation == true &&
+                                                            blockingQuestion.isNotBlank() &&
+                                                            !isRoutineConfirmationQuestion(blockingQuestion)
+                                                if (!hardBlocked) {
                                                     if (continuationCount < maxContinuations) {
                                                         continuationCount++
                                                         reprocess = true
                                                         requestInputs.add(
                                                             systemMessage(
                                                                 "Continue executing the ACTIVE plan autonomously. " +
-                                                                        "Do not ask the user questions unless truly blocked.",
+                                                                        "Do not ask the user questions unless truly blocked by a missing external dependency or unavailable information. " +
+                                                                        "Do not stop for routine confirmations such as asking permission to continue, apply safe changes, inspect files, or run the next planned step.",
                                                             ),
                                                         )
                                                         return@forEach
@@ -1636,7 +1868,7 @@ class OpenAIService(
                                                     reprocess = true
                                                     requestInputs.add(
                                                         systemMessage(
-                                                            "The session plan is ACTIVE and still has unchecked tasks. Continue executing until tasks are completed or you are truly blocked.",
+                                                            "The session plan is ACTIVE and still has unchecked tasks. Continue executing until tasks are completed or you are truly blocked. Avoid asking for simple confirmations while the plan can still be executed safely.",
                                                         ),
                                                     )
                                                     return@forEach

@@ -80,7 +80,14 @@ class ToolExecutionService(
 
         val argsSummary = buildArgsSummary(toolName, argsJson)
         val details =
-            if (argsSummary.isNotBlank()) {
+            if (!succeeded && map != null) {
+                listOf("errorText", "message", "summary", "text", "content")
+                    .mapNotNull { key -> map[key]?.toString()?.trim()?.takeIf { value -> value.isNotBlank() } }
+                    .firstOrNull()
+                    ?: argsSummary.ifBlank {
+                        map.entries.joinToString("\n") { (key, value) -> "$key: $value" }.trim()
+                    }
+            } else if (argsSummary.isNotBlank()) {
                 argsSummary
             } else if (preferred != null) {
                 preferred

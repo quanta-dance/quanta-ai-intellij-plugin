@@ -59,8 +59,18 @@ fun ChatApp(project: Project, viewModel: ChatViewModel, voiceService: FrontendAI
     val textFieldState = rememberTextFieldState()
     var lastSpokenMessageId by remember { mutableStateOf<String?>(null) }
 
-    // Auto-scroll to the bottom when new messages arrive (only when not searching)
-    LaunchedEffect(chatMessages.lastOrNull()?.id) {
+    val lastMessageScrollKey = remember(chatMessages) {
+        chatMessages.lastOrNull()?.let { message ->
+            listOf(
+                message.id,
+                message.content,
+                message.type.name,
+                message.toolItems.joinToString("|") { tool -> "${tool.callId}:${tool.status}:${tool.displayText}:${tool.errorText}:${tool.detailText}" },
+            ).joinToString("#")
+        }
+    }
+
+    LaunchedEffect(lastMessageScrollKey, chatMessages.size, searchState.isSearching) {
         if (chatMessages.isNotEmpty() && !searchState.isSearching) {
             listState.animateScrollToItem(chatMessages.lastIndex)
         }
@@ -77,6 +87,24 @@ fun ChatApp(project: Project, viewModel: ChatViewModel, voiceService: FrontendAI
         }
     }
 
+    LaunchedEffect(activeSession?.id) {
+        lastSpokenMessageId =
+            chatMessages
+                .asReversed()
+                .firstOrNull { message -> !message.isMyMessage && message.isTextMessage() }
+                ?.id
+        voiceService.stopTalking()
+    }
+
+    LaunchedEffect(chatMessages.size) {
+        if (lastSpokenMessageId == null) {
+            lastSpokenMessageId =
+                chatMessages
+                    .asReversed()
+                    .firstOrNull { message -> !message.isMyMessage && message.isTextMessage() }
+                    ?.id
+        }
+    }
 
     LaunchedEffect(Unit) {
         while (true) {

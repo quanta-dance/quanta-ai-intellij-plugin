@@ -5,6 +5,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
+import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.ToolFriendlyException
 import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
@@ -17,6 +18,7 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VirtualFile
@@ -228,6 +230,14 @@ class CreateOrUpdateFile : ToolInterface<String> {
                     } catch (_: Throwable) {
                     }
                 } catch (e: Throwable) {
+                    if (e is ProcessCanceledException || e is java.util.concurrent.CancellationException) {
+                        val cancelMessage =
+                            "Environment cancelled the write while updating $relToBase before completion. Retry may succeed."
+                        project
+                            .service<ToolWindowService>()
+                            .addToolingMessage("Modify File - cancelled", cancelMessage)
+                        throw ToolFriendlyException(cancelMessage, code = "cancelled", retriable = true)
+                    }
                     QDLog.warn(logger, { "Failed to update file $relToBase" }, e)
                     project
                         .service<ToolWindowService>()
