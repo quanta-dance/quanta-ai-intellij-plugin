@@ -14,7 +14,7 @@ import java.time.LocalDateTime
  */
 class ChatMessageFactory(
     private val aiCompanionName: String,
-    private val myUserName: String
+    private val myUserName: String,
 ) {
 
     /**
@@ -49,6 +49,7 @@ class ChatMessageFactory(
         timestamp: LocalDateTime = LocalDateTime.now(),
         voiceSummary: String? = null,
         toolItems: List<ToolExecutionItem> = emptyList(),
+        parentMessageId: String? = null,
     ): ChatMessage {
         return ChatMessage(
             content = content,
@@ -58,12 +59,14 @@ class ChatMessageFactory(
             type = ChatMessage.ChatMessageType.TEXT,
             voiceSummary = voiceSummary,
             toolItems = toolItems,
+            parentMessageId = parentMessageId,
         )
     }
 
     fun createAIToolMessage(
         toolItems: List<ToolExecutionItem>,
         timestamp: LocalDateTime = LocalDateTime.now(),
+        parentMessageId: String? = null,
     ): ChatMessage {
         return ChatMessage(
             content = "",
@@ -72,6 +75,7 @@ class ChatMessageFactory(
             isMyMessage = false,
             type = ChatMessage.ChatMessageType.TOOL,
             toolItems = toolItems,
+            parentMessageId = parentMessageId,
         )
     }
 

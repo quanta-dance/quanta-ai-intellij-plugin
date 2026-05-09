@@ -16,6 +16,7 @@ data class ChatMessageDto(
     val type: ChatMessage.ChatMessageType,
     val voiceSummary: String? = null,
     val toolItems: List<com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem> = emptyList(),
+    val parentMessageId: String? = null,
 )
 
 fun ChatMessageDto.toChatMessage(): ChatMessage {
@@ -28,6 +29,7 @@ fun ChatMessageDto.toChatMessage(): ChatMessage {
         type = type,
         voiceSummary = voiceSummary,
         toolItems = toolItems,
+        parentMessageId = parentMessageId,
     )
 }
 
@@ -41,5 +43,6 @@ fun ChatMessage.toChatMessageDto(): ChatMessageDto {
         type = type,
         voiceSummary = voiceSummary,
         toolItems = toolItems,
+        parentMessageId = parentMessageId,
     )
 }

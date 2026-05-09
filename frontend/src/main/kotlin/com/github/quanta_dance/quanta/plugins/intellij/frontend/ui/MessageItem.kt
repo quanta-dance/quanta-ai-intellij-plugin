@@ -35,12 +35,14 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.Fronten
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.platform.project.projectId
+import fleet.rpc.client.durable
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.Icon
+import org.jetbrains.jewel.ui.component.OutlinedButton
 import org.jetbrains.jewel.ui.component.Text
 
 private val logger = Logger.getInstance("ToolExecutionLink")
@@ -129,6 +131,7 @@ private fun ToolExecutionRow(
 ) {
     var hovered by remember(item.callId) { mutableStateOf(false) }
     var statusHovered by remember(item.callId) { mutableStateOf(false) }
+    var detailsExpanded by remember(item.callId) { mutableStateOf(false) }
     val handPointer = remember { PointerIcon(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)) }
     val scope = rememberCoroutineScope()
     val statusIcon =
@@ -239,7 +242,10 @@ private fun ToolExecutionRow(
                                 )
                                 scope.launch {
                                     runCatching {
-                                        QuantaBackendApi.getInstance().openProjectFile(project.projectId(), filePath!!)
+                                        durable {
+                                            QuantaBackendApi.getInstance()
+                                                .openProjectFile(project.projectId(), filePath!!)
+                                        }
                                     }.onFailure { error ->
                                         frontendLinkLog(
                                             project,
@@ -274,10 +280,40 @@ private fun ToolExecutionRow(
                 }
             if (!secondary.isNullOrBlank()) {
                 Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = secondary,
-                    style = JewelTheme.defaultTextStyle.copy(fontSize = 11.sp, color = ChatAppColors.Text.timestamp),
-                )
+                SelectionContainer {
+                    Text(
+                        text = secondary,
+                        style = JewelTheme.defaultTextStyle.copy(
+                            fontSize = 11.sp,
+                            color = ChatAppColors.Text.timestamp
+                        ),
+                    )
+                }
+            }
+            if (!detailText.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                OutlinedButton(onClick = { detailsExpanded = !detailsExpanded }) {
+                    Text(if (detailsExpanded) "Hide details" else "Show details")
+                }
+                if (detailsExpanded) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.White.copy(alpha = 0.04f), RoundedCornerShape(6.dp))
+                            .padding(8.dp),
+                    ) {
+                        SelectionContainer {
+                            Text(
+                                text = detailText,
+                                style = JewelTheme.defaultTextStyle.copy(
+                                    fontSize = 11.sp,
+                                    color = ChatAppColors.Text.timestamp,
+                                ),
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -338,13 +374,14 @@ private fun ThinkingMessageRow(
 
 @Composable
 private fun MessageHeader(message: ChatMessage) {
+    val displayAuthor = if (message.isMyMessage) "Me" else message.author
     Row(
         modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = message.author,
+            text = displayAuthor,
             style = JewelTheme.defaultTextStyle.copy(
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 12.sp,

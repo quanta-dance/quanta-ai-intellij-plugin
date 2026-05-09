@@ -1,12 +1,8 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.rpc
 
-import com.github.quanta_dance.quanta.plugins.intellij.backend.contracts.BackendWorkspaceFileService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.OpenFileInEditorTool
 import com.github.quanta_dance.quanta.plugins.intellij.services.*
-import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.WorkspaceFileReadRequest
-import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.WorkspaceFileWriteRequest
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaBackendApi
-import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.WorkspaceFileRpcApi
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.*
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
@@ -45,6 +41,42 @@ class QuantaBackendRpcApi : QuantaBackendApi {
         return statusService.statusFlow
     }
 
+    override suspend fun getCurrentAgents(projectId: ProjectId): List<AgentInfoDto> {
+        val backendProject = projectId.findProjectOrNull() ?: return emptyList()
+        return backendProject.service<AgentRosterService>().agentsFlow.value
+    }
+
+    override suspend fun getAgentsFlow(projectId: ProjectId): Flow<List<AgentInfoDto>> {
+        val backendProject = projectId.findProjectOrNull() ?: return kotlinx.coroutines.flow.emptyFlow()
+        return backendProject.service<AgentRosterService>().agentsFlow
+    }
+
+    override suspend fun getCurrentDelegatedTasks(projectId: ProjectId): List<DelegatedTaskDto> {
+        val backendProject = projectId.findProjectOrNull() ?: return emptyList()
+        return backendProject.service<com.github.quanta_dance.quanta.plugins.intellij.backend.chat.AgentChannelStateService>().tasksFlow.value
+    }
+
+    override suspend fun getDelegatedTasksFlow(projectId: ProjectId): Flow<List<DelegatedTaskDto>> {
+        val backendProject = projectId.findProjectOrNull() ?: return kotlinx.coroutines.flow.emptyFlow()
+        return backendProject.service<com.github.quanta_dance.quanta.plugins.intellij.backend.chat.AgentChannelStateService>().tasksFlow
+    }
+
+    override suspend fun getCurrentChannelEvents(projectId: ProjectId): List<AgentChannelEventDto> {
+        val backendProject = projectId.findProjectOrNull() ?: return emptyList()
+        return backendProject.service<com.github.quanta_dance.quanta.plugins.intellij.backend.chat.AgentChannelStateService>().eventsFlow.value
+    }
+
+    override suspend fun getChannelEventsFlow(projectId: ProjectId): Flow<List<AgentChannelEventDto>> {
+        val backendProject = projectId.findProjectOrNull() ?: return kotlinx.coroutines.flow.emptyFlow()
+        return backendProject.service<com.github.quanta_dance.quanta.plugins.intellij.backend.chat.AgentChannelStateService>().eventsFlow
+    }
+
+    override suspend fun createDefaultAgentTeam(projectId: ProjectId): List<AgentInfoDto> {
+        val backendProject = projectId.findProjectOrNull() ?: return emptyList()
+        backendProject.service<AgentManagerService>().createDefaultTeam()
+        return backendProject.service<AgentRosterService>().agentsFlow.value
+    }
+
     override suspend fun synthesizeSpeech(
         projectId: ProjectId,
         text: String,
@@ -69,7 +101,8 @@ class QuantaBackendRpcApi : QuantaBackendApi {
         val backendProject = projectId.findProjectOrNull() ?: return SpeechChunkDto(
             sessionId = sessionId,
             sequence = afterSequence,
-            isLast = true
+            isLast = true,
+            chunkBase64 = "",
         )
         return backendProject.service<AIVoiceService>().pollSpeechChunk(sessionId, afterSequence)
     }
@@ -84,27 +117,21 @@ class QuantaBackendRpcApi : QuantaBackendApi {
         backendProject.service<SpeechToTextService>().startSession(sessionId)
     }
 
-    override suspend fun appendMicrophoneAudioChunk(
-        projectId: ProjectId,
-        sessionId: String,
-        chunkBase64: String,
-    ) {
+    override suspend fun appendMicrophoneAudioChunk(projectId: ProjectId, sessionId: String, chunkBase64: String) {
         val backendProject = projectId.findProjectOrNull() ?: return
-        val chunkBytes = Base64.getDecoder().decode(chunkBase64)
+        val chunkBytes = runCatching { Base64.getDecoder().decode(chunkBase64) }.getOrDefault(ByteArray(0))
         backendProject.service<SpeechToTextService>().appendAudioChunk(sessionId, chunkBytes)
     }
 
     override suspend fun finishMicrophoneSession(
         projectId: ProjectId,
-        sessionId: String,
+        sessionId: String
     ): MicrophoneTranscriptionResultDto {
         val backendProject =
             projectId.findProjectOrNull() ?: return MicrophoneTranscriptionResultDto(sessionId = sessionId)
-        val transcript = backendProject.service<SpeechToTextService>().finishSession(sessionId)
         return MicrophoneTranscriptionResultDto(
             sessionId = sessionId,
-            transcript = transcript,
-            submitted = transcript.isNotBlank(),
+            transcript = backendProject.service<SpeechToTextService>().finishSession(sessionId),
         )
     }
 
@@ -115,16 +142,6 @@ class QuantaBackendRpcApi : QuantaBackendApi {
 
     override suspend fun openProjectFile(projectId: ProjectId, relativePath: String) {
         val backendProject = projectId.findProjectOrNull() ?: return
-        OpenFileInEditorTool(filePath = relativePath, focus = true).execute(backendProject)
+        OpenFileInEditorTool(filePath = relativePath).execute(backendProject)
     }
-}
-
-class BackendWorkspaceFileRpcApi : WorkspaceFileRpcApi {
-    private val workspaceFileService = BackendWorkspaceFileService()
-
-    override suspend fun read(path: String): String =
-        workspaceFileService.read(WorkspaceFileReadRequest(path)).content
-
-    override suspend fun write(path: String, content: String): Boolean =
-        workspaceFileService.write(WorkspaceFileWriteRequest(path, content)).success
 }

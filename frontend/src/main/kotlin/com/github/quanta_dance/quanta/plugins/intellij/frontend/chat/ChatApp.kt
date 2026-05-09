@@ -17,6 +17,7 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.pointerMoveFilter
 import androidx.compose.ui.text.font.FontWeight
@@ -31,7 +32,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.frontend.ui.*
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.voice.FrontendAIVoiceService
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.voice.FrontendMicrophoneService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
-import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.*
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
@@ -50,7 +51,11 @@ fun ChatApp(project: Project, viewModel: ChatViewModel, voiceService: FrontendAI
     var voiceEnabled by remember { mutableStateOf(FrontendQuantaSettingsState.instance.state.voiceEnabled) }
     var selectedModel by remember { mutableStateOf(FrontendQuantaSettingsState.instance.state.aiChatModel) }
     var availableModels by remember { mutableStateOf(FrontendQuantaSettingsState.instance.state.availableChatModels) }
+    var agenticEnabled by remember { mutableStateOf(FrontendQuantaSettingsState.instance.state.agenticEnabled ?: true) }
     val planStatus by viewModel.planStatusFlow.collectAsState(ChatPlanStatusDto())
+    val agents by viewModel.agentsFlow.collectAsState(emptyList())
+    val delegatedTasks by viewModel.delegatedTasksFlow.collectAsState(emptyList())
+    val channelEvents by viewModel.channelEventsFlow.collectAsState(emptyList())
     val activeSession = sessions.firstOrNull { it.isActive }
     val microphoneService = remember(project) { project.service<FrontendMicrophoneService>() }
     val micEnabled by microphoneService.isListening.collectAsState(false)
@@ -169,7 +174,12 @@ fun ChatApp(project: Project, viewModel: ChatViewModel, voiceService: FrontendAI
                 onSessionDeleted = { sessionId -> viewModel.onDeleteSession(sessionId) },
             )
 
-            // Message area
+            ChannelActivityPanel(
+                modifier = Modifier.fillMaxWidth(),
+                tasks = delegatedTasks,
+                events = channelEvents,
+            )
+
             ChatList(
                 project = project,
                 modifier = Modifier
@@ -177,8 +187,16 @@ fun ChatApp(project: Project, viewModel: ChatViewModel, voiceService: FrontendAI
                     .weight(1f),
                 chatMessages = chatMessages,
                 listState = listState,
-                searchState = searchState
+                searchState = searchState,
             )
+
+            if (agenticEnabled) {
+                AgentsPanel(
+                    modifier = Modifier.fillMaxWidth(),
+                    agents = agents,
+                    onCreateDefaultTeam = { viewModel.onCreateDefaultAgentTeam() },
+                )
+            }
 
             PromptInput(
                 modifier = Modifier
@@ -193,11 +211,18 @@ fun ChatApp(project: Project, viewModel: ChatViewModel, voiceService: FrontendAI
                 currentPlanText = planStatus.text,
                 currentModel = selectedModel,
                 availableModels = availableModels,
+                agenticEnabled = agenticEnabled,
                 onModelSelected = { model ->
                     selectedModel = model
                     FrontendQuantaSettingsState.instance.state.aiChatModel = model
                 },
                 onToggleMic = { microphoneService.toggleListening() },
+                onToggleAgenticMode = {
+                    val updated = !agenticEnabled
+                    agenticEnabled = updated
+                    FrontendQuantaSettingsState.instance.state.agenticEnabled = updated
+                    viewModel.onSetAgenticMode(updated)
+                },
                 onToggleVoiceFeedback = {
                     voiceEnabled = !voiceEnabled
                     FrontendQuantaSettingsState.instance.state.voiceEnabled = voiceEnabled
@@ -211,6 +236,175 @@ fun ChatApp(project: Project, viewModel: ChatViewModel, voiceService: FrontendAI
             )
         }
     )
+}
+
+@Composable
+private fun ChannelActivityPanel(
+    modifier: Modifier = Modifier,
+    tasks: List<DelegatedTaskDto>,
+    events: List<AgentChannelEventDto>,
+) {
+    if (tasks.isEmpty() && events.isEmpty()) return
+    Column(
+        modifier = modifier
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .background(Color.White.copy(alpha = 0.03f), RoundedCornerShape(8.dp))
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text("Team channel", fontWeight = FontWeight.SemiBold)
+        tasks.takeLast(3).forEach { task ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .background(taskStatusColor(task.status), RoundedCornerShape(99.dp)),
+                )
+                Text(task.title, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                Text(task.status.name.lowercase(), fontSize = 11.sp, color = ChatAppColors.Text.disabled)
+                if (task.assignedRoles.isNotEmpty()) {
+                    Text(task.assignedRoles.joinToString(", "), fontSize = 11.sp, color = ChatAppColors.Text.disabled)
+                }
+            }
+        }
+        events.takeLast(4).forEach { event ->
+            if (event.kind.name == "TOOL_ACTIVITY") {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(eventAuthorLabel(event), fontSize = 11.sp, color = ChatAppColors.Text.disabled)
+                    Box(
+                        modifier = Modifier
+                            .background(Color.White.copy(alpha = 0.06f), RoundedCornerShape(999.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                    ) {
+                        Text(event.text, fontSize = 11.sp)
+                    }
+                }
+            } else {
+                Text(
+                    text = "${eventAuthorLabel(event)}: ${event.text}",
+                    fontSize = 11.sp,
+                    color = ChatAppColors.Text.disabled,
+                )
+            }
+        }
+    }
+}
+
+private fun eventAuthorLabel(event: AgentChannelEventDto): String = when (event.authorType) {
+    AgentChannelAuthorTypeDto.DIRECTOR -> "Director"
+    AgentChannelAuthorTypeDto.MANAGER -> event.authorRole ?: "Manager"
+    AgentChannelAuthorTypeDto.AGENT -> event.authorRole ?: "Agent"
+    AgentChannelAuthorTypeDto.SYSTEM -> "System"
+}
+
+private fun taskStatusColor(status: DelegatedTaskStatusDto): Color = when (status) {
+    DelegatedTaskStatusDto.QUEUED -> Color(0xFFEBCB8B)
+    DelegatedTaskStatusDto.RUNNING -> Color(0xFF88C0D0)
+    DelegatedTaskStatusDto.BLOCKED -> Color(0xFFD08770)
+    DelegatedTaskStatusDto.DONE -> Color(0xFFA3BE8C)
+    DelegatedTaskStatusDto.FAILED -> Color(0xFFBF616A)
+}
+
+@Composable
+private fun AgentsPanel(
+    modifier: Modifier = Modifier,
+    agents: List<AgentInfoDto>,
+    onCreateDefaultTeam: () -> Unit,
+) {
+    Column(
+        modifier = modifier
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .background(ChatAppColors.Panel.background, RoundedCornerShape(8.dp))
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text("Agents", fontWeight = FontWeight.SemiBold)
+        if (agents.isEmpty()) {
+            Text(
+                text = "No agents created yet.",
+                fontSize = 12.sp,
+            )
+            Text(
+                text = "Create the default team: Analitic, Tester, Developer.",
+                fontSize = 12.sp,
+            )
+            DefaultButton(onClick = onCreateDefaultTeam) {
+                Text("Create default team")
+            }
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                agents.forEach { agent ->
+                    val agentColor = colorForAgent(agent.id)
+                    Row(
+                        modifier = Modifier
+                            .widthIn(min = 150.dp, max = 220.dp)
+                            .background(Color.White.copy(alpha = 0.04f), RoundedCornerShape(10.dp))
+                            .padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        AgentAvatar(agent = agent, color = agentColor)
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            Text(agent.role.replaceFirstChar { it.uppercase() }, fontWeight = FontWeight.Medium)
+                            agent.model?.takeIf { it.isNotBlank() }?.let {
+                                Text(text = it, fontSize = 11.sp)
+                            }
+                            Text(text = agent.id.take(8), fontSize = 11.sp, color = ChatAppColors.Text.disabled)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AgentAvatar(
+    agent: AgentInfoDto,
+    color: Color,
+) {
+    Box(
+        modifier = Modifier
+            .size(28.dp)
+            .background(color, RoundedCornerShape(999.dp)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = agent.role.firstOrNull()?.uppercase() ?: "A",
+            color = Color.White,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+private fun colorForAgent(agentId: String): Color {
+    val palette = listOf(
+        Color(0xFF5E81AC),
+        Color(0xFFBF616A),
+        Color(0xFFA3BE8C),
+        Color(0xFFD08770),
+        Color(0xFFB48EAD),
+        Color(0xFF88C0D0),
+        Color(0xFFEBCB8B),
+        Color(0xFF7B88FF),
+    )
+    return palette[kotlin.math.abs(agentId.hashCode()) % palette.size]
 }
 
 @Composable
@@ -324,11 +518,13 @@ private fun ChatList(
     modifier: Modifier = Modifier,
     chatMessages: List<ChatMessage>,
     listState: LazyListState,
-    searchState: SearchState
+    searchState: SearchState,
 ) {
+    val topLevelMessages = remember(chatMessages) { chatMessages.filter { it.parentMessageId == null } }
+    val threadMessagesByParent =
+        remember(chatMessages) { chatMessages.filter { it.parentMessageId != null }.groupBy { it.parentMessageId } }
     Box(modifier = modifier) {
         if (chatMessages.isEmpty()) {
-            // Empty state
             EmptyChatListPlaceholder()
         } else {
             VerticallyScrollableContainer(
@@ -339,19 +535,61 @@ private fun ChatList(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(vertical = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(1.dp)
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    items(chatMessages, key = { it.id }) { message ->
-                        MessageBubble(
-                            project = project,
-                            message = message,
-                            modifier = Modifier.fillMaxWidth(),
-                            isMatchingSearch = searchState.searchQuery?.let { query -> message.matches(query) }
-                                ?: false,
-                            isHighlightedInSearch = message.id == searchState.currentSelectedSearchResultId,
-                        )
+                    items(topLevelMessages, key = { it.id }) { message ->
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            MessageBubble(
+                                project = project,
+                                message = message,
+                                modifier = Modifier.fillMaxWidth(),
+                                isMatchingSearch = searchState.searchQuery?.let { query -> message.matches(query) }
+                                    ?: false,
+                                isHighlightedInSearch = message.id == searchState.currentSelectedSearchResultId,
+                            )
+                            val threadMessages = threadMessagesByParent[message.id].orEmpty()
+                            if (threadMessages.isNotEmpty()) {
+                                AgentThread(
+                                    project = project,
+                                    parentId = message.id,
+                                    threadMessages = threadMessages,
+                                    searchState = searchState,
+                                )
+                            }
+                        }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AgentThread(
+    project: Project,
+    parentId: String,
+    threadMessages: List<ChatMessage>,
+    searchState: SearchState,
+) {
+    var expanded by remember(parentId) { mutableStateOf(false) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 32.dp, end = 8.dp, top = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        OutlinedButton(onClick = { expanded = !expanded }) {
+            Text(if (expanded) "Hide agent activity (${threadMessages.size})" else "Show agent activity (${threadMessages.size})")
+        }
+        if (expanded) {
+            threadMessages.forEach { threadMessage ->
+                MessageBubble(
+                    project = project,
+                    message = threadMessage,
+                    modifier = Modifier.fillMaxWidth(),
+                    isMatchingSearch = searchState.searchQuery?.let { query -> threadMessage.matches(query) } ?: false,
+                    isHighlightedInSearch = threadMessage.id == searchState.currentSelectedSearchResultId,
+                )
             }
         }
     }

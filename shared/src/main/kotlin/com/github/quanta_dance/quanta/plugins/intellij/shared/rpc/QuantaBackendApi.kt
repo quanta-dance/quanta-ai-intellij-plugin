@@ -26,6 +26,20 @@ interface QuantaBackendApi : RemoteApi<Unit> {
 
     suspend fun getPlanStatusFlow(projectId: ProjectId): Flow<ChatPlanStatusDto>
 
+    suspend fun getCurrentAgents(projectId: ProjectId): List<AgentInfoDto>
+
+    suspend fun getAgentsFlow(projectId: ProjectId): Flow<List<AgentInfoDto>>
+
+    suspend fun getCurrentDelegatedTasks(projectId: ProjectId): List<DelegatedTaskDto>
+
+    suspend fun getDelegatedTasksFlow(projectId: ProjectId): Flow<List<DelegatedTaskDto>>
+
+    suspend fun getCurrentChannelEvents(projectId: ProjectId): List<AgentChannelEventDto>
+
+    suspend fun getChannelEventsFlow(projectId: ProjectId): Flow<List<AgentChannelEventDto>>
+
+    suspend fun createDefaultAgentTeam(projectId: ProjectId): List<AgentInfoDto>
+
     suspend fun synthesizeSpeech(projectId: ProjectId, text: String): SynthesizedSpeechDto
 
     suspend fun startSpeechStream(projectId: ProjectId, sessionId: String, text: String)

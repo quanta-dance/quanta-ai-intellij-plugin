@@ -3,8 +3,11 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.services
 
-import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQuantaSettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.AgentChannelStateService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.Instructions
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelAuthorTypeDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventKindDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskStatusDto
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
@@ -71,7 +74,7 @@ class AgentManagerService(
     private val agentLastWakeRequestedAtMs = ConcurrentHashMap<String, Long>()
 
     init {
-        val st = BackendQuantaSettingsState.instance.state
+        val st = QuantaAISettingsState.instance.state
         st.agents.forEach { pa ->
             val session =
                 AgentSession(pa.id, AgentConfig(pa.role, pa.model, pa.instructions), previousId = pa.previousId)
@@ -634,9 +637,9 @@ class AgentManagerService(
         ids +=
             createAgent(
                 AgentConfig(
-                    role = "Developer Agent",
+                    role = "Developer",
                     model = null,
-                    instructions = "Develop and implement code changes. Do not run Gradle tasks; coordinate with Test Agent.",
+                    instructions = "Develop and implement code changes. Do not run Gradle tasks; coordinate with Tester.",
                     includeMcp = false,
                     allowedBuiltInTools = true,
                     allowedBuiltInNames = developerTools,
@@ -645,7 +648,7 @@ class AgentManagerService(
         ids +=
             createAgent(
                 AgentConfig(
-                    role = "Test Agent",
+                    role = "Tester",
                     model = null,
                     instructions = "Run Gradle tests/build and report failures and key logs. Avoid editing code.",
                     includeMcp = false,
@@ -656,7 +659,7 @@ class AgentManagerService(
         ids +=
             createAgent(
                 AgentConfig(
-                    role = "Project Analyst",
+                    role = "Analitic",
                     model = null,
                     instructions = "Analyze project structure and requirements; provide concise guidance. Avoid editing code.",
                     includeMcp = false,
@@ -679,6 +682,13 @@ class AgentManagerService(
         st.agents.removeIf { it.id == agentId }
         project.service<ToolWindowService>()
             .addToolingMessage("AgentManager", "Removed agent ${removed.config.role} [$agentId]")
+        project.service<AgentChannelStateService>().appendEvent(
+            kind = AgentChannelEventKindDto.AGENT_REMOVED,
+            authorType = AgentChannelAuthorTypeDto.MANAGER,
+            text = "Removed ${removed.config.role}",
+            authorId = agentId,
+            authorRole = removed.config.role,
+        )
         try {
             broadcastRosterUpdate(from = "AgentManager")
         } catch (_: Throwable) {
@@ -763,7 +773,24 @@ class AgentManagerService(
                     )
                 )
         val requestId = UUID.randomUUID().toString()
-        pcs.firePropertyChange("agent_task_started", null, mapOf("requestId" to requestId, "agentId" to agentId))
+        val channelState = project.service<AgentChannelStateService>()
+        val delegatedTask = channelState.createTask(
+            title = message.take(120),
+            assignedAgentIds = listOf(agentId),
+            assignedRoles = listOf(session.config.role),
+        )
+        channelState.updateTaskStatus(delegatedTask.id, DelegatedTaskStatusDto.RUNNING, summary = "Started")
+        channelState.appendEvent(
+            kind = AgentChannelEventKindDto.DELEGATION_STARTED,
+            authorType = AgentChannelAuthorTypeDto.MANAGER,
+            text = "Assigned ${session.config.role}: ${message.take(160)}",
+            relatedTaskId = delegatedTask.id,
+        )
+        pcs.firePropertyChange(
+            "agent_task_started",
+            null,
+            mapOf("requestId" to requestId, "agentId" to agentId, "taskId" to delegatedTask.id)
+        )
 
         val fut = CompletableFuture<AgentTaskResult>()
         ensureExecutor(agentId).submit {
@@ -896,6 +923,16 @@ class AgentManagerService(
                         agentLabel = agentLabel,
                         allowedBuiltInNames = session.config.allowedBuiltInNames,
                         allowedMcpNames = session.config.allowedMcpNames,
+                        onToolUpdate = { update ->
+                            channelState.appendEvent(
+                                kind = AgentChannelEventKindDto.TOOL_ACTIVITY,
+                                authorType = AgentChannelAuthorTypeDto.AGENT,
+                                text = update.item.displayText,
+                                authorId = agentId,
+                                authorRole = session.config.role,
+                                relatedTaskId = delegatedTask.id,
+                            )
+                        },
                     )
                 session.previousId = newPrev
                 QuantaAISettingsState.instance.state.agents
@@ -916,6 +953,20 @@ class AgentManagerService(
 
                 QDLog.info(logger) { "Agent[$agentId][$requestId] reply length=${reply.length}" }
                 val result = AgentTaskResult(requestId, agentId, true, reply.ifBlank { "<no message>" }, null)
+                channelState.updateTaskStatus(
+                    delegatedTask.id,
+                    DelegatedTaskStatusDto.DONE,
+                    result = result.text,
+                    summary = "Completed"
+                )
+                channelState.appendEvent(
+                    kind = AgentChannelEventKindDto.DELEGATION_COMPLETED,
+                    authorType = AgentChannelAuthorTypeDto.AGENT,
+                    text = result.text ?: "Completed task",
+                    authorId = agentId,
+                    authorRole = session.config.role,
+                    relatedTaskId = delegatedTask.id,
+                )
                 fut.complete(result)
                 pcs.firePropertyChange("agent_task_finished", null, result)
             } catch (t: Throwable) {
@@ -957,6 +1008,20 @@ class AgentManagerService(
 
                             val result =
                                 AgentTaskResult(requestId, agentId, true, reply.ifBlank { "<no message>" }, null)
+                            channelState.updateTaskStatus(
+                                delegatedTask.id,
+                                DelegatedTaskStatusDto.DONE,
+                                result = result.text,
+                                summary = "Completed"
+                            )
+                            channelState.appendEvent(
+                                kind = AgentChannelEventKindDto.DELEGATION_COMPLETED,
+                                authorType = AgentChannelAuthorTypeDto.AGENT,
+                                text = result.text ?: "Completed task",
+                                authorId = agentId,
+                                authorRole = session.config.role,
+                                relatedTaskId = delegatedTask.id,
+                            )
                             fut.complete(result)
                             pcs.firePropertyChange("agent_task_finished", null, result)
                             return@submit
@@ -967,6 +1032,20 @@ class AgentManagerService(
 
                 val err = t.message ?: t.javaClass.simpleName
                 val result = AgentTaskResult(requestId, agentId, false, null, err)
+                channelState.updateTaskStatus(
+                    delegatedTask.id,
+                    DelegatedTaskStatusDto.FAILED,
+                    result = err,
+                    summary = "Failed"
+                )
+                channelState.appendEvent(
+                    kind = AgentChannelEventKindDto.DELEGATION_UPDATED,
+                    authorType = AgentChannelAuthorTypeDto.AGENT,
+                    text = err,
+                    authorId = agentId,
+                    authorRole = session.config.role,
+                    relatedTaskId = delegatedTask.id,
+                )
                 fut.complete(result)
                 pcs.firePropertyChange("agent_task_finished", null, result)
             }

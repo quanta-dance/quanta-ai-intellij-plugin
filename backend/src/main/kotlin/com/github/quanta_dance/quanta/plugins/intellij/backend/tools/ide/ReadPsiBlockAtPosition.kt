@@ -5,6 +5,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
+import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.ToolFriendlyException
 import com.github.quanta_dance.quanta.plugins.intellij.project.CurrentFileContextProvider
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
@@ -71,67 +72,77 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
                 return err(e.message ?: "Invalid path")
             } ?: return err("File not found: $rel")
 
-        return ApplicationManager.getApplication().runReadAction<Map<String, Any?>> {
-            val psiFile =
-                PsiManager.getInstance(project).findFile(vFile)
-                    ?: return@runReadAction err("PSI file not found: $rel")
-            val doc =
-                FileDocumentManager.getInstance().getDocument(vFile)
-                    ?: return@runReadAction err("Document not found for: $rel")
+        return try {
+            ApplicationManager.getApplication().runReadAction<Map<String, Any?>> {
+                val psiFile =
+                    PsiManager.getInstance(project).findFile(vFile)
+                        ?: return@runReadAction err("PSI file not found: $rel")
+                val doc =
+                    FileDocumentManager.getInstance().getDocument(vFile)
+                        ?: return@runReadAction err("Document not found for: $rel")
 
-            val psiDocMgr = PsiDocumentManager.getInstance(project)
-            if (!psiDocMgr.isCommitted(doc)) {
-                ApplicationManager.getApplication().runWriteAction {
-                    try {
-                        psiDocMgr.commitDocument(doc)
-                    } catch (_: Throwable) {
+                val psiDocMgr = PsiDocumentManager.getInstance(project)
+                if (!psiDocMgr.isCommitted(doc)) {
+                    ApplicationManager.getApplication().runWriteAction {
+                        try {
+                            psiDocMgr.commitDocument(doc)
+                        } catch (_: Throwable) {
+                        }
                     }
                 }
-            }
 
-            val effectiveOffset =
-                computeOffset(doc.text, line, column, offset, ctx)
-                    ?: return@runReadAction err("Need position: provide line/column or offset, or ensure caret is available")
+                val effectiveOffset =
+                    computeOffset(doc.text, line, column, offset, ctx)
+                        ?: return@runReadAction err("Need position: provide line/column or offset, or ensure caret is available")
 
-            val leaf = psiFile.findElementAt(effectiveOffset)
-            val chosen = chooseElementByScope(leaf, scope)
-            if (chosen == null) {
-                val window = windowAroundOffset(doc.text, effectiveOffset, maxChars)
-                return@runReadAction mapOf(
+                val leaf = psiFile.findElementAt(effectiveOffset)
+                val chosen = chooseElementByScope(leaf, scope)
+                if (chosen == null) {
+                    val window = windowAroundOffset(doc.text, effectiveOffset, maxChars)
+                    return@runReadAction mapOf(
+                        "status" to "ok",
+                        "file" to rel,
+                        "elementKind" to "window",
+                        "name" to null,
+                        "offset" to effectiveOffset,
+                        "startLine" to window.firstLine,
+                        "endLine" to window.lastLine,
+                        "text" to withOptionalLineNumbers(window.text, window.firstLine),
+                    )
+                }
+                val (element, kind) = chosen
+
+                val range = element.textRange
+                val startLine = doc.getLineNumber(range.startOffset) + 1
+                val endLine = doc.getLineNumber(range.endOffset.coerceAtLeast(range.startOffset)) + 1
+                val name = (element as? PsiNamedElement)?.name ?: element.javaClass.simpleName
+                var text = element.text
+                if (text.length > maxChars) text = text.take(maxChars)
+
+                project.service<ToolWindowService>().addToolingMessage(
+                    "Read PSI block",
+                    "$rel:$startLine-$endLine ($kind $name)",
+                )
+
+                mapOf(
                     "status" to "ok",
                     "file" to rel,
-                    "elementKind" to "window",
-                    "name" to null,
+                    "elementKind" to kind,
+                    "name" to name,
                     "offset" to effectiveOffset,
-                    "startLine" to window.firstLine,
-                    "endLine" to window.lastLine,
-                    "text" to withOptionalLineNumbers(window.text, window.firstLine),
+                    "startLine" to startLine,
+                    "endLine" to endLine,
+                    "text" to withOptionalLineNumbers(text, startLine),
                 )
             }
-            val (element, kind) = chosen
-
-            val range = element.textRange
-            val startLine = doc.getLineNumber(range.startOffset) + 1
-            val endLine = doc.getLineNumber(range.endOffset.coerceAtLeast(range.startOffset)) + 1
-            val name = (element as? PsiNamedElement)?.name ?: element.javaClass.simpleName
-            var text = element.text
-            if (text.length > maxChars) text = text.take(maxChars)
-
-            project.service<ToolWindowService>().addToolingMessage(
-                "Read PSI block",
-                "$rel:$startLine-$endLine ($kind $name)",
-            )
-
-            mapOf(
-                "status" to "ok",
-                "file" to rel,
-                "elementKind" to kind,
-                "name" to name,
-                "offset" to effectiveOffset,
-                "startLine" to startLine,
-                "endLine" to endLine,
-                "text" to withOptionalLineNumbers(text, startLine),
-            )
+        } catch (e: Throwable) {
+            if (e is com.intellij.openapi.progress.ProcessCanceledException || e is java.util.concurrent.CancellationException) {
+                val cancelMessage =
+                    "Environment cancelled PSI block reading for $rel before completion. Retry may succeed."
+                project.service<ToolWindowService>().addToolingMessage("Read PSI block - cancelled", cancelMessage)
+                throw ToolFriendlyException(cancelMessage, code = "cancelled", retriable = true)
+            }
+            throw e
         }
     }
 

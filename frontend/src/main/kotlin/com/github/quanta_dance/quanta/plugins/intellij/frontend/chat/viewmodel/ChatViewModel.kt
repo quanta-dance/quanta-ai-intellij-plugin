@@ -1,8 +1,7 @@
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel
 
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
-import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
-import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.*
 import com.intellij.openapi.Disposable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -14,6 +13,9 @@ interface ChatViewModelApi : Disposable {
     val chatMessagesFlow: StateFlow<List<ChatMessage>>
     val sessionsFlow: StateFlow<List<ChatSessionDto>>
     val planStatusFlow: StateFlow<ChatPlanStatusDto>
+    val agentsFlow: StateFlow<List<AgentInfoDto>>
+    val delegatedTasksFlow: StateFlow<List<DelegatedTaskDto>>
+    val channelEventsFlow: StateFlow<List<AgentChannelEventDto>>
 
     fun onPromptInputChanged(input: String)
 
@@ -26,6 +28,10 @@ interface ChatViewModelApi : Disposable {
     fun onActivateSession(sessionId: String)
 
     fun onDeleteSession(sessionId: String)
+
+    fun onSetAgenticMode(enabled: Boolean)
+
+    fun onCreateDefaultAgentTeam()
 
     fun searchChatMessagesHandler(): SearchChatMessagesHandler
 
@@ -43,6 +49,9 @@ class ChatViewModel(
     override val sessionsFlow: StateFlow<List<ChatSessionDto>> = _sessionsFlow.asStateFlow()
 
     override val planStatusFlow: StateFlow<ChatPlanStatusDto> = repository.planStatusFlow
+    override val agentsFlow: StateFlow<List<AgentInfoDto>> = repository.agentsFlow
+    override val delegatedTasksFlow: StateFlow<List<DelegatedTaskDto>> = repository.delegatedTasksFlow
+    override val channelEventsFlow: StateFlow<List<AgentChannelEventDto>> = repository.channelEventsFlow
 
     private val _promptInputState = MutableStateFlow<MessageInputState>(MessageInputState.Disabled)
     override val promptInputState: StateFlow<MessageInputState> = _promptInputState.asStateFlow()
@@ -120,14 +129,29 @@ class ChatViewModel(
         }
     }
 
+    override fun onSetAgenticMode(enabled: Boolean) {
+        coroutineScope.launch {
+            repository.setAgenticMode(enabled)
+        }
+    }
+
+    override fun onCreateDefaultAgentTeam() {
+        coroutineScope.launch {
+            repository.createDefaultAgentTeam()
+        }
+    }
+
     override fun searchChatMessagesHandler(): SearchChatMessagesHandler = searchChatMessagesHandler
 
     private fun getCurrentInputTextIfNotEmpty(): String? =
-        _promptInputState.value.inputText.takeIf { it.isNotBlank() }
+        _promptInputState.value.takeIf { it is MessageInputState.Enabled || it is MessageInputState.Sending }
+            ?.inputText?.takeIf { input -> input.isNotEmpty() }
 
-    private fun emitPromptInputState(state: MessageInputState) {
-        _promptInputState.value = state
+    private fun emitPromptInputState(newState: MessageInputState) {
+        _promptInputState.value = newState
     }
 
-    override fun dispose() = Unit
+    override fun dispose() {
+        currentSendMessageJob?.cancel()
+    }
 }

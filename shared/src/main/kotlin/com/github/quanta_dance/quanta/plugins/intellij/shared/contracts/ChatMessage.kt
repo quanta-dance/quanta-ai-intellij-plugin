@@ -17,6 +17,7 @@ data class ChatMessage(
     val type: ChatMessageType = TEXT,
     val voiceSummary: String? = null,
     val toolItems: List<ToolExecutionItem> = emptyList(),
+    val parentMessageId: String? = null,
 ) : Searchable {
 
     enum class ChatMessageType {
