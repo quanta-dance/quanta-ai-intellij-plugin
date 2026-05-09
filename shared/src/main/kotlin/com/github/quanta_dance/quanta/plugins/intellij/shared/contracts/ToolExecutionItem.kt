@@ -10,6 +10,7 @@ data class ToolExecutionItem(
     val status: ToolExecutionStatus,
     val filePath: String? = null,
     val errorText: String? = null,
+    val detailText: String? = null,
 )
 
 @Serializable
