@@ -15,11 +15,13 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerMoveFilter
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.zIndex
+import androidx.compose.ui.window.Popup
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.ChatAppColors
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.ChatAppIcons
@@ -126,6 +128,7 @@ private fun ToolExecutionRow(
     item: ToolExecutionItem,
 ) {
     var hovered by remember(item.callId) { mutableStateOf(false) }
+    var statusHovered by remember(item.callId) { mutableStateOf(false) }
     val handPointer = remember { PointerIcon(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)) }
     val scope = rememberCoroutineScope()
     val statusIcon =
@@ -135,23 +138,48 @@ private fun ToolExecutionRow(
             ToolExecutionStatus.FAILED -> ChatAppIcons.ToolStatus.failed
         }
     val filePath = item.filePath
+    val detailText = item.detailText
     val fileName = filePath?.substringAfterLast('/')?.substringAfterLast('\\')
+    val linkDisplayName = filePath?.let(::compactPathForLink)
     val hasFileLink = !filePath.isNullOrBlank() && !fileName.isNullOrBlank() && item.displayText.contains(fileName)
     val displayPrefix = if (hasFileLink) item.displayText.substringBefore(fileName) else item.displayText
+    val density = LocalDensity.current
     Box {
+        if (statusHovered && !detailText.isNullOrBlank()) {
+            val lineCount = detailText.lineSequence().count().coerceAtLeast(1)
+            val tooltipOffsetY = with(density) { -((lineCount.coerceAtMost(20) * 18) + 22) }
+            val tooltipOffsetX = with(density) { 18.dp.toPx().toInt() }
+            Popup(offset = IntOffset(tooltipOffsetX, tooltipOffsetY)) {
+                Box(
+                    modifier = Modifier
+                        .widthIn(max = 420.dp)
+                        .background(Color(0xFF2B2B2B), RoundedCornerShape(6.dp))
+                        .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                ) {
+                    Text(
+                        text = detailText,
+                        style = JewelTheme.defaultTextStyle.copy(fontSize = 11.sp, color = Color.White),
+                    )
+                }
+            }
+        }
         if (hovered && !filePath.isNullOrBlank()) {
-            Box(
-                modifier = Modifier
-                    .offset(y = (-28).dp)
-                    .zIndex(1f)
-                    .background(Color(0xFF2B2B2B), RoundedCornerShape(6.dp))
-                    .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(6.dp))
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-            ) {
-                Text(
-                    text = filePath,
-                    style = JewelTheme.defaultTextStyle.copy(fontSize = 11.sp, color = Color.White),
-                )
+            val fileTooltipOffsetX = with(density) { 18.dp.toPx().toInt() }
+            val fileTooltipOffsetY = with(density) { (-36).dp.toPx().toInt() }
+            Popup(offset = IntOffset(fileTooltipOffsetX, fileTooltipOffsetY)) {
+                Box(
+                    modifier = Modifier
+                        .widthIn(max = 420.dp)
+                        .background(Color(0xFF2B2B2B), RoundedCornerShape(6.dp))
+                        .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                ) {
+                    Text(
+                        text = filePath,
+                        style = JewelTheme.defaultTextStyle.copy(fontSize = 11.sp, color = Color.White),
+                    )
+                }
             }
         }
 
@@ -166,11 +194,25 @@ private fun ToolExecutionRow(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Icon(
-                    key = statusIcon,
-                    contentDescription = item.status.name,
-                    modifier = Modifier.size(14.dp),
-                )
+                Box(
+                    modifier = Modifier
+                        .pointerMoveFilter(
+                            onEnter = {
+                                statusHovered = true
+                                false
+                            },
+                            onExit = {
+                                statusHovered = false
+                                false
+                            },
+                        ),
+                ) {
+                    Icon(
+                        key = statusIcon,
+                        contentDescription = item.status.name,
+                        modifier = Modifier.size(14.dp),
+                    )
+                }
                 if (hasFileLink) {
                     Text(
                         text = displayPrefix,
@@ -209,7 +251,7 @@ private fun ToolExecutionRow(
                             },
                     ) {
                         Text(
-                            text = fileName,
+                            text = linkDisplayName ?: fileName,
                             style = JewelTheme.defaultTextStyle.copy(
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Medium,
@@ -239,6 +281,20 @@ private fun ToolExecutionRow(
             }
         }
     }
+}
+
+private fun compactPathForLink(path: String): String {
+    val normalized = path.replace('\\', '/').trim()
+    if (normalized.length <= 40) return normalized
+    val segments = normalized.split('/').filter { it.isNotBlank() }
+    if (segments.isEmpty()) return normalized.takeLast(40)
+    if (segments.size <= 2) return normalized
+    val fileName = segments.last()
+    val prev = segments.dropLast(1).lastOrNull().orEmpty()
+    val tail = if (prev.isNotBlank()) "$prev/$fileName" else fileName
+    if (tail.length <= 40) return tail
+    val candidate = if (prev.isNotBlank()) "...$prev/$fileName" else "...$fileName"
+    return if (candidate.length <= 44) candidate else "...${normalized.takeLast(40)}"
 }
 
 private fun frontendLinkLog(

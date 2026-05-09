@@ -876,24 +876,31 @@ class OpenAIService(
                         )
                         onToolUpdate?.invoke(ToolTurnUpdate(startedItem))
                         try {
-                            val toolOutput =
+                            val toolResult =
                                 project.service<ToolExecutionService>().executeToolCall(functionCall, agentLabel)
                             QDLog.info(thisLogger()) {
                                 "OpenAIService.agentTurn: executed tool call name=${functionCall.name()} callId=$callId"
                             }
                             val completedItem = buildToolExecutionItem(
                                 functionCall,
-                                com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus.SUCCEEDED
+                                if (toolResult.succeeded) {
+                                    com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus.SUCCEEDED
+                                } else {
+                                    com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus.FAILED
+                                },
+                                errorText = toolResult.errorText,
+                                detailText = toolResult.detailText,
                             )
                             onToolUpdate?.invoke(ToolTurnUpdate(completedItem))
                             pendingToolOutputs.add(
-                                ResponseInputItem.ofFunctionCallOutput(toolOutput),
+                                ResponseInputItem.ofFunctionCallOutput(toolResult.toolOutput),
                             )
                         } catch (t: Throwable) {
                             val failedItem = buildToolExecutionItem(
                                 functionCall,
                                 com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus.FAILED,
                                 errorText = t.message,
+                                detailText = t.stackTraceToString().take(2_000),
                             )
                             onToolUpdate?.invoke(ToolTurnUpdate(failedItem))
                             throw t
@@ -985,12 +992,13 @@ class OpenAIService(
         functionCall: com.openai.models.responses.ResponseFunctionToolCall,
         status: com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus,
         errorText: String? = null,
+        detailText: String? = null,
     ): com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem {
         val toolName = functionCall.name()
         val argsText = runCatching { functionCall.arguments() }.getOrDefault("")
         val argsJson = runCatching { mapper.readTree(argsText) }.getOrNull()
         val filePath = extractFilePath(argsJson)
-        val displayText = buildToolDisplayText(toolName, filePath)
+        val displayText = buildToolDisplayText(toolName, filePath, argsJson)
         return com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem(
             callId = functionCall.callId(),
             toolName = toolName,
@@ -998,6 +1006,7 @@ class OpenAIService(
             status = status,
             filePath = filePath,
             errorText = errorText,
+            detailText = detailText,
         )
     }
 
@@ -1012,9 +1021,23 @@ class OpenAIService(
         return null
     }
 
-    private fun buildToolDisplayText(toolName: String, filePath: String?): String {
+    private fun buildToolDisplayText(
+        toolName: String,
+        filePath: String?,
+        argsJson: JsonNode?,
+    ): String {
         val fileName = filePath?.substringAfterLast('/')?.substringAfterLast('\\')
         return when {
+            toolName.contains("SessionPlan", ignoreCase = true) -> {
+                val action = argsJson?.path("action")?.asText("")?.trim()?.uppercase().orEmpty()
+                when (action) {
+                    "ACTIVATE" -> "Session Plan: Active"
+                    "COMPLETE" -> "Session Plan: Done"
+                    "DRAFT" -> "Session Plan: Draft"
+                    else -> "Session Plan"
+                }
+            }
+
             toolName.contains("ReadFile", ignoreCase = true) && !fileName.isNullOrBlank() -> "Reading $fileName"
             toolName.contains("OpenFile", ignoreCase = true) && !fileName.isNullOrBlank() -> "Opening $fileName"
             toolName.contains("SearchInFiles", ignoreCase = true) -> "Searching files"
@@ -1481,13 +1504,13 @@ class OpenAIService(
                                         item.asFunctionCall()
                                     val callId = functionCall.callId()
                                     if (!processedCallIds.add(callId)) return@mapIndexed
-                                    val toolOutput = project.service<ToolExecutionService>()
+                                    val toolResult = project.service<ToolExecutionService>()
                                         .executeToolCall(functionCall, managerLabel)
                                     QDLog.info(thisLogger()) {
                                         "OpenAIService.sendMessage toolResult name=${functionCall.name()}"
                                     }
                                     pendingToolOutputs.add(
-                                        com.openai.models.responses.ResponseInputItem.ofFunctionCallOutput(toolOutput),
+                                        com.openai.models.responses.ResponseInputItem.ofFunctionCallOutput(toolResult.toolOutput),
                                     )
                                 }
 

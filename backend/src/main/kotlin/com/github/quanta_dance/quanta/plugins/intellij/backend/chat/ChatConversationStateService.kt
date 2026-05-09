@@ -21,6 +21,7 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
         var status: String = ToolExecutionStatus.EXECUTING.name,
         var filePath: String? = null,
         var errorText: String? = null,
+        var detailText: String? = null,
     )
 
     data class PersistedChatMessage(
@@ -139,6 +140,7 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
                                 status = ToolExecutionStatus.valueOf(item.status),
                                 filePath = item.filePath,
                                 errorText = item.errorText,
+                                detailText = item.detailText,
                             )
                         },
                 )
@@ -171,6 +173,7 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
                                 status = item.status.name,
                                 filePath = item.filePath,
                                 errorText = item.errorText,
+                                detailText = item.detailText,
                             )
                         }.toMutableList(),
                 )
