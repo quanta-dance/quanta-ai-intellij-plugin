@@ -293,6 +293,17 @@ class ChatConversationService(
         persistMessages()
     }
 
+    fun compactConversationWithBrief(brief: String) {
+        val notice =
+            if (brief.isBlank()) {
+                "Conversation compacted. Continuing from session memory."
+            } else {
+                "Conversation compacted. Continuing from session memory.\n\n${brief.take(1200)}"
+            }
+        _messages.value = listOf(chatMessageFactory.createAIMessage(notice))
+        persistMessages()
+    }
+
     private fun persistMessages() {
         persistence.saveActiveMessages(_messages.value, openAIService.getLastResponseId())
         _sessions.value = persistence.listSessions()

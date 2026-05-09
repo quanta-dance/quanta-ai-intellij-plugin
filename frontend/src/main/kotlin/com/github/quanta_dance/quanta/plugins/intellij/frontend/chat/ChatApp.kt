@@ -13,13 +13,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.input.pointer.pointerMoveFilter
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.ModularPluginFrontendBundle
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel.ChatViewModel
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel.MessageInputState
@@ -28,6 +31,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.frontend.ui.*
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.voice.FrontendAIVoiceService
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.voice.FrontendMicrophoneService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
@@ -46,6 +50,7 @@ fun ChatApp(project: Project, viewModel: ChatViewModel, voiceService: FrontendAI
     var voiceEnabled by remember { mutableStateOf(FrontendQuantaSettingsState.instance.state.voiceEnabled) }
     var selectedModel by remember { mutableStateOf(FrontendQuantaSettingsState.instance.state.aiChatModel) }
     var availableModels by remember { mutableStateOf(FrontendQuantaSettingsState.instance.state.availableChatModels) }
+    val planStatus by viewModel.planStatusFlow.collectAsState(ChatPlanStatusDto())
     val activeSession = sessions.firstOrNull { it.isActive }
     val microphoneService = remember(project) { project.service<FrontendMicrophoneService>() }
     val micEnabled by microphoneService.isListening.collectAsState(false)
@@ -72,6 +77,7 @@ fun ChatApp(project: Project, viewModel: ChatViewModel, voiceService: FrontendAI
         }
     }
 
+
     LaunchedEffect(Unit) {
         while (true) {
             val settings = FrontendQuantaSettingsState.instance.state
@@ -84,7 +90,7 @@ fun ChatApp(project: Project, viewModel: ChatViewModel, voiceService: FrontendAI
             if (availableModels != settings.availableChatModels) {
                 availableModels = settings.availableChatModels
             }
-            delay(300)
+            kotlinx.coroutines.delay(300)
         }
     }
 
@@ -155,6 +161,8 @@ fun ChatApp(project: Project, viewModel: ChatViewModel, voiceService: FrontendAI
                 voiceEnabled = voiceEnabled,
                 micEnabled = micEnabled,
                 micActive = micActive,
+                currentPlanStatus = planStatus.status,
+                currentPlanText = planStatus.text,
                 currentModel = selectedModel,
                 availableModels = availableModels,
                 onModelSelected = { model ->
@@ -236,6 +244,49 @@ private fun SessionTabs(
                 )
             }
         }
+    }
+}
+
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+private fun VisiblePlanStatus(
+    status: String,
+    text: String,
+) {
+    var hovered by remember { mutableStateOf(false) }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+    ) {
+        if (hovered && text.isNotBlank()) {
+            Box(
+                modifier = Modifier
+                    .offset(y = (-28).dp)
+                    .zIndex(1f)
+                    .background(ChatAppColors.Panel.background, RoundedCornerShape(6.dp))
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+            ) {
+                Text(text = text, style = JewelTheme.defaultTextStyle.copy(fontSize = 11.sp))
+            }
+        }
+        Text(
+            text = "Plan: $status",
+            modifier = Modifier
+                .background(ChatAppColors.MessageBubble.othersBackground, RoundedCornerShape(8.dp))
+                .padding(horizontal = 10.dp, vertical = 6.dp)
+                .pointerMoveFilter(
+                    onEnter = {
+                        hovered = true
+                        false
+                    },
+                    onExit = {
+                        hovered = false
+                        false
+                    },
+                ),
+            style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, fontWeight = FontWeight.SemiBold),
+        )
     }
 }
 
