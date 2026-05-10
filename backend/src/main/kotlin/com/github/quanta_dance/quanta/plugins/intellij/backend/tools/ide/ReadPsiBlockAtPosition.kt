@@ -7,11 +7,9 @@ import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.ToolFriendlyException
 import com.github.quanta_dance.quanta.plugins.intellij.backend.project.CurrentFileContextProvider
-import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
-import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
@@ -66,9 +64,6 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
             try {
                 PathUtils.resolveVirtualFileWithinProject(project, rel)
             } catch (e: IllegalArgumentException) {
-                project
-                    .service<ToolWindowService>()
-                    .addToolingMessage("ReadPsiBlockAtPosition - invalid path", e.message ?: "Invalid path")
                 return err(e.message ?: "Invalid path")
             } ?: return err("File not found: $rel")
 
@@ -119,11 +114,6 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
                 var text = element.text
                 if (text.length > maxChars) text = text.take(maxChars)
 
-                project.service<ToolWindowService>().addToolingMessage(
-                    "Read PSI block",
-                    "$rel:$startLine-$endLine ($kind $name)",
-                )
-
                 mapOf(
                     "status" to "ok",
                     "file" to rel,
@@ -139,7 +129,6 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
             if (e is com.intellij.openapi.progress.ProcessCanceledException || e is java.util.concurrent.CancellationException) {
                 val cancelMessage =
                     "Environment cancelled PSI block reading for $rel before completion. Retry may succeed."
-                project.service<ToolWindowService>().addToolingMessage("Read PSI block - cancelled", cancelMessage)
                 throw ToolFriendlyException(cancelMessage, code = "cancelled", retriable = true)
             }
             throw e

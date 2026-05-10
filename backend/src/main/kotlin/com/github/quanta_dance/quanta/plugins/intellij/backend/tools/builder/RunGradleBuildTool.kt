@@ -5,9 +5,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.builder
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
-import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
-import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.SystemInfo
 import java.io.File
@@ -37,18 +35,10 @@ class RunGradleBuildTool : ToolInterface<String> {
         // Prefer warnings visible
         args += listOf("--warning-mode", "all", "--stacktrace")
 
-        val tool =
-            try {
-                project.service<ToolWindowService>()
-                    .startToolingMessage("Gradle build", "tasks=${args.joinToString(" ")}")
-            } catch (_: Throwable) {
-                null
-            }
         val proc =
             try {
                 ProcessBuilder(args).directory(File(basePath)).redirectErrorStream(true).start()
             } catch (e: Exception) {
-                tool?.setText("Failed to start gradle: ${e.message}")
                 return "Failed to start gradle: ${e.message}"
             }
 
@@ -63,13 +53,11 @@ class RunGradleBuildTool : ToolInterface<String> {
         val finished = proc.waitFor(20, TimeUnit.MINUTES)
         if (!finished) {
             proc.destroyForcibly()
-            tool?.setText("Timeout while running gradle build")
             return "Gradle build timed out"
         }
         val exit = proc.exitValue()
         val tail = if (stdoutTailLines > 0) output.lines().takeLast(stdoutTailLines).joinToString("\n") else null
         val summary = if (exit == 0) "Build succeeded" else "Build failed (exit=$exit)"
-        tool?.setText(("tasks=${args.joinToString(" ")}" + "\n\n" + (tail ?: "")).trim())
         return if (tail != null) "$summary\n$tail" else summary
     }
 }

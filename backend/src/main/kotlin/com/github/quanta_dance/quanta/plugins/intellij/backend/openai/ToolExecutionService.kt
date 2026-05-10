@@ -5,9 +5,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.openai
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.intellij.openapi.components.Service
-import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.openai.models.responses.ResponseFunctionToolCall
 import com.openai.models.responses.ResponseInputItem
@@ -30,7 +28,6 @@ class ToolExecutionService(
         functionCall: ResponseFunctionToolCall,
         agentLabel: String,
     ): ToolExecutionResult {
-        project.service<ToolWindowService>().addToolingMessage(agentLabel, "Calling tool: ${functionCall.name()}")
         val argsJson = runCatching { objectMapper.readTree(functionCall.arguments()) }.getOrNull()
         val functionResult = toolRouter.route(functionCall)
         val safeResult = truncateToolOutput(functionResult) ?: emptyMap<String, Any>()

@@ -5,10 +5,8 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
-import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
-import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
-import com.intellij.openapi.components.service
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.intellij.openapi.project.Project
 import java.nio.file.Files
 import java.nio.file.Path
@@ -42,8 +40,6 @@ class DeleteFileTool : ToolInterface<String> {
             try {
                 PathUtils.resolveWithinProject(base, filePath)
             } catch (e: IllegalArgumentException) {
-                project.service<ToolWindowService>()
-                    .addToolingMessage("File delete - rejected", e.message ?: "Invalid path")
                 return e.message ?: "Invalid path"
             }
 
@@ -57,12 +53,9 @@ class DeleteFileTool : ToolInterface<String> {
             } else {
                 Files.deleteIfExists(target)
             }
-            val rel = PathUtils.relativizeToProject(base, target)
-            project.service<ToolWindowService>().addToolingMessage("File deleted", rel)
             "Delete successful"
         } catch (e: Exception) {
             val msg = "Error deleting: ${e.message}"
-            project.service<ToolWindowService>().addToolingMessage("File delete - error", msg)
             msg
         }
     }

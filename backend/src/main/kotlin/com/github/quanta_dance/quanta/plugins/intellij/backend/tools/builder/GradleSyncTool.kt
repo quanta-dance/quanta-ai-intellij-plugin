@@ -2,10 +2,8 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.builder
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
-import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
-import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
-import com.intellij.openapi.components.service
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.intellij.openapi.externalSystem.importing.ImportSpecBuilder
 import com.intellij.openapi.externalSystem.service.execution.ProgressExecutionMode
 import com.intellij.openapi.externalSystem.util.ExternalSystemUtil
@@ -30,8 +28,6 @@ class GradleSyncTool : ToolInterface<String> {
             linked = linked.filter { it.equals(target, ignoreCase = true) || it.endsWith(target) }
         }
         if (linked.isEmpty()) {
-            project.service<ToolWindowService>()
-                .addToolingMessage("Gradle Sync", "No linked Gradle projects found for $basePath")
             return "No linked Gradle projects found."
         }
 
@@ -49,8 +45,6 @@ class GradleSyncTool : ToolInterface<String> {
 
             ExternalSystemUtil.refreshProject(path, specBuilder)
         }
-        project.service<ToolWindowService>()
-            .addToolingMessage("Gradle Sync", "Queued sync for ${linked.size} project(s) in background")
         return "Queued Gradle sync for ${linked.size} project(s) in background."
     }
 }

@@ -4,14 +4,12 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
-import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
-import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
@@ -478,7 +476,6 @@ class McpClientService(
                         }
                     val msg =
                         "Missing required parameter(s): ${missing.joinToString(", ")}. Known properties: $propsSummary"
-                    project.service<ToolWindowService>().addToolingMessage("MCP $server.$toolName", msg)
                     return msg
                 }
             } catch (_: Throwable) {
@@ -508,27 +505,10 @@ class McpClientService(
                         }
                     }.joinToString("\n")
                     .trim()
-            project.service<ToolWindowService>().addToolingMessage(
-                "MCP $server.$toolName",
-                "Completed in ${duration}ms. Args: ${
-                    if (args.isEmpty()) {
-                        "<no args>"
-                    } else {
-                        args.entries.joinToString(", ") { (k, v) -> "$k=$v" }
-                    }
-                }",
-            )
             text.ifEmpty { "MCP call $server.$toolName returned no textual content" }
         } catch (_: TimeoutCancellationException) {
-            project
-                .service<ToolWindowService>()
-                .addToolingMessage("MCP $server.$toolName", "Timed out after ${timeoutMs}ms")
             "MCP call timed out after ${timeoutMs}ms"
         } catch (e: Exception) {
-            project.service<ToolWindowService>().addToolingMessage(
-                "MCP $server.$toolName",
-                "Failed: ${e.javaClass.simpleName}: ${e.message ?: "no message"}",
-            )
             "MCP call failed: ${e.javaClass.simpleName}: ${e.message ?: "no message"}"
         }
     }

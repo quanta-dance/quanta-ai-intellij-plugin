@@ -5,16 +5,14 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
+import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.project.CodeReferenceSelector.getAllReferencesAndDefinitions
 import com.github.quanta_dance.quanta.plugins.intellij.backend.project.DependencyResolver.resolveImportsToDependencies
 import com.github.quanta_dance.quanta.plugins.intellij.backend.project.ProjectVersionUtil.getProjectBuildFiles
 import com.github.quanta_dance.quanta.plugins.intellij.backend.project.ProjectVersionUtil.getProjectCompileVersion
-import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
-import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
-import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiManager
@@ -39,8 +37,6 @@ class GetFileReferencesAndDependencies : ToolInterface<Map<String, Any>> {
             try {
                 PathUtils.resolveVirtualFileWithinProject(project, rel)
             } catch (e: IllegalArgumentException) {
-                project.service<ToolWindowService>()
-                    .addToolingMessage("Get file references - invalid path", e.message ?: "Invalid path")
                 return mapOf("status" to "error", "message" to (e.message ?: "Invalid path"))
             }
                 ?: return mapOf("status" to "error", "message" to "File not found: $rel")
@@ -75,8 +71,6 @@ class GetFileReferencesAndDependencies : ToolInterface<Map<String, Any>> {
                     } catch (_: Throwable) {
                         emptyList()
                     }
-
-                project.service<ToolWindowService>().addToolingMessage("Get file references", rel)
 
                 mapOf(
                     "status" to "ok",

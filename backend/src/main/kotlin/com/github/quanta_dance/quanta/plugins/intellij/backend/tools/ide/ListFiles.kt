@@ -2,10 +2,8 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
-import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
-import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
-import com.intellij.openapi.components.service
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.intellij.openapi.project.Project
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
@@ -19,7 +17,6 @@ class ListFiles : ToolInterface<List<String>> {
     override fun execute(project: Project): List<String> {
         val projBase = PathUtils.projectRootPath(project) ?: return emptyList()
         return try {
-            project.service<ToolWindowService>().addToolingMessage("List Files", path.orEmpty())
             val absPath = PathUtils.resolveWithinProject(projBase, path, allowBlankAsDot = true)
             if (absPath.exists() && absPath.isDirectory()) {
                 return absPath.listDirectoryEntries().map { entry ->
@@ -28,10 +25,8 @@ class ListFiles : ToolInterface<List<String>> {
             }
             emptyList()
         } catch (e: IllegalArgumentException) {
-            project.service<ToolWindowService>().addToolingMessage("List Files - rejected", e.message ?: "Invalid path")
             emptyList()
         } catch (e: Throwable) {
-            project.service<ToolWindowService>().addToolingMessage("List Files - error", e.message ?: "Unknown error")
             emptyList()
         }
     }

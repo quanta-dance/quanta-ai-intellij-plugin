@@ -7,7 +7,6 @@ import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.OpenAIService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
-import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
 import com.intellij.openapi.components.service
@@ -48,8 +47,7 @@ class GenerateImage : ToolInterface<String> {
             // Show in tool window
             try {
                 if (filePath == null) {
-                    val toolService = project.service<ToolWindowService>()
-                    toolService.addImage(title, url)
+                    // TODO: add image to frontend (title, url)
                 }
             } catch (_: Throwable) {
                 // ignore if tool window service not available
@@ -64,9 +62,6 @@ class GenerateImage : ToolInterface<String> {
                     try {
                         PathUtils.resolveWithinProject(projectBase, fp)
                     } catch (e: IllegalArgumentException) {
-                        project
-                            .service<ToolWindowService>()
-                            .addToolingMessage("Save Image - rejected", e.message ?: "Invalid path")
                         QDLog.warn(logger, { "Invalid path for GenerateImage: $fp" }, e)
                         throw e
                     }
@@ -85,14 +80,6 @@ class GenerateImage : ToolInterface<String> {
                         fos.flush()
                     }
                 }
-
-                try {
-                    val toolService = project.service<ToolWindowService>()
-                    toolService.addToolingMessage("Image saved", "Saved to: $resolved")
-                } catch (_: Throwable) {
-                    // ignore
-                }
-
                 return resolved.toString()
             }
 

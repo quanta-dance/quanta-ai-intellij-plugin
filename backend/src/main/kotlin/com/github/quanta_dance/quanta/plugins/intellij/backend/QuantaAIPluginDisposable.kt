@@ -1,7 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
-
-package com.github.quanta_dance.quanta.plugins.intellij.services
+package com.github.quanta_dance.quanta.plugins.intellij.backend
 
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager

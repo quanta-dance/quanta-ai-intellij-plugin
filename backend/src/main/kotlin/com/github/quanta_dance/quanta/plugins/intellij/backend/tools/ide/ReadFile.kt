@@ -5,14 +5,12 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
-import com.github.quanta_dance.quanta.plugins.intellij.backend.project.CurrentFileContextProvider
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
-import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
-import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
+import com.github.quanta_dance.quanta.plugins.intellij.backend.project.CurrentFileContextProvider
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
-import com.github.quanta_dance.quanta.plugins.intellij.tools.models.ReadFileResult
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.models.ReadFileResult
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
@@ -63,17 +61,6 @@ data class ReadFile(
 
     companion object {
         private val logger = Logger.getInstance(ReadFile::class.java)
-    }
-
-    private fun addMsg(
-        project: Project,
-        title: String,
-        msg: String,
-    ) {
-        try {
-            project.service<ToolWindowService>().addToolingMessage(title, msg)
-        } catch (_: Throwable) {
-        }
     }
 
     private fun withLineNumbers(
@@ -168,7 +155,6 @@ data class ReadFile(
 
     override fun execute(project: Project): ReadFileResult {
         if (filePath.isBlank()) {
-            addMsg(project, "Read file content - rejected", "filePath is required")
             return ReadFileResult("", "", "filePath is required")
         }
 
@@ -178,7 +164,6 @@ data class ReadFile(
             try {
                 PathUtils.resolveWithinProject(project, filePath)
             } catch (e: IllegalArgumentException) {
-                addMsg(project, "Read file content - rejected", e.message ?: "Invalid path")
                 return ReadFileResult(
                     "",
                     "",
@@ -191,7 +176,6 @@ data class ReadFile(
             } catch (_: Throwable) {
                 resolved.toString()
             }
-        addMsg(project, "Read file content", relToBase)
 
         return ApplicationManager.getApplication().runReadAction<ReadFileResult> {
             val virtualFile =
@@ -318,21 +302,6 @@ data class ReadFile(
                 }
 
             val hash = sha256Normalized(rawContent)
-            if (truncated) {
-                addMsg(
-                    project,
-                    "Read file content - truncated",
-                    "strategy=$strategy maxChars=$maxChars windowRadiusLines=$windowRadiusLines " +
-                            "current=$isCurrentTarget startLine=$firstLineNumber fromLine=${fromLine ?: ""} toLine=${toLine ?: ""}",
-                )
-            } else {
-                addMsg(
-                    project,
-                    "Read file content - success",
-                    "lineNumbers=$includeLineNumbers startLine=$firstLineNumber fromLine=${fromLine ?: ""} toLine=${toLine ?: ""}",
-                )
-            }
-
             QDLog.debug(logger) {
                 "Read file content: $relToBase, lineNumbers=$includeLineNumbers, truncated=$truncated, " +
                         "startLine=$firstLineNumber fromLine=${fromLine ?: ""} toLine=${toLine ?: ""}"

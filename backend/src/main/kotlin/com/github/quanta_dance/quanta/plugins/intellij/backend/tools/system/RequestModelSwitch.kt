@@ -6,9 +6,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.system
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQuantaSettingsState
-import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
-import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.openai.models.ChatModel
 
@@ -90,14 +88,6 @@ class RequestModelSwitch : ToolInterface<Map<String, Any>> {
                         else -> "Approved model change to $chosen from $normCurrent"
                     }
             }
-        }
-
-        try {
-            project.service<ToolWindowService>().addToolingMessage(
-                "Model switch request",
-                "runtime=$normCurrent requested=$normRequested cap=$normMax -> approved=$approved new=$chosen reason=${reason.orEmpty()}",
-            )
-        } catch (_: Throwable) {
         }
 
         return mapOf(

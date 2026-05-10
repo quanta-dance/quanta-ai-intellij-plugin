@@ -5,18 +5,16 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.builder
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
-import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.models.RunTestsResult
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.models.TestCaseResult
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
-import com.github.quanta_dance.quanta.plugins.intellij.tools.models.RunTestsResult
-import com.github.quanta_dance.quanta.plugins.intellij.tools.models.TestCaseResult
-import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.vfs.VfsUtil
 import org.w3c.dom.Element
 import java.io.File
 import java.nio.charset.StandardCharsets
-import java.util.LinkedList
+import java.util.*
 import java.util.concurrent.TimeUnit
 import javax.xml.parsers.DocumentBuilderFactory
 
@@ -36,13 +34,29 @@ class RunGradleTestsTool : ToolInterface<RunTestsResult> {
 
     override fun execute(project: Project): RunTestsResult {
         val basePath =
-            project.basePath ?: return RunTestsResult(false, 0, 0, 0, emptyList(), null, "Project base path not found")
+            project.basePath ?: return RunTestsResult(
+                false,
+                0,
+                0,
+                0,
+                emptyList<TestCaseResult>(),
+                null,
+                "Project base path not found"
+            )
         val tasksList = (tasks?.trim()?.takeIf { it.isNotEmpty() } ?: "test").split(" ").filter { it.isNotBlank() }
 
         val gradlewName = if (SystemInfo.isWindows) "gradlew.bat" else "gradlew"
         val gradlew = File(basePath, gradlewName)
         if (!gradlew.exists()) {
-            return RunTestsResult(false, 0, 0, 0, emptyList(), null, "Gradle wrapper not found: $gradlewName")
+            return RunTestsResult(
+                false,
+                0,
+                0,
+                0,
+                emptyList<TestCaseResult>(),
+                null,
+                "Gradle wrapper not found: $gradlewName"
+            )
         }
 
         val args = mutableListOf<String>()
@@ -54,18 +68,6 @@ class RunGradleTestsTool : ToolInterface<RunTestsResult> {
 
         // Start a single tooling message and spinner
         val taskLine = "tasks=${args.joinToString(" ")}"
-        val tool =
-            try {
-                project.service<ToolWindowService>().startToolingMessage("Run tests", taskLine)
-            } catch (_: Throwable) {
-                null
-            }
-        val spinner =
-            try {
-                project.service<ToolWindowService>().startSpinner("In progress...")
-            } catch (_: Throwable) {
-                null
-            }
 
         val process =
             try {
@@ -74,9 +76,15 @@ class RunGradleTestsTool : ToolInterface<RunTestsResult> {
                     .redirectErrorStream(true)
                     .start()
             } catch (e: Exception) {
-                spinner?.stopError("Failed to start gradle")
-                tool?.setText(taskLine + "\n\nFailed to start gradle: ${e.message}")
-                return RunTestsResult(false, 0, 0, 0, emptyList(), null, "Failed to start gradle: ${e.message}")
+                return RunTestsResult(
+                    false,
+                    0,
+                    0,
+                    0,
+                    emptyList<TestCaseResult>(),
+                    null,
+                    "Failed to start gradle: ${e.message}"
+                )
             }
 
         val output = StringBuilder()
@@ -126,7 +134,6 @@ class RunGradleTestsTool : ToolInterface<RunTestsResult> {
             val now = System.currentTimeMillis()
             if (now - lastProgressAt >= 2000) {
                 lastProgressAt = now
-                tool?.setText(rebuildPanelText())
             }
         }
 
@@ -149,7 +156,6 @@ class RunGradleTestsTool : ToolInterface<RunTestsResult> {
                     }
                     val testName = m.groupValues[1]
                     pushRecent("$testName: ${status.lowercase()}")
-                    tool?.setText(rebuildPanelText())
                 }
 
                 summaryRegex.find(ln)?.let { m ->
@@ -168,9 +174,7 @@ class RunGradleTestsTool : ToolInterface<RunTestsResult> {
         val finished = process.waitFor(30, TimeUnit.MINUTES)
         if (!finished) {
             process.destroyForcibly()
-            spinner?.stopError("Timeout")
-            tool?.setText(taskLine + "\n\nTimeout while running Gradle tests")
-            return RunTestsResult(false, 0, 0, 0, emptyList(), null, "Gradle test execution timed out")
+            return RunTestsResult(false, 0, 0, 0, emptyList<TestCaseResult>(), null, "Gradle test execution timed out")
         }
         val exitCode = process.exitValue()
 
@@ -189,20 +193,6 @@ class RunGradleTestsTool : ToolInterface<RunTestsResult> {
 
         val parseResult = parseReports(File(basePath, reportsPath))
         val success = exitCode == 0
-
-        if (success) {
-            spinner?.stopSuccess()
-            val finalText =
-                if (parseResult.failed == 0) {
-                    rebuildPanelText() + "\nAll tests passed"
-                } else {
-                    rebuildPanelText() + "\n${parseResult.failed} tests failed out of ${parseResult.total}"
-                }
-            tool?.setText(finalText)
-        } else {
-            spinner?.stopError("Gradle exit=$exitCode")
-            tool?.setText(rebuildPanelText() + "\nGradle failed with exit code $exitCode")
-        }
 
         return RunTestsResult(
             success,

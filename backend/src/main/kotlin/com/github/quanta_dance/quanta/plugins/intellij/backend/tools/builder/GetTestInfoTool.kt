@@ -5,11 +5,9 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.builder
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
-import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.models.GetTestInfoResult
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.models.TestCaseResult
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
-import com.github.quanta_dance.quanta.plugins.intellij.tools.models.GetTestInfoResult
-import com.github.quanta_dance.quanta.plugins.intellij.tools.models.TestCaseResult
-import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import org.w3c.dom.Element
 import java.io.File
@@ -26,16 +24,6 @@ class GetTestInfoTool : ToolInterface<GetTestInfoResult> {
     @field:JsonPropertyDescription("Path to XML reports directory relative to project root. Default: 'build/test-results/test'")
     var reportsDir: String? = null
 
-    private fun addMsg(
-        project: Project,
-        title: String,
-        msg: String,
-    ) {
-        try {
-            project.service<ToolWindowService>().addToolingMessage(title, msg)
-        } catch (_: Throwable) {
-        }
-    }
 
     override fun execute(project: Project): GetTestInfoResult {
         val basePath = project.basePath ?: return GetTestInfoResult(error = "Project base path not found")
@@ -102,7 +90,6 @@ class GetTestInfoTool : ToolInterface<GetTestInfoResult> {
                                 systemErr = systemErr,
                                 reportFilePath = file.absolutePath,
                             )
-                        addMsg(project, "Get test info", "$klass#$name -> $status from ${file.name}")
                         return GetTestInfoResult(test = test)
                     }
                 }

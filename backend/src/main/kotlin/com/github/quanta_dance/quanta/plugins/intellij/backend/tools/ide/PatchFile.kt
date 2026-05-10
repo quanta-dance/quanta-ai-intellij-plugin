@@ -5,15 +5,13 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
-import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.ToolFriendlyException
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
-import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
-import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
+import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.ToolFriendlyException
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.intellij.codeInsight.actions.OptimizeImportsProcessor
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.command.WriteCommandAction
-import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.fileEditor.FileDocumentManager
@@ -360,8 +358,6 @@ class PatchFile : ToolInterface<String> {
             try {
                 PathUtils.resolveWithinProject(project, filePath)
             } catch (e: IllegalArgumentException) {
-                project.service<ToolWindowService>()
-                    .addToolingMessage("Patch File - rejected", e.message ?: "Invalid path")
                 return e.message ?: "Invalid path"
             }
         val relToBase = PathUtils.relativizeToProject(projectBase, resolved)
@@ -377,8 +373,6 @@ class PatchFile : ToolInterface<String> {
                     val vFile =
                         PathUtils.resolveVirtualFileWithinProject(project, relToBase)
                             ?: run {
-                                project.service<ToolWindowService>()
-                                    .addToolingMessage("Patch File - error", "Error opening file")
                                 return@runWriteCommandAction
                             }
 
@@ -387,8 +381,6 @@ class PatchFile : ToolInterface<String> {
                         try {
                             docManager.getDocument(vFile) ?: docManager.getDocument(vFile)!!
                         } catch (e: Throwable) {
-                            project.service<ToolWindowService>()
-                                .addToolingMessage("Patch File - error", e.message ?: "Error opening file")
                             return@runWriteCommandAction
                         }
 
@@ -401,8 +393,6 @@ class PatchFile : ToolInterface<String> {
                         if (overlaps.isNotEmpty()) {
                             result.append("Rejected: overlapping patches: ")
                             result.append(overlaps.joinToString("; ") { "${it.first.index}-${it.second.index}" })
-                            project.service<ToolWindowService>()
-                                .addToolingMessage("Patch File - rejected", result.toString())
                             return@runWriteCommandAction
                         }
                     }
@@ -418,8 +408,6 @@ class PatchFile : ToolInterface<String> {
                             .append("Aborted: Content hash mismatch for ")
                             .append(relToBase)
                             .append(" and guards did not allow proceed.")
-                        project.service<ToolWindowService>()
-                            .addToolingMessage("Patch File - aborted", result.toString())
                         return@runWriteCommandAction
                     }
 
@@ -438,8 +426,6 @@ class PatchFile : ToolInterface<String> {
                                     .append(mismatches.size)
                                     .append(" mismatch(es). Details: \n")
                                     .append(mismatches.joinToString("\n"))
-                                project.service<ToolWindowService>()
-                                    .addToolingMessage("Patch File - aborted", result.toString())
                                 return@runWriteCommandAction
                             }
 
@@ -521,7 +507,6 @@ class PatchFile : ToolInterface<String> {
         } catch (e: Throwable) {
             if (e is com.intellij.openapi.progress.ProcessCanceledException || e is java.util.concurrent.CancellationException) {
                 val cancelMessage = "Environment cancelled patching $relToBase before completion. Retry may succeed."
-                project.service<ToolWindowService>().addToolingMessage("Patch File - cancelled", cancelMessage)
                 throw ToolFriendlyException(cancelMessage, code = "cancelled", retriable = true)
             }
             throw e
@@ -561,7 +546,6 @@ class PatchFile : ToolInterface<String> {
         }
 
         val summary = result.toString()
-        project.service<ToolWindowService>().addToolingMessage("Patch file", "$relToBase\n$summary")
         return "$summary. File version: $lastModified"
     }
 }

@@ -4,10 +4,8 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.chat.agents
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
-import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
-import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import java.beans.PropertyChangeListener
@@ -41,25 +39,18 @@ class AgentWakeService(
         }
         lastWakeRequestedAtMs[agentId] = now
         pcs.firePropertyChange("agent_wake_requested", null, mapOf("agentId" to agentId, "at" to now))
-        try {
-            project.service<ToolWindowService>().addDebugMessage("wake_requested", "agent=$agentId at=$now")
-        } catch (_: Throwable) {
-        }
         if (ApplicationManager.getApplication().isUnitTestMode) return
         sessionProvider() ?: return
         val flag = inFlight.computeIfAbsent(agentId) { AtomicBoolean(false) }
         if (!flag.compareAndSet(false, true)) return
         try {
-            project.service<ToolWindowService>().addDebugMessage("wake_start", "agent=$agentId")
             val reply = sendTurn(
                 agentId,
                 "(auto) You have new inbox messages. Process them. If you need to respond to another agent, use AgentPostMessageTool. If nothing is required, reply with DONE.",
             )
             QDLog.debug(logger) { "Wake turn finished: agent=$agentId replyLen=${reply.length}" }
-            project.service<ToolWindowService>().addDebugMessage("wake_done", "agent=$agentId replyLen=${reply.length}")
         } catch (t: Throwable) {
             QDLog.warn(logger, { "Wake turn failed: agent=$agentId err=${t.message}" }, t)
-            project.service<ToolWindowService>().addDebugMessage("wake_error", "agent=$agentId err=${t.message}")
         } finally {
             flag.set(false)
         }

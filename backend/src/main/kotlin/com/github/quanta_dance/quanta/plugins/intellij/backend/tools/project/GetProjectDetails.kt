@@ -4,7 +4,6 @@ import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.backend.project.ProjectVersionUtil
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
-import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
 import com.intellij.openapi.components.service
@@ -152,11 +151,6 @@ class GetProjectDetails : ToolInterface<String> {
             } else {
                 0
             }
-
-        project.service<ToolWindowService>().addToolingMessage(
-            "Get project Details",
-            "Available build files: $buildFiles\n$sdkVersion\nFiles in the project: $filesCount",
-        )
 
         val summaryHeader =
             StringBuilder()

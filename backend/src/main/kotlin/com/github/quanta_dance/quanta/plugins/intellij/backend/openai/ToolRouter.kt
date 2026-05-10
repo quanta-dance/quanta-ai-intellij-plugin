@@ -8,7 +8,6 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.DynamicMcpToolProvider
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.McpClientService
-import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.progress.ProcessCanceledException
@@ -26,7 +25,6 @@ class ToolRouter(
         val name = functionCall.name()
         try {
             QDLog.debug(log) { "Tool route: name=$name" }
-            project.service<ToolWindowService>().addDebugMessage("tool_route", "name=$name")
         } catch (_: Throwable) {
         }
 
