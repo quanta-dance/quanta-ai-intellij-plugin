@@ -42,7 +42,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.Icon
-import org.jetbrains.jewel.ui.component.OutlinedButton
+import org.jetbrains.jewel.ui.component.IconButton
 import org.jetbrains.jewel.ui.component.Text
 
 private val logger = Logger.getInstance("ToolExecutionLink")
@@ -194,6 +194,7 @@ private fun ToolExecutionRow(
                     .padding(horizontal = 8.dp, vertical = 6.dp),
         ) {
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
@@ -216,61 +217,76 @@ private fun ToolExecutionRow(
                         modifier = Modifier.size(14.dp),
                     )
                 }
-                if (hasFileLink) {
-                    Text(
-                        text = displayPrefix,
-                        style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, fontWeight = FontWeight.Medium),
-                    )
-                    Box(
-                        modifier = Modifier
-                            .pointerHoverIcon(handPointer)
-                            .pointerMoveFilter(
-                                onEnter = {
-                                    hovered = true
-                                    false
-                                },
-                                onExit = {
-                                    hovered = false
-                                    false
-                                },
-                            )
-                            .clickable {
-                                frontendLinkLog(
-                                    project,
-                                    FrontendLogLevel.INFO,
-                                    "ToolExecutionRow.click filePath=$filePath"
-                                )
-                                scope.launch {
-                                    runCatching {
-                                        durable {
-                                            QuantaBackendApi.getInstance()
-                                                .openProjectFile(project.projectId(), filePath!!)
-                                        }
-                                    }.onFailure { error ->
-                                        frontendLinkLog(
-                                            project,
-                                            FrontendLogLevel.ERROR,
-                                            "ToolExecutionRow.openProjectFile failed: ${error.message}"
-                                        )
-                                    }
-                                }
-                            },
-                    ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    if (hasFileLink) {
                         Text(
-                            text = linkDisplayName ?: fileName,
-                            style = JewelTheme.defaultTextStyle.copy(
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = Color(0xFF69B7FF),
-                                textDecoration = TextDecoration.Underline,
-                            ),
+                            text = displayPrefix,
+                            style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, fontWeight = FontWeight.Medium),
+                        )
+                        Box(
+                            modifier = Modifier
+                                .pointerHoverIcon(handPointer)
+                                .pointerMoveFilter(
+                                    onEnter = {
+                                        hovered = true
+                                        false
+                                    },
+                                    onExit = {
+                                        hovered = false
+                                        false
+                                    },
+                                )
+                                .clickable {
+                                    frontendLinkLog(
+                                        project,
+                                        FrontendLogLevel.INFO,
+                                        "ToolExecutionRow.click filePath=$filePath"
+                                    )
+                                    scope.launch {
+                                        runCatching {
+                                            durable {
+                                                QuantaBackendApi.getInstance()
+                                                    .openProjectFile(project.projectId(), filePath!!)
+                                            }
+                                        }.onFailure { error ->
+                                            frontendLinkLog(
+                                                project,
+                                                FrontendLogLevel.ERROR,
+                                                "ToolExecutionRow.openProjectFile failed: ${error.message}"
+                                            )
+                                        }
+                                    }
+                                },
+                        ) {
+                            Text(
+                                text = linkDisplayName ?: fileName,
+                                style = JewelTheme.defaultTextStyle.copy(
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color(0xFF69B7FF),
+                                    textDecoration = TextDecoration.Underline,
+                                ),
+                            )
+                        }
+                    } else {
+                        Text(
+                            text = item.displayText,
+                            style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, fontWeight = FontWeight.Medium),
                         )
                     }
-                } else {
-                    Text(
-                        text = item.displayText,
-                        style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, fontWeight = FontWeight.Medium),
-                    )
+                }
+                if (!detailText.isNullOrBlank()) {
+                    IconButton(onClick = { detailsExpanded = !detailsExpanded }) {
+                        Icon(
+                            key = ChatAppIcons.ToolStatus.details,
+                            contentDescription = if (detailsExpanded) "Hide details" else "Show details",
+                            modifier = Modifier.size(14.dp),
+                        )
+                    }
                 }
             }
             val secondary =
@@ -290,28 +306,22 @@ private fun ToolExecutionRow(
                     )
                 }
             }
-            if (!detailText.isNullOrBlank()) {
+            if (!detailText.isNullOrBlank() && detailsExpanded) {
                 Spacer(modifier = Modifier.height(4.dp))
-                OutlinedButton(onClick = { detailsExpanded = !detailsExpanded }) {
-                    Text(if (detailsExpanded) "Hide details" else "Show details")
-                }
-                if (detailsExpanded) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color.White.copy(alpha = 0.04f), RoundedCornerShape(6.dp))
-                            .padding(8.dp),
-                    ) {
-                        SelectionContainer {
-                            Text(
-                                text = detailText,
-                                style = JewelTheme.defaultTextStyle.copy(
-                                    fontSize = 11.sp,
-                                    color = ChatAppColors.Text.timestamp,
-                                ),
-                            )
-                        }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.White.copy(alpha = 0.04f), RoundedCornerShape(6.dp))
+                        .padding(8.dp),
+                ) {
+                    SelectionContainer {
+                        Text(
+                            text = detailText,
+                            style = JewelTheme.defaultTextStyle.copy(
+                                fontSize = 11.sp,
+                                color = ChatAppColors.Text.timestamp,
+                            ),
+                        )
                     }
                 }
             }

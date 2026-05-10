@@ -157,39 +157,51 @@ fun PromptInput(
                     }
                 }
                 Row(
-                    modifier = Modifier
-                        .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
-                        .padding(horizontal = 8.dp, vertical = 5.dp)
-                        .pointerMoveFilter(
-                            onEnter = {
-                                planHideJob?.cancel()
-                                planHovered = true
-                                false
-                            },
-                            onExit = {
-                                planHideJob?.cancel()
-                                planHideJob = scope.launch {
-                                    delay(120)
-                                    planHovered = false
-                                }
-                                false
-                            },
-                        ),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Icon(
-                        key = planStatusIcon,
-                        contentDescription = displayedPlanStatus,
-                        modifier = Modifier.size(12.dp),
-                    )
-                    Text(
-                        text = "Plan",
-                        style = JewelTheme.defaultTextStyle.copy(
-                            fontSize = 11.sp,
-                            color = Color.White,
-                        ),
-                    )
+                    Row(
+                        modifier = Modifier
+                            .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 8.dp, vertical = 5.dp)
+                            .pointerMoveFilter(
+                                onEnter = {
+                                    planHideJob?.cancel()
+                                    planHovered = true
+                                    false
+                                },
+                                onExit = {
+                                    planHideJob?.cancel()
+                                    planHideJob = scope.launch {
+                                        delay(120)
+                                        planHovered = false
+                                    }
+                                    false
+                                },
+                            ),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(
+                            key = planStatusIcon,
+                            contentDescription = displayedPlanStatus,
+                            modifier = Modifier.size(12.dp),
+                        )
+                        Text(
+                            text = "Plan",
+                            style = JewelTheme.defaultTextStyle.copy(
+                                fontSize = 11.sp,
+                                color = Color.White,
+                            ),
+                        )
+                    }
+
+                    OutlinedButton(
+                        modifier = Modifier.padding(horizontal = 4.dp),
+                        onClick = onToggleAgenticMode,
+                    ) {
+                        Text(if (agenticEnabled) "Agentic On" else "Agentic Mode")
+                    }
                 }
             }
 
@@ -231,17 +243,7 @@ fun PromptInput(
                             )
                         }
 
-                        OutlinedButton(
-                            modifier = Modifier.padding(horizontal = 4.dp),
-                            onClick = onToggleAgenticMode,
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            ) {
-                                Text(if (agenticEnabled) "Agentic On" else "Agentic Mode")
-                            }
-                        }
+
 
                         IconButton(onClick = onToggleVoiceFeedback) {
                             Icon(
@@ -309,18 +311,6 @@ fun PromptInput(
                                 },
                                 contentDescription = "Toggle Microphone",
                             )
-                        }
-
-                        OutlinedButton(
-                            modifier = Modifier.padding(horizontal = 4.dp),
-                            onClick = onToggleAgenticMode,
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            ) {
-                                Text(if (agenticEnabled) "Agentic On" else "Agentic Mode")
-                            }
                         }
 
                         IconButton(onClick = {

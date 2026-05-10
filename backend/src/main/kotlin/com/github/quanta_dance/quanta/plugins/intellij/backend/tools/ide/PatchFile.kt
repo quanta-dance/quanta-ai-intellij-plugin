@@ -134,6 +134,31 @@ class PatchFile : ToolInterface<String> {
         return if (oneLine.length <= maxChars) oneLine else oneLine.take(maxChars) + "…"
     }
 
+    private fun firstDifferenceSummary(
+        expected: String,
+        actual: String,
+        baseStartLine1: Int,
+    ): String {
+        val expectedLines = normalizeForCompare(expected).split("\n")
+        val actualLines = normalizeForCompare(actual).split("\n")
+        val firstDiffIndex =
+            (0 until maxOf(expectedLines.size, actualLines.size)).firstOrNull { idx ->
+                expectedLines.getOrNull(idx) != actualLines.getOrNull(idx)
+            } ?: return ""
+        val expectedLine = expectedLines.getOrNull(firstDiffIndex).orEmpty()
+        val actualLine = actualLines.getOrNull(firstDiffIndex).orEmpty()
+        val expectedChar =
+            (0 until maxOf(expectedLine.length, actualLine.length)).firstOrNull { i ->
+                expectedLine.getOrNull(i) != actualLine.getOrNull(i)
+            } ?: 0
+        return " firstDiff=line ${baseStartLine1 + firstDiffIndex}, char ${expectedChar + 1}, expectedLine='${
+            preview(
+                expectedLine,
+                160
+            )
+        }', actualLine='${preview(actualLine, 160)}'"
+    }
+
     private fun sha256Normalized(text: String): String {
         val norm = text.replace("\r\n", "\n").replace("\r", "\n")
         val md = MessageDigest.getInstance("SHA-256")
@@ -241,7 +266,9 @@ class PatchFile : ToolInterface<String> {
                 }
             mismatchesOut?.add(
                 "Patch $patchIndex1: expectedText mismatch at lines ${patch.fromLine}-${patch.toLine} ($reason). " +
-                        "expected='${preview(expectedRaw)}' actual='${preview(baseSlice)}'" + actualExtra,
+                        "expected='${preview(expectedRaw)}' actual='${preview(baseSlice)}'" +
+                        firstDifferenceSummary(expectedRaw, baseSlice, patch.fromLine) +
+                        actualExtra,
             )
             return null
         }
@@ -296,7 +323,9 @@ class PatchFile : ToolInterface<String> {
             }
         mismatchesOut?.add(
             "Patch $patchIndex1: expectedText mismatch at lines ${patch.fromLine}-${patch.toLine} ($reason). " +
-                    "expected='${preview(expectedRaw)}' actual='${preview(baseSlice)}'" + actualExtra,
+                    "expected='${preview(expectedRaw)}' actual='${preview(baseSlice)}'" +
+                    firstDifferenceSummary(expectedRaw, baseSlice, patch.fromLine) +
+                    actualExtra,
         )
         return null
     }

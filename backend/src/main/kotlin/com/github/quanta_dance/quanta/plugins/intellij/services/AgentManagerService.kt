@@ -4,11 +4,14 @@
 package com.github.quanta_dance.quanta.plugins.intellij.services
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.AgentChannelStateService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.rpc.BackendSettingsRpcApi
+import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQuantaSettingsState
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.Instructions
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelAuthorTypeDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventKindDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskStatusDto
 import com.intellij.openapi.Disposable
+import com.openai.models.ChatModel
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
@@ -579,6 +582,8 @@ class AgentManagerService(
             return agents.keys.toList()
         }
 
+        val selectedModels = chooseDefaultTeamModels()
+
         // Common communication tools for sub-agents.
         // Note: we intentionally do NOT grant AgentReadInboxTool to sub-agents.
         // Inbox messages are delivered automatically at the start of each turn.
@@ -638,7 +643,7 @@ class AgentManagerService(
             createAgent(
                 AgentConfig(
                     role = "Developer",
-                    model = null,
+                    model = selectedModels["Developer"],
                     instructions = "Develop and implement code changes. Do not run Gradle tasks; coordinate with Tester.",
                     includeMcp = false,
                     allowedBuiltInTools = true,
@@ -649,7 +654,7 @@ class AgentManagerService(
             createAgent(
                 AgentConfig(
                     role = "Tester",
-                    model = null,
+                    model = selectedModels["Tester"],
                     instructions = "Run Gradle tests/build and report failures and key logs. Avoid editing code.",
                     includeMcp = false,
                     allowedBuiltInTools = true,
@@ -660,7 +665,7 @@ class AgentManagerService(
             createAgent(
                 AgentConfig(
                     role = "Analitic",
-                    model = null,
+                    model = selectedModels["Analitic"],
                     instructions = "Analyze project structure and requirements; provide concise guidance. Avoid editing code.",
                     includeMcp = false,
                     allowedBuiltInTools = true,
@@ -668,6 +673,55 @@ class AgentManagerService(
                 ),
             )
         return ids
+    }
+
+    private fun chooseDefaultTeamModels(): Map<String, String> {
+        val settings = BackendQuantaSettingsState.instance.state
+        val availableModels = BackendSettingsRpcApi.AVAILABLE_CHAT_MODELS
+        val prompt = buildString {
+            append("Choose the best model for each default agent role from this allowed list only: ")
+            append(availableModels.joinToString(", "))
+            append(". Return exactly three lines in the format Role=model, one for Developer, Tester, and Analitic. ")
+            append("Use only allowed model names and prefer smaller models unless a role clearly needs more capability.")
+        }
+        return try {
+            val openAI = project.service<OpenAIService>()
+            val (text, _) = openAI.agentTurn(
+                inputs = mutableListOf(
+                    ResponseInputItem.ofMessage(
+                        ResponseInputItem.Message.builder()
+                            .role(ResponseInputItem.Message.Role.SYSTEM)
+                            .addInputTextContent("You are the manager choosing models for a default team.")
+                            .build(),
+                    ),
+                    ResponseInputItem.ofMessage(
+                        ResponseInputItem.Message.builder()
+                            .role(ResponseInputItem.Message.Role.USER)
+                            .addInputTextContent(prompt)
+                            .build(),
+                    ),
+                ),
+                previousId = null,
+                overrideInstructions = null,
+                overrideModel = settings.aiChatModel,
+                allowedToolClassFilter = { false },
+                includeMcp = false,
+                agentLabel = "Manager",
+                allowedBuiltInNames = emptySet(),
+                allowedMcpNames = emptySet(),
+            )
+            text.lineSequence()
+                .mapNotNull { line ->
+                    val parts = line.split("=", limit = 2)
+                    if (parts.size != 2) return@mapNotNull null
+                    val role = parts[0].trim()
+                    val model = parts[1].trim()
+                    if (role.isBlank() || model.isBlank()) null else role to model
+                }
+                .toMap()
+        } catch (_: Throwable) {
+            emptyMap()
+        }
     }
 
     fun removeAgent(agentId: String): Boolean {
@@ -750,7 +804,8 @@ class AgentManagerService(
     fun sendMessageAsync(
         agentId: String,
         message: String,
-    ): CompletableFuture<AgentTaskResult> { // unchanged
+        existingTaskId: String? = null,
+    ): CompletableFuture<AgentTaskResult> {
         val enabled = QuantaAISettingsState.instance.state.agenticEnabled ?: true
         if (!enabled) return CompletableFuture.completedFuture(
             AgentTaskResult(
@@ -774,18 +829,24 @@ class AgentManagerService(
                 )
         val requestId = UUID.randomUUID().toString()
         val channelState = project.service<AgentChannelStateService>()
-        val delegatedTask = channelState.createTask(
-            title = message.take(120),
-            assignedAgentIds = listOf(agentId),
-            assignedRoles = listOf(session.config.role),
-        )
-        channelState.updateTaskStatus(delegatedTask.id, DelegatedTaskStatusDto.RUNNING, summary = "Started")
-        channelState.appendEvent(
-            kind = AgentChannelEventKindDto.DELEGATION_STARTED,
-            authorType = AgentChannelAuthorTypeDto.MANAGER,
-            text = "Assigned ${session.config.role}: ${message.take(160)}",
-            relatedTaskId = delegatedTask.id,
-        )
+        val delegatedTask =
+            existingTaskId?.let { existingId ->
+                channelState.tasksFlow.value.firstOrNull { it.id == existingId }
+            } ?: channelState.createTask(
+                title = message.take(120),
+                requestText = message,
+                assignedAgentIds = listOf(agentId),
+                assignedRoles = listOf(session.config.role),
+            )
+        if (existingTaskId == null) {
+            channelState.updateTaskStatus(delegatedTask.id, DelegatedTaskStatusDto.RUNNING, summary = "Started")
+            channelState.appendEvent(
+                kind = AgentChannelEventKindDto.DELEGATION_STARTED,
+                authorType = AgentChannelAuthorTypeDto.MANAGER,
+                text = "Assigned ${session.config.role}: ${message.take(160)}",
+                relatedTaskId = delegatedTask.id,
+            )
+        }
         pcs.firePropertyChange(
             "agent_task_started",
             null,

@@ -85,6 +85,9 @@ class OpenAIService(
     private var lastInjectedAgentsRosterHash: Int? = null
 
     @Volatile
+    private var lastInjectedPlanHash: Int? = null
+
+    @Volatile
     private var toolPolicyHintInjectedThisIdeSession: Boolean = false
 
     @Volatile
@@ -657,6 +660,7 @@ class OpenAIService(
         lastInjectedSummaryHash = null
         lastInjectedAgentsMdHash = null
         lastInjectedAgentsRosterHash = null
+        lastInjectedPlanHash = null
 
         // Reset agents thread pointers as well; keep their transcripts.
         try {
@@ -676,6 +680,7 @@ class OpenAIService(
         lastInjectedSummaryHash = null
         lastInjectedAgentsMdHash = null
         lastInjectedAgentsRosterHash = null
+        lastInjectedPlanHash = null
 
         // Reset global token usage counters
         try {
@@ -719,6 +724,7 @@ class OpenAIService(
         lastInjectedSummaryHash = null
         lastInjectedAgentsMdHash = null
         lastInjectedAgentsRosterHash = null
+        lastInjectedPlanHash = null
     }
 
     fun stopAndClearSession() {
@@ -974,25 +980,27 @@ class OpenAIService(
                                 }
 
                                 try {
-                                    when (effectivePlanStatus) {
-                                        "DRAFT" -> planService.applyDraftFromResponse(
-                                            goal = message.planGoal,
-                                            definitionOfDone = message.planDefinitionOfDone,
-                                            tasks = message.planTasks,
-                                        )
+                                    if (!sessionPlanToolCalledThisTurn) {
+                                        when (effectivePlanStatus) {
+                                            "DRAFT" -> planService.applyDraftFromResponse(
+                                                goal = message.planGoal,
+                                                definitionOfDone = message.planDefinitionOfDone,
+                                                tasks = message.planTasks,
+                                            )
 
-                                        "ACTIVE" -> {
-                                            if (!planService.isActive()) {
-                                                planService.applyDraftFromResponse(
-                                                    goal = message.planGoal,
-                                                    definitionOfDone = message.planDefinitionOfDone,
-                                                    tasks = message.planTasks,
-                                                )
-                                                planService.activate()
+                                            "ACTIVE" -> {
+                                                if (!planService.isActive()) {
+                                                    planService.applyDraftFromResponse(
+                                                        goal = message.planGoal,
+                                                        definitionOfDone = message.planDefinitionOfDone,
+                                                        tasks = message.planTasks,
+                                                    )
+                                                    planService.activate()
+                                                }
                                             }
-                                        }
 
-                                        "DONE" -> planService.markAllTasksDone()
+                                            "DONE" -> planService.markAllTasksDone()
+                                        }
                                     }
                                 } catch (_: Throwable) {
                                 }
@@ -1042,17 +1050,12 @@ class OpenAIService(
                                         lastPlanLoopSignature = currentPlanLoopSignature
                                         repeatedPlanLoopSignatureCount = 0
                                     }
-                                    if (repeatedPlanLoopSignatureCount >= 2 && pendingToolOutputs.isEmpty()) {
-                                        if (continuationCount < maxContinuations) {
-                                            continuationCount++
-                                            reprocess = true
-                                            inputs.add(
-                                                systemMessage(
-                                                    "You are repeating the same ACTIVE-plan response without making progress. Do not restate prior analysis or ask the user to confirm routine next steps. Execute the next concrete action now, or if truly blocked ask exactly one specific external-dependency question.",
-                                                ),
-                                            )
-                                            return@forEach
-                                        }
+                                    if (repeatedPlanLoopSignatureCount >= 1 && pendingToolOutputs.isEmpty()) {
+                                        project.service<ToolWindowService>().addToolingMessage(
+                                            agentLabel,
+                                            "Stopping repeated ACTIVE-plan loop after identical response signature #$repeatedPlanLoopSignatureCount; awaiting a materially different next action",
+                                        )
+                                        return@forEach
                                     }
                                 } else {
                                     lastPlanLoopSignature = currentPlanLoopSignature
@@ -1584,8 +1587,10 @@ class OpenAIService(
                 if (planIsActive) {
                     try {
                         val planText = planService.loadText(maxChars = 8_000)
-                        if (planText.isNotBlank()) {
+                        val planHash = planText.hashCode()
+                        if (planText.isNotBlank() && (lastInjectedPlanHash == null || lastInjectedPlanHash != planHash)) {
                             requestInputs.add(systemMessage("Session plan (.quantadance/session/plan.md):\n" + planText))
+                            lastInjectedPlanHash = planHash
                         }
                         requestInputs.add(
                             systemMessage(
@@ -1595,6 +1600,7 @@ class OpenAIService(
                                         "(Developer Agent / Test Agent / Project Analyst) and integrate their replies. " +
                                         "Only do work yourself when coordination-only or trivial. " +
                                         "Do NOT ask the user questions unless truly blocked. " +
+                                        "If the current user request is clearly about team management (create default team, hire, remove, or reassign agents), handle it directly and do not convert it into a plan update. " +
                                         "If blocked, set nextStep=WAIT_USER, set planNeedsUserConfirmation=true, " +
                                         "and put exactly one question in planBlockingQuestion. " +
                                         "Otherwise, keep nextStep=CONTINUE until all tasks are [x], then DONE.",
@@ -1822,32 +1828,34 @@ class OpenAIService(
 
                                             // Capture or update plan content from response.
                                             try {
-                                                when (effectivePlanStatus) {
-                                                    "DRAFT" -> {
-                                                        planServiceForTurn.applyDraftFromResponse(
-                                                            goal = message.planGoal,
-                                                            definitionOfDone = message.planDefinitionOfDone,
-                                                            tasks = message.planTasks,
-                                                        )
-                                                        if (message.planNeedsUserConfirmation == true) {
-                                                            pendingTeamAddAgents = message.teamAddAgents
-                                                            pendingTeamRemoveRoles = message.teamRemoveRoles
-                                                        }
-                                                    }
-
-                                                    "ACTIVE" -> {
-                                                        if (!planServiceForTurn.isActive()) {
+                                                if (!sessionPlanToolCalledThisTurn) {
+                                                    when (effectivePlanStatus) {
+                                                        "DRAFT" -> {
                                                             planServiceForTurn.applyDraftFromResponse(
                                                                 goal = message.planGoal,
                                                                 definitionOfDone = message.planDefinitionOfDone,
                                                                 tasks = message.planTasks,
                                                             )
-                                                            planServiceForTurn.activate()
+                                                            if (message.planNeedsUserConfirmation == true) {
+                                                                pendingTeamAddAgents = message.teamAddAgents
+                                                                pendingTeamRemoveRoles = message.teamRemoveRoles
+                                                            }
                                                         }
-                                                    }
 
-                                                    "DONE" -> {
-                                                        planServiceForTurn.markAllTasksDone()
+                                                        "ACTIVE" -> {
+                                                            if (!planServiceForTurn.isActive()) {
+                                                                planServiceForTurn.applyDraftFromResponse(
+                                                                    goal = message.planGoal,
+                                                                    definitionOfDone = message.planDefinitionOfDone,
+                                                                    tasks = message.planTasks,
+                                                                )
+                                                                planServiceForTurn.activate()
+                                                            }
+                                                        }
+
+                                                        "DONE" -> {
+                                                            planServiceForTurn.markAllTasksDone()
+                                                        }
                                                     }
                                                 }
                                             } catch (_: Throwable) {

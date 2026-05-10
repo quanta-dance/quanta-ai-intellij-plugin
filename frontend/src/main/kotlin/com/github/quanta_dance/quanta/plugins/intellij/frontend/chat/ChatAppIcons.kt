@@ -28,6 +28,7 @@ object ChatAppIcons {
         val running = AllIconsKeys.Actions.Suspend
         val success = AllIconsKeys.General.InspectionsOK
         val failed = AllIconsKeys.General.Error
+        val details = AllIconsKeys.General.Information
     }
 
     object PlanStatus {

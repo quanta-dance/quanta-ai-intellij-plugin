@@ -70,16 +70,6 @@ class ValidateClassFileTool : ToolInterface<List<String>> {
             return errors
         }
 
-        // Commit docs so PSI is up to date
-        try {
-            FileDocumentManager.getInstance().saveAllDocuments()
-        } catch (_: Throwable) {
-        }
-        try {
-            PsiDocumentManager.getInstance(project).commitAllDocuments()
-        } catch (_: Throwable) {
-        }
-
         val psiFile = PsiManager.getInstance(project).findFile(vFile)
         if (psiFile == null) {
             errors.add("PSI file not found.")
@@ -97,6 +87,14 @@ class ValidateClassFileTool : ToolInterface<List<String>> {
 
     override fun execute(project: Project): List<String> {
         if (filePath.isNullOrEmpty()) return listOf("Class file path is not specified.")
+        try {
+            FileDocumentManager.getInstance().saveAllDocuments()
+        } catch (_: Throwable) {
+        }
+        try {
+            PsiDocumentManager.getInstance(project).commitAllDocuments()
+        } catch (_: Throwable) {
+        }
         return ApplicationManager.getApplication().runReadAction<List<String>> {
             val errors = findErrors(project)
             project.service<ToolWindowService>().addToolingMessage(
