@@ -1,14 +1,11 @@
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.chat
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.runtime.*
@@ -23,6 +20,7 @@ import androidx.compose.ui.input.pointer.pointerMoveFilter
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.zIndex
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.ModularPluginFrontendBundle
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel.ChatViewModel
@@ -174,12 +172,6 @@ fun ChatApp(project: Project, viewModel: ChatViewModel, voiceService: FrontendAI
                 onSessionDeleted = { sessionId -> viewModel.onDeleteSession(sessionId) },
             )
 
-            ChannelActivityPanel(
-                modifier = Modifier.fillMaxWidth(),
-                tasks = delegatedTasks,
-                events = channelEvents,
-            )
-
             ChatList(
                 project = project,
                 modifier = Modifier
@@ -312,6 +304,7 @@ private fun taskStatusColor(status: DelegatedTaskStatusDto): Color = when (statu
     DelegatedTaskStatusDto.FAILED -> Color(0xFFBF616A)
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun AgentsPanel(
     modifier: Modifier = Modifier,
@@ -347,24 +340,45 @@ private fun AgentsPanel(
             ) {
                 agents.forEach { agent ->
                     val agentColor = colorForAgent(agent.id)
-                    Row(
-                        modifier = Modifier
-                            .widthIn(min = 150.dp, max = 220.dp)
-                            .background(Color.White.copy(alpha = 0.04f), RoundedCornerShape(10.dp))
-                            .padding(10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        AgentAvatar(agent = agent, color = agentColor)
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                    val showProfile = remember(agent.id) { mutableStateOf(false) }
+                    Box {
+                        Row(
+                            modifier = Modifier
+                                .widthIn(min = 150.dp, max = 220.dp)
+                                .background(Color.White.copy(alpha = 0.04f), RoundedCornerShape(10.dp))
+                                .padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
-                            Text(agent.role.replaceFirstChar { it.uppercase() }, fontWeight = FontWeight.Medium)
-                            agent.model?.takeIf { it.isNotBlank() }?.let {
-                                Text(text = it, fontSize = 11.sp)
+                            AgentAvatar(
+                                agent = agent,
+                                color = agentColor,
+                                onClick = { showProfile.value = true },
+                            )
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                            ) {
+                                Text(agent.role.replaceFirstChar { it.uppercase() }, fontWeight = FontWeight.Medium)
+                                Text(
+                                    text = agent.model?.takeIf { it.isNotBlank() } ?: "unknown model",
+                                    fontSize = 11.sp,
+                                )
+                                Text(
+                                    text = "Profile",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF88C0D0),
+                                    modifier = Modifier.clickable { showProfile.value = true },
+                                )
                             }
-                            Text(text = agent.id.take(8), fontSize = 11.sp, color = ChatAppColors.Text.disabled)
+                        }
+
+                        if (showProfile.value) {
+                            AgentProfileDialog(
+                                agent = agent,
+                                color = agentColor,
+                                onDismiss = { showProfile.value = false },
+                            )
                         }
                     }
                 }
@@ -377,11 +391,13 @@ private fun AgentsPanel(
 private fun AgentAvatar(
     agent: AgentInfoDto,
     color: Color,
+    onClick: (() -> Unit)? = null,
 ) {
     Box(
         modifier = Modifier
             .size(28.dp)
-            .background(color, RoundedCornerShape(999.dp)),
+            .background(color, RoundedCornerShape(999.dp))
+            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -390,6 +406,60 @@ private fun AgentAvatar(
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
         )
+    }
+}
+
+@Composable
+private fun AgentProfileDialog(
+    agent: AgentInfoDto,
+    color: Color,
+    onDismiss: () -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Box(
+            modifier = Modifier
+                .widthIn(min = 320.dp, max = 520.dp)
+                .heightIn(max = 420.dp)
+                .background(Color(0xFF1E1E1E), RoundedCornerShape(14.dp))
+                .padding(16.dp),
+        ) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AgentAvatar(agent = agent, color = color)
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            agent.role.replaceFirstChar { it.uppercase() },
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White
+                        )
+                        Text(agent.model ?: "unknown model", fontSize = 11.sp, color = Color(0xFFB0BEC5))
+                    }
+                }
+                ProfileField("ID", agent.id)
+                ProfileField("Model", agent.model ?: "unknown model")
+                ProfileField("Role", agent.role)
+                if (!agent.instructions.isNullOrBlank()) {
+                    ProfileField("Custom instructions", agent.instructions!!)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProfileField(
+    label: String,
+    value: String,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(label, fontSize = 10.sp, color = Color(0xFF88C0D0))
+        Text(value, fontSize = 11.sp, color = Color.White)
     }
 }
 

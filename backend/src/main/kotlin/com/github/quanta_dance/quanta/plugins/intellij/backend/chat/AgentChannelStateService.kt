@@ -1,11 +1,15 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.chat
 
+import com.github.quanta_dance.quanta.plugins.intellij.services.AgentManagerService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.*
 import com.intellij.openapi.components.Service
+import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import java.util.*
 
 @Service(Service.Level.PROJECT)
@@ -13,6 +17,7 @@ class AgentChannelStateService(
     private val project: Project,
 ) {
     private val persistence: ChatConversationStateService = project.getService(ChatConversationStateService::class.java)
+    private val runningTaskIds = Collections.synchronizedSet(mutableSetOf<String>())
 
     private val _events = MutableStateFlow(persistence.loadActiveChannelEvents())
     val eventsFlow: StateFlow<List<AgentChannelEventDto>> = _events.asStateFlow()
@@ -70,6 +75,7 @@ class AgentChannelStateService(
 
     fun createTask(
         title: String,
+        requestText: String,
         assignedAgentIds: List<String>,
         assignedRoles: List<String>,
         createdByRole: String = "Manager",
@@ -82,6 +88,7 @@ class AgentChannelStateService(
         val task = DelegatedTaskDto(
             id = UUID.randomUUID().toString(),
             title = title,
+            requestText = requestText,
             createdByRole = createdByRole,
             assignedAgentIds = assignedAgentIds,
             assignedRoles = assignedRoles,
@@ -91,7 +98,11 @@ class AgentChannelStateService(
             createdAtEpochMs = now,
             updatedAtEpochMs = now,
         )
-        return upsertTask(task)
+        return upsertTask(task).also {
+            if (it.status == DelegatedTaskStatusDto.QUEUED) {
+                triggerReadyTasks()
+            }
+        }
     }
 
     fun areDependenciesSatisfied(dependsOnTaskIds: List<String>): Boolean =
@@ -120,6 +131,7 @@ class AgentChannelStateService(
         )
         if (status == DelegatedTaskStatusDto.DONE) {
             promoteSatisfiedBlockedTasks()
+            triggerReadyTasks()
         }
     }
 
@@ -136,5 +148,26 @@ class AgentChannelStateService(
             }
         }
         persistence.saveActiveDelegatedTasks(_tasks.value)
+    }
+
+    fun triggerReadyTasks() {
+        val manager = project.service<AgentManagerService>()
+        readyQueuedTasks().forEach { task ->
+            val agentId = task.assignedAgentIds.firstOrNull() ?: return@forEach
+            if (!runningTaskIds.add(task.id)) return@forEach
+            updateTaskStatus(task.id, DelegatedTaskStatusDto.RUNNING, summary = "Started")
+            appendEvent(
+                kind = AgentChannelEventKindDto.DELEGATION_UPDATED,
+                authorType = AgentChannelAuthorTypeDto.MANAGER,
+                text = "Auto-running task: ${task.title}",
+                relatedTaskId = task.id,
+            )
+            manager.sendMessageAsync(agentId, task.requestText, task.id).whenComplete { _, _ ->
+                runningTaskIds.remove(task.id)
+                kotlinx.coroutines.CoroutineScope(Dispatchers.Default).launch {
+                    triggerReadyTasks()
+                }
+            }
+        }
     }
 }

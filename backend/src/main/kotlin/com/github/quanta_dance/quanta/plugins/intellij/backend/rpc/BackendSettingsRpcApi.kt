@@ -9,7 +9,7 @@ import kotlinx.coroutines.withContext
 
 class BackendSettingsRpcApi : QuantaSettingsApi {
     companion object {
-        private val AVAILABLE_CHAT_MODELS =
+        val AVAILABLE_CHAT_MODELS =
             listOf(
                 //ChatModel.GPT_5_5.toString(),
                 //ChatModel.GPT_5_5_MINI.toString(),

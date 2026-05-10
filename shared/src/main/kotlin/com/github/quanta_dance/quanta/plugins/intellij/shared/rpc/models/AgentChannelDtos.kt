@@ -7,6 +7,7 @@ import kotlinx.serialization.Serializable
 data class DelegatedTaskDto(
     val id: String,
     val title: String,
+    val requestText: String = "",
     val createdByAgentId: String? = null,
     val createdByRole: String? = null,
     val assignedAgentIds: List<String> = emptyList(),

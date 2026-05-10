@@ -39,6 +39,7 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
     data class PersistedDelegatedTask(
         var id: String = "",
         var title: String = "",
+        var requestText: String = "",
         var createdByAgentId: String? = null,
         var createdByRole: String? = null,
         var assignedAgentIds: MutableList<String> = mutableListOf(),
@@ -193,6 +194,7 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
             DelegatedTaskDto(
                 id = saved.id,
                 title = saved.title,
+                requestText = saved.requestText,
                 createdByAgentId = saved.createdByAgentId,
                 createdByRole = saved.createdByRole,
                 assignedAgentIds = saved.assignedAgentIds,
@@ -216,6 +218,7 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
             PersistedDelegatedTask(
                 id = task.id,
                 title = task.title,
+                requestText = task.requestText,
                 createdByAgentId = task.createdByAgentId,
                 createdByRole = task.createdByRole,
                 assignedAgentIds = task.assignedAgentIds.toMutableList(),

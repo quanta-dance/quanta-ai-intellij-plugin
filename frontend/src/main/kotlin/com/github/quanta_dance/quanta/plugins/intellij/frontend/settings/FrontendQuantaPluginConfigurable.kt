@@ -40,7 +40,6 @@ class FrontendQuantaPluginConfigurable : Configurable {
                     maxTokensValue != settings.maxTokens ||
                     aiChatModelValue != settings.aiChatModel ||
                     dynamicModelEnabled != (settings.dynamicModelEnabled ?: false) ||
-                    agenticEnabled != (settings.agenticEnabled ?: true) ||
                     debugEnabled != settings.debugEnabled ||
                     maxAutomaticTurns != settings.maxAutomaticTurns ||
                     terminalToolEnabled != (settings.terminalToolEnabled ?: false) ||
@@ -60,7 +59,6 @@ class FrontendQuantaPluginConfigurable : Configurable {
             settings.maxTokens = maxTokensValue
             settings.aiChatModel = aiChatModelValue
             settings.dynamicModelEnabled = dynamicModelEnabled
-            settings.agenticEnabled = agenticEnabled
             settings.debugEnabled = debugEnabled
             settings.maxAutomaticTurns = maxAutomaticTurns
             settings.terminalToolEnabled = terminalToolEnabled
@@ -84,7 +82,6 @@ class FrontendQuantaPluginConfigurable : Configurable {
             setAvailableModels(settings.availableChatModels)
             aiChatModelValue = settings.aiChatModel
             dynamicModelEnabled = settings.dynamicModelEnabled ?: false
-            agenticEnabled = settings.agenticEnabled ?: true
             debugEnabled = settings.debugEnabled
             maxAutomaticTurns = settings.maxAutomaticTurns
             terminalToolEnabled = settings.terminalToolEnabled ?: false
@@ -120,8 +117,7 @@ private class FrontendQuantaSettingsComponent {
     private val maxOutputTokensField = JBTextField()
     private val modelField = ComboBox<String>()
     private val dynamicModelEnabledField = JBCheckBox("Enable dynamic model switching")
-    private val agenticEnabledField = JBCheckBox("Enable agentic mode")
-    private val debugEnabledField = JBCheckBox("Enable debug messages in tool window")
+    private val debugEnabledField = JBCheckBox("Enable debug")
     private val maxAutomaticTurnsField = JBTextField().apply {
         toolTipText = "Maximum automatic CONTINUE turns per user request (1..100)."
     }
@@ -218,7 +214,6 @@ private class FrontendQuantaSettingsComponent {
             .addSeparator()
             .addLabeledComponent(JBLabel("AI chat model: "), modelField, 1, false)
             .addComponent(dynamicModelEnabledField)
-            .addComponent(agenticEnabledField)
             .addComponent(debugEnabledField)
             .addLabeledComponent(JBLabel("Max automatic turns: "), maxAutomaticTurnsField, 1, false)
             .addComponent(terminalToolEnabledField)
@@ -316,12 +311,6 @@ private class FrontendQuantaSettingsComponent {
         get() = dynamicModelEnabledField.isSelected
         set(value) {
             dynamicModelEnabledField.isSelected = value
-        }
-
-    var agenticEnabled: Boolean
-        get() = agenticEnabledField.isSelected
-        set(value) {
-            agenticEnabledField.isSelected = value
         }
 
     var debugEnabled: Boolean
