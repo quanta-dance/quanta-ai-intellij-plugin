@@ -4,6 +4,7 @@
 package com.github.quanta_dance.quanta.plugins.intellij.services
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.AgentChannelStateService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.ChatConversationStateService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.rpc.BackendSettingsRpcApi
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQuantaSettingsState
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.Instructions
@@ -77,19 +78,35 @@ class AgentManagerService(
     private val agentLastWakeRequestedAtMs = ConcurrentHashMap<String, Long>()
 
     init {
-        val st = QuantaAISettingsState.instance.state
-        st.agents.forEach { pa ->
+        reloadAgentsFromSession()
+    }
+
+    fun reloadAgentsFromSession() {
+        agents.clear()
+        executors.keys.toList().forEach { id ->
+            executors.remove(id)?.shutdownNow()
+        }
+        val persisted = project.service<ChatConversationStateService>().loadActiveAgents()
+        persisted.forEach { pa ->
             val session =
                 AgentSession(pa.id, AgentConfig(pa.role, pa.model, pa.instructions), previousId = pa.previousId)
             agents[pa.id] = session
             ensureExecutor(pa.id)
         }
+        try {
+            QuantaAISettingsState.instance.state.agents = persisted.toMutableList()
+        } catch (_: Throwable) {
+        }
+        pcs.firePropertyChange("agents", null, persisted.toList())
     }
 
     fun addPropertyChangeListener(listener: PropertyChangeListener) = pcs.addPropertyChangeListener(listener)
 
     fun getAgentsSnapshot(): List<AgentSnapshot> =
         agents.values.map { AgentSnapshot(it.id, it.config.role, it.config.instructions, it.config.model) }
+
+    fun getPersistedAgentProfiles(): List<QuantaAISettingsState.AgentProfile> =
+        QuantaAISettingsState.instance.state.agents.map { it.copy() }
 
     fun getAgentAllowedBuiltInNames(agentId: String): Set<String>? = agents[agentId]?.config?.allowedBuiltInNames
 
@@ -734,6 +751,7 @@ class AgentManagerService(
         }
         val st = QuantaAISettingsState.instance.state
         st.agents.removeIf { it.id == agentId }
+        project.service<ChatConversationStateService>().saveActiveAgents(st.agents)
         project.service<ToolWindowService>()
             .addToolingMessage("AgentManager", "Removed agent ${removed.config.role} [$agentId]")
         project.service<AgentChannelStateService>().appendEvent(
@@ -794,6 +812,7 @@ class AgentManagerService(
         st.agents.indices.forEach { idx ->
             st.agents[idx] = st.agents[idx].copy(previousId = null)
         }
+        project.service<ChatConversationStateService>().saveActiveAgents(st.agents)
         project.service<ToolWindowService>().addDebugMessage(
             "agents_reset",
             "Reset agents conversation state for new session",

@@ -51,6 +51,7 @@ class ChatConversationService(
         _messages.value = persistence.loadActiveMessages()
         _sessions.value = persistence.listSessions()
         openAIService.switchToSession(persistence.getActiveSessionId(), persistence.getActiveLastResponseId())
+        agentManager.reloadAgentsFromSession()
         agentManager.addPropertyChangeListener { event ->
             when (event.propertyName) {
                 "agent_task_started" -> {
@@ -80,24 +81,30 @@ class ChatConversationService(
     fun sessionsFlow(): Flow<List<ChatSessionDto>> = _sessions
 
     fun createNewSession() {
+        persistence.saveActiveAgents(agentManager.getPersistedAgentProfiles())
         val sessionId = persistence.createSession()
         _messages.value = emptyList()
         _sessions.value = persistence.listSessions()
         openAIService.switchToSession(sessionId, null)
+        agentManager.reloadAgentsFromSession()
     }
 
     fun activateSession(sessionId: String) {
+        persistence.saveActiveAgents(agentManager.getPersistedAgentProfiles())
         if (!persistence.activateSession(sessionId)) return
         _messages.value = persistence.loadActiveMessages()
         _sessions.value = persistence.listSessions()
         openAIService.switchToSession(sessionId, persistence.getActiveLastResponseId())
+        agentManager.reloadAgentsFromSession()
     }
 
     fun deleteSession(sessionId: String) {
+        persistence.saveActiveAgents(agentManager.getPersistedAgentProfiles())
         val nextSessionId = persistence.deleteSession(sessionId)
         _messages.value = persistence.loadActiveMessages()
         _sessions.value = persistence.listSessions()
         openAIService.switchToSession(nextSessionId, persistence.getActiveLastResponseId())
+        agentManager.reloadAgentsFromSession()
     }
 
     suspend fun sendUserMessage(messageContent: String) {
