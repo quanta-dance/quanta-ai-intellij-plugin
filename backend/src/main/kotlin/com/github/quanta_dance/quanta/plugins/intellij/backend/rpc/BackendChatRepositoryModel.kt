@@ -29,4 +29,7 @@ class BackendChatRepositoryModel(
     fun deleteSession(sessionId: String) = conversationService.deleteSession(sessionId)
 
     suspend fun sendMessage(messageContent: String) = conversationService.sendUserMessage(messageContent)
+
+    suspend fun sendScheduledReminder(reminderContext: String) =
+        conversationService.sendScheduledReminder(reminderContext)
 }

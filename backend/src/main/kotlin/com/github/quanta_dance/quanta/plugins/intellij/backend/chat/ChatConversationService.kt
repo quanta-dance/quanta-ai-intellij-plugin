@@ -298,6 +298,60 @@ class ChatConversationService(
         persistMessages()
     }
 
+    suspend fun sendScheduledReminder(reminderContext: String) {
+        withContext(Dispatchers.IO) {
+            val thinkingMessageId = appendAiThinkingMessage()
+            try {
+                val inputs = buildReminderRequestInputs(reminderContext)
+                val (responseText, _) = openAIService.agentTurn(
+                    inputs = inputs,
+                    previousId = null,
+                    agentLabel = "AI Manager",
+                )
+                replaceMessage(
+                    thinkingMessageId,
+                    chatMessageFactory.createAIMessage(responseText),
+                )
+                persistMessages()
+            } catch (e: Throwable) {
+                if (e is CancellationException) {
+                    clearThinkingMessages()
+                    throw e
+                }
+                replaceMessage(
+                    thinkingMessageId,
+                    chatMessageFactory.createAIMessage(
+                        "I want to remind you: ${
+                            reminderContext.trim().removePrefix("Reminder:").trim()
+                                .ifBlank { "please check your reminder." }
+                        }"
+                    ),
+                )
+                persistMessages()
+            }
+        }
+    }
+
+    private fun buildReminderRequestInputs(reminderContext: String): MutableList<ResponseInputItem> =
+        buildRequestInputs().apply {
+            add(
+                ResponseInputItem.ofMessage(
+                    ResponseInputItem.Message
+                        .builder()
+                        .addInputTextContent(
+                            "Scheduled reminder context (internal only):\n" +
+                                    reminderContext +
+                                    "\n\nWrite a short, natural reminder to the user. " +
+                                    "Do not say the reminder was acknowledged, delivered, fired, or triggered. " +
+                                    "Do not repeat the reminder context verbatim. " +
+                                    "Use first-person phrasing like 'I want to remind you ...'.",
+                        )
+                        .role(ResponseInputItem.Message.Role.SYSTEM)
+                        .build(),
+                ),
+            )
+        }
+
     private fun buildHistory(): List<ChatTurn> =
         _messages.value
             .filterNot { it.type == AI_THINKING }
