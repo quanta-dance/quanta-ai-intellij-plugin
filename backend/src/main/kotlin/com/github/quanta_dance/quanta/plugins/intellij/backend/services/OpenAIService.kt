@@ -12,7 +12,6 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQ
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.QuantaAISessionState
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ToolsRegistry
-import com.github.quanta_dance.quanta.plugins.intellij.services.ProjectAgentsFileManager
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus

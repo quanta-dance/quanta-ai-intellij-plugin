@@ -2,7 +2,6 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.services
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
-import com.github.quanta_dance.quanta.plugins.intellij.services.SessionPlanStatusService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.service
