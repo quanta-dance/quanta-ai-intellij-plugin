@@ -7,7 +7,6 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.rpc.BackendSettin
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQuantaSettingsState
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.Instructions
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.QuantaAISessionState
-import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelAuthorTypeDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventKindDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskStatusDto
@@ -149,10 +148,6 @@ class AgentManagerService(
                     "Inbox post: to=$toAgentId from=${from ?: "<null>"} kind=${kind ?: "<null>"} " +
                             "len=${text.length} inboxSize=${list.size}"
                 }
-                project.service<ToolWindowService>().addDebugMessage(
-                    "inbox_post",
-                    "to=$toAgentId from=${from ?: "<null>"} kind=${kind ?: "<null>"} inboxSize=${list.size}",
-                )
             } catch (_: Throwable) {
             }
 
@@ -182,10 +177,6 @@ class AgentManagerService(
         }
         agentLastWakeRequestedAtMs[agentId] = now
         pcs.firePropertyChange("agent_wake_requested", null, mapOf("agentId" to agentId, "at" to now))
-        try {
-            project.service<ToolWindowService>().addDebugMessage("wake_requested", "agent=$agentId at=$now")
-        } catch (_: Throwable) {
-        }
 
         // Do not auto-call OpenAI during unit tests.
         if (ApplicationManager.getApplication().isUnitTestMode) {
@@ -201,7 +192,6 @@ class AgentManagerService(
         if (!flag.compareAndSet(false, true)) {
             try {
                 QDLog.debug(logger) { "Wake skipped (already in flight): agent=$agentId" }
-                project.service<ToolWindowService>().addDebugMessage("wake_skip", "agent=$agentId alreadyInFlight=true")
             } catch (_: Throwable) {
             }
             return
@@ -210,8 +200,6 @@ class AgentManagerService(
         ensureExecutor(agentId).submit {
             try {
                 QDLog.debug(logger) { "Wake turn starting: agent=$agentId" }
-                project.service<ToolWindowService>().addDebugMessage("wake_start", "agent=$agentId")
-
                 // A lightweight wake turn. Inbox messages will be injected at start-of-turn and cleared.
                 val reply =
                     sendMessage(
@@ -221,13 +209,9 @@ class AgentManagerService(
                                 "If nothing is required, reply with DONE.",
                     )
                 QDLog.debug(logger) { "Wake turn finished: agent=$agentId replyLen=${reply.length}" }
-                project.service<ToolWindowService>()
-                    .addDebugMessage("wake_done", "agent=$agentId replyLen=${reply.length}")
             } catch (t: Throwable) {
                 try {
                     QDLog.warn(logger, { "Wake turn failed: agent=$agentId err=${t.message}" }, t)
-                    project.service<ToolWindowService>()
-                        .addDebugMessage("wake_error", "agent=$agentId err=${t.message}")
                 } catch (_: Throwable) {
                 }
             } finally {
@@ -254,10 +238,6 @@ class AgentManagerService(
         if (roster.isBlank()) return
         try {
             QDLog.debug(logger) { "Roster broadcast: from=${from ?: "<null>"} agents=${agents.size}" }
-            project.service<ToolWindowService>().addDebugMessage(
-                "roster_broadcast",
-                "from=${from ?: "<null>"} agents=${agents.size}",
-            )
         } catch (_: Throwable) {
         }
         agents.keys.forEach { id ->
@@ -570,7 +550,6 @@ class AgentManagerService(
         val session = AgentSession(id = id, config = config.copy(instructions = baseInstr))
         agents[id] = session
         ensureExecutor(id)
-        project.service<ToolWindowService>().addToolingMessage("AgentManager", "Created agent ${config.role} [$id]")
         try {
             broadcastRosterUpdate(from = "AgentManager")
         } catch (_: Throwable) {
@@ -751,8 +730,6 @@ class AgentManagerService(
         val st = QuantaAISessionState.instance.state
         st.agents.removeIf { it.id == agentId }
         project.service<ChatConversationStateService>().saveActiveAgents(st.agents)
-        project.service<ToolWindowService>()
-            .addToolingMessage("AgentManager", "Removed agent ${removed.config.role} [$agentId]")
         project.service<AgentChannelStateService>().appendEvent(
             kind = AgentChannelEventKindDto.AGENT_REMOVED,
             authorType = AgentChannelAuthorTypeDto.MANAGER,
@@ -779,7 +756,6 @@ class AgentManagerService(
             }
         }
         executors[agentId] = Executors.newSingleThreadExecutor { r -> Thread(r, "agent-$agentId") }
-        project.service<ToolWindowService>().addToolingMessage("AgentManager", "Stopped agent [$agentId]")
         pcs.firePropertyChange("agent_stopped", null, agentId)
         return true
     }
@@ -796,7 +772,6 @@ class AgentManagerService(
                 executors[id] = Executors.newSingleThreadExecutor { r -> Thread(r, "agent-$id") }
             }
         }
-        project.service<ToolWindowService>().addToolingMessage("AgentManager", "Stopped tasks for $stopped agent(s)")
         pcs.firePropertyChange("agents_stopped", null, stopped)
         return stopped
     }
@@ -812,10 +787,6 @@ class AgentManagerService(
             st.agents[idx] = st.agents[idx].copy(previousId = null)
         }
         project.service<ChatConversationStateService>().saveActiveAgents(st.agents)
-        project.service<ToolWindowService>().addDebugMessage(
-            "agents_reset",
-            "Reset agents conversation state for new session",
-        )
         pcs.firePropertyChange("agents_reset", null, null)
     }
 
@@ -886,10 +857,6 @@ class AgentManagerService(
                                 val kinds = inbox.mapNotNull { it.kind?.ifBlank { null } }.distinct()
                                 "Inbox injected: agent=$agentId count=${inbox.size} kinds=$kinds"
                             }
-                            project.service<ToolWindowService>().addDebugMessage(
-                                "inbox_injected",
-                                "agent=$agentId count=${inbox.size}",
-                            )
                         } catch (_: Throwable) {
                         }
 
@@ -1154,10 +1121,6 @@ class AgentManagerService(
                             val kinds = inbox.mapNotNull { it.kind?.ifBlank { null } }.distinct()
                             "Inbox injected: agent=$agentId count=${inbox.size} kinds=$kinds"
                         }
-                        project.service<ToolWindowService>().addDebugMessage(
-                            "inbox_injected",
-                            "agent=$agentId count=${inbox.size}",
-                        )
                     } catch (_: Throwable) {
                     }
 

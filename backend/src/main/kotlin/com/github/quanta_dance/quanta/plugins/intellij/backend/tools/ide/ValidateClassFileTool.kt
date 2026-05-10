@@ -6,11 +6,9 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
-import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
-import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
@@ -97,10 +95,6 @@ class ValidateClassFileTool : ToolInterface<List<String>> {
         }
         return ApplicationManager.getApplication().runReadAction<List<String>> {
             val errors = findErrors(project)
-            project.service<ToolWindowService>().addToolingMessage(
-                "Validate compilation errors " + filePath.orEmpty(),
-                errors.joinToString("\n"),
-            )
             errors
         }
     }

@@ -5,11 +5,8 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.media
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
-
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
-import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
-import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 
@@ -27,14 +24,6 @@ class SoundGeneratorTool : ToolInterface<String> {
 
     override fun execute(project: Project): String {
         QDLog.info(logger) { "Generating speech for text: $text" }
-        val t = text ?: throw IllegalArgumentException("text must be provided")
-
-
-        try {
-            project.service<ToolWindowService>()
-                .addToolingMessage("Sound generated", "Speech requested for: ${t.take(60)}")
-        } catch (_: Throwable) {
-        }
         return "Speech requested"
     }
 }

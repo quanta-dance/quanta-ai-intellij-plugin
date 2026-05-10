@@ -5,9 +5,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.chat.agents
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.QuantaAISessionState
-import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.intellij.openapi.components.Service
-import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import java.beans.PropertyChangeListener
@@ -38,10 +36,6 @@ class AgentInboxService(
         pcs.firePropertyChange("agent_inbox", null, mapOf("agentId" to toAgentId, "count" to list.size))
         try {
             QDLog.debug(logger) { "Inbox post: to=$toAgentId from=${from ?: "<null>"} kind=${kind ?: "<null>"} inboxSize=${list.size}" }
-            project.service<ToolWindowService>().addDebugMessage(
-                "inbox_post",
-                "to=$toAgentId from=${from ?: "<null>"} kind=${kind ?: "<null>"} inboxSize=${list.size}",
-            )
         } catch (_: Throwable) {
         }
         return true

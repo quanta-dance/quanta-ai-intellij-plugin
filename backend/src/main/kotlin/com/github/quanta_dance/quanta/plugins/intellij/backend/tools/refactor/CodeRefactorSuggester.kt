@@ -11,9 +11,7 @@ This tool publishes actionable refactoring suggestions to the plugin UI for revi
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.backend.models.Suggestion
-import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
-import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 
 @JsonClassDescription(
@@ -36,8 +34,10 @@ class CodeRefactorSuggester : ToolInterface<String> {
         val actionable = suggestions.filter { isActionable(it) }
         if (actionable.isEmpty()) return "No actionable suggestions provided."
 
+
         actionable.forEach { suggestion ->
-            project.service<ToolWindowService>().addSuggestions(listOf(suggestion))
+            // TODO: add this to frontend UI into chat
+            // addSuggestions(listOf(suggestion))
         }
 
         return "Actionable refactor suggestions published (${actionable.size})."

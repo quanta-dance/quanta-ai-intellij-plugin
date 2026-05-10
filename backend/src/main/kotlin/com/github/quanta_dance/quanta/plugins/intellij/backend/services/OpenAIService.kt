@@ -12,7 +12,6 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQ
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.QuantaAISessionState
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ToolsRegistry
-import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus
 import com.intellij.openapi.Disposable
@@ -151,16 +150,6 @@ class OpenAIService(
         } catch (_: Throwable) {
         }
 
-        if (reportToUi) {
-            try {
-                project.service<ToolWindowService>().addDebugMessage(
-                    "usage",
-                    "+in=$inTok +out=$outTok +total=$totalTok | total in=$tIn out=$tOut total=$tTot",
-                )
-            } catch (_: Throwable) {
-            }
-        }
-
         try {
             thisLogger().info(
                 "Usage: tag=$tag in=$inTok out=$outTok total=$totalTok global(in=$tIn out=$tOut total=$tTot)",
@@ -245,10 +234,6 @@ class OpenAIService(
         responseId: String? = null,
     ) {
         persistOnly(role, text, responseId)
-        try {
-            project.service<ToolWindowService>().addToolingMessage(label, text)
-        } catch (_: Throwable) {
-        }
         if (role.equals("assistant", ignoreCase = true) && text.isNotBlank()) {
             try {
                 project.service<SessionMemoryService>().refreshFromCurrentState(
@@ -707,7 +692,6 @@ class OpenAIService(
         } catch (_: Throwable) {
         }
         pcs.firePropertyChange("session", old, currentSessionId)
-        project.service<ToolWindowService>().clear()
         return currentSessionId
     }
 
@@ -1065,10 +1049,6 @@ class OpenAIService(
                                         repeatedPlanLoopSignatureCount = 0
                                     }
                                     if (repeatedPlanLoopSignatureCount >= 1 && pendingToolOutputs.isEmpty()) {
-                                        project.service<ToolWindowService>().addToolingMessage(
-                                            agentLabel,
-                                            "Stopping repeated ACTIVE-plan loop after identical response signature #$repeatedPlanLoopSignatureCount; awaiting a materially different next action",
-                                        )
                                         return@forEach
                                     }
                                 } else {
@@ -1127,15 +1107,6 @@ class OpenAIService(
                                         // Nudge follow-up (no tools pending)
                                         inputs.add(systemMessage("Continue."))
                                         reprocess = true
-                                        project.service<ToolWindowService>().addToolingMessage(
-                                            agentLabel,
-                                            "Continuation requested by model (nextStep=CONTINUE) #$continuationCount",
-                                        )
-                                    } else {
-                                        project.service<ToolWindowService>().addToolingMessage(
-                                            agentLabel,
-                                            "nextStep=CONTINUE requested but maxContinuations=$maxContinuations reached; stopping",
-                                        )
                                     }
                                 }
                             }
@@ -1293,8 +1264,6 @@ class OpenAIService(
         return when {
             normalized == "refresh summary" || normalized == "/refresh summary" -> {
                 memory.refreshFromCurrentState(reason = "user_command_refresh", userText = raw, force = true)
-                project.service<ToolWindowService>()
-                    .addToolingMessage("Session memory", "Session summaries refreshed on disk.")
                 true
             }
 
@@ -1305,18 +1274,10 @@ class OpenAIService(
                     project.service<ChatConversationService>()
                         .compactConversationWithBrief(brief)
                 }
-                project.service<ToolWindowService>().addToolingMessage(
-                    "Session memory",
-                    if (brief.isBlank()) "Session memory compacted, but no brief was available yet." else "Conversation compacted with persisted session memory.",
-                )
                 true
             }
 
             normalized == "show session brief" || normalized == "/show session brief" -> {
-                project.service<ToolWindowService>().addToolingMessage(
-                    "Session brief",
-                    memory.loadBrief(maxChars = 8_000).ifBlank { "No session brief recorded yet." },
-                )
                 true
             }
 
@@ -1327,11 +1288,6 @@ class OpenAIService(
                     force = true
                 )
                 resetThreadStatePreservingHistory()
-                project.service<ToolWindowService>().addToolingMessage(
-                    "Session memory",
-                    memory.loadBrief(maxChars = 8_000)
-                        .ifBlank { "Session memory restored, but the brief is still empty." },
-                )
                 true
             }
 
@@ -1340,8 +1296,6 @@ class OpenAIService(
                     parseMemoryFactCommand(if (normalized.startsWith("/pin fact ")) "/pin fact" else "pin fact", raw)
                 if (parsed != null) {
                     memory.pinFact(parsed.first, parsed.second)
-                    project.service<ToolWindowService>()
-                        .addToolingMessage("Session memory", "Pinned fact: ${parsed.first}")
                 }
                 true
             }
@@ -1354,8 +1308,6 @@ class OpenAIService(
                     )
                 if (parsed != null) {
                     memory.markRootCause(parsed.first, parsed.second)
-                    project.service<ToolWindowService>()
-                        .addToolingMessage("Session memory", "Root cause marked: ${parsed.first}")
                 }
                 true
             }

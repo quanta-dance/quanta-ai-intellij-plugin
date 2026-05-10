@@ -3,11 +3,11 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.backend.project
 
-import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
-import com.github.quanta_dance.quanta.plugins.intellij.services.EmbeddingService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
-import com.github.quanta_dance.quanta.plugins.intellij.services.SQLiteVectorStore
-import com.github.quanta_dance.quanta.plugins.intellij.services.VectorStoreService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.EmbeddingService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SQLiteVectorStore
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.VectorStoreService
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger

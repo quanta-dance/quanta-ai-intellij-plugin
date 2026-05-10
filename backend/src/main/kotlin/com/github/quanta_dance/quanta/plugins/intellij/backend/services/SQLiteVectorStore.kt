@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
 
-package com.github.quanta_dance.quanta.plugins.intellij.services
+package com.github.quanta_dance.quanta.plugins.intellij.backend.services
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
@@ -19,6 +19,12 @@ import java.util.*
 
 data class SearchResult(val id: String, val score: Double, val metadata: Map<String, String>)
 
+/**
+ * SQLite-backed persistent store for embeddings.
+ *
+ * Each project gets its own database file under `.idea`, and this service provides the
+ * minimal CRUD/search operations used by the embedding tools and services.
+ */
 @Service(Service.Level.PROJECT)
 class SQLiteVectorStore(private val project: Project) {
     private val dbFile: File
@@ -33,13 +39,14 @@ class SQLiteVectorStore(private val project: Project) {
         try {
             Class.forName("org.sqlite.JDBC")
         } catch (e: Throwable) {
-            // Log but continue; if driver missing, DriverManager will throw below
+            // The driver is optional at class-load time; a clearer failure will happen when we connect.
             QDLog.warn(logger, { "SQLite JDBC driver not found on classpath" }, e)
         }
         conn = DriverManager.getConnection(url)
         createTables()
     }
 
+    /** Ensures the embeddings table and lookup index exist before any store operations run. */
     private fun createTables() {
         conn.createStatement().use { stmt ->
             stmt.execute(
@@ -58,6 +65,7 @@ class SQLiteVectorStore(private val project: Project) {
         }
     }
 
+    /** Inserts or replaces an embedding row for the current project. */
     fun upsert(
         id: String,
         vector: FloatArray,
@@ -79,6 +87,7 @@ class SQLiteVectorStore(private val project: Project) {
         }
     }
 
+    /** Returns the stored content hash for an embedding id, or null when no row exists. */
     fun getChunkHash(id: String): String? {
         val sql = "SELECT chunk_hash FROM embeddings WHERE id = ?"
         conn.prepareStatement(sql).use { ps ->

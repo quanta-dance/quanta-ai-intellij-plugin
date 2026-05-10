@@ -2,10 +2,8 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.go
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
-import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
-import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
-import com.intellij.openapi.components.service
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.vfs.VfsUtil
@@ -53,16 +51,6 @@ class RunGoTestsTool : ToolInterface<RunGoTestsTool.Result> {
     )
     var goBinary: String? = null
 
-    private fun addMsg(
-        project: Project,
-        title: String,
-        msg: String,
-    ) {
-        try {
-            project.service<ToolWindowService>().addToolingMessage(title, msg)
-        } catch (_: Throwable) {
-        }
-    }
 
     private fun resolveGoBinary(): String? {
         // 1) Explicit field
@@ -144,7 +132,6 @@ class RunGoTestsTool : ToolInterface<RunGoTestsTool.Result> {
                     append("Go binary not found. Set goBinary explicitly or ensure PATH includes 'go'.\n")
                     append("Tried GOROOT/bin/go and common locations. On macOS with Homebrew: /opt/homebrew/bin/go\n")
                 }
-            addMsg(project, "Run Go tests - failed", hint)
             return Result(false, 0, 0, null, hint.trim())
         }
 
@@ -158,19 +145,6 @@ class RunGoTestsTool : ToolInterface<RunGoTestsTool.Result> {
         }
 
         val taskLine = "cmd=${args.joinToString(" ")}\nwd=${workDir.absolutePath}"
-        val toolMsg =
-            try {
-                project.service<ToolWindowService>().startToolingMessage("Run Go tests", taskLine)
-            } catch (_: Throwable) {
-                null
-            }
-        val spinner =
-            try {
-                project.service<ToolWindowService>().startSpinner("Running go test…")
-            } catch (_: Throwable) {
-                null
-            }
-
         val output = StringBuilder()
         val process =
             try {
@@ -179,8 +153,6 @@ class RunGoTestsTool : ToolInterface<RunGoTestsTool.Result> {
                     .redirectErrorStream(true)
                     .start()
             } catch (e: Exception) {
-                spinner?.stopError("Failed to start")
-                toolMsg?.setText("$taskLine\nFailed to start go test: ${e.message}")
                 return Result(false, 0, 0, null, "Failed to start go test: ${e.message}")
             }
 
@@ -209,7 +181,6 @@ class RunGoTestsTool : ToolInterface<RunGoTestsTool.Result> {
                         append("Packages: ").append(totalPkgs).append(", Failed: ").append(failedPkgs).append("\n")
                         if (recent.isNotEmpty()) append(recent.joinToString("\n"))
                     }
-                toolMsg?.setText(body)
             }
         }
 
@@ -250,8 +221,6 @@ class RunGoTestsTool : ToolInterface<RunGoTestsTool.Result> {
         val finished = process.waitFor(timeoutMinutes, TimeUnit.MINUTES)
         if (!finished) {
             process.destroyForcibly()
-            spinner?.stopError("Timeout")
-            toolMsg?.setText("$taskLine\nTimed out after ${timeoutMinutes}m\nPackages: $totalPkgs, Failed: $failedPkgs")
             return Result(
                 false,
                 totalPkgs,
@@ -271,8 +240,6 @@ class RunGoTestsTool : ToolInterface<RunGoTestsTool.Result> {
                 append(taskLine)
                 append("\nPackages: ").append(totalPkgs).append(", Failed: ").append(failedPkgs)
             }
-        if (success) spinner?.stopSuccess() else spinner?.stopError("exit=$exitCode")
-        toolMsg?.setText(finalBody)
 
         return Result(
             success,

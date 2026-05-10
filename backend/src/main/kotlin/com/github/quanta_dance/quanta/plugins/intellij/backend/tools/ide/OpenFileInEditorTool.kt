@@ -5,11 +5,9 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
-import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
-import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.components.service
 import com.intellij.openapi.editor.LogicalPosition
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
@@ -45,17 +43,6 @@ data class OpenFileInEditorTool(
     val selectionEndColumn: Int? = null,
 ) : ToolInterface<String> {
 
-    private fun addMsg(
-        project: Project,
-        title: String,
-        msg: String,
-    ) {
-        try {
-            project.service<ToolWindowService>().addToolingMessage(title, msg)
-        } catch (_: Throwable) {
-        }
-    }
-
     override fun execute(project: Project): String {
         val basePath = PathUtils.projectRootPath(project) ?: return "Project base path not found."
 
@@ -63,7 +50,6 @@ data class OpenFileInEditorTool(
             try {
                 PathUtils.resolveWithinProject(project, filePath)
             } catch (e: IllegalArgumentException) {
-                addMsg(project, "Open file - rejected", e.message ?: "Invalid path")
                 return e.message ?: "Invalid path"
             }
 
@@ -79,7 +65,6 @@ data class OpenFileInEditorTool(
 
         if (vFile == null || vFile.isDirectory) {
             val reason = if (vFile == null) "File not found" else "Path is a directory"
-            addMsg(project, "Open file - failed", "$relToBase ($reason)")
             return reason
         }
 
@@ -146,12 +131,10 @@ data class OpenFileInEditorTool(
                         append(targetColumn ?: 0)
                     }
                 }
-            addMsg(project, "Open file", details)
             if (opened) "Opened $relToBase" else "Opened (no editor) $relToBase"
         } catch (e: Throwable) {
             if (e is ProcessCanceledException) throw e
             val msg = e.message ?: "Failed to open file"
-            addMsg(project, "Open file - error", "$relToBase: $msg")
             msg
         }
     }

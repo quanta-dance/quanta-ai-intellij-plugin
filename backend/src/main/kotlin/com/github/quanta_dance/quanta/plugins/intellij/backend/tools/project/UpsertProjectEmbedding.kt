@@ -7,14 +7,20 @@ import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
-import com.github.quanta_dance.quanta.plugins.intellij.services.EmbeddingService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.EmbeddingService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.models.UpsertEmbeddingResult
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
-import com.github.quanta_dance.quanta.plugins.intellij.tools.models.UpsertEmbeddingResult
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import kotlinx.coroutines.runBlocking
 
 @JsonClassDescription("Create or update embedding for a given id and text in project-local vector DB.")
+/**
+ * Tool that turns a single text chunk into an embedding and stores it in the local vector DB.
+ *
+ * The tool is intentionally lightweight: it accepts the embedding id, raw text, and optional
+ * metadata, then delegates the actual embedding generation/storage to [EmbeddingService].
+ */
 class UpsertProjectEmbedding : ToolInterface<UpsertEmbeddingResult> {
     @field:JsonPropertyDescription("Unique id for the embedding (e.g., project|path|chunkIndex)")
     var id: String? = null
@@ -42,7 +48,7 @@ class UpsertProjectEmbedding : ToolInterface<UpsertEmbeddingResult> {
                 }
             }
 
-        // Generate embedding and store locally
+        // Keep the tool synchronous from the caller's perspective while the suspend work runs.
         runBlocking {
             embeddingService.createAndStoreEmbeddings(listOf(pid), listOf(txt), listOf(md))
         }

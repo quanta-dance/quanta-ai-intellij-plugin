@@ -5,9 +5,9 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.project
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
-import com.github.quanta_dance.quanta.plugins.intellij.services.VectorStoreService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.VectorStoreService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.models.SearchProjectEmbeddingsResult
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
-import com.github.quanta_dance.quanta.plugins.intellij.tools.models.SearchProjectEmbeddingsResult
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 

@@ -4,9 +4,8 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.system
 
 import com.fasterxml.jackson.annotation.*
-import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQuantaSettingsState
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
-import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQuantaSettingsState
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.execution.impl.ConsoleViewImpl
@@ -14,7 +13,6 @@ import com.intellij.execution.process.*
 import com.intellij.execution.ui.ConsoleView
 import com.intellij.execution.ui.ConsoleViewContentType
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Key
@@ -97,8 +95,6 @@ class TerminalCommandTool : ToolInterface<String> {
         }
 
         QDLog.info(logger) { "Executing command via shell: $cmd" }
-
-        project.service<ToolWindowService>().addToolingMessage("Execute terminal", cmd)
 
         if (!basePath.isNullOrEmpty()) {
             commandLine.setWorkDirectory(File(basePath))

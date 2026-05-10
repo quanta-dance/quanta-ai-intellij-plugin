@@ -5,10 +5,8 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
-import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
-import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
-import com.intellij.openapi.components.service
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.intellij.openapi.project.Project
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
@@ -36,16 +34,12 @@ class CopyFileOrDirectoryTool : ToolInterface<String> {
             try {
                 PathUtils.resolveWithinProject(base, sourcePath)
             } catch (e: IllegalArgumentException) {
-                project.service<ToolWindowService>()
-                    .addToolingMessage("Copy - rejected", e.message ?: "Invalid source path")
                 return e.message ?: "Invalid source path"
             }
         val destination =
             try {
                 PathUtils.resolveWithinProject(base, destinationPath)
             } catch (e: IllegalArgumentException) {
-                project.service<ToolWindowService>()
-                    .addToolingMessage("Copy - rejected", e.message ?: "Invalid destination path")
                 return e.message ?: "Invalid destination path"
             }
 
@@ -86,12 +80,9 @@ class CopyFileOrDirectoryTool : ToolInterface<String> {
                     Files.copy(source, finalTarget, *copyOptions.toTypedArray())
                 }
             }
-            val relMsg = PathUtils.relativizeToProject(base, destNorm)
-            project.service<ToolWindowService>().addToolingMessage("Copy successful", "$sourcePath -> $relMsg")
             "Copy successful"
         } catch (e: Exception) {
             val msg = "Error copying: ${e.message}"
-            project.service<ToolWindowService>().addToolingMessage("Copy - error", msg)
             msg
         }
     }

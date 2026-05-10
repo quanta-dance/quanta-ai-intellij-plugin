@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
 
-package com.github.quanta_dance.quanta.plugins.intellij.services.openai
+package com.github.quanta_dance.quanta.plugins.intellij.backend.openai
 
-import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.OpenAIClientProvider
-import com.github.quanta_dance.quanta.plugins.intellij.services.SQLiteVectorStore
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SQLiteVectorStore
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.openai.client.OpenAIClient
+import com.openai.models.embeddings.EmbeddingCreateParams
+import com.openai.models.embeddings.EmbeddingModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -25,8 +26,8 @@ class EmbeddingService(private val project: Project) {
     ): List<FloatArray> =
         withContext(Dispatchers.IO) {
             val params =
-                com.openai.models.embeddings.EmbeddingCreateParams.builder()
-                    .model(com.openai.models.embeddings.EmbeddingModel.of(model))
+                EmbeddingCreateParams.builder()
+                    .model(EmbeddingModel.of(model))
                     .input(texts.first())
                     .build()
             val output = oAI.embeddings().create(params).data()
