@@ -5,10 +5,9 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.catalog.ListToolsCatalogTool
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.*
-import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.CreateOrUpdateFile
-import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.project.GetProjectDetails
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.McpListServerToolsTool
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.McpListServersTool
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.project.GetProjectDetails
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.project.SearchInFiles
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.project.SearchProjectEmbeddings
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.project.UpsertProjectEmbedding
@@ -73,7 +72,8 @@ object ToolsRegistry {
     }
 
     private fun baseEntries(project: Project?): List<ToolEntry> {
-        val settings = com.github.quanta_dance.quanta.plugins.intellij.services.QuantaAISettingsState.instance.state
+        val settings =
+            com.github.quanta_dance.quanta.plugins.intellij.backend.settings.QuantaAISessionState.instance.state
         val agentic = settings.agenticEnabled ?: true
         val terminalEnabled = false //settings.terminalToolEnabled == true
         val list =
@@ -156,7 +156,8 @@ object ToolsRegistry {
     }
 
     fun toolsFor(project: Project): List<Class<out ToolInterface<out Any>>> {
-        val settings = com.github.quanta_dance.quanta.plugins.intellij.services.QuantaAISettingsState.instance.state
+        val settings =
+            com.github.quanta_dance.quanta.plugins.intellij.backend.settings.QuantaAISessionState.instance.state
         val agentic = settings.agenticEnabled ?: true
         val basePath = project.basePath
         val gradle = basePath?.let { detectGradle(File(it)) } ?: false
@@ -168,7 +169,7 @@ object ToolsRegistry {
                 append("gradle=").append(gradle).append(';')
                 append("go=").append(go).append(';')
                 append("javaPsi=").append(javaPsi).append(';')
-               // append("terminal=").append(settings.terminalToolEnabled == true).append(';')
+                // append("terminal=").append(settings.terminalToolEnabled == true).append(';')
                 append("base=").append(basePath ?: "<none>")
             }
         cache[project]?.takeIf { it.signature == signature }?.let { return it.tools }

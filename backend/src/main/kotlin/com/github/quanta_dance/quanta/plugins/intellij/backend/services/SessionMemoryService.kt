@@ -1,11 +1,9 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
-
-package com.github.quanta_dance.quanta.plugins.intellij.services
+package com.github.quanta_dance.quanta.plugins.intellij.backend.services
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.github.quanta_dance.quanta.plugins.intellij.services.QuantaAISettingsState
-import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
+import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
+import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.QuantaAISessionState
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
@@ -162,16 +160,16 @@ class SessionMemoryService(
         val brief = loadBrief(maxChars = MAX_BRIEF_CHARS)
         if (brief.isBlank()) return ""
         try {
-            QuantaAISettingsState.instance.state.conversations[key] =
+            QuantaAISessionState.instance.state.conversations[key] =
                 mutableListOf(
-                    QuantaAISettingsState.PersistedMessage(
+                    QuantaAISessionState.PersistedMessage(
                         System.currentTimeMillis(),
                         "system",
                         "Session memory brief (restored from disk):\n$brief",
                         null,
                     ),
                 )
-            QuantaAISettingsState.instance.state.conversationSummaries[key] = brief
+            QuantaAISessionState.instance.state.conversationSummaries[key] = brief
         } catch (t: Throwable) {
             QDLog.warn(log, { "Failed to compact conversation with session memory: ${t.message}" }, t)
         }
@@ -224,7 +222,7 @@ class SessionMemoryService(
     ) {
         val key = conversationKeyForMain()
         val messages = try {
-            QuantaAISettingsState.instance.state.conversations[key].orEmpty()
+            QuantaAISessionState.instance.state.conversations[key].orEmpty()
         } catch (_: Throwable) {
             emptyList()
         }
@@ -247,7 +245,7 @@ class SessionMemoryService(
         }
 
         val rollingSummary = try {
-            QuantaAISettingsState.instance.state.conversationSummaries[key].orEmpty()
+            QuantaAISessionState.instance.state.conversationSummaries[key].orEmpty()
         } catch (_: Throwable) {
             ""
         }
@@ -259,7 +257,7 @@ class SessionMemoryService(
     private fun inferGoalFromConversation(): String {
         val key = conversationKeyForMain()
         val messages = try {
-            QuantaAISettingsState.instance.state.conversations[key].orEmpty()
+            QuantaAISessionState.instance.state.conversations[key].orEmpty()
         } catch (_: Throwable) {
             emptyList()
         }
@@ -277,7 +275,7 @@ class SessionMemoryService(
         writeText(File(dir, SESSION_FILE), sessionText)
         writeText(File(dir, BRIEF_FILE), briefText)
         try {
-            QuantaAISettingsState.instance.state.conversationSummaries[conversationKeyForMain()] = briefText
+            QuantaAISessionState.instance.state.conversationSummaries[conversationKeyForMain()] = briefText
         } catch (_: Throwable) {
         }
         refreshVfs(dir)

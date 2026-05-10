@@ -3,7 +3,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.backend.chat.agents
 
-import com.github.quanta_dance.quanta.plugins.intellij.services.QuantaAISettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.QuantaAISessionState
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
 import java.beans.PropertyChangeListener
@@ -18,7 +18,7 @@ class AgentLifecycleService(
     fun addPropertyChangeListener(listener: PropertyChangeListener) = pcs.addPropertyChangeListener(listener)
 
     fun createDefaultTeam(registry: AgentRegistryService): List<String> {
-        if ((QuantaAISettingsState.instance.state.agenticEnabled ?: true).not()) return emptyList()
+        if ((QuantaAISessionState.instance.state.agenticEnabled ?: true).not()) return emptyList()
         if (registry.getAgentsSnapshot().isNotEmpty()) return registry.getAgentsSnapshot().map { it.id }
 
         val commonComms = setOf("AgentSendMessageTool", "AgentPostMessageTool")

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
 
-package com.github.quanta_dance.quanta.plugins.intellij.listeners
+package com.github.quanta_dance.quanta.plugins.intellij.backend.listeners
 
-import com.github.quanta_dance.quanta.plugins.intellij.project.EmbeddingManager
-import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
-import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
+import com.github.quanta_dance.quanta.plugins.intellij.backend.project.EmbeddingManager
+import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
@@ -34,7 +34,7 @@ class EmbeddingProjectFileListener(private val project: Project) {
                                     .relativize(java.nio.file.Paths.get(virtualFile.path))
                                     .toString()
                             val text = document.text
-                            EmbeddingManager.getInstance(project).enqueueFileForIndexing(relPath, text)
+                            project.service<EmbeddingManager>().enqueueFileForIndexing(relPath, text)
                         }
                     } catch (t: Throwable) {
                         QDLog.error(logger, { "Failed to enqueue file for embedding" }, t)

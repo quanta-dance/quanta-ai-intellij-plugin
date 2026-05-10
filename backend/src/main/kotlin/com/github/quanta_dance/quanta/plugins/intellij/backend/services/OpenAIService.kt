@@ -1,20 +1,24 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
-
-package com.github.quanta_dance.quanta.plugins.intellij.services
+package com.github.quanta_dance.quanta.plugins.intellij.backend.services
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.ChatConversationService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.*
 import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.models.OpenAIResponse
 import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.models.TeamAgentSpec
+import com.github.quanta_dance.quanta.plugins.intellij.backend.project.CurrentFileContextProvider
+import com.github.quanta_dance.quanta.plugins.intellij.backend.project.ProjectVersionUtil
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQuantaSettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.QuantaAISessionState
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ToolsRegistry
-import com.github.quanta_dance.quanta.plugins.intellij.project.CurrentFileContextProvider
-import com.github.quanta_dance.quanta.plugins.intellij.project.ProjectVersionUtil
+import com.github.quanta_dance.quanta.plugins.intellij.services.ProjectAgentsFileManager
+import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.github.quanta_dance.quanta.plugins.intellij.services.ui.DelayedSpinner
 import com.github.quanta_dance.quanta.plugins.intellij.services.ui.Notifications
-import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
@@ -22,14 +26,18 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.openapi.vfs.VirtualFile
 import com.openai.client.OpenAIClient
 import com.openai.models.images.ImageGenerateParams
 import com.openai.models.images.ImageModel
+import com.openai.models.responses.ResponseFunctionToolCall
 import com.openai.models.responses.ResponseInputItem
 import com.openai.models.responses.ResponseUsage
 import com.openai.models.responses.StructuredResponse
 import java.beans.PropertyChangeListener
 import java.beans.PropertyChangeSupport
+import java.io.File
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Future
@@ -54,7 +62,7 @@ class OpenAIService(
     private var modelKey: Pair<Boolean, String> =
         BackendQuantaSettingsState.instance.settings.let { (it.dynamicModelEnabled == true) to it.aiChatModel }
 
-    private var lastResponseId: String? = QuantaAISettingsState.instance.state.mainLastResponseId
+    private var lastResponseId: String? = QuantaAISessionState.instance.state.mainLastResponseId
     private var currentSessionId: String = UUID.randomUUID().toString()
 
     private val toolInvoker: ToolInvoker = DefaultToolInvoker()
@@ -176,7 +184,7 @@ class OpenAIService(
             try {
                 // Try Git IDEA API via reflection to avoid hard dependency
                 val gitClass = Class.forName("git4idea.repo.GitRepositoryManager")
-                val method = gitClass.getMethod("getInstance", com.intellij.openapi.project.Project::class.java)
+                val method = gitClass.getMethod("getInstance", Project::class.java)
                 val mgr = method.invoke(null, project)
                 val reposMethod = gitClass.getMethod("getRepositories")
                 val repos = reposMethod.invoke(mgr) as java.util.List<*>
@@ -193,7 +201,7 @@ class OpenAIService(
                     val basePath = PathUtils.projectRootPath(project)
                     if (basePath != null) {
                         val pb = ProcessBuilder("git", "rev-parse", "--abbrev-ref", "HEAD")
-                        pb.directory(java.io.File(basePath))
+                        pb.directory(File(basePath))
                         pb.redirectErrorStream(true)
                         val proc = pb.start()
                         val out =
@@ -222,9 +230,9 @@ class OpenAIService(
     ) {
         try {
             val key = conversationKeyForMain()
-            val state = QuantaAISettingsState.instance.state
+            val state = QuantaAISessionState.instance.state
             val list = state.conversations.getOrPut(key) { mutableListOf() }
-            list.add(QuantaAISettingsState.PersistedMessage(System.currentTimeMillis(), role, text, responseId))
+            list.add(QuantaAISessionState.PersistedMessage(System.currentTimeMillis(), role, text, responseId))
             // Retention: keep only last N messages to avoid settings bloat
             if (list.size > maxPersistedMessagesPerConversation) {
                 val drop = list.size - maxPersistedMessagesPerConversation
@@ -259,7 +267,7 @@ class OpenAIService(
 
     private fun summaryForKey(key: String): String? =
         try {
-            QuantaAISettingsState.instance.state.conversationSummaries[key]
+            QuantaAISessionState.instance.state.conversationSummaries[key]
         } catch (_: Throwable) {
             null
         }
@@ -270,7 +278,7 @@ class OpenAIService(
     ) {
         if (summary.isBlank()) return
         try {
-            QuantaAISettingsState.instance.state.conversationSummaries[key] = summary
+            QuantaAISessionState.instance.state.conversationSummaries[key] = summary
         } catch (_: Throwable) {
         }
     }
@@ -281,7 +289,7 @@ class OpenAIService(
     ): String {
         val msgs =
             try {
-                QuantaAISettingsState.instance.state.conversations[key]
+                QuantaAISessionState.instance.state.conversations[key]
             } catch (_: Throwable) {
                 null
             } ?: return ""
@@ -338,7 +346,7 @@ class OpenAIService(
         if (budgetedThisTurn) return true
         val msgs =
             try {
-                QuantaAISettingsState.instance.state.conversations[key]
+                QuantaAISessionState.instance.state.conversations[key]
             } catch (_: Throwable) {
                 null
             } ?: return false
@@ -379,7 +387,7 @@ class OpenAIService(
     ): String {
         val msgs =
             try {
-                QuantaAISettingsState.instance.state.conversations[key]
+                QuantaAISessionState.instance.state.conversations[key]
             } catch (_: Throwable) {
                 null
             } ?: return ""
@@ -467,13 +475,13 @@ class OpenAIService(
                 val basePath = PathUtils.projectRootPath(project)
                 if (basePath != null) {
                     val root =
-                        com.intellij.openapi.vfs.LocalFileSystem
+                        LocalFileSystem
                             .getInstance()
                             .findFileByPath(basePath)
                     if (root != null) {
                         var cnt = 0
 
-                        fun dfs(v: com.intellij.openapi.vfs.VirtualFile) {
+                        fun dfs(v: VirtualFile) {
                             if (!v.isValid) return
                             if (v.isDirectory) {
                                 v.children?.forEach { dfs(it) }
@@ -516,20 +524,20 @@ class OpenAIService(
     override fun dispose() {}
 
     private fun userMessage(text: String): ResponseInputItem =
-        com.openai.models.responses.ResponseInputItem.ofMessage(
-            com.openai.models.responses.ResponseInputItem.Message
+        ResponseInputItem.ofMessage(
+            ResponseInputItem.Message
                 .builder()
                 .addInputTextContent(text)
-                .role(com.openai.models.responses.ResponseInputItem.Message.Role.USER)
+                .role(ResponseInputItem.Message.Role.USER)
                 .build(),
         )
 
     private fun systemMessage(text: String): ResponseInputItem =
-        com.openai.models.responses.ResponseInputItem.ofMessage(
-            com.openai.models.responses.ResponseInputItem.Message
+        ResponseInputItem.ofMessage(
+            ResponseInputItem.Message
                 .builder()
                 .addInputTextContent(text)
-                .role(com.openai.models.responses.ResponseInputItem.Message.Role.SYSTEM)
+                .role(ResponseInputItem.Message.Role.SYSTEM)
                 .build(),
         )
 
@@ -652,7 +660,7 @@ class OpenAIService(
         thisLogger().info("Resetting AI thread state (preserve history). session=$currentSessionId")
         lastResponseId = null
         try {
-            QuantaAISettingsState.instance.state.mainLastResponseId = null
+            QuantaAISessionState.instance.state.mainLastResponseId = null
         } catch (_: Throwable) {
         }
         lastCtxHash = null
@@ -674,7 +682,7 @@ class OpenAIService(
         val old = currentSessionId
         currentSessionId = UUID.randomUUID().toString()
         lastResponseId = null
-        QuantaAISettingsState.instance.state.mainLastResponseId = null
+        QuantaAISessionState.instance.state.mainLastResponseId = null
         lastCtxHash = null
         initialContextInjectedThisIdeSession = false
         lastInjectedSummaryHash = null
@@ -694,7 +702,7 @@ class OpenAIService(
         // Clear persisted chat for current branch so "new session" is a clean slate on restart too
         try {
             val key = conversationKeyForMain()
-            QuantaAISettingsState.instance.state.conversations
+            QuantaAISessionState.instance.state.conversations
                 .remove(key)
         } catch (_: Throwable) {
         }
@@ -718,7 +726,7 @@ class OpenAIService(
     ) {
         currentSessionId = sessionId
         this.lastResponseId = lastResponseId
-        QuantaAISettingsState.instance.state.mainLastResponseId = lastResponseId
+        QuantaAISessionState.instance.state.mainLastResponseId = lastResponseId
         lastCtxHash = null
         initialContextInjectedThisIdeSession = false
         lastInjectedSummaryHash = null
@@ -808,7 +816,7 @@ class OpenAIService(
     )
 
     data class ToolTurnUpdate(
-        val item: com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem,
+        val item: ToolExecutionItem,
     )
 
     fun agentTurn(
@@ -837,7 +845,7 @@ class OpenAIService(
         var repeatedPlanLoopSignatureCount = 0
         val configuredContinuations =
             try {
-                QuantaAISettingsState.instance.state.maxAutomaticTurns.coerceIn(1, 100)
+                QuantaAISessionState.instance.state.maxAutomaticTurns.coerceIn(1, 100)
             } catch (_: Throwable) {
                 5
             }
@@ -881,7 +889,7 @@ class OpenAIService(
                     }
 
                     item.isFunctionCall() -> {
-                        val functionCall: com.openai.models.responses.ResponseFunctionToolCall = item.asFunctionCall()
+                        val functionCall: ResponseFunctionToolCall = item.asFunctionCall()
                         val callId = functionCall.callId()
                         if (!processedCallIds.add(callId)) return@map
                         if (functionCall.name().contains("SessionPlan", ignoreCase = true)) {
@@ -889,7 +897,7 @@ class OpenAIService(
                         }
                         val startedItem = buildToolExecutionItem(
                             functionCall,
-                            com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus.EXECUTING
+                            ToolExecutionStatus.EXECUTING
                         )
                         onToolUpdate?.invoke(ToolTurnUpdate(startedItem))
                         try {
@@ -901,9 +909,9 @@ class OpenAIService(
                             val completedItem = buildToolExecutionItem(
                                 functionCall,
                                 if (toolResult.succeeded) {
-                                    com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus.SUCCEEDED
+                                    ToolExecutionStatus.SUCCEEDED
                                 } else {
-                                    com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus.FAILED
+                                    ToolExecutionStatus.FAILED
                                 },
                                 errorText = toolResult.errorText,
                                 detailText = toolResult.detailText,
@@ -915,7 +923,7 @@ class OpenAIService(
                         } catch (t: Throwable) {
                             val failedItem = buildToolExecutionItem(
                                 functionCall,
-                                com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus.FAILED,
+                                ToolExecutionStatus.FAILED,
                                 errorText = t.message,
                                 detailText = t.stackTraceToString().take(2_000),
                             )
@@ -1170,17 +1178,17 @@ class OpenAIService(
     }
 
     private fun buildToolExecutionItem(
-        functionCall: com.openai.models.responses.ResponseFunctionToolCall,
-        status: com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus,
+        functionCall: ResponseFunctionToolCall,
+        status: ToolExecutionStatus,
         errorText: String? = null,
         detailText: String? = null,
-    ): com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem {
+    ): ToolExecutionItem {
         val toolName = functionCall.name()
         val argsText = runCatching { functionCall.arguments() }.getOrDefault("")
         val argsJson = runCatching { mapper.readTree(argsText) }.getOrNull()
         val filePath = extractFilePath(argsJson)
         val displayText = buildToolDisplayText(toolName, filePath, argsJson)
-        return com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem(
+        return ToolExecutionItem(
             callId = functionCall.callId(),
             toolName = toolName,
             displayText = displayText,
@@ -1288,7 +1296,7 @@ class OpenAIService(
                 val brief = memory.compactConversationHistory()
                 resetThreadStatePreservingHistory()
                 runCatching {
-                    project.service<com.github.quanta_dance.quanta.plugins.intellij.backend.chat.ChatConversationService>()
+                    project.service<ChatConversationService>()
                         .compactConversationWithBrief(brief)
                 }
                 project.service<ToolWindowService>().addToolingMessage(
@@ -1372,7 +1380,7 @@ class OpenAIService(
         processingFuture =
             ApplicationManager.getApplication().executeOnPooledThread {
                 val requestInputs =
-                    Collections.synchronizedList(mutableListOf<com.openai.models.responses.ResponseInputItem>())
+                    Collections.synchronizedList(mutableListOf<ResponseInputItem>())
 
                 val ctx = if (includeEditorContext) CurrentFileContextProvider(project).getCurrent() else null
                 if (ctx != null) {
@@ -1509,7 +1517,7 @@ class OpenAIService(
                 var repeatedPlanLoopSignatureCount = 0
                 val configuredContinuations =
                     try {
-                        QuantaAISettingsState.instance.state.maxAutomaticTurns.coerceIn(1, 100)
+                        QuantaAISessionState.instance.state.maxAutomaticTurns.coerceIn(1, 100)
                     } catch (_: Throwable) {
                         10
                     }
@@ -1706,7 +1714,7 @@ class OpenAIService(
                         delayedSpinner.stopSuccess()
 
                         requestInputs.clear()
-                        val pendingToolOutputs = mutableListOf<com.openai.models.responses.ResponseInputItem>()
+                        val pendingToolOutputs = mutableListOf<ResponseInputItem>()
                         var sessionPlanToolCalledThisTurn = false
 
                         QDLog.info(thisLogger()) { "OpenAIService.sendMessage output size=${structResponse.output().size}" }
@@ -1727,7 +1735,7 @@ class OpenAIService(
                                 }
 
                                 item.isFunctionCall() -> {
-                                    val functionCall: com.openai.models.responses.ResponseFunctionToolCall =
+                                    val functionCall: ResponseFunctionToolCall =
                                         item.asFunctionCall()
                                     val callId = functionCall.callId()
                                     if (!processedCallIds.add(callId)) return@mapIndexed
@@ -1740,7 +1748,7 @@ class OpenAIService(
                                         "OpenAIService.sendMessage toolResult name=${functionCall.name()}"
                                     }
                                     pendingToolOutputs.add(
-                                        com.openai.models.responses.ResponseInputItem.ofFunctionCallOutput(toolResult.toolOutput),
+                                        ResponseInputItem.ofFunctionCallOutput(toolResult.toolOutput),
                                     )
                                 }
 
@@ -2185,16 +2193,16 @@ class OpenAIService(
                                 // Rewrite persisted history to avoid re-hitting the context window on restart
                                 // and to keep the chat UI coherent.
                                 try {
-                                    val st = QuantaAISettingsState.instance.state
+                                    val st = QuantaAISessionState.instance.state
                                     st.conversations[key] =
                                         mutableListOf(
-                                            QuantaAISettingsState.PersistedMessage(
+                                            QuantaAISessionState.PersistedMessage(
                                                 System.currentTimeMillis(),
                                                 "system",
                                                 "Session memory brief (rewritten after context-window reset):\n" + summaryText,
                                                 null,
                                             ),
-                                            QuantaAISettingsState.PersistedMessage(
+                                            QuantaAISessionState.PersistedMessage(
                                                 System.currentTimeMillis(),
                                                 "user",
                                                 text,
@@ -2209,7 +2217,7 @@ class OpenAIService(
                             previousIdForThisTurn = null
                             lastResponseId = null
                             try {
-                                QuantaAISettingsState.instance.state.mainLastResponseId = null
+                                QuantaAISessionState.instance.state.mainLastResponseId = null
                             } catch (_: Throwable) {
                             }
 
@@ -2262,7 +2270,7 @@ class OpenAIService(
                 }
                 if (!aborted) {
                     lastResponseId = previousIdForThisTurn
-                    QuantaAISettingsState.instance.state.mainLastResponseId = lastResponseId
+                    QuantaAISessionState.instance.state.mainLastResponseId = lastResponseId
 
                     // Proactive LLM summarization (throttled) to keep long conversations within context limits
                     try {

@@ -4,11 +4,10 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.chat.agents
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.Instructions
-import com.github.quanta_dance.quanta.plugins.intellij.services.QuantaAISettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.QuantaAISessionState
 import com.intellij.openapi.components.Service
-import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
-import java.util.UUID
+import java.util.*
 
 @Service(Service.Level.PROJECT)
 class AgentRegistryService(
@@ -41,7 +40,7 @@ class AgentRegistryService(
     private val agents = LinkedHashMap<String, AgentSession>()
 
     init {
-        QuantaAISettingsState.instance.state.agents.forEach { profile ->
+        QuantaAISessionState.instance.state.agents.forEach { profile ->
             val session = AgentSession(
                 id = profile.id,
                 config = AgentConfig(profile.role, profile.model, profile.instructions),
@@ -68,8 +67,8 @@ class AgentRegistryService(
         }
         val session = AgentSession(id = id, config = config.copy(instructions = baseInstr))
         agents[id] = session
-        QuantaAISettingsState.instance.state.agents.add(
-            QuantaAISettingsState.AgentProfile(
+        QuantaAISessionState.instance.state.agents.add(
+            QuantaAISessionState.AgentProfile(
                 id = id,
                 role = session.config.role,
                 model = session.config.model,

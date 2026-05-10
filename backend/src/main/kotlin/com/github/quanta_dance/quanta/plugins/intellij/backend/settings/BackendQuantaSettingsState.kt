@@ -3,19 +3,33 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.backend.settings
 
-import com.github.quanta_dance.quanta.plugins.intellij.services.QuantaAISettingsState
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.PersistentStateComponent
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.State
 import com.intellij.openapi.components.Storage
 
+/**
+ * Backend application settings for the plugin.
+ *
+ * This state stores user-configurable backend defaults such as API endpoint,
+ * model selection, voice settings, terminal/tool toggles, and other app-level
+ * preferences.
+ *
+ * TODO: remove session/runtime concerns from this state entirely.
+ * TODO: keep only long-lived backend configuration here.
+ */
 @Service(Service.Level.APP)
 @State(
     name = "BackendQuantaSettingsState",
     storages = [Storage("quanta.backend.xml")],
 )
 class BackendQuantaSettingsState : PersistentStateComponent<BackendQuantaSettingsState.State> {
+    /**
+     * Persistent backend configuration values.
+     *
+     * TODO: migrate any remaining agent/session-related fields out of this state.
+     */
     data class State(
         var openAiUrl: String = "https://api.openai.com/v1/",
         var openAiToken: String = "",
@@ -25,13 +39,15 @@ class BackendQuantaSettingsState : PersistentStateComponent<BackendQuantaSetting
         var voiceByLocalTTS: Boolean = false,
         var maxTokens: Long? = 2048,
         var dynamicModelEnabled: Boolean? = false,
+        // TODO: move the remaining agent/session toggles to QuantaAISessionState or a dedicated agent config object.
         var agenticEnabled: Boolean? = true,
         var maxAutomaticTurns: Int = 10,
         var terminalToolEnabled: Boolean? = false,
         var terminalAllowedCommandsCsv: String = "git status,git diff,git add,git commit",
         var extraInstructions: String? = "",
         var debugEnabled: Boolean = false,
-        var agents: MutableList<QuantaAISettingsState.AgentProfile> = mutableListOf(),
+        // TODO: remove this cross-state coupling once agent profile persistence is consolidated.
+        var agents: MutableList<QuantaAISessionState.AgentProfile> = mutableListOf(),
     )
 
     companion object {

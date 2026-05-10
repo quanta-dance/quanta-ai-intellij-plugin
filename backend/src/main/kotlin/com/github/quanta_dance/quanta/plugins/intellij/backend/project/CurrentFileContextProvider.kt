@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
 
-package com.github.quanta_dance.quanta.plugins.intellij.project
+package com.github.quanta_dance.quanta.plugins.intellij.backend.project
 
-import com.github.quanta_dance.quanta.plugins.intellij.project.VersionUtil.computeVersion
-import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
@@ -34,9 +33,8 @@ class CurrentFileContextProvider(private val project: Project) {
         val rel =
             try {
                 val filePath = Paths.get(vf.path).toAbsolutePath().normalize().toString()
-                val relPath =
-                    Paths.get(basePath).toAbsolutePath().normalize().relativize(Paths.get(filePath)).toString()
-                PathUtils.relativizeToProject(basePath, Paths.get(filePath)) // ensure forward slashes
+                Paths.get(basePath).toAbsolutePath().normalize().relativize(Paths.get(filePath)).toString()
+                PathUtils.relativizeToProject(basePath, Paths.get(filePath))
             } catch (_: Throwable) {
                 return null
             }
@@ -47,7 +45,7 @@ class CurrentFileContextProvider(private val project: Project) {
                 val psiStamp = psi?.modificationStamp ?: 0L
                 val docStamp = FileDocumentManager.getInstance().getDocument(vf)?.modificationStamp ?: 0L
                 val vfsStamp = VersionUtil.safeVfsStamp(vf)
-                computeVersion(psiStamp, docStamp, vfsStamp)
+                VersionUtil.computeVersion(psiStamp, docStamp, vfsStamp)
             }
 
         return ApplicationManager.getApplication().runReadAction<CurrentFileContext> {
@@ -76,7 +74,7 @@ class CurrentFileContextProvider(private val project: Project) {
                 selStartLine = startPos.line + 1
                 selStartCol = startPos.column
                 selEndLine = endPos.line + 1
-                selEndCol = endPos.column - 1
+                selEndCol = endPos.column
             }
 
             CurrentFileContext(

@@ -1,5 +1,8 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.rpc
 
+import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentManagerService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SessionPlanService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.OpenFileInEditorTool
 import com.github.quanta_dance.quanta.plugins.intellij.services.*
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaBackendApi

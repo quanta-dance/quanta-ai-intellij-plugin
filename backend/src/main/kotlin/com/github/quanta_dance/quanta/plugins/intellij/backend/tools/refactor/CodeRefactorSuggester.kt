@@ -10,7 +10,7 @@ This tool publishes actionable refactoring suggestions to the plugin UI for revi
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
-import com.github.quanta_dance.quanta.plugins.intellij.models.Suggestion
+import com.github.quanta_dance.quanta.plugins.intellij.backend.models.Suggestion
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.intellij.openapi.components.service
@@ -22,13 +22,13 @@ import com.intellij.openapi.project.Project
 class CodeRefactorSuggester : ToolInterface<String> {
     @field:JsonPropertyDescription(
         "Only provide actionable suggestions: each item MUST include file, valid original line range (for display only)," +
-            " replaced_code (exact current text), and suggested_code (replacement). Descriptive-only suggestions are not accepted.",
+                " replaced_code (exact current text), and suggested_code (replacement). Descriptive-only suggestions are not accepted.",
     )
     var suggestions: List<Suggestion> = emptyList()
 
     private fun isActionable(s: Suggestion): Boolean =
         s.file.isNotBlank() && s.suggested_code.isNotBlank() && s.replaced_code.isNotBlank() &&
-            s.original_line_from > 0 && s.original_line_to >= s.original_line_from
+                s.original_line_from > 0 && s.original_line_to >= s.original_line_from
 
     override fun execute(project: Project): String {
         if (suggestions.isEmpty()) return "No refactor suggestions available."

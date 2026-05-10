@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
 
-package com.github.quanta_dance.quanta.plugins.intellij.project
+package com.github.quanta_dance.quanta.plugins.intellij.backend.project
 
-import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
-import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
+import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiClass
@@ -91,7 +91,6 @@ object CodeReferenceSelector {
                 val virtualFile = containingFile.virtualFile ?: return@forEach
                 val containingFilePath = virtualFile.path
                 if (basePath.isNullOrBlank()) {
-                    // If no base path, we still want relative behaviour to fail gracefully
                     QDLog.debug(logger) { "Project base path is null or blank; skipping relative path computation." }
                 }
                 val relativeFilePath =
@@ -102,7 +101,6 @@ object CodeReferenceSelector {
                             containingFilePath
                         }
                     } catch (e: Exception) {
-                        // Fallback to absolute path if relativize fails
                         QDLog.debug(logger) { "Failed to relativize path: ${e.message}" }
                         containingFilePath
                     }
@@ -125,41 +123,14 @@ object CodeReferenceSelector {
         return methodUsages
     }
 
-    /**
-     * Check whether the given class name belongs to a set of excluded (standard)
-     * packages. Returns false for empty class names.
-     *
-     * @param className fully qualified class name
-     * @return true if the class name starts with any of the excluded package prefixes
-     */
     private fun isStandardLibrary(className: String): Boolean =
         className.isNotEmpty() && excludedPackages.any { className.startsWith(it) }
 
-    /**
-     * Public entry to find references of a class. This method prepares a visited
-     * set to avoid infinite recursion and duplicates, then delegates to the
-     * internal recursive implementation.
-     *
-     * @param psiClass class to find references for
-     * @return list of formatted class usage descriptions
-     */
     fun findClassReferences(psiClass: PsiClass): List<String> {
-        // Use a visited set to avoid recursion and duplicates
         val visited = mutableSetOf<String>()
         return findClassReferencesInternal(psiClass, visited)
     }
 
-    /**
-     * Internal recursive implementation that searches for references of a class,
-     * traverses superclasses and interfaces, and accumulates formatted results.
-     *
-     * The method guards against missing virtual files and document data and will
-     * continue working in the presence of those issues. Returns an empty list on errors.
-     *
-     * @param psiClass class to search references for
-     * @param visited mutable set of visited class keys to avoid cycles
-     * @return list of usage descriptions
-     */
     private fun findClassReferencesInternal(
         psiClass: PsiClass,
         visited: MutableSet<String>,
@@ -207,26 +178,9 @@ object CodeReferenceSelector {
         return references
     }
 
-    /**
-     * Return all PsiClass instances found in the given PsiFile.
-     *
-     * @param file PSI file to scan
-     * @return list of PsiClass elements in the file
-     */
     fun getClassesFromPsiFile(file: PsiFile): List<PsiClass> =
         PsiTreeUtil.findChildrenOfType(file, PsiClass::class.java).toList()
 
-    /**
-     * Gather both method usages and class references present in a file.
-     *
-     * This method collects method declarations and classes from the provided
-     * psiFile and uses search utilities to produce a combined list of reference
-     * and definition descriptions.
-     *
-     * @param psiFile file to analyze
-     * @param project current IntelliJ project used for relative path computation
-     * @return list of formatted reference and definition descriptions
-     */
     fun getAllReferencesAndDefinitions(
         psiFile: PsiFile,
         project: Project,
