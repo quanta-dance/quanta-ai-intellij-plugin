@@ -7,7 +7,7 @@ import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.DynamicMcpToolProvider
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.McpClientService
-import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
+import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.github.quanta_dance.quanta.plugins.intellij.services.ui.Notifications
 import com.intellij.notification.NotificationType

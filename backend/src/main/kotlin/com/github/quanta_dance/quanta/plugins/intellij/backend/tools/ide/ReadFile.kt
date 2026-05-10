@@ -5,11 +5,11 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
-import com.github.quanta_dance.quanta.plugins.intellij.project.CurrentFileContextProvider
-import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
+import com.github.quanta_dance.quanta.plugins.intellij.backend.project.CurrentFileContextProvider
+import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
-import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
 import com.github.quanta_dance.quanta.plugins.intellij.tools.models.ReadFileResult
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.service

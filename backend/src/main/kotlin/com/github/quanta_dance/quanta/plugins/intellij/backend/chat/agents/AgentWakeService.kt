@@ -3,7 +3,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.backend.chat.agents
 
-import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
+import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service

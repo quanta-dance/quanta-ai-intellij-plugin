@@ -3,7 +3,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp
 
-import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
 import com.intellij.openapi.project.Project
 import java.nio.file.Path
 

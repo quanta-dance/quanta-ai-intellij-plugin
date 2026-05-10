@@ -5,7 +5,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
+import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.intellij.openapi.diagnostic.Logger
 import com.openai.core.JsonValue
 import com.openai.models.responses.FunctionTool

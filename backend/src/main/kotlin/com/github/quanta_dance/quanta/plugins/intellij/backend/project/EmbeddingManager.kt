@@ -1,24 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
 
-package com.github.quanta_dance.quanta.plugins.intellij.project
+package com.github.quanta_dance.quanta.plugins.intellij.backend.project
 
-import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
+import com.github.quanta_dance.quanta.plugins.intellij.services.EmbeddingService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.services.SQLiteVectorStore
 import com.github.quanta_dance.quanta.plugins.intellij.services.VectorStoreService
-import com.github.quanta_dance.quanta.plugins.intellij.services.EmbeddingService
-import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.*
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 
@@ -79,40 +72,21 @@ class EmbeddingManager(private val project: com.intellij.openapi.project.Project
                 mapOf(
                     "project" to projectKey,
                     "path" to filePath,
-                    "chunkIndex" to i.toString(),
+                    "chunk" to i.toString(),
                     "timestamp" to timestamp.toString(),
                 ),
             )
             textsToEmbed.add(chunk)
             chunkHashes.add(hash)
         }
-        if (textsToEmbed.isEmpty()) return
-        embeddingService.createAndStoreEmbeddings(ids, textsToEmbed, metas, chunkHashes = chunkHashes)
+        if (ids.isEmpty()) return
+        embeddingService.createAndStoreEmbeddings(
+            ids = ids,
+            texts = textsToEmbed,
+            metadataList = metas,
+            chunkHashes = chunkHashes,
+        )
     }
 
-    private fun slidingWindowChunk(
-        text: String,
-        chunkSize: Int,
-        overlap: Int,
-    ): List<String> {
-        if (text.length <= chunkSize) return listOf(text)
-        val step = (chunkSize - overlap).coerceAtLeast(1)
-        val list = mutableListOf<String>()
-        var i = 0
-        while (i < text.length) {
-            val end = (i + chunkSize).coerceAtMost(text.length)
-            list.add(text.substring(i, end))
-            if (end == text.length) break
-            i += step
-        }
-        return list
-    }
-
-    fun dispose() {
-        scope.cancel()
-    }
-
-    companion object {
-        fun getInstance(project: com.intellij.openapi.project.Project): EmbeddingManager = project.service()
-    }
+    private fun slidingWindowChunk(text: String, size: Int, overlap: Int): List<String> = emptyList()
 }

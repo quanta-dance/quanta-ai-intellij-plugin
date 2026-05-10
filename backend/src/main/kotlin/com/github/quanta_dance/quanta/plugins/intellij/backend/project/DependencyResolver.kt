@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
 
-package com.github.quanta_dance.quanta.plugins.intellij.project
+package com.github.quanta_dance.quanta.plugins.intellij.backend.project
 
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.LibraryOrderEntry
@@ -58,7 +58,7 @@ object DependencyResolver {
             if (entry is LibraryOrderEntry) {
                 val library = entry.library
                 if (library != null) {
-                    return library.name // Returns dependency name (e.g., "Guava", "Commons Lang")
+                    return library.name
                 }
             }
         }

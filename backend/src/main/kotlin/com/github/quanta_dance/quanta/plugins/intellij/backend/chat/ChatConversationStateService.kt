@@ -1,6 +1,6 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.chat
 
-import com.github.quanta_dance.quanta.plugins.intellij.services.QuantaAISettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.QuantaAISessionState
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus
@@ -146,7 +146,7 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
         )
         state.sessions.add(0, session)
         state.activeSessionId = session.id
-        QuantaAISettingsState.instance.state.agents = mutableListOf()
+        QuantaAISessionState.instance.state.agents = mutableListOf()
         return session.id
     }
 
@@ -200,9 +200,9 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
 
     fun getActiveLastResponseId(): String? = getActiveSession()?.lastResponseId
 
-    fun loadActiveAgents(): List<QuantaAISettingsState.AgentProfile> =
+    fun loadActiveAgents(): List<QuantaAISessionState.AgentProfile> =
         getActiveSession()?.agents.orEmpty().map { saved ->
-            QuantaAISettingsState.AgentProfile(
+            QuantaAISessionState.AgentProfile(
                 id = saved.id,
                 role = saved.role,
                 model = saved.model,
@@ -211,7 +211,7 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
             )
         }
 
-    fun saveActiveAgents(agents: List<QuantaAISettingsState.AgentProfile>) {
+    fun saveActiveAgents(agents: List<QuantaAISessionState.AgentProfile>) {
         val session = getOrCreateActiveSession()
         session.agents = agents.map { agent ->
             PersistedAgentProfile(

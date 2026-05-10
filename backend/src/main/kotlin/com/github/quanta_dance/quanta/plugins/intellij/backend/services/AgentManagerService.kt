@@ -1,18 +1,18 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
-
-package com.github.quanta_dance.quanta.plugins.intellij.services
+package com.github.quanta_dance.quanta.plugins.intellij.backend.services
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.AgentChannelStateService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.ChatConversationStateService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.rpc.BackendSettingsRpcApi
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQuantaSettingsState
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.Instructions
+import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.QuantaAISessionState
+import com.github.quanta_dance.quanta.plugins.intellij.services.ProjectAgentsFileManager
+import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelAuthorTypeDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventKindDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskStatusDto
 import com.intellij.openapi.Disposable
-import com.openai.models.ChatModel
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
@@ -94,7 +94,7 @@ class AgentManagerService(
             ensureExecutor(pa.id)
         }
         try {
-            QuantaAISettingsState.instance.state.agents = persisted.toMutableList()
+            QuantaAISessionState.instance.state.agents = persisted.toMutableList()
         } catch (_: Throwable) {
         }
         pcs.firePropertyChange("agents", null, persisted.toList())
@@ -105,8 +105,8 @@ class AgentManagerService(
     fun getAgentsSnapshot(): List<AgentSnapshot> =
         agents.values.map { AgentSnapshot(it.id, it.config.role, it.config.instructions, it.config.model) }
 
-    fun getPersistedAgentProfiles(): List<QuantaAISettingsState.AgentProfile> =
-        QuantaAISettingsState.instance.state.agents.map { it.copy() }
+    fun getPersistedAgentProfiles(): List<QuantaAISessionState.AgentProfile> =
+        QuantaAISessionState.instance.state.agents.map { it.copy() }
 
     fun getAgentAllowedBuiltInNames(agentId: String): Set<String>? = agents[agentId]?.config?.allowedBuiltInNames
 
@@ -135,9 +135,9 @@ class AgentManagerService(
         if (text.isBlank()) return false
         if (!agents.containsKey(toAgentId)) return false
         return try {
-            val st = QuantaAISettingsState.instance.state
+            val st = QuantaAISessionState.instance.state
             val list = st.agentInboxes.getOrPut(toAgentId) { mutableListOf() }
-            list.add(QuantaAISettingsState.AgentInboxMessage(System.currentTimeMillis(), from, text, kind))
+            list.add(QuantaAISessionState.AgentInboxMessage(System.currentTimeMillis(), from, text, kind))
             val max = 50
             if (list.size > max) {
                 val drop = list.size - max
@@ -237,9 +237,9 @@ class AgentManagerService(
         }
     }
 
-    fun readAndClearInbox(agentId: String): List<QuantaAISettingsState.AgentInboxMessage> {
+    fun readAndClearInbox(agentId: String): List<QuantaAISessionState.AgentInboxMessage> {
         return try {
-            val st = QuantaAISettingsState.instance.state
+            val st = QuantaAISessionState.instance.state
             val list = st.agentInboxes[agentId] ?: return emptyList()
             val out = list.toList()
             list.clear()
@@ -278,9 +278,9 @@ class AgentManagerService(
     ) {
         try {
             val key = agentConversationKey(agentId)
-            val state = QuantaAISettingsState.instance.state
+            val state = QuantaAISessionState.instance.state
             val list = state.conversations.getOrPut(key) { mutableListOf() }
-            list.add(QuantaAISettingsState.PersistedMessage(System.currentTimeMillis(), role, text, null))
+            list.add(QuantaAISessionState.PersistedMessage(System.currentTimeMillis(), role, text, null))
 
             // Keep bounded to ensure summary inputs remain small.
             val max = 120
@@ -294,7 +294,7 @@ class AgentManagerService(
 
     private fun summaryForAgent(agentId: String): String? =
         try {
-            QuantaAISettingsState.instance.state.conversationSummaries[agentConversationKey(agentId)]
+            QuantaAISessionState.instance.state.conversationSummaries[agentConversationKey(agentId)]
         } catch (_: Throwable) {
             null
         }
@@ -305,7 +305,7 @@ class AgentManagerService(
     ) {
         if (summary.isBlank()) return
         try {
-            QuantaAISettingsState.instance.state.conversationSummaries[agentConversationKey(agentId)] = summary
+            QuantaAISessionState.instance.state.conversationSummaries[agentConversationKey(agentId)] = summary
         } catch (_: Throwable) {
         }
     }
@@ -317,7 +317,7 @@ class AgentManagerService(
         val key = agentConversationKey(agentId)
         val msgs =
             try {
-                QuantaAISettingsState.instance.state.conversations[key]
+                QuantaAISessionState.instance.state.conversations[key]
             } catch (_: Throwable) {
                 null
             } ?: return false
@@ -379,15 +379,15 @@ class AgentManagerService(
         // Rewrite persisted history so restart won't immediately exceed context window
         try {
             val key = agentConversationKey(agentId)
-            QuantaAISettingsState.instance.state.conversations[key] =
+            QuantaAISessionState.instance.state.conversations[key] =
                 mutableListOf(
-                    QuantaAISettingsState.PersistedMessage(
+                    QuantaAISessionState.PersistedMessage(
                         System.currentTimeMillis(),
                         "system",
                         "Conversation summary (auto, rewritten after context-window reset):\n" + summaryText,
                         null,
                     ),
-                    QuantaAISettingsState.PersistedMessage(
+                    QuantaAISessionState.PersistedMessage(
                         System.currentTimeMillis(),
                         "user",
                         message,
@@ -400,7 +400,7 @@ class AgentManagerService(
         // Reset server-side thread state for the agent
         session.previousId = null
         try {
-            QuantaAISettingsState.instance.state.agents
+            QuantaAISessionState.instance.state.agents
                 .find { it.id == agentId }
                 ?.previousId = null
         } catch (_: Throwable) {
@@ -480,7 +480,7 @@ class AgentManagerService(
         val key = agentConversationKey(agentId)
         val msgs =
             try {
-                QuantaAISettingsState.instance.state.conversations[key]
+                QuantaAISessionState.instance.state.conversations[key]
             } catch (_: Throwable) {
                 null
             } ?: return ""
@@ -556,7 +556,7 @@ class AgentManagerService(
     }
 
     fun createAgent(config: AgentConfig): String {
-        val enabled = QuantaAISettingsState.instance.state.agenticEnabled ?: true
+        val enabled = QuantaAISessionState.instance.state.agenticEnabled ?: true
         if (!enabled) throw IllegalStateException("Agentic mode is disabled in settings")
         val id = UUID.randomUUID().toString()
         val baseInstr =
@@ -576,9 +576,9 @@ class AgentManagerService(
             broadcastRosterUpdate(from = "AgentManager")
         } catch (_: Throwable) {
         }
-        val st = QuantaAISettingsState.instance.state
+        val st = QuantaAISessionState.instance.state
         st.agents.add(
-            QuantaAISettingsState.AgentProfile(
+            QuantaAISessionState.AgentProfile(
                 id = id,
                 role = session.config.role,
                 model = session.config.model,
@@ -591,7 +591,7 @@ class AgentManagerService(
     }
 
     fun createDefaultTeam(): List<String> {
-        val enabled = QuantaAISettingsState.instance.state.agenticEnabled ?: true
+        val enabled = QuantaAISessionState.instance.state.agenticEnabled ?: true
         if (!enabled) return emptyList()
 
         // Idempotent: do not create duplicates if user already has agents.
@@ -749,7 +749,7 @@ class AgentManagerService(
             } catch (_: Throwable) {
             }
         }
-        val st = QuantaAISettingsState.instance.state
+        val st = QuantaAISessionState.instance.state
         st.agents.removeIf { it.id == agentId }
         project.service<ChatConversationStateService>().saveActiveAgents(st.agents)
         project.service<ToolWindowService>()
@@ -808,7 +808,7 @@ class AgentManagerService(
      */
     fun resetForNewSession() {
         agents.values.forEach { it.previousId = null }
-        val st = QuantaAISettingsState.instance.state
+        val st = QuantaAISessionState.instance.state
         st.agents.indices.forEach { idx ->
             st.agents[idx] = st.agents[idx].copy(previousId = null)
         }
@@ -825,7 +825,7 @@ class AgentManagerService(
         message: String,
         existingTaskId: String? = null,
     ): CompletableFuture<AgentTaskResult> {
-        val enabled = QuantaAISettingsState.instance.state.agenticEnabled ?: true
+        val enabled = QuantaAISessionState.instance.state.agenticEnabled ?: true
         if (!enabled) return CompletableFuture.completedFuture(
             AgentTaskResult(
                 "",
@@ -1015,12 +1015,12 @@ class AgentManagerService(
                         },
                     )
                 session.previousId = newPrev
-                QuantaAISettingsState.instance.state.agents
+                QuantaAISessionState.instance.state.agents
                     .indexOfFirst { it.id == agentId }
                     .takeIf { it >= 0 }
                     ?.let { idx ->
-                        val current = QuantaAISettingsState.instance.state.agents[idx]
-                        QuantaAISettingsState.instance.state.agents[idx] = current.copy(previousId = newPrev)
+                        val current = QuantaAISessionState.instance.state.agents[idx]
+                        QuantaAISessionState.instance.state.agents[idx] = current.copy(previousId = newPrev)
                     }
 
                 // Persist transcript and schedule proactive summarization
@@ -1070,12 +1070,12 @@ class AgentManagerService(
                         if (retry != null) {
                             val (reply, newPrev) = retry
                             session.previousId = newPrev
-                            QuantaAISettingsState.instance.state.agents
+                            QuantaAISessionState.instance.state.agents
                                 .indexOfFirst { it.id == agentId }
                                 .takeIf { it >= 0 }
                                 ?.let { idx ->
-                                    val current = QuantaAISettingsState.instance.state.agents[idx]
-                                    QuantaAISettingsState.instance.state.agents[idx] =
+                                    val current = QuantaAISessionState.instance.state.agents[idx]
+                                    QuantaAISessionState.instance.state.agents[idx] =
                                         current.copy(previousId = newPrev)
                                 }
 
@@ -1137,7 +1137,7 @@ class AgentManagerService(
         agentId: String,
         message: String,
     ): String { // unchanged
-        val enabled = QuantaAISettingsState.instance.state.agenticEnabled ?: true
+        val enabled = QuantaAISessionState.instance.state.agenticEnabled ?: true
         if (!enabled) throw IllegalStateException("Agentic mode is disabled in settings")
         val session = agents[agentId] ?: return "Agent not found: $agentId"
         val requestId = UUID.randomUUID().toString()
@@ -1273,12 +1273,12 @@ class AgentManagerService(
                     allowedMcpNames = session.config.allowedMcpNames,
                 )
             session.previousId = newPrev
-            QuantaAISettingsState.instance.state.agents
+            QuantaAISessionState.instance.state.agents
                 .indexOfFirst { it.id == agentId }
                 .takeIf { it >= 0 }
                 ?.let { idx ->
-                    val current = QuantaAISettingsState.instance.state.agents[idx]
-                    QuantaAISettingsState.instance.state.agents[idx] = current.copy(previousId = newPrev)
+                    val current = QuantaAISessionState.instance.state.agents[idx]
+                    QuantaAISessionState.instance.state.agents[idx] = current.copy(previousId = newPrev)
                 }
 
             // Persist transcript and schedule proactive summarization
@@ -1314,12 +1314,12 @@ class AgentManagerService(
                     if (retry != null) {
                         val (reply, newPrev) = retry
                         session.previousId = newPrev
-                        QuantaAISettingsState.instance.state.agents
+                        QuantaAISessionState.instance.state.agents
                             .indexOfFirst { it.id == agentId }
                             .takeIf { it >= 0 }
                             ?.let { idx ->
-                                val current = QuantaAISettingsState.instance.state.agents[idx]
-                                QuantaAISettingsState.instance.state.agents[idx] = current.copy(previousId = newPrev)
+                                val current = QuantaAISessionState.instance.state.agents[idx]
+                                QuantaAISessionState.instance.state.agents[idx] = current.copy(previousId = newPrev)
                             }
 
                         persistAgentMessage(agentId, "user", message)

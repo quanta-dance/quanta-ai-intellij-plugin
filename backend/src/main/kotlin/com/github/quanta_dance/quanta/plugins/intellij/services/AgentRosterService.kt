@@ -1,5 +1,6 @@
 package com.github.quanta_dance.quanta.plugins.intellij.services
 
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentManagerService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQuantaSettingsState
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
 import com.intellij.openapi.components.Service

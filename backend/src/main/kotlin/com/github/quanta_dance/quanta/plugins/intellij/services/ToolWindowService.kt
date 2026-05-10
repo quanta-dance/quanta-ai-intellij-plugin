@@ -25,7 +25,7 @@ class ToolWindowService(
         @Suppress("unused") url: String,
     ) = Unit
 
-    fun addSuggestions(@Suppress("unused") suggestions: List<com.github.quanta_dance.quanta.plugins.intellij.models.Suggestion>?) =
+    fun addSuggestions(@Suppress("unused") suggestions: List<com.github.quanta_dance.quanta.plugins.intellij.backend.models.Suggestion>?) =
         Unit
 
     fun addDebugMessage(

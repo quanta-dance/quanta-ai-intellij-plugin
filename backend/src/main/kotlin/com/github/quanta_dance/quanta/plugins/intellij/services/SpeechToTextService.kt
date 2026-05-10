@@ -2,6 +2,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.services
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.ChatConversationService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQuantaSettingsState
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service

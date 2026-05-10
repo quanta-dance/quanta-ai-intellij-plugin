@@ -1,6 +1,6 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.chat
 
-import com.github.quanta_dance.quanta.plugins.intellij.services.AgentManagerService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentManagerService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.*
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service

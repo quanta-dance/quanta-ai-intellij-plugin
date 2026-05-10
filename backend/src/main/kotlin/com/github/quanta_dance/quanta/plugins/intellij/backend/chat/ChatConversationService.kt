@@ -7,12 +7,12 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.agents.Agent
 import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.agents.AgentLifecycleService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.agents.AgentRegistryService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.agents.AgentWakeService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.project.CurrentFileContextProvider
 import com.github.quanta_dance.quanta.plugins.intellij.backend.repository.ChatMessageFactory
 import com.github.quanta_dance.quanta.plugins.intellij.backend.repository.OpenAIBackendChatResponder
 import com.github.quanta_dance.quanta.plugins.intellij.backend.repository.OpenAIBackendChatResponder.ChatTurn
-import com.github.quanta_dance.quanta.plugins.intellij.project.CurrentFileContextProvider
-import com.github.quanta_dance.quanta.plugins.intellij.services.AgentManagerService
-import com.github.quanta_dance.quanta.plugins.intellij.services.OpenAIService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentManagerService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.OpenAIService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage.ChatMessageType.AI_THINKING
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatMessageDto

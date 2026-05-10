@@ -3,8 +3,8 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.backend.chat.agents
 
-import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
-import com.github.quanta_dance.quanta.plugins.intellij.services.QuantaAISettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
+import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.QuantaAISessionState
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
@@ -29,9 +29,9 @@ class AgentInboxService(
         kind: String? = "notification",
     ): Boolean {
         if (text.isBlank()) return false
-        val state = QuantaAISettingsState.instance.state
+        val state = QuantaAISessionState.instance.state
         val list = state.agentInboxes.getOrPut(toAgentId) { mutableListOf() }
-        list.add(QuantaAISettingsState.AgentInboxMessage(System.currentTimeMillis(), from, text, kind))
+        list.add(QuantaAISessionState.AgentInboxMessage(System.currentTimeMillis(), from, text, kind))
         if (list.size > 50) {
             repeat(list.size - 50) { if (list.isNotEmpty()) list.removeAt(0) }
         }
@@ -47,8 +47,8 @@ class AgentInboxService(
         return true
     }
 
-    fun readAndClearInbox(agentId: String): List<QuantaAISettingsState.AgentInboxMessage> {
-        val state = QuantaAISettingsState.instance.state
+    fun readAndClearInbox(agentId: String): List<QuantaAISessionState.AgentInboxMessage> {
+        val state = QuantaAISessionState.instance.state
         val list = state.agentInboxes[agentId] ?: return emptyList()
         val out = list.toList()
         list.clear()

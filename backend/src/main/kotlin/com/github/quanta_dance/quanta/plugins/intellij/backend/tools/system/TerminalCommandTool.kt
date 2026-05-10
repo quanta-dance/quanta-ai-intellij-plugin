@@ -5,7 +5,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.system
 
 import com.fasterxml.jackson.annotation.*
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQuantaSettingsState
-import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
+import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.intellij.execution.configurations.GeneralCommandLine

@@ -5,14 +5,14 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
-import com.github.quanta_dance.quanta.plugins.intellij.project.CodeReferenceSelector.getAllReferencesAndDefinitions
-import com.github.quanta_dance.quanta.plugins.intellij.project.DependencyResolver.resolveImportsToDependencies
-import com.github.quanta_dance.quanta.plugins.intellij.project.ProjectVersionUtil.getProjectBuildFiles
-import com.github.quanta_dance.quanta.plugins.intellij.project.ProjectVersionUtil.getProjectCompileVersion
-import com.github.quanta_dance.quanta.plugins.intellij.services.QDLog
+import com.github.quanta_dance.quanta.plugins.intellij.backend.project.CodeReferenceSelector.getAllReferencesAndDefinitions
+import com.github.quanta_dance.quanta.plugins.intellij.backend.project.DependencyResolver.resolveImportsToDependencies
+import com.github.quanta_dance.quanta.plugins.intellij.backend.project.ProjectVersionUtil.getProjectBuildFiles
+import com.github.quanta_dance.quanta.plugins.intellij.backend.project.ProjectVersionUtil.getProjectCompileVersion
+import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
-import com.github.quanta_dance.quanta.plugins.intellij.tools.PathUtils
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
