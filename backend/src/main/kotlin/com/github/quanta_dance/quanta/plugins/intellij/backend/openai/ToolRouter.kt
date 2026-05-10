@@ -9,8 +9,6 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.Dynamic
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.McpClientService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
-import com.github.quanta_dance.quanta.plugins.intellij.services.ui.Notifications
-import com.intellij.notification.NotificationType
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.progress.ProcessCanceledException
@@ -94,7 +92,6 @@ class ToolRouter(
             } catch (_: Throwable) {
             }
             log.error("Tool '${functionCall.name()}' failed: ${e.message}", e)
-            Notifications.show(project, e.message.orEmpty(), NotificationType.ERROR)
             mapOf(
                 "status" to "error",
                 "tool" to functionCall.name(),
