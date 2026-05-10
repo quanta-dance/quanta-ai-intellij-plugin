@@ -1,10 +1,13 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.rpc
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AIVoiceService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentManagerService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentRosterService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SessionPlanService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.OpenFileInEditorTool
-import com.github.quanta_dance.quanta.plugins.intellij.services.*
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SessionPlanStatusService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SpeechToTextService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaBackendApi
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.*
 import com.intellij.openapi.components.service
@@ -85,7 +88,7 @@ class QuantaBackendRpcApi : QuantaBackendApi {
         text: String,
     ): SynthesizedSpeechDto {
         val backendProject = projectId.findProjectOrNull() ?: return SynthesizedSpeechDto(audioBase64 = "")
-        val audioBytes = backendProject.service<AIVoiceService>().say(text)
+        val audioBytes = backendProject.getService(AIVoiceService::class.java).say(text)
         return SynthesizedSpeechDto(
             audioBase64 = Base64.getEncoder().encodeToString(audioBytes),
         )
@@ -93,7 +96,7 @@ class QuantaBackendRpcApi : QuantaBackendApi {
 
     override suspend fun startSpeechStream(projectId: ProjectId, sessionId: String, text: String) {
         val backendProject = projectId.findProjectOrNull() ?: return
-        backendProject.service<AIVoiceService>().startSpeechStream(sessionId, text)
+        backendProject.getService(AIVoiceService::class.java).startSpeechStream(sessionId, text)
     }
 
     override suspend fun pollSpeechChunk(
@@ -107,12 +110,12 @@ class QuantaBackendRpcApi : QuantaBackendApi {
             isLast = true,
             chunkBase64 = "",
         )
-        return backendProject.service<AIVoiceService>().pollSpeechChunk(sessionId, afterSequence)
+        return backendProject.getService(AIVoiceService::class.java).pollSpeechChunk(sessionId, afterSequence)
     }
 
     override suspend fun stopSpeech(projectId: ProjectId) {
         val backendProject = projectId.findProjectOrNull() ?: return
-        backendProject.service<AIVoiceService>().stopTalking()
+        backendProject.getService(AIVoiceService::class.java).stopTalking()
     }
 
     override suspend fun startMicrophoneSession(projectId: ProjectId, sessionId: String) {

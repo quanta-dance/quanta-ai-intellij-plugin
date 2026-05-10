@@ -18,6 +18,8 @@ import kotlinx.serialization.Serializable
  *
  * TODO: consider splitting agent registry data from conversation history
  * if the session state grows further.
+ * TODO: rename the persisted state key from QuantaAISettingsState to
+ * QuantaAISessionState after existing data migration is handled.
  */
 @Service(Service.Level.APP)
 @State(

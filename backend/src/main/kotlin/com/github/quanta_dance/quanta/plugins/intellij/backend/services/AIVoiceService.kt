@@ -1,4 +1,7 @@
-package com.github.quanta_dance.quanta.plugins.intellij.services
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
+package com.github.quanta_dance.quanta.plugins.intellij.backend.services
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
@@ -18,6 +21,12 @@ import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.LinkedBlockingQueue
 
+/**
+ * Backend text-to-speech service.
+ *
+ * Provides both one-shot synthesis and streaming speech generation.
+ * The frontend uses the streaming helpers to play back audio in chunks.
+ */
 @Service(Service.Level.PROJECT)
 class AIVoiceService(private val project: Project) {
     companion object {
@@ -34,6 +43,9 @@ class AIVoiceService(private val project: Project) {
     private val httpClient: HttpClient = HttpClient.newHttpClient()
     private val objectMapper = jacksonObjectMapper()
 
+    /**
+     * Synthesize a complete MP3 clip for the given text.
+     */
     fun say(message: String): ByteArray {
         val text = message.trim()
         if (text.isEmpty()) return ByteArray(0)
@@ -54,6 +66,11 @@ class AIVoiceService(private val project: Project) {
         }
     }
 
+    /**
+     * Start a streaming speech request for the given session.
+     *
+     * The generated PCM chunks are buffered in-memory for frontend polling.
+     */
     fun startSpeechStream(sessionId: String, message: String) {
         stopTalking()
         val text = message.trim()
@@ -160,6 +177,9 @@ class AIVoiceService(private val project: Project) {
         worker.start()
     }
 
+    /**
+     * Poll the next available chunk for a session stream.
+     */
     fun pollSpeechChunk(sessionId: String, afterSequence: Int): SpeechChunkDto {
         val state =
             streams[sessionId] ?: return SpeechChunkDto(sessionId = sessionId, sequence = afterSequence, isLast = true)
@@ -179,6 +199,9 @@ class AIVoiceService(private val project: Project) {
         return SpeechChunkDto(sessionId = sessionId, sequence = afterSequence, isLast = false)
     }
 
+    /**
+     * Stop any active speech streams and clear buffered chunks.
+     */
     fun stopTalking() {
         streams.clear()
     }

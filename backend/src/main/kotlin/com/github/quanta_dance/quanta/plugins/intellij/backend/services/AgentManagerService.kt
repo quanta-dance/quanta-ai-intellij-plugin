@@ -7,7 +7,6 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.rpc.BackendSettin
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQuantaSettingsState
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.Instructions
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.QuantaAISessionState
-import com.github.quanta_dance.quanta.plugins.intellij.services.ProjectAgentsFileManager
 import com.github.quanta_dance.quanta.plugins.intellij.services.ToolWindowService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelAuthorTypeDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventKindDto

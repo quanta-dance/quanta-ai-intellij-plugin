@@ -1,4 +1,4 @@
-package com.github.quanta_dance.quanta.plugins.intellij.services
+package com.github.quanta_dance.quanta.plugins.intellij.backend.services
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.ChatConversationService
@@ -21,6 +21,15 @@ import javax.sound.sampled.AudioFormat
 import javax.sound.sampled.AudioInputStream
 import javax.sound.sampled.AudioSystem
 
+/**
+ * Backend speech-to-text service.
+ *
+ * Collects PCM audio for a voice session, wraps it as WAV, and sends it to the
+ * OpenAI transcription endpoint. The backend keeps session lifecycle and request
+ * construction centralized here.
+ *
+ * TODO: split raw PCM buffering from transcription transport if this service grows further.
+ */
 @Service(Service.Level.PROJECT)
 class SpeechToTextService(private val project: Project) {
     companion object {
@@ -33,12 +42,18 @@ class SpeechToTextService(private val project: Project) {
     private val httpClient: HttpClient = HttpClient.newHttpClient()
     private val objectMapper = jacksonObjectMapper()
 
+    /**
+     * Start a new capture session and reset any previous buffered audio.
+     */
     fun startSession(sessionId: String) {
         sessions[sessionId]?.close()
         sessions[sessionId] = ByteArrayOutputStream()
         QDLog.info(logger) { "SpeechToTextService.startSession: $sessionId" }
     }
 
+    /**
+     * Append a PCM audio chunk to the active capture session.
+     */
     fun appendAudioChunk(sessionId: String, chunk: ByteArray) {
         if (chunk.isEmpty()) return
         val buffer = sessions[sessionId]
@@ -55,11 +70,17 @@ class SpeechToTextService(private val project: Project) {
         }
     }
 
+    /**
+     * Cancel and discard a capture session without transcription.
+     */
     fun cancelSession(sessionId: String) {
         sessions.remove(sessionId)?.close()
         QDLog.info(logger) { "SpeechToTextService.cancelSession: $sessionId" }
     }
 
+    /**
+     * Finish a capture session, transcribe the audio, and return the text.
+     */
     suspend fun finishSession(sessionId: String): String {
         val buffer = sessions.remove(sessionId) ?: return ""
         val pcmBytes = synchronized(buffer) { buffer.toByteArray() }
