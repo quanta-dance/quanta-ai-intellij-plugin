@@ -1,5 +1,6 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.chat
 
+import com.github.quanta_dance.quanta.plugins.intellij.services.QuantaAISettingsState
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus
@@ -72,6 +73,14 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
         var createdAtEpochMs: Long = 0,
     )
 
+    data class PersistedAgentProfile(
+        var id: String = UUID.randomUUID().toString(),
+        var role: String = "",
+        var model: String? = null,
+        var instructions: String? = null,
+        var previousId: String? = null,
+    )
+
     data class PersistedChatSession(
         var id: String = UUID.randomUUID().toString(),
         var title: String = "New Chat",
@@ -80,6 +89,7 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
         var messages: MutableList<PersistedChatMessage> = mutableListOf(),
         var delegatedTasks: MutableList<PersistedDelegatedTask> = mutableListOf(),
         var channelEvents: MutableList<PersistedChannelEvent> = mutableListOf(),
+        var agents: MutableList<PersistedAgentProfile> = mutableListOf(),
     )
 
     data class State(
@@ -136,6 +146,7 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
         )
         state.sessions.add(0, session)
         state.activeSessionId = session.id
+        QuantaAISettingsState.instance.state.agents = mutableListOf()
         return session.id
     }
 
@@ -188,6 +199,31 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
         }
 
     fun getActiveLastResponseId(): String? = getActiveSession()?.lastResponseId
+
+    fun loadActiveAgents(): List<QuantaAISettingsState.AgentProfile> =
+        getActiveSession()?.agents.orEmpty().map { saved ->
+            QuantaAISettingsState.AgentProfile(
+                id = saved.id,
+                role = saved.role,
+                model = saved.model,
+                instructions = saved.instructions,
+                previousId = saved.previousId,
+            )
+        }
+
+    fun saveActiveAgents(agents: List<QuantaAISettingsState.AgentProfile>) {
+        val session = getOrCreateActiveSession()
+        session.agents = agents.map { agent ->
+            PersistedAgentProfile(
+                id = agent.id,
+                role = agent.role,
+                model = agent.model,
+                instructions = agent.instructions,
+                previousId = agent.previousId,
+            )
+        }.toMutableList()
+        session.updatedAtEpochMs = System.currentTimeMillis()
+    }
 
     fun loadActiveDelegatedTasks(): List<DelegatedTaskDto> =
         getActiveSession()?.delegatedTasks.orEmpty().map { saved ->
@@ -352,6 +388,7 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
         session.messages.clear()
         session.lastResponseId = null
         session.updatedAtEpochMs = System.currentTimeMillis()
+        session.agents.clear()
     }
 
     private fun getActiveSession(): PersistedChatSession? {
