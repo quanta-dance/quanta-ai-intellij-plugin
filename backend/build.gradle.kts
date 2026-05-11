@@ -1,23 +1,19 @@
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
-import org.jetbrains.intellij.platform.gradle.tasks.PrepareSandboxTask
 
 plugins {
     kotlin("jvm")
     kotlin("plugin.serialization")
-   // id("org.jetbrains.intellij.platform.module")
     id("rpc")
 }
 
 repositories {
     mavenCentral()
-
     intellijPlatform {
         defaultRepositories()
     }
 }
 
 val quantaRuntime by configurations.creating
-
 
 dependencies {
     intellijPlatform {
@@ -57,23 +53,9 @@ dependencies {
 }
 
 kotlin {
-    // This single line replaces both the 'java' and 'kotlin' toolchain blocks
     jvmToolchain(21)
 }
-//
-//tasks.withType<PrepareSandboxTask> {
-//    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-//    into("lib") {
-//        from(
-//            configurations.runtimeClasspath
-//                .filter { it.name.endsWith(".jar") }
-//                .map { zipTree(it) }
-//        )
-//    }
-//}
 
-// Optional: Only keep this if you need to build a fat JAR specifically.
-// Otherwise, the IntelliJ Platform plugin handles JAR creation for you.
 tasks {
     withType<Test>().configureEach {
         jvmArgs("-Dkotlinx.coroutines.debug=off")
@@ -82,9 +64,10 @@ tasks {
 
     withType<Jar>().configureEach {
         duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-        val runtimeFiles = quantaRuntime
-            .filter { it.name.endsWith(".jar") }
-            .map { zipTree(it) }
+        val runtimeFiles =
+            quantaRuntime
+                .filter { it.name.endsWith(".jar") }
+                .map { zipTree(it) }
         from(runtimeFiles)
     }
 }
