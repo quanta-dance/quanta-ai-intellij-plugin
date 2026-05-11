@@ -503,6 +503,18 @@ class OpenAIService(
 
     override fun dispose() {}
 
+    private fun ensureClientIsCurrent() {
+        val settings = BackendQuantaSettingsState.instance.settings
+        val latestClientKey = settings.openAiUrl to settings.openAiToken
+        if (latestClientKey != clientKey) {
+            QDLog.info(thisLogger()) {
+                "OpenAIService: rebuilding OpenAI client due to backend settings change. url=${settings.openAiUrl}, tokenPresent=${settings.openAiToken.isNotBlank()}"
+            }
+            oAI = OpenAIClientProvider.get(project)
+            clientKey = latestClientKey
+        }
+    }
+
     private fun userMessage(text: String): ResponseInputItem =
         ResponseInputItem.ofMessage(
             ResponseInputItem.Message
@@ -766,6 +778,7 @@ class OpenAIService(
                 includeMcp = includeMcp,
                 previousResponseId = previousId,
             )
+        ensureClientIsCurrent()
         QDLog.info(thisLogger()) { "OpenAIService.createResponse: request built, sending to OpenAI" }
         val structResponse = oAI.responses().create(createParams)
         QDLog.info(thisLogger()) {
