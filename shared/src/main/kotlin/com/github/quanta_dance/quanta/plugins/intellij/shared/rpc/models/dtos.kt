@@ -46,3 +46,11 @@ fun ChatMessage.toChatMessageDto(): ChatMessageDto {
         parentMessageId = parentMessageId,
     )
 }
+
+@Serializable
+data class ApplyRefactorSuggestionResultDto(
+    val applied: Boolean,
+    val newStartLine: Int? = null,
+    val newEndLine: Int? = null,
+    val errorMessage: String? = null,
+)

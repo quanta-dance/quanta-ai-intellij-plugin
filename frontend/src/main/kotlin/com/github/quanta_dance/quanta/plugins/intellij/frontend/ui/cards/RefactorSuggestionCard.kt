@@ -2,30 +2,28 @@ package com.github.quanta_dance.quanta.plugins.intellij.frontend.ui.cards
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.SwingPanel
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.ChatAppIcons
+import com.github.quanta_dance.quanta.plugins.intellij.models.Suggestion
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaBackendApi
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.FrontendLogDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.FrontendLogLevel
 import com.intellij.openapi.diagnostic.Logger
-import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.LineNumberConverter
 import com.intellij.openapi.editor.colors.EditorColorsManager
@@ -35,7 +33,6 @@ import com.intellij.openapi.editor.highlighter.EditorHighlighterFactory
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.project.Project
 import com.intellij.platform.project.projectId
-import com.intellij.ui.EditorTextField
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -44,9 +41,15 @@ import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.Icon
 import org.jetbrains.jewel.ui.component.IconButton
 import org.jetbrains.jewel.ui.component.Text
+import org.jetbrains.jewel.ui.icons.AllIconsKeys
+import java.awt.Dimension
+import java.awt.EventQueue
+import java.awt.Toolkit
+import java.awt.datatransfer.StringSelection
 
 private val refactorCardScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 private val logger = Logger.getInstance("RefactorSuggestionCard")
+private val refactorCardPersistentStates = mutableMapOf<String, RefactorCardPersistentState>()
 
 private fun frontendLog(project: Project, message: String) {
     QDLog.info(logger) { message }
@@ -60,9 +63,18 @@ private fun frontendLog(project: Project, message: String) {
     }
 }
 
-private fun resolveFileType(extension: String) =
-    FileTypeManager.getInstance().getFileTypeByExtension(extension)
+private fun resolveFileType(filePath: String?) =
+    filePath
+        ?.substringAfterLast('/')
+        ?.let { FileTypeManager.getInstance().getFileTypeByFileName(it) }
+        ?: FileTypeManager.getInstance().getFileTypeByExtension("")
 
+private const val MAX_CODE_BLOCK_HEIGHT = 320
+
+private fun contentPreferredHeight(lineCount: Int, lineHeight: Int): Int =
+    (lineCount.coerceAtLeast(1) * lineHeight).coerceAtMost(MAX_CODE_BLOCK_HEIGHT)
+
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun RefactorSuggestionCard(
     project: Project,
@@ -89,18 +101,34 @@ fun RefactorSuggestionCard(
             ""
         }
 
+    val handPointer = remember { PointerIcon(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)) }
     val fileLabel = item.filePath?.substringAfterLast('/') ?: item.displayText
     val originalRange = extractLineRange(item.displayText)
     val suggestedRange =
         originalRange.first to (originalRange.first + suggestedText.lineSequence().count().coerceAtLeast(1) - 1)
+    val suggestion = remember(item.filePath, message, currentText, suggestedText, originalRange) {
+        buildSuggestion(item, message, currentText, suggestedText, originalRange)
+    }
 
     val editorScheme = EditorColorsManager.getInstance().globalScheme
     val foreground = Color(editorScheme.defaultForeground.rgb)
     val background = Color(editorScheme.defaultBackground.rgb)
     val cardBorder = foreground.copy(alpha = 0.18f)
     val codeBorder = foreground.copy(alpha = 0.10f)
-    val originalAccent = foreground.copy(alpha = 0.70f)
-    val suggestedAccent = foreground.copy(alpha = 0.70f)
+    val originalAccent = Color(0xFFD16D6D).copy(alpha = 0.9f)
+    val suggestedAccent = Color(0xFF5FAF6B).copy(alpha = 0.95f)
+    val actionAccent = foreground.copy(alpha = 0.75f)
+    val persistentState =
+        remember(item.callId) {
+            refactorCardPersistentStates.getOrPut(item.callId) { RefactorCardPersistentState() }
+        }
+    var isOriginalExpanded by persistentState::isOriginalExpanded
+    var isSuggestedExpanded by persistentState::isSuggestedExpanded
+    var isApplying by remember(item.callId) { mutableStateOf(false) }
+    var applyError by remember(item.callId) { mutableStateOf<String?>(null) }
+    var actionState by persistentState::actionState
+    var appliedRange by persistentState::appliedRange
+    val displayedSuggestedRange = appliedRange ?: suggestedRange
 
     Column(
         modifier =
@@ -119,7 +147,6 @@ fun RefactorSuggestionCard(
             Text(
                 text = "Refactor suggestion",
                 style = JewelTheme.defaultTextStyle.copy(
-                    fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = foreground,
                 ),
@@ -128,9 +155,8 @@ fun RefactorSuggestionCard(
 
         if (item.filePath != null) {
             Text(
-                text = "$fileLabel:${originalRange.first}-${originalRange.second} → ${suggestedRange.first}-${suggestedRange.second}",
+                text = "$fileLabel:${originalRange.first}-${originalRange.second} → ${displayedSuggestedRange.first}-${displayedSuggestedRange.second}",
                 style = JewelTheme.defaultTextStyle.copy(
-                    fontSize = 10.sp,
                     color = foreground.copy(alpha = 0.75f),
                 ),
             )
@@ -140,70 +166,158 @@ fun RefactorSuggestionCard(
             Text(
                 text = message,
                 style = JewelTheme.defaultTextStyle.copy(
-                    fontSize = 10.sp,
                     color = foreground,
                 ),
             )
         }
 
-        Text(
-            text = "Original",
-            style = JewelTheme.defaultTextStyle.copy(
-                fontSize = 10.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = originalAccent,
-            ),
+        applyError?.let { error ->
+            Text(
+                text = error,
+                style = JewelTheme.defaultTextStyle.copy(
+                    fontSize = 11.sp,
+                    color = originalAccent,
+                ),
+            )
+        }
+
+        SectionHeader(
+            title = "Original",
+            expanded = isOriginalExpanded,
+            accent = originalAccent,
+            actionAccent = actionAccent,
+            onToggle = { isOriginalExpanded = !isOriginalExpanded },
+            onCopy = { copyToClipboard(currentText.ifBlank { item.displayText }) },
         )
 
-        SyntaxHighlightedBlock(
-            text = currentText.ifBlank { item.displayText },
-            filePath = item.filePath,
-            startLine = originalRange.first,
-            borderColor = codeBorder,
-            scheme = editorScheme,
+        if (isOriginalExpanded) {
+            SyntaxHighlightedBlock(
+                project = project,
+                text = currentText.ifBlank { item.displayText },
+                filePath = item.filePath,
+                startLine = originalRange.first,
+                borderColor = codeBorder,
+                scheme = editorScheme,
+            )
+        }
+
+        SectionHeader(
+            title = "Suggested",
+            expanded = isSuggestedExpanded,
+            accent = suggestedAccent,
+            actionAccent = actionAccent,
+            onToggle = { isSuggestedExpanded = !isSuggestedExpanded },
+            onCopy = { copyToClipboard(suggestedText.ifBlank { detail }) },
         )
 
-        Text(
-            text = "Suggested",
-            style = JewelTheme.defaultTextStyle.copy(
-                fontSize = 10.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = suggestedAccent,
-            ),
-        )
-
-        SyntaxHighlightedBlock(
-            text = suggestedText.ifBlank { detail },
-            filePath = item.filePath,
-            startLine = suggestedRange.first,
-            borderColor = codeBorder,
-            scheme = editorScheme,
-        )
+        if (isSuggestedExpanded) {
+            SyntaxHighlightedBlock(
+                project = project,
+                text = suggestedText.ifBlank { detail },
+                filePath = item.filePath,
+                startLine = suggestedRange.first,
+                borderColor = codeBorder,
+                scheme = editorScheme,
+            )
+        }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            IconButton(
+            ActionButton(
+                text = "Open",
+                accent = actionAccent,
+                handPointer = handPointer,
                 onClick = {
                     item.filePath?.let { path ->
-                        frontendLog(project, "RefactorSuggestionCard.open: $path")
+                        frontendLog(project, "RefactorSuggestionCard.open: $path:${originalRange.first}")
                         refactorCardScope.launch {
                             runCatching {
-                                QuantaBackendApi.getInstance().openProjectFile(project.projectId(), path)
+                                QuantaBackendApi.getInstance().openProjectFileAtLine(
+                                    project.projectId(),
+                                    path,
+                                    originalRange.first,
+                                )
                             }.onFailure {
                                 QDLog.warn(logger) { "Failed to open suggested file: ${it.message}" }
                             }
                         }
                     }
                 },
-            ) {
-                Text("Open")
-            }
+            )
 
-            IconButton(
-                onClick = {
-                    frontendLog(project, "RefactorSuggestionCard.apply requested: ${item.displayText}")
-                },
-            ) {
-                Text("Apply")
+            if (actionState == null) {
+                ActionButton(
+                    text = if (isApplying) "Applying..." else "Apply",
+                    accent = suggestedAccent,
+                    handPointer = handPointer,
+                    enabled = !isApplying,
+                    onClick = {
+                        if (suggestion == null || isApplying) return@ActionButton
+                        frontendLog(project, "RefactorSuggestionCard.apply requested: ${item.displayText}")
+                        applyError = null
+                        isApplying = true
+                        refactorCardScope.launch {
+                            runCatching {
+                                QuantaBackendApi.getInstance().applyRefactorSuggestion(project.projectId(), suggestion)
+                            }.onSuccess { result ->
+                                EventQueue.invokeLater {
+                                    if (result.applied) {
+                                        actionState = RefactorActionState.APPLIED
+                                        isSuggestedExpanded = false
+                                        isOriginalExpanded = false
+                                        appliedRange =
+                                            if (result.newStartLine != null && result.newEndLine != null) {
+                                                Pair(result.newStartLine!!, result.newEndLine!!)
+                                            } else {
+                                                appliedRange
+                                            }
+                                    } else {
+                                        applyError = result.errorMessage ?: "Failed to apply suggestion."
+                                    }
+                                    isApplying = false
+                                }
+                            }.onFailure {
+                                QDLog.warn(logger) { "Failed to apply suggested refactor: ${it.message}" }
+                                EventQueue.invokeLater {
+                                    applyError = it.message ?: "Failed to apply suggestion."
+                                    isApplying = false
+                                }
+                            }
+                        }
+                    },
+                )
+
+                ActionButton(
+                    text = "Decline",
+                    accent = originalAccent,
+                    handPointer = handPointer,
+                    enabled = !isApplying,
+                    onClick = {
+                        if (isApplying) return@ActionButton
+                        frontendLog(project, "RefactorSuggestionCard.decline requested: ${item.displayText}")
+                        applyError = null
+                        actionState = RefactorActionState.DECLINED
+                        isSuggestedExpanded = false
+                        isOriginalExpanded = false
+                    },
+                )
+            } else {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(
+                        key = if (actionState == RefactorActionState.APPLIED) ChatAppIcons.ToolStatus.success else ChatAppIcons.ToolStatus.failed,
+                        contentDescription = null,
+                    )
+                    Text(
+                        text = if (actionState == RefactorActionState.APPLIED) "Applied" else "Declined",
+                        style = JewelTheme.defaultTextStyle.copy(
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (actionState == RefactorActionState.APPLIED) suggestedAccent else originalAccent,
+                        ),
+                    )
+                }
             }
         }
     }
@@ -211,17 +325,14 @@ fun RefactorSuggestionCard(
 
 @Composable
 private fun SyntaxHighlightedBlock(
+    project: Project,
     text: String,
     filePath: String?,
     startLine: Int,
     borderColor: Color,
     scheme: EditorColorsScheme,
 ) {
-    val extension = filePath?.substringAfterLast('.', "") ?: ""
-    val fileType = resolveFileType(extension)
-    if (extension == "go" && fileType.name == "Plain Text") {
-        QDLog.warn(logger) { "RefactorSuggestionCard.go highlighting fallback: fileType=${fileType.name}" }
-    }
+    val fileType = resolveFileType(filePath)
 
     val editorData = remember(text, filePath, startLine, scheme) {
         val document = EditorFactory.getInstance().createDocument(text)
@@ -237,11 +348,15 @@ private fun SyntaxHighlightedBlock(
         editor.settings.isUseSoftWraps = true
         editor.settings.isCaretRowShown = false
         editor.settings.isWhitespacesShown = false
+        editor.settings.setAdditionalLinesCount(0)
+        editor.settings.isVirtualSpace = false
         editor.settings.isAdditionalPageAtBottom = false
         editor.setHorizontalScrollbarVisible(false)
-        editor.setVerticalScrollbarVisible(false)
+        editor.setVerticalScrollbarVisible(true)
         editor.highlighter =
-            EditorHighlighterFactory.getInstance().createEditorHighlighter(fileType, scheme, null)
+            filePath
+                ?.let { EditorHighlighterFactory.getInstance().createEditorHighlighter(scheme, it, project) }
+                ?: EditorHighlighterFactory.getInstance().createEditorHighlighter(fileType, scheme, project)
 
         editor.gutterComponentEx.setLineNumberConverter(
             object : LineNumberConverter {
@@ -263,6 +378,10 @@ private fun SyntaxHighlightedBlock(
         editor.scrollPane.isOpaque = true
         editor.scrollPane.viewport.isOpaque = true
         editor.gutterComponentEx.isOpaque = true
+
+        val preferredHeight = contentPreferredHeight(document.lineCount, editor.lineHeight)
+        editor.component.preferredSize = Dimension(editor.component.preferredSize.width, preferredHeight)
+        editor.scrollPane.preferredSize = Dimension(editor.scrollPane.preferredSize.width, preferredHeight)
 
         editor to document
     }
@@ -292,4 +411,100 @@ private fun SyntaxHighlightedBlock(
 private fun extractLineRange(displayText: String): Pair<Int, Int> {
     val match = Regex("(\\d+)-(\\d+)").find(displayText) ?: return 1 to 1
     return match.groupValues[1].toInt() to match.groupValues[2].toInt()
+}
+
+private fun buildSuggestion(
+    item: ToolExecutionItem,
+    message: String,
+    currentText: String,
+    suggestedText: String,
+    originalRange: Pair<Int, Int>,
+): Suggestion? {
+    val filePath = item.filePath ?: return null
+    if (currentText.isBlank() || suggestedText.isBlank()) return null
+    return Suggestion(
+        file = filePath,
+        original_line_from = originalRange.first,
+        original_line_to = originalRange.second,
+        suggested_code = suggestedText,
+        replaced_code = currentText,
+        message = message,
+    )
+}
+
+private class RefactorCardPersistentState {
+    var isOriginalExpanded by mutableStateOf(false)
+    var isSuggestedExpanded by mutableStateOf(true)
+    var actionState by mutableStateOf<RefactorActionState?>(null)
+    var appliedRange by mutableStateOf<Pair<Int, Int>?>(null)
+}
+
+private enum class RefactorActionState {
+    APPLIED,
+    DECLINED,
+}
+
+private fun copyToClipboard(text: String) {
+    Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(text), null)
+}
+
+@Composable
+private fun ActionButton(
+    text: String,
+    accent: Color,
+    handPointer: PointerIcon,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    val background = accent.copy(alpha = if (enabled) 0.14f else 0.08f)
+    val border = accent.copy(alpha = if (enabled) 0.40f else 0.18f)
+    val textColor = if (enabled) accent else accent.copy(alpha = 0.55f)
+
+    Text(
+        text = text,
+        style = JewelTheme.defaultTextStyle.copy(
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            color = textColor,
+        ),
+        modifier =
+            Modifier
+                .background(background, RoundedCornerShape(8.dp))
+                .border(1.dp, border, RoundedCornerShape(8.dp))
+                .pointerHoverIcon(handPointer)
+                .clickable(enabled = enabled) { onClick() }
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+    )
+}
+
+@Composable
+private fun SectionHeader(
+    title: String,
+    expanded: Boolean,
+    accent: Color,
+    actionAccent: Color,
+    onToggle: () -> Unit,
+    onCopy: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            text = if (expanded) "▼ $title" else "▶ $title",
+            style = JewelTheme.defaultTextStyle.copy(
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = accent,
+            ),
+            modifier = Modifier.clickable { onToggle() },
+        )
+        IconButton(onClick = onCopy) {
+            Icon(
+                key = AllIconsKeys.Actions.Copy,
+                contentDescription = "Copy $title",
+            )
+        }
+    }
 }
