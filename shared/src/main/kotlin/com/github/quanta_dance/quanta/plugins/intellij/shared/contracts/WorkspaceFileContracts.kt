@@ -1,9 +1,6 @@
-/**
- * Shared contracts for workspace file access.
- *
- * This package defines transport-neutral request and result shapes used by both frontend and backend
- * implementations of workspace file operations.
- */
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
 package com.github.quanta_dance.quanta.plugins.intellij.shared.contracts
 
 data class WorkspaceFileReadRequest(

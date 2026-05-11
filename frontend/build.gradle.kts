@@ -3,14 +3,12 @@ plugins {
     id("org.jetbrains.kotlin.jvm")
     id("org.jetbrains.kotlin.plugin.serialization")
     id("org.jetbrains.kotlin.plugin.compose")
-
 }
 
 val quantaRuntime by configurations.creating
 
 repositories {
     mavenCentral()
-
     intellijPlatform {
         defaultRepositories()
     }
