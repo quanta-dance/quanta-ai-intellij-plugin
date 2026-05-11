@@ -6,6 +6,11 @@ import com.intellij.openapi.components.Service.Level
 import com.intellij.openapi.project.Project
 import fleet.rpc.client.durable
 
+/**
+ * Frontend service that reads workspace files through the split-mode backend path.
+ *
+ * It wraps the remote adapter in a durable RPC call and normalizes the result for frontend users.
+ */
 @Service(Level.PROJECT)
 class FrontendWorkspaceFileReadService(
     private val project: Project,

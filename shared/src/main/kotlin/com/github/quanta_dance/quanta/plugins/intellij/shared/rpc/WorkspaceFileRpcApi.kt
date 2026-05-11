@@ -4,6 +4,12 @@ import fleet.rpc.RemoteApi
 import fleet.rpc.Rpc
 import fleet.rpc.remoteApiDescriptor
 
+/**
+ * Minimal shared RPC API for backend-owned workspace file reads and writes.
+ *
+ * The backend remains responsible for filesystem access so frontend callers can work safely in
+ * split-mode and remote environments.
+ */
 @Rpc
 interface WorkspaceFileRpcApi : RemoteApi<Unit> {
     companion object {

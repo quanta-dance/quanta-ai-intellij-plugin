@@ -15,6 +15,12 @@ import com.intellij.platform.util.coroutines.childScope
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
+/**
+ * Frontend action that asks the backend to read the currently selected file and posts the result to chat.
+ *
+ * This is a split-mode example of a user action that crosses from frontend UI into backend-owned
+ * workspace file access.
+ */
 class ReadCurrentFileAction : AnAction("Read Current File") {
     override fun actionPerformed(event: AnActionEvent) {
         val project = event.project ?: return

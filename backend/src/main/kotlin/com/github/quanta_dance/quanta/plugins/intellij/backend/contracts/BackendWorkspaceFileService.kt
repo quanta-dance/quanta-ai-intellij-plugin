@@ -9,6 +9,12 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Path
 import java.nio.file.Paths
 
+/**
+ * Backend implementation of the shared workspace file service.
+ *
+ * It resolves and accesses files inside the backend process so frontend callers can use file
+ * operations safely in split-mode and remote environments.
+ */
 class BackendWorkspaceFileService : WorkspaceFileService {
     override suspend fun read(request: WorkspaceFileReadRequest): WorkspaceFileReadResult =
         ApplicationManager.getApplication().runReadAction<WorkspaceFileReadResult> {

@@ -11,6 +11,12 @@ import com.intellij.openapi.project.Project
 import java.beans.PropertyChangeListener
 import java.beans.PropertyChangeSupport
 
+/**
+ * Lightweight session inbox for inter-agent and manager-to-agent messages.
+ *
+ * Messages are stored in session state so agent wake-ups and coordination signals can be consumed
+ * by the backend chat runtime without introducing a separate transport layer.
+ */
 @Service(Service.Level.PROJECT)
 class AgentInboxService(
     private val project: Project,

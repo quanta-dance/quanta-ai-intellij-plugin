@@ -25,6 +25,7 @@
 **Frontend**
 - `ReviewSelectedAction`
 - any editor/UI request collection
+- TODO: replace current frontend-local review placeholder adapter with backend/RPC-backed execution
 
 **Shared**
 - review request/response DTOs
@@ -83,3 +84,4 @@
 - Prefer adding a shared contract first, then backend implementation, then frontend usage.
 - Keep existing legacy runtime behavior untouched until the new slice compiles and is packaged.
 - Validate `buildPlugin` after each slice.
+- TODO: if a package boundary still looks mixed after docs land, keep the current behavior and document the overlap before refactoring it.

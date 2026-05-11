@@ -9,6 +9,12 @@ import com.intellij.openapi.project.Project
 import java.beans.PropertyChangeListener
 import java.beans.PropertyChangeSupport
 
+/**
+ * Coordinates agent-team lifecycle decisions for the current chat session.
+ *
+ * This service creates the default agent team and emits lifecycle-related updates that other
+ * backend chat services can translate into UI-visible state.
+ */
 @Service(Service.Level.PROJECT)
 class AgentLifecycleService(
     private val project: Project,

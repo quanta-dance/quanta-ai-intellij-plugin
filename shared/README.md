@@ -14,4 +14,4 @@ The shared module contains transport-neutral contracts, serializers, and shared 
 - `tools/` — shared tool-facing abstractions
 
 ## Documentation strategy
-Keep this module focused on stable API surfaces. If a contract looks module-specific, move the implementation to the owning module and leave a TODO if the split is still in progress.
+Keep this module focused on stable API surfaces. Prefer KDoc on contracts and RPC APIs; add package-level docs only when a cross-module boundary needs explicit explanation. If a contract looks module-specific, move the implementation to the owning module and leave a TODO if the split is still in progress.

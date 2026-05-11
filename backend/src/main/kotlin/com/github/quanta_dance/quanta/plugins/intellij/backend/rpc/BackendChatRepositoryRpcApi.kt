@@ -8,6 +8,12 @@ import com.intellij.platform.project.findProjectOrNull
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 
+/**
+ * Backend implementation of the shared chat repository RPC.
+ *
+ * It resolves the target backend project and delegates chat-session state, message flows, and send
+ * operations to the backend chat repository model.
+ */
 class BackendChatRepositoryRpcApi : ChatRepositoryRpcApi {
     override suspend fun getMessagesFlow(projectId: ProjectId): Flow<List<ChatMessageDto>> {
         val backendProject = projectId.findProjectOrNull() ?: return emptyFlow()

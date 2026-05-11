@@ -10,6 +10,12 @@ import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import kotlinx.coroutines.runBlocking
 
+/**
+ * Frontend action entry point for the review flow.
+ *
+ * TODO: this action currently exercises backend connectivity with a simple ping and should evolve
+ * into the real review request flow described in the migration map.
+ */
 class ReviewSelectedAction : AnAction("Review") {
     override fun actionPerformed(event: AnActionEvent) {
         val project = event.project ?: return

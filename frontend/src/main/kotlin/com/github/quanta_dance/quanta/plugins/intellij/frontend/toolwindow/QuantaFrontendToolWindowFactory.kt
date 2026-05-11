@@ -17,6 +17,12 @@ import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import org.jetbrains.jewel.bridge.addComposeTab
 
+/**
+ * Frontend tool-window entry point for the Quanta chat UI.
+ *
+ * This factory wires the Compose chat surface, voice service, and title-bar actions into the
+ * frontend-only presentation layer used in local and split-mode IDE sessions.
+ */
 class QuantaFrontendToolWindowFactory : ToolWindowFactory {
 
     override fun shouldBeAvailable(project: Project) = true

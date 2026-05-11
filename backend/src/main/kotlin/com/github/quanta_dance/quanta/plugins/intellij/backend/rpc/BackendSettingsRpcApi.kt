@@ -7,6 +7,12 @@ import com.openai.models.ChatModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+/**
+ * Backend implementation of the shared settings RPC.
+ *
+ * This class bridges frontend-owned configuration changes into [BackendQuantaSettingsState], which
+ * is the source of truth for runtime services running on the backend process.
+ */
 class BackendSettingsRpcApi : QuantaSettingsApi {
     companion object {
         val AVAILABLE_CHAT_MODELS =

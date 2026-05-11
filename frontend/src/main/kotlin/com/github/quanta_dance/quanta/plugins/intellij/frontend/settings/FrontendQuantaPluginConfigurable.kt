@@ -23,6 +23,12 @@ import javax.swing.JComponent
 import javax.swing.JPanel
 import javax.swing.JScrollPane
 
+/**
+ * Frontend settings UI for editing Quanta runtime and UX configuration.
+ *
+ * This configurable updates the local frontend state and then synchronizes the effective settings
+ * snapshot to the backend so split-mode runtime services use the same values.
+ */
 class FrontendQuantaPluginConfigurable : Configurable {
     private val settingsComponent: FrontendQuantaSettingsComponent by lazy(::FrontendQuantaSettingsComponent)
 

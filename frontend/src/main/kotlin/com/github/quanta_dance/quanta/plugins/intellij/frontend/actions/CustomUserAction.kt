@@ -9,6 +9,12 @@ import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import kotlinx.coroutines.runBlocking
 
+/**
+ * Frontend action that dispatches a canned custom-prompt request.
+ *
+ * It is primarily a user-facing entry point into the custom prompt contract and related adapter
+ * chain.
+ */
 class CustomUserAction : AnAction("Custom User Action") {
     override fun actionPerformed(event: AnActionEvent) {
         val project = event.project ?: return

@@ -7,6 +7,12 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
 
+/**
+ * Convenience action that opens the Quanta frontend settings configurable.
+ *
+ * It provides a user-facing entry point from menus and tool windows into the same configuration
+ * surface that later synchronizes settings to the backend.
+ */
 class SettingsAction : AnAction("Quanta AI Settings", "Open Quanta AI plugin settings", AllIcons.General.Settings) {
     override fun actionPerformed(e: AnActionEvent) {
         val project: Project? = e.project

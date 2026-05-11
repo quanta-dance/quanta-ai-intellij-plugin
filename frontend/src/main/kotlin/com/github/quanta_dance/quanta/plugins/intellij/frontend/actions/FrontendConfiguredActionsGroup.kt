@@ -10,6 +10,11 @@ import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import kotlinx.coroutines.launch
 
+/**
+ * Dynamic editor action group backed by the configurable frontend action catalog.
+ *
+ * It turns persisted action definitions into runtime action instances that forward intent into chat.
+ */
 class FrontendConfiguredActionsGroup : ActionGroup() {
     override fun getChildren(e: AnActionEvent?): Array<AnAction> {
         val actions = FrontendActionCatalog.decode(FrontendQuantaSettingsState.instance.state.actionConfigsJson)

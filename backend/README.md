@@ -18,4 +18,4 @@ The backend module owns server-side IntelliJ Platform logic for Quanta AI.
 
 ## Documentation strategy
 This module follows the bottom-up documentation rule described in `AGENTS.md`.
-Deep package docs live beside their package and should be kept short, with this file serving as the module entry point.
+Prefer KDoc on backend APIs and add package-level docs only where package ownership or module boundaries are otherwise unclear. This file remains the module entry point.

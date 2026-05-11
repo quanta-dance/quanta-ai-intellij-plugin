@@ -503,6 +503,12 @@ class OpenAIService(
 
     override fun dispose() {}
 
+    /**
+     * Refreshes the cached OpenAI client if backend settings changed after service initialization.
+     *
+     * This protects split-mode sessions where the frontend synchronizes URL/token only after the
+     * backend service has already been created.
+     */
     private fun ensureClientIsCurrent() {
         val settings = BackendQuantaSettingsState.instance.settings
         val latestClientKey = settings.openAiUrl to settings.openAiToken

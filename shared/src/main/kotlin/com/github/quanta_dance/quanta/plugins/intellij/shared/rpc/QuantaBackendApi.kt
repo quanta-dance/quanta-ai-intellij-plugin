@@ -11,6 +11,12 @@ import fleet.rpc.Rpc
 import fleet.rpc.remoteApiDescriptor
 import kotlinx.coroutines.flow.Flow
 
+/**
+ * Shared frontend-to-backend RPC surface for non-chat Quanta capabilities.
+ *
+ * This API groups agent/team state, plan status, speech flows, file opening, logging, and refactor
+ * application so the frontend can stay presentation-focused in split-mode.
+ */
 @Rpc
 interface QuantaBackendApi : RemoteApi<Unit> {
     companion object {
