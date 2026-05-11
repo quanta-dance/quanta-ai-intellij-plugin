@@ -3,6 +3,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.project
 
+import com.github.quanta_dance.quanta.plugins.intellij.backend.project.CodeReferenceSelector
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiClass

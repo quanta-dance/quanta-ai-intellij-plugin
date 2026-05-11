@@ -1,3 +1,4 @@
+import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.intellij.platform.gradle.tasks.PrepareSandboxTask
 
 plugins {
@@ -27,6 +28,7 @@ dependencies {
         bundledModule("intellij.platform.backend")
         bundledPlugin("com.intellij.java")
         bundledPlugin("com.intellij.gradle")
+        testFramework(TestFrameworkType.Platform)
     }
 
     compileOnly(project(":shared"))
@@ -36,6 +38,7 @@ dependencies {
     implementation(libs.openai)
     implementation("com.openai:openai-java-client-okhttp:4.31.0")
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.2")
+    implementation("org.eclipse.jgit:org.eclipse.jgit:6.10.0.202406032230-r")
 
     quantaRuntime(libs.openai)
     quantaRuntime("com.openai:openai-java-client-okhttp:4.31.0")
@@ -46,7 +49,11 @@ dependencies {
     implementation("io.modelcontextprotocol:kotlin-sdk:0.7.2")
 
     testImplementation(kotlin("test"))
+    testImplementation(kotlin("stdlib"))
     testImplementation("io.mockk:mockk:1.13.12")
+    testImplementation(libs.byte.buddy)
+    testImplementation(libs.byte.buddy.agent)
+    testImplementation(project(":shared"))
 }
 
 kotlin {
@@ -68,6 +75,11 @@ kotlin {
 // Optional: Only keep this if you need to build a fat JAR specifically.
 // Otherwise, the IntelliJ Platform plugin handles JAR creation for you.
 tasks {
+    withType<Test>().configureEach {
+        jvmArgs("-Dkotlinx.coroutines.debug=off")
+        systemProperty("kotlinx.coroutines.debug", "off")
+    }
+
     withType<Jar>().configureEach {
         duplicatesStrategy = DuplicatesStrategy.EXCLUDE
         val runtimeFiles = quantaRuntime

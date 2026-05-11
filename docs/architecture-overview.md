@@ -11,7 +11,7 @@ Quanta AI is a split IntelliJ plugin organized into three Gradle modules:
 2. Read the root `README.md` for product-level orientation.
 3. Read `docs/architecture-overview.md` and `docs/modular-migration-map.md` for architecture, ownership, and migration intent.
 4. Read module `README.md` files in `backend/`, `frontend/`, and `shared/`.
-5. For important behavioral questions, inspect integration tests, executable scenarios, or other verification artifacts before relying on prose.
+5. For important behavioral questions, inspect `docs/behavioral-scenario-index.md`, integration tests, executable scenarios, or other verification artifacts before relying on prose.
 6. Then inspect Kotlin APIs directly, starting with KDoc on public services, DTOs, RPC APIs, and entry points.
 
 ## Documentation conventions
@@ -26,6 +26,7 @@ Quanta AI is a split IntelliJ plugin organized into three Gradle modules:
 - Frontend settings are synchronized to the backend through RPC.
 - In remote split mode, both frontend and backend parts of the plugin matter: backend owns execution and analysis, frontend owns UI.
 - Key code entry points for this flow include `QuantaSettingsApi`, `FrontendSettingsRpcService`, `BackendSettingsRpcApi`, `OpenAIClientProvider`, and `OpenAIService`.
+- See `BackendSettingsSyncScenarioTest` for the current executable scenario that verifies backend settings sync and refreshed OpenAI connection settings.
 - If settings-related runtime behavior changes, update both the owning module docs and `AGENTS.md` when the maintenance strategy changes.
 
 ## Documentation maintenance order

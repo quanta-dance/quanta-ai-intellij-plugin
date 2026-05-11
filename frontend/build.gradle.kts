@@ -32,6 +32,13 @@ dependencies {
     compileOnly(project(":shared"))
     implementation(libs.javazoom)
 
+    testImplementation(kotlin("test"))
+    testImplementation(kotlin("stdlib"))
+    testImplementation("io.mockk:mockk:1.13.12")
+    testImplementation(libs.byte.buddy)
+    testImplementation(libs.byte.buddy.agent)
+    testImplementation(project(":shared"))
+
     quantaRuntime(libs.javazoom)
 }
 
@@ -40,6 +47,11 @@ kotlin {
 }
 
 tasks {
+    withType<Test>().configureEach {
+        jvmArgs("-Dkotlinx.coroutines.debug=off")
+        systemProperty("kotlinx.coroutines.debug", "off")
+    }
+
     withType<Jar>().configureEach {
         duplicatesStrategy = DuplicatesStrategy.EXCLUDE
         val runtimeFiles = quantaRuntime

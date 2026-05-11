@@ -4,11 +4,13 @@ junit = "4.13.2"
 
 # plugins
 kotlin = "2.3.0"
-# https://github.com/JetBrains/intellij-platform-gradle-plugin
 intellij-platform = "2026.1"
-intellij-gradle-plugin = "2.14.0"
+# https://github.com/JetBrains/intellij-platform-gradle-plugin
+intellij-gradle-plugin = "2.16.0"
+# https://mvnrepository.com/artifact/com.jetbrains.fleet/rpc-compiler-plugin/versions
 intellij-rpc-plugin = "2.3.0-0.2"
 kotlin-serialization = "1.11.0"
+byte-buddy = "1.17.8"
 
 [libraries]
 junit = { group = "junit", name = "junit", version.ref = "junit" }
@@ -16,6 +18,8 @@ kotlin-serialization-core-jvm = { module = "org.jetbrains.kotlinx:kotlinx-serial
 kotlin-serialization-json-jvm = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json-jvm", version.ref = "kotlin-serialization" }
 javazoom = { group = "javazoom", name = "jlayer", version = "1.0.1" }
 openai = { group = "com.openai", name = "openai-java", version = "4.35.0" }
+byte-buddy = { group = "net.bytebuddy", name = "byte-buddy", version.ref = "byte-buddy" }
+byte-buddy-agent = { group = "net.bytebuddy", name = "byte-buddy-agent", version.ref = "byte-buddy" }
 
 [plugins]
 intellij-platform = { id = "org.jetbrains.intellij.platform", version.ref = "intellij-gradle-plugin" }

@@ -9,7 +9,7 @@ manage embeddings, interact with MCP servers, and more).
 Project structure highlights
 
 - build.gradle.kts: Gradle Kotlin build file.
-- docs/: repo-level architecture and migration documentation. Start with `docs/architecture-overview.md` for eager context and `docs/modular-migration-map.md` for ownership/migration status.
+- docs/: repo-level architecture, migration, and scenario documentation. Start with `docs/architecture-overview.md` for eager context, `docs/behavioral-scenario-index.md` for executable behavior coverage, and `docs/modular-migration-map.md` for ownership/migration status.
 - src/main/kotlin: plugin implementation. Key packages:
     - tools/*: Tool implementations exposed to agents (file IO, patching, search, embeddings, build/test runners, MCP
       tools, image/sound generation, agent lifecycle tools).
@@ -51,7 +51,7 @@ Agents should be able to:
 5) Work with embeddings and search: SearchInFiles, SearchProjectEmbeddings, UpsertProjectEmbedding and EmbeddingManager service for context indexing.
 6) Use MCP tools: McpListServersTool and McpListServerToolsTool to discover and interact with external MCP servers if configured.
 7) Maintain docs discoverability: every module should have a README.md, important packages should expose their intent through KDoc or a dedicated package-doc file, and repo-level docs should link to the authoritative slice map or migration notes.
-8) Follow documentation discovery order for new sessions: `AGENTS.md` -> root `README.md` -> `docs/architecture-overview.md` -> `docs/modular-migration-map.md` -> module `README.md` files -> tests / executable scenarios for important behavior -> KDoc on key APIs and services.
+8) Follow documentation discovery order for new sessions: `AGENTS.md` -> root `README.md` -> `docs/architecture-overview.md` -> `docs/behavioral-scenario-index.md` -> `docs/modular-migration-map.md` -> module `README.md` files -> tests / executable scenarios for important behavior -> KDoc on key APIs and services.
 
 Conventions and safety rules (must follow)
 
