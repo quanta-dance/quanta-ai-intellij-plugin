@@ -10,8 +10,12 @@ This tool publishes actionable refactoring suggestions to the plugin UI for revi
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
+import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.ChatConversationService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.models.Suggestion
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
+import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 
 @JsonClassDescription(
@@ -34,11 +38,27 @@ class CodeRefactorSuggester : ToolInterface<String> {
         val actionable = suggestions.filter { isActionable(it) }
         if (actionable.isEmpty()) return "No actionable suggestions provided."
 
-
-        actionable.forEach { suggestion ->
-            // TODO: add this to frontend UI into chat
-            // addSuggestions(listOf(suggestion))
-        }
+        val chat = project.service<ChatConversationService>()
+        val toolItems =
+            actionable.mapIndexed { index, suggestion ->
+                ToolExecutionItem(
+                    callId = "refactor-${index + 1}-${suggestion.file}:${suggestion.original_line_from}-${suggestion.original_line_to}",
+                    toolName = "CodeRefactorSuggester",
+                    displayText = "${suggestion.file}:${suggestion.original_line_from}-${suggestion.original_line_to}",
+                    status = ToolExecutionStatus.SUCCEEDED,
+                    filePath = suggestion.file,
+                    detailText = buildString {
+                        appendLine(suggestion.message)
+                        appendLine()
+                        appendLine("Current:")
+                        appendLine(suggestion.replaced_code)
+                        appendLine()
+                        appendLine("Suggested:")
+                        appendLine(suggestion.suggested_code)
+                    }.trim(),
+                )
+            }
+        chat.appendAiToolMessage(toolItems)
 
         return "Actionable refactor suggestions published (${actionable.size})."
     }

@@ -26,6 +26,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.frontend.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.ChatAppColors
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.ChatAppIcons
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.components.TypingIndicator
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.ui.cards.RefactorSuggestionCard
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus
@@ -118,7 +119,11 @@ private fun ToolExecutionGroup(
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         toolItems.forEach { item ->
-            ToolExecutionRow(project = project, item = item)
+            if (item.toolName == "CodeRefactorSuggester" && item.detailText?.contains("Suggested:") == true) {
+                RefactorSuggestionCard(project = project, item = item)
+            } else {
+                ToolExecutionRow(project = project, item = item)
+            }
         }
     }
 }
