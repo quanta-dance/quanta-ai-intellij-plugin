@@ -1,19 +1,22 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.rpc
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
-import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AIVoiceService
-import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentManagerService
-import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentRosterService
-import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SessionPlanService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.*
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.OpenFileInEditorTool
-import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SessionPlanStatusService
-import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SpeechToTextService
+import com.github.quanta_dance.quanta.plugins.intellij.models.Suggestion
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaBackendApi
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.*
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ReadAction
+import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.project.Project
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.platform.project.ProjectId
 import com.intellij.platform.project.findProjectOrNull
+import com.intellij.psi.PsiDocumentManager
 import kotlinx.coroutines.flow.Flow
 import java.util.*
 
@@ -149,5 +152,116 @@ class QuantaBackendRpcApi : QuantaBackendApi {
     override suspend fun openProjectFile(projectId: ProjectId, relativePath: String) {
         val backendProject = projectId.findProjectOrNull() ?: return
         OpenFileInEditorTool(filePath = relativePath).execute(backendProject)
+    }
+
+    override suspend fun openProjectFileAtLine(projectId: ProjectId, relativePath: String, line: Int) {
+        val backendProject = projectId.findProjectOrNull() ?: return
+        OpenFileInEditorTool(filePath = relativePath, line = line).execute(backendProject)
+    }
+
+    override suspend fun applyRefactorSuggestion(
+        projectId: ProjectId,
+        suggestion: Suggestion,
+    ): ApplyRefactorSuggestionResultDto {
+        val backendProject = projectId.findProjectOrNull()
+            ?: return ApplyRefactorSuggestionResultDto(applied = false, errorMessage = "Project not found")
+        return applySuggestionDirectly(backendProject, suggestion)
+    }
+
+    private fun applySuggestionDirectly(
+        project: Project,
+        suggestion: Suggestion,
+    ): ApplyRefactorSuggestionResultDto {
+        val document =
+            ReadAction.compute<com.intellij.openapi.editor.Document?, RuntimeException> {
+                val basePath = project.basePath
+                    ?: return@compute null
+                val virtualFile = LocalFileSystem.getInstance().refreshAndFindFileByPath("$basePath/${suggestion.file}")
+                    ?: return@compute null
+                FileDocumentManager.getInstance().getDocument(virtualFile)
+            } ?: return ApplyRefactorSuggestionResultDto(
+                applied = false,
+                errorMessage = "Document not available: ${suggestion.file}"
+            )
+
+        var result = ApplyRefactorSuggestionResultDto(applied = false, errorMessage = "Unknown apply error")
+        ApplicationManager.getApplication().invokeAndWait {
+            WriteCommandAction.runWriteCommandAction(project) {
+                val offsets = remapOffsets(project, suggestion, document)
+                    ?: run {
+                        result = ApplyRefactorSuggestionResultDto(
+                            applied = false,
+                            errorMessage = "Could not locate the original code segment to replace.",
+                        )
+                        return@runWriteCommandAction
+                    }
+                val start = offsets.first
+                val end = offsets.second
+                document.replaceString(start, end, suggestion.suggested_code)
+                PsiDocumentManager.getInstance(project).commitDocument(document)
+
+                val newStartLine = document.getLineNumber(start) + 1
+                val newEndOffset = (start + suggestion.suggested_code.length).coerceAtMost(document.textLength)
+                val newEndLine = document.getLineNumber(newEndOffset.coerceAtLeast(start)) + 1
+                result = ApplyRefactorSuggestionResultDto(
+                    applied = true,
+                    newStartLine = newStartLine,
+                    newEndLine = newEndLine,
+                )
+            }
+        }
+        return result
+    }
+
+    private fun remapOffsets(
+        project: Project,
+        suggestion: Suggestion,
+        document: com.intellij.openapi.editor.Document,
+    ): Pair<Int, Int>? {
+        val plannedOffsets = plannedOffsets(project, suggestion, document) ?: return null
+        var start = plannedOffsets.first
+        var end = plannedOffsets.second
+        val currentSegment = document.charsSequence.subSequence(start, end).toString()
+        if (currentSegment != suggestion.replaced_code) {
+            val windowStart = (start - 1000).coerceAtLeast(0)
+            val windowEnd = (end + 1000).coerceAtMost(document.textLength)
+            val found =
+                fuzzyFind(document.charsSequence, suggestion.replaced_code, windowStart, windowEnd)
+                    ?: document.charsSequence.indexOf(suggestion.replaced_code).takeIf { it >= 0 }
+            if (found != null) {
+                start = found
+                end = found + suggestion.replaced_code.length
+            } else {
+                return null
+            }
+        }
+        return start to end
+    }
+
+    private fun plannedOffsets(
+        project: Project,
+        suggestion: Suggestion,
+        document: com.intellij.openapi.editor.Document,
+    ): Pair<Int, Int>? {
+        if (document.lineCount <= 0) return null
+        val startLineIdx = (suggestion.original_line_from - 1).coerceAtLeast(0).coerceAtMost(document.lineCount - 1)
+        val endLineIdx = (suggestion.original_line_to - 1).coerceAtLeast(0).coerceAtMost(document.lineCount - 1)
+        val startOffset = document.getLineStartOffset(startLineIdx)
+        val endOffset = document.getLineEndOffset(endLineIdx)
+        return startOffset to endOffset
+    }
+
+    private fun fuzzyFind(
+        docText: CharSequence,
+        needle: String,
+        windowStart: Int,
+        windowEnd: Int,
+    ): Int? {
+        if (needle.isEmpty()) return null
+        val start = windowStart.coerceAtLeast(0)
+        val end = windowEnd.coerceAtMost(docText.length)
+        if (start >= end) return null
+        val index = docText.indexOf(needle, startIndex = start)
+        return if (index in start until end) index else null
     }
 }
