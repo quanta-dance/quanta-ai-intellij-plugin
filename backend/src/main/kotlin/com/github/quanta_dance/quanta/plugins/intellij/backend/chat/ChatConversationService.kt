@@ -227,7 +227,7 @@ class ChatConversationService(
         persistMessages()
     }
 
-    private fun appendAiToolMessage(
+    fun appendAiToolMessage(
         toolItems: List<com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem>,
         beforeMessageId: String? = null,
     ): String {

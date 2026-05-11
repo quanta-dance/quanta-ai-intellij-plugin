@@ -11,6 +11,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.project.Get
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.project.SearchInFiles
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.project.SearchProjectEmbeddings
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.project.UpsertProjectEmbedding
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.refactor.CodeRefactorSuggester
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.session.ScheduleTaskTool
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.session.SessionPlanTool
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.system.RequestModelSwitch
@@ -83,6 +84,7 @@ object ToolsRegistry {
                 ToolEntry(SearchInFiles::class.java, Group.GENERIC),
                 ToolEntry(SearchProjectEmbeddings::class.java, Group.GENERIC),
                 ToolEntry(UpsertProjectEmbedding::class.java, Group.GENERIC),
+                ToolEntry(CodeRefactorSuggester::class.java, Group.GENERIC),
                 ToolEntry(CreateOrUpdateFile::class.java, Group.GENERIC),
                 ToolEntry(ReadFile::class.java, Group.GENERIC),
                 ToolEntry(ReadPsiBlockAtPosition::class.java, Group.GENERIC),
@@ -98,6 +100,10 @@ object ToolsRegistry {
                 ToolEntry(McpListServerToolsTool::class.java, Group.GENERIC),
                 ToolEntry(SessionPlanTool::class.java, Group.GENERIC),
                 ToolEntry(ScheduleTaskTool::class.java, Group.GENERIC),
+                ToolEntry(
+                    com.github.quanta_dance.quanta.plugins.intellij.backend.tools.go.RunGoTestsTool::class.java,
+                    Group.GO
+                ),
             )
 
         if (terminalEnabled) list.add(ToolEntry(TerminalCommandTool::class.java, Group.GENERIC))
