@@ -275,8 +275,8 @@ class CreateOrUpdateFile : ToolInterface<String> {
     private fun runPsiValidation(
         project: Project,
         relToBase: String,
-    ): String =
-        try {
+    ): String {
+        return try {
             val validator = ValidateClassFileTool().apply { filePath = relToBase }
             val errors =
                 ApplicationManager.getApplication().runReadAction<List<String>> { validator.findErrors(project) }
@@ -298,4 +298,5 @@ class CreateOrUpdateFile : ToolInterface<String> {
             QDLog.warn(logger, { "Validation unavailable for $relToBase" }, e)
             "Validation: skipped (${e.message})"
         }
+    }
 }

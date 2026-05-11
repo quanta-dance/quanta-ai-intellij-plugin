@@ -9,6 +9,7 @@ import com.intellij.find.impl.FindInProjectUtil
 import com.intellij.openapi.application.Application
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiFile
@@ -34,12 +35,17 @@ class SearchInFilesTest {
         mockkStatic(FindInProjectUtil::class)
         mockkStatic(GlobalSearchScope::class)
         mockkStatic(ApplicationManager::class)
+        mockkStatic(LocalFileSystem::class)
         val app = mockk<Application>()
+        val localFileSystem = mockk<LocalFileSystem>()
         every { ApplicationManager.getApplication() } returns app
         every { app.runReadAction(any<Runnable>()) } answers {
             arg<Runnable>(0).run()
             null
         }
+        every { LocalFileSystem.getInstance() } returns localFileSystem
+        every { localFileSystem.findFileByPath(any()) } returns null
+        every { localFileSystem.refreshAndFindFileByPath(any()) } returns null
     }
 
     @AfterTest
@@ -63,15 +69,16 @@ class SearchInFilesTest {
         tool.query = "foo"
         val project = mockk<Project>()
         every { project.basePath } returns "/project"
+        every { project.isDisposed } returns false
         // Stub projectScope to avoid getUserData calls in GlobalSearchScope.projectScope
         every { GlobalSearchScope.projectScope(project) } returns
-            object : GlobalSearchScope(project) {
-                override fun contains(file: VirtualFile) = true
+                object : GlobalSearchScope(project) {
+                    override fun contains(file: VirtualFile) = true
 
-                override fun isSearchInModuleContent(aModule: com.intellij.openapi.module.Module) = true
+                    override fun isSearchInModuleContent(aModule: com.intellij.openapi.module.Module) = true
 
-                override fun isSearchInLibraries() = false
-            }
+                    override fun isSearchInLibraries() = false
+                }
         every {
             FindInProjectUtil.findUsages(
                 any<FindModel>(),
@@ -91,15 +98,16 @@ class SearchInFilesTest {
         tool.query = "foo"
         val project = mockk<Project>()
         every { project.basePath } returns "/project"
+        every { project.isDisposed } returns false
         // Stub projectScope
         every { GlobalSearchScope.projectScope(project) } returns
-            object : GlobalSearchScope(project) {
-                override fun contains(file: VirtualFile) = true
+                object : GlobalSearchScope(project) {
+                    override fun contains(file: VirtualFile) = true
 
-                override fun isSearchInModuleContent(aModule: com.intellij.openapi.module.Module) = true
+                    override fun isSearchInModuleContent(aModule: com.intellij.openapi.module.Module) = true
 
-                override fun isSearchInLibraries() = false
-            }
+                    override fun isSearchInLibraries() = false
+                }
 
         val usage = mockk<UsageInfo>()
         val vfile = mockk<VirtualFile>()
@@ -139,16 +147,17 @@ class SearchInFilesTest {
         tool.maxResults = 5
         val project = mockk<Project>()
         every { project.basePath } returns "/project"
+        every { project.isDisposed } returns false
 
         // Stub projectScope
         every { GlobalSearchScope.projectScope(project) } returns
-            object : GlobalSearchScope(project) {
-                override fun contains(file: VirtualFile) = true
+                object : GlobalSearchScope(project) {
+                    override fun contains(file: VirtualFile) = true
 
-                override fun isSearchInModuleContent(aModule: com.intellij.openapi.module.Module) = true
+                    override fun isSearchInModuleContent(aModule: com.intellij.openapi.module.Module) = true
 
-                override fun isSearchInLibraries() = false
-            }
+                    override fun isSearchInLibraries() = false
+                }
 
         val usage = mockk<UsageInfo>()
         val vfile = mockk<VirtualFile>()
