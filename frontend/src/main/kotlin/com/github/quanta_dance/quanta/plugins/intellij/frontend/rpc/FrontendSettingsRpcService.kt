@@ -7,6 +7,12 @@ import com.intellij.openapi.components.Service.Level
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
 
+/**
+ * Frontend-side adapter for the shared settings RPC.
+ *
+ * The frontend uses this service to push UI-edited settings to the backend and to reload the
+ * backend-accepted snapshot afterward, which is especially important in remote split-mode.
+ */
 @Service(Level.PROJECT)
 class FrontendSettingsRpcService(
     private val project: Project,

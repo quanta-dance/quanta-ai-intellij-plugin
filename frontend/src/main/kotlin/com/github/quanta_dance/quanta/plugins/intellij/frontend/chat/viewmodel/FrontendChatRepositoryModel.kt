@@ -18,6 +18,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 
+/**
+ * Frontend-side durable view model adapter over the split-mode RPC layer.
+ *
+ * It converts backend chat, plan, agent, and channel flows into frontend-consumable state flows so
+ * the UI can remain reactive without owning backend execution logic.
+ */
 @Service(Level.PROJECT)
 class FrontendChatRepositoryModel(
     private val project: Project,

@@ -11,6 +11,12 @@ data class CommentResponse(
     val message: String,
 )
 
+/**
+ * Shared contract for comment/documentation assistance requests.
+ *
+ * The contract already gives frontend features a stable API, while backend-owned implementation is
+ * still being migrated into the split architecture.
+ */
 interface CommentService {
     suspend fun comment(request: CommentRequest): CommentResponse
 }

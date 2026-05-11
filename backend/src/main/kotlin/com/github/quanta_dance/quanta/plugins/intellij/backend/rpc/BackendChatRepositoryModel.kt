@@ -7,6 +7,12 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
 import kotlinx.coroutines.flow.Flow
 
+/**
+ * Backend-side model adapter that exposes conversation flows to RPC implementations.
+ *
+ * It wraps [ChatConversationService] in a simpler shape for the RPC layer and other backend entry
+ * points that only need session/message access.
+ */
 @Service(Service.Level.PROJECT)
 class BackendChatRepositoryModel(
     private val project: Project,

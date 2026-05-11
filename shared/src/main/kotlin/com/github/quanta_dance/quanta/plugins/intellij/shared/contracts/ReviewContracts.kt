@@ -11,6 +11,12 @@ data class ReviewResponse(
     val message: String,
 )
 
+/**
+ * Shared contract for code-review style requests.
+ *
+ * The contract is already consumed by frontend actions, while full backend execution is still part
+ * of the modular migration path.
+ */
 interface ReviewService {
     suspend fun review(request: ReviewRequest): ReviewResponse
 }

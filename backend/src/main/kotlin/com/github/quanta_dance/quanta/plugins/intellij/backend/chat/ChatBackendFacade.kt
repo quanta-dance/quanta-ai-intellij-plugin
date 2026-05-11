@@ -11,6 +11,11 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 
+/**
+ * Small backend facade exposing the agent-related chat services as a cohesive entry point.
+ *
+ * This keeps higher-level chat features from wiring individual agent services repeatedly.
+ */
 @Service(Service.Level.PROJECT)
 class ChatBackendFacade(
     private val project: Project,

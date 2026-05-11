@@ -5,6 +5,12 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.Workspac
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.WorkspaceFileWriteRequest
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.WorkspaceFileRpcApi
 
+/**
+ * Backend RPC adapter for workspace file read/write operations.
+ *
+ * It keeps filesystem access in the backend process and delegates to the backend workspace file
+ * service used by split-mode callers.
+ */
 class BackendWorkspaceFileRpcApi : WorkspaceFileRpcApi {
     private val service = BackendWorkspaceFileService()
 

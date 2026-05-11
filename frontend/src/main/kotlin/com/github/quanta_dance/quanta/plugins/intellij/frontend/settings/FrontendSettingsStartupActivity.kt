@@ -6,6 +6,12 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.ProjectActivity
 import kotlinx.coroutines.delay
 
+/**
+ * Startup sync that pushes the local frontend settings snapshot to the backend.
+ *
+ * This is especially important in split-mode, where backend services may start before the frontend
+ * settings UI has synchronized the effective URL, token, and related runtime configuration.
+ */
 class FrontendSettingsStartupActivity : ProjectActivity {
     private val logger = thisLogger()
 

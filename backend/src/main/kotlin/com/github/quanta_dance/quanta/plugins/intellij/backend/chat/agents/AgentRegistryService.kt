@@ -9,6 +9,12 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
 import java.util.*
 
+/**
+ * Session-scoped registry of delegated agents available to the backend chat runtime.
+ *
+ * It owns agent identity, role/configuration snapshots, and persistence into session state so
+ * multi-agent orchestration can survive chat reloads.
+ */
 @Service(Service.Level.PROJECT)
 class AgentRegistryService(
     private val project: Project,

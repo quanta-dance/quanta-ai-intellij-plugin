@@ -21,6 +21,12 @@ import com.intellij.openapi.project.Project
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
+/**
+ * Central registry for agent-callable backend tools.
+ *
+ * The registry groups tools by capability and enables or filters them based on runtime availability
+ * such as Gradle support, Java PSI presence, Go support, and plugin settings.
+ */
 object ToolsRegistry {
     enum class Group { GENERIC, GRADLE, GO }
 

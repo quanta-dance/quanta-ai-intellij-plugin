@@ -9,6 +9,12 @@ data class CustomPromptResponse(
     val message: String,
 )
 
+/**
+ * Shared contract for custom user-authored prompt execution.
+ *
+ * TODO: backend-owned execution should become the source of truth once the custom-prompt migration
+ * slice is completed.
+ */
 interface CustomPromptService {
     suspend fun run(request: CustomPromptRequest): CustomPromptResponse
 }

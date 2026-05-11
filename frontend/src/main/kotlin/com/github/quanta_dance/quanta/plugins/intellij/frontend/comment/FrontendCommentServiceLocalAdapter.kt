@@ -4,6 +4,12 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.CommentR
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.CommentResponse
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.CommentService
 
+/**
+ * Temporary frontend-local adapter for the shared comment contract.
+ *
+ * TODO: replace this placeholder with the real backend/RPC-backed comment execution once the
+ * modular migration for comment flows is completed.
+ */
 class FrontendCommentServiceLocalAdapter : CommentService {
     override suspend fun comment(request: CommentRequest): CommentResponse =
         CommentResponse(

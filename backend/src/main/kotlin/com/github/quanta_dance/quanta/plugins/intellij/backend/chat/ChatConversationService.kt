@@ -30,6 +30,12 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.cancellation.CancellationException
 
+/**
+ * Backend conversation orchestrator for the main Quanta chat session.
+ *
+ * This service restores persisted session state, coordinates message flow with [OpenAIService], and
+ * bridges agent lifecycle events into chat-visible updates consumed by the frontend.
+ */
 @Service(Service.Level.PROJECT)
 class ChatConversationService(
     private val project: Project,

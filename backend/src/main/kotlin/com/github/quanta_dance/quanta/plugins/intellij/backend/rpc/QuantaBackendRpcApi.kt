@@ -20,6 +20,12 @@ import com.intellij.psi.PsiDocumentManager
 import kotlinx.coroutines.flow.Flow
 import java.util.*
 
+/**
+ * Backend implementation of the broad shared Quanta backend RPC surface.
+ *
+ * This adapter exposes backend-only capabilities such as planning state, agent roster flows,
+ * speech sessions, file opening, and refactor application to frontend callers.
+ */
 class QuantaBackendRpcApi : QuantaBackendApi {
     companion object {
         private val logger = Logger.getInstance(QuantaBackendRpcApi::class.java)

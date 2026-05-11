@@ -17,4 +17,4 @@ The frontend module owns IntelliJ UI, actions, and local adapters for Quanta AI.
 - `rpc/` — frontend RPC clients and bridges
 
 ## Documentation strategy
-This module is documented bottom-up. Package docs should explain local UI responsibility and link back here when broader context is needed.
+This module is documented bottom-up. Prefer KDoc on frontend UI/services first, and add package-level docs only when local ownership or UI/backend boundaries need clarification.

@@ -10,8 +10,10 @@ import fleet.rpc.remoteApiDescriptor
 import kotlinx.coroutines.flow.Flow
 
 /**
- * Interface defining the contract for managing chat messages and interactions within a chat system.
- * Provides access to the flow of messages and supports operations for sending and editing chat messages.
+ * Shared RPC contract for chat messages and sessions.
+ *
+ * Frontend UI layers observe these flows to render chat state, while backend services own message
+ * persistence, session activation, and OpenAI-backed turn execution.
  */
 @Rpc
 interface ChatRepositoryRpcApi : RemoteApi<Unit> {

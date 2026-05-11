@@ -12,6 +12,12 @@ import com.openai.client.okhttp.OpenAIOkHttpClient
  * Provider for obtaining OpenAIClient instances configured from the backend plugin state.
  */
 object OpenAIClientProvider {
+    /**
+     * Builds a fresh OpenAI client from the current backend settings state.
+     *
+     * Callers that can outlive settings synchronization in split-mode should re-read the client
+     * through this provider instead of assuming startup-time credentials remain current.
+     */
     fun get(project: Project): OpenAIClient {
         val state = BackendQuantaSettingsState.instance.settings
         return OpenAIOkHttpClient
