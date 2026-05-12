@@ -6,6 +6,12 @@ package com.github.quanta_dance.quanta.plugins.intellij.frontend.settings
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.KotlinModule
 
+/**
+ * JSON-backed catalog of configurable frontend quick actions.
+ *
+ * It defines the default editor actions shown to users and provides normalization/lookup helpers for
+ * persisted action configurations stored in frontend settings.
+ */
 object FrontendActionCatalog {
     data class ActionConfig(
         val id: String,

@@ -14,6 +14,12 @@ import java.io.File
 import javax.xml.parsers.DocumentBuilderFactory
 
 @JsonClassDescription("Get detailed information for a specific test case from Gradle XML reports")
+/**
+ * Backend tool that reads detailed information for one test case from Gradle XML reports.
+ *
+ * It complements [RunGradleTestsTool]: use the test runner to execute and list failures, then this
+ * tool to inspect one specific failed test in more detail.
+ */
 class GetTestInfoTool : ToolInterface<GetTestInfoResult> {
     @field:JsonPropertyDescription("Fully qualified test class name to look up")
     var testClass: String? = null

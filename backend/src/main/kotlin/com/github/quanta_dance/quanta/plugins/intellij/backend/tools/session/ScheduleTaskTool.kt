@@ -14,6 +14,12 @@ import com.intellij.openapi.project.Project
     "Schedule a follow-up manager turn in this IDE session. Session-only: tasks are not persisted across IDE restarts. " +
             "Actions: ADD | LIST | CANCEL. If no specific agent is provided, the task is assigned to the main AI by default.",
 )
+/**
+ * Backend tool for manipulating the in-memory session scheduler.
+ *
+ * Compared with [SessionPlanTool], this tool schedules time-based follow-up turns, while the plan
+ * tool manages durable task structure and execution state.
+ */
 class ScheduleTaskTool : ToolInterface<Map<String, Any>> {
     @field:JsonPropertyDescription("Action: ADD | LIST | CANCEL")
     var action: String? = null

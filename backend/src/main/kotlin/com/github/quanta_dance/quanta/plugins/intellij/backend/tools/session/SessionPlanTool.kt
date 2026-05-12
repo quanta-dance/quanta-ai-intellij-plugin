@@ -13,6 +13,12 @@ import com.intellij.openapi.project.Project
     "Manage the cooperative session plan stored at .quantadance/session/plan.md. " +
             "Use this tool to draft a plan, activate it after user approval, mark tasks completed, or read the current plan.",
 )
+/**
+ * Backend tool for maintaining the session-level execution plan shared across turns.
+ *
+ * It is the main persistence layer for cooperative planning, allowing agents to draft, activate,
+ * read, and complete work items in a controlled markdown format.
+ */
 class SessionPlanTool : ToolInterface<String> {
     @field:JsonPropertyDescription("Action to perform: READ | DRAFT | ACTIVATE | COMPLETE")
     var action: String? = null

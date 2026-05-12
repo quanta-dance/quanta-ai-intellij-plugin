@@ -19,6 +19,12 @@ import java.io.File
 import java.nio.file.Paths
 
 @JsonClassDescription("Validate a class file and return any compilation errors.")
+/**
+ * Backend tool that performs PSI-based validation of a single source file.
+ *
+ * It is intended for fast feedback on syntax and parse errors after localized edits, without running
+ * a full project build.
+ */
 class ValidateClassFileTool : ToolInterface<List<String>> {
     @field:JsonPropertyDescription("Relative to project root path to the file to validate.")
     var filePath: String? = null

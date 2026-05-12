@@ -11,6 +11,12 @@ import com.intellij.openapi.project.Project
 import com.openai.models.ChatModel
 
 @JsonClassDescription("Request to switch the conversation model tier. Returns approval decision and the clamped model.")
+/**
+ * Backend tool that evaluates and clamps agent requests to change model tier.
+ *
+ * It mediates between agent preference and the project-configured maximum model policy so automatic
+ * escalations stay inside allowed bounds.
+ */
 class RequestModelSwitch : ToolInterface<Map<String, Any>> {
     @field:JsonPropertyDescription("Requested target model id, e.g., gpt-5-mini or gpt-5-nano")
     var desiredModel: String? = null

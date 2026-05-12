@@ -19,6 +19,12 @@ import java.util.concurrent.TimeUnit
 import javax.xml.parsers.DocumentBuilderFactory
 
 @JsonClassDescription("Run Gradle tests and collect failed tests from XML reports")
+/**
+ * Backend tool for executing Gradle test tasks and summarizing test outcomes.
+ *
+ * Compared with [RunGradleBuildTool], this tool focuses on test execution and augments the raw
+ * process result with parsed failed-test details from Gradle XML reports.
+ */
 class RunGradleTestsTool : ToolInterface<RunTestsResult> {
     @field:JsonPropertyDescription("Gradle task names to run, space-separated. Default: 'test'")
     var tasks: String? = null

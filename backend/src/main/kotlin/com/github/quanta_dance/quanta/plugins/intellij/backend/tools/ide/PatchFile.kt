@@ -30,6 +30,12 @@ import java.security.MessageDigest
             "from bottom to top (descending start line), so earlier replacements do not shift later ranges. " +
             "Lines are 1-based inclusive; offsets are computed from the current Document. Supports optional guards.",
 )
+/**
+ * Backend tool for guarded, line-oriented file patching.
+ *
+ * It is the lowest-level text editing primitive exposed to agents when they need atomic, expected-
+ * text-checked document updates without replacing the whole file.
+ */
 class PatchFile : ToolInterface<String> {
     data class Patch(
         @field:JsonPropertyDescription("1-based start line (inclusive)")

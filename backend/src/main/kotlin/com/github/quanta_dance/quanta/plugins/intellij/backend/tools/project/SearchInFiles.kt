@@ -33,6 +33,12 @@ import java.util.concurrent.atomic.AtomicInteger
     "Search for a text query across project files using IDE Find-in-Files (regex supported). " +
             "Returns concise matches and a modelSummary for AI context.",
 )
+/**
+ * Backend search tool that wraps IntelliJ Find-in-Files and returns AI-friendly summaries.
+ *
+ * It is one of the primary exploration tools for agents because it can search broadly while still
+ * capping result volume and producing a concise model summary.
+ */
 class SearchInFiles : ToolInterface<SearchInFilesResult> {
     @field:JsonPropertyDescription("Text to search for in project files (regex supported). Use a|b|c for OR.")
     var query: String? = null

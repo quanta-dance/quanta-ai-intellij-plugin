@@ -35,5 +35,12 @@ Quanta AI is a split IntelliJ plugin organized into three Gradle modules:
 3. Clarify package or module ownership where needed.
 4. Update repo-level docs after the lower-level facts are stable.
 
+## Tool selection heuristics
+- Prefer `ReadFile` for raw file or line-range content.
+- Prefer `ReadPsiBlockAtPosition` when you need a semantic block such as a function, class, or field.
+- Prefer `PatchFile` for atomic guarded edits and `CreateOrUpdateFile` when whole-file replacement or mixed patch/write behavior is more appropriate.
+- Prefer `RunGradleBuildTool` for compile/build verification, `RunGradleTestsTool` for test execution summaries, and `GetTestInfoTool` for drilling into one specific failed test.
+- Prefer `SessionPlanTool` for durable cooperative planning and `ScheduleTaskTool` for time-based follow-up reminders inside the current IDE session.
+
 ## Known active migration theme
 The repository is still converging on clearer ownership between frontend, backend, and shared packages. When boundaries are unclear, document the current behavior first, call out conflicting scenarios or missing coverage, and add a TODO before refactoring.

@@ -12,6 +12,12 @@ import com.intellij.openapi.components.*
 import java.time.LocalDateTime
 import java.util.*
 
+/**
+ * Persistent project-level state for chat sessions, messages, delegated tasks, and channel events.
+ *
+ * This service is the durable backing store that allows chat and multi-agent state to survive IDE
+ * restarts and session switches.
+ */
 @Service(Service.Level.PROJECT)
 @State(
     name = "QuantaChatConversationState",
