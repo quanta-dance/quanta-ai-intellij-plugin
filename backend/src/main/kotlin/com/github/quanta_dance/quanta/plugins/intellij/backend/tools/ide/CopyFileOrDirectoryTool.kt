@@ -15,6 +15,12 @@ import java.nio.file.StandardCopyOption
     "Tool to copy a specified file or directory within the project. " +
             "Before modifying methods in the file you may need to check for this method references as they might need to be updated.",
 )
+/**
+ * Backend tool for copying files or directories within the project boundary.
+ *
+ * It normalizes both source and destination through [PathUtils] and prevents self-copy or copying
+ * into a child of the source directory.
+ */
 class CopyFileOrDirectoryTool : ToolInterface<String> {
     @field:JsonPropertyDescription("Source path of the file or directory to be copied.")
     var sourcePath: String? = null

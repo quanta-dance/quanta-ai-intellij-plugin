@@ -15,6 +15,12 @@ import java.nio.file.Path
     "Tool to delete a specified file from the project. " +
             "Before modifying methods in the file you may need to check for this method references as they might need to be updated.",
 )
+/**
+ * Backend tool for guarded file or directory deletion within the project root.
+ *
+ * It requires an explicit confirmation flag so destructive operations are never performed by
+ * accident in autonomous flows.
+ */
 class DeleteFileTool : ToolInterface<String> {
     @field:JsonPropertyDescription("Relative to the project root path to the file to be deleted.")
     var filePath: String? = null

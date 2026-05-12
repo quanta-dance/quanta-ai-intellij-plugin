@@ -14,6 +14,12 @@ import kotlinx.coroutines.*
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
+/**
+ * Session-scoped scheduler for follow-up manager turns and reminder jobs.
+ *
+ * It keeps lightweight in-memory timers for the current IDE session and routes fired reminders back
+ * into chat through [ChatConversationService].
+ */
 @Service(Service.Level.PROJECT)
 class SessionSchedulerService(
     @Suppress("unused") private val project: Project,

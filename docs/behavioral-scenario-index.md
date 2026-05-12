@@ -18,6 +18,7 @@ This file points to executable scenarios/tests that act as the primary documenta
 - Full end-to-end refresh inside `OpenAIService` is still only partially covered; the current scenario verifies backend state sync and the refreshed connection settings consumed by client creation.
 - Review/comment/custom-prompt full backend execution scenarios are still blocked by ongoing migration from placeholder adapters to RPC-backed implementations.
 - Chat/session lifecycle still needs targeted behavior scenarios beyond code-level KDoc.
+- Some areas are currently documented only through KDoc and architecture notes because test-runtime repair is deferred; those docs should be treated as guidance, not executable proof.
 
 ## Maintenance rule
 When a behavior becomes important to explain repeatedly, prefer adding or updating an executable scenario here before expanding prose elsewhere.

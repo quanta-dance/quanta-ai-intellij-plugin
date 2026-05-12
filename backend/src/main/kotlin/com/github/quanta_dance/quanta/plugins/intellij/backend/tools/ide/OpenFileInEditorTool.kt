@@ -15,6 +15,12 @@ import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
 
 @JsonClassDescription("Open a project file in the editor. REQUIRED ARGUMENT: filePath. Use filePath, not path. Example: {\"filePath\": \"README.md\"}. Optionally move the caret to a line/column or select a range.")
+/**
+ * Backend tool that opens a project file in the editor and optionally positions the caret or selection.
+ *
+ * It resolves files through project-aware path utilities first so remote and split-mode editor flows
+ * can open the same logical file seen by the backend.
+ */
 data class OpenFileInEditorTool(
     @field:JsonPropertyDescription("REQUIRED. Use this exact field name: filePath. Relative to the project root path to the file to open. Example: README.md")
     val filePath: String,

@@ -7,6 +7,11 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.ProjectActivity
 
+/**
+ * Project startup hook that activates MCP watching and performs the initial server refresh.
+ *
+ * This ensures MCP-backed tool availability is reconciled as soon as the backend project opens.
+ */
 class McpServersStartupActivity : ProjectActivity {
     override suspend fun execute(project: Project) {
         // Ensure the watcher is instantiated so it subscribes to VFS changes

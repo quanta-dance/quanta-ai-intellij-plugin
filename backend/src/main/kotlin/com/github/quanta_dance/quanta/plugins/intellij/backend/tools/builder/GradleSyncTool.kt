@@ -15,6 +15,12 @@ import org.jetbrains.plugins.gradle.settings.GradleSettings
 import org.jetbrains.plugins.gradle.util.GradleConstants
 
 @JsonClassDescription("Synchronize linked Gradle projects with the current IntelliJ project (runs in background).")
+/**
+ * Backend tool that requests IntelliJ's Gradle project refresh/import flow.
+ *
+ * It differs from the Gradle build/test tools by refreshing IDE project models and dependencies
+ * rather than invoking wrapper tasks for compilation or tests.
+ */
 class GradleSyncTool : ToolInterface<String> {
     @field:JsonPropertyDescription("Optional Gradle project path to sync. If omitted, all linked Gradle projects are synced.")
     var projectPath: String? = null

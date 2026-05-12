@@ -30,6 +30,12 @@ import java.security.MessageDigest
     "Create or Update specified file. Supports full replacement via 'content' or partial line-range updates via 'patches'. " +
             "Before modifying methods in the file you may need to check for method references as they might need updates.",
 )
+/**
+ * Backend tool for file creation, full replacement, or guarded line-range updates.
+ *
+ * This tool is the higher-level sibling of [PatchFile]: it supports whole-file writes as well as
+ * small targeted patches while keeping validation, formatting, and import optimization in one place.
+ */
 class CreateOrUpdateFile : ToolInterface<String> {
     data class Patch(
         @field:JsonPropertyDescription("1-based start line (inclusive)")

@@ -13,6 +13,12 @@ import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
 
 @JsonClassDescription("Run Gradle compile tasks and return result summary with optional stdout tail.")
+/**
+ * Backend tool for running Gradle build/compile tasks through the project wrapper.
+ *
+ * Compared with [RunGradleTestsTool], this tool is intended for compilation and general build
+ * verification rather than parsing test results from XML reports.
+ */
 class RunGradleBuildTool : ToolInterface<String> {
     @field:JsonPropertyDescription("Gradle task names to run, space-separated. Default: 'compileKotlin compileJava'")
     var tasks: String? = null

@@ -20,6 +20,12 @@ import com.intellij.psi.PsiManager
 @JsonClassDescription(
     "Get file dependencies (imports resolved to libraries with versions) and PSI-based references/definitions for a given file.",
 )
+/**
+ * Backend analysis tool that combines dependency resolution with PSI reference discovery for one file.
+ *
+ * It is useful when an agent needs to understand both external library usage and internal code
+ * connections before making a targeted change.
+ */
 class GetFileReferencesAndDependencies : ToolInterface<Map<String, Any>> {
     @field:JsonPropertyDescription("Relative to the project root path to the requested file.")
     var filePath: String? = null

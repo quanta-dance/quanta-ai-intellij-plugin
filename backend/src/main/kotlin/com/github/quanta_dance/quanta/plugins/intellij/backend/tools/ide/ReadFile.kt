@@ -21,6 +21,12 @@ import java.security.MessageDigest
 @JsonClassDescription(
     "Read the content of a file. REQUIRED ARGUMENT: filePath. Use filePath, not path. Example: {\"filePath\": \"README.md\"}. Supports optional truncation and windowed reading around caret/selection for the current file.",
 )
+/**
+ * Backend tool for reading file content with optional slicing and truncation strategies.
+ *
+ * Compared with [ReadPsiBlockAtPosition], this tool stays text-oriented: it is best for whole-file or
+ * line-range reads, while PSI-aware structural extraction belongs to the PSI block tool.
+ */
 data class ReadFile(
     @field:JsonPropertyDescription("REQUIRED. Use this exact field name: filePath. Relative to the project root path to the requested file. Example: README.md")
     val filePath: String,

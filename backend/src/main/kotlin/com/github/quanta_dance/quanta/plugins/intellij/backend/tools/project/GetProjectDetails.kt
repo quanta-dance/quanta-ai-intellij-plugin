@@ -21,6 +21,12 @@ import java.nio.file.Paths
 import java.util.concurrent.ConcurrentHashMap
 
 @JsonClassDescription("Provide Project Details and a bounded, depth-first project structure with clear truncation indicators.")
+/**
+ * Backend tool that summarizes project structure, environment, and an optionally truncated tree.
+ *
+ * It is intended as the safest first-step discovery tool for new sessions before agents start
+ * reading or modifying individual files.
+ */
 class GetProjectDetails : ToolInterface<String> {
     // Defaults chosen to keep output readable while allowing full small projects
     @field:JsonPropertyDescription("Include a truncated project tree in the summary. Default: false")

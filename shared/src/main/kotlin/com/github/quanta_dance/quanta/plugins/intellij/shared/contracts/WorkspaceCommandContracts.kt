@@ -16,6 +16,12 @@ data class WorkspaceCommandResult(
     val stderr: String,
 )
 
+/**
+ * Shared contract for backend-owned workspace command execution.
+ *
+ * It models shell-like command requests in a transport-neutral shape so frontend callers can ask
+ * the backend to execute commands without assuming local process access.
+ */
 interface WorkspaceCommandService {
     suspend fun execute(request: WorkspaceCommandRequest): WorkspaceCommandResult
 }
