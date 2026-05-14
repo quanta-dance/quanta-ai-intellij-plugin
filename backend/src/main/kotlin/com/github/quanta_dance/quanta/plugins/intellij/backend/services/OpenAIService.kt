@@ -33,7 +33,6 @@ import com.openai.models.responses.StructuredResponse
 import java.beans.PropertyChangeListener
 import java.beans.PropertyChangeSupport
 import java.io.File
-import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Future
 
@@ -56,9 +55,6 @@ class OpenAIService(
     private var modelKey: Pair<Boolean, String> =
         BackendRuntimeSettingsService.instance.settings.let { (it.dynamicModelEnabled == true) to it.aiChatModel }
 
-    private var lastResponseId: String? = QuantaAISessionState.instance.state.mainLastResponseId
-    private var currentSessionId: String = UUID.randomUUID().toString()
-
     private val toolInvoker: ToolInvoker = DefaultToolInvoker()
     private val mapper = ObjectMapper()
     private val toolRouter = ToolRouter(project, toolInvoker, mapper)
@@ -68,6 +64,25 @@ class OpenAIService(
     private val usageTracker = OpenAIUsageTracker(thisLogger()) { snapshot ->
         pcs.firePropertyChange("usage", null, snapshot)
     }
+    private val localMemoryCommandHandler = LocalMemoryCommandHandler(
+        project = project,
+        resetThreadStatePreservingHistory = ::resetThreadStatePreservingHistory,
+        compactConversationWithBrief = { brief ->
+            project.service<ChatConversationService>().compactConversationWithBrief(brief)
+        },
+    )
+    private val sessionCoordinator = OpenAISessionCoordinator(
+        project = project,
+        onSessionStateReset = {
+            lastCtxHash = null
+            contextInjector.reset()
+            lastInjectedSummaryHash = null
+            lastInjectedPlanHash = null
+        },
+        onSessionChanged = { oldSessionId, newSessionId ->
+            pcs.firePropertyChange("session", oldSessionId, newSessionId)
+        },
+    )
 
     private var currentModel: String = ModelSelector.initialModel()
 
@@ -607,12 +622,8 @@ class OpenAIService(
     }
 
     fun resetThreadStatePreservingHistory() {
-        thisLogger().info("Resetting AI thread state (preserve history). session=$currentSessionId")
-        lastResponseId = null
-        try {
-            QuantaAISessionState.instance.state.mainLastResponseId = null
-        } catch (_: Throwable) {
-        }
+        thisLogger().info("Resetting AI thread state (preserve history). session=${sessionCoordinator.currentSessionId()}")
+        sessionCoordinator.clearLastResponseId()
         lastCtxHash = null
         contextInjector.reset()
         lastInjectedSummaryHash = null
@@ -626,50 +637,20 @@ class OpenAIService(
     }
 
     fun newSession(): String {
-        thisLogger().info("Starting new AI session. Previous session: $currentSessionId")
-        val old = currentSessionId
-        currentSessionId = UUID.randomUUID().toString()
-        lastResponseId = null
-        QuantaAISessionState.instance.state.mainLastResponseId = null
-        lastCtxHash = null
-        contextInjector.reset()
-        lastInjectedSummaryHash = null
-        lastInjectedPlanHash = null
-
-        // Reset global token usage counters
+        thisLogger().info("Starting new AI session. Previous session: ${sessionCoordinator.currentSessionId()}")
         usageTracker.reset(reportToUi = true)
-
-        // Clear persisted chat for current branch so "new session" is a clean slate on restart too
-        try {
-            val key = conversationKeyForMain()
-            QuantaAISessionState.instance.state.conversations
-                .remove(key)
-        } catch (_: Throwable) {
-        }
-
-        try {
-            project.service<AgentManagerService>().resetForNewSession()
-        } catch (_: Throwable) {
-        }
-        pcs.firePropertyChange("session", old, currentSessionId)
-        return currentSessionId
+        return sessionCoordinator.newSession()
     }
 
-    fun getCurrentSessionId(): String = currentSessionId
+    fun getCurrentSessionId(): String = sessionCoordinator.currentSessionId()
 
-    fun getLastResponseId(): String? = lastResponseId
+    fun getLastResponseId(): String? = sessionCoordinator.lastResponseId()
 
     fun switchToSession(
         sessionId: String,
         lastResponseId: String?,
     ) {
-        currentSessionId = sessionId
-        this.lastResponseId = lastResponseId
-        QuantaAISessionState.instance.state.mainLastResponseId = lastResponseId
-        lastCtxHash = null
-        contextInjector.reset()
-        lastInjectedSummaryHash = null
-        lastInjectedPlanHash = null
+        sessionCoordinator.switchToSession(sessionId, lastResponseId)
     }
 
     fun stopAndClearSession() {
@@ -1090,74 +1071,7 @@ class OpenAIService(
         return patterns.any { q.contains(it) }
     }
 
-    private fun parseMemoryFactCommand(prefix: String, text: String): Pair<String, String?>? {
-        val body = text.trim().removePrefix(prefix).trim()
-        if (body.isBlank()) return null
-        val parts = body.split("| supersedes ", limit = 2)
-        val fact = parts[0].trim()
-        val supersedes = parts.getOrNull(1)?.trim()?.ifBlank { null }
-        if (fact.isBlank()) return null
-        return fact to supersedes
-    }
-
-    private fun handleLocalMemoryCommand(text: String): Boolean {
-        val raw = text.trim()
-        val normalized = raw.lowercase()
-        val memory = project.service<SessionMemoryService>()
-        return when {
-            normalized == "refresh summary" || normalized == "/refresh summary" -> {
-                memory.refreshFromCurrentState(reason = "user_command_refresh", userText = raw, force = true)
-                true
-            }
-
-            normalized == "compact with memory" || normalized == "/compact with memory" -> {
-                val brief = memory.compactConversationHistory()
-                resetThreadStatePreservingHistory()
-                runCatching {
-                    project.service<ChatConversationService>()
-                        .compactConversationWithBrief(brief)
-                }
-                true
-            }
-
-            normalized == "show session brief" || normalized == "/show session brief" -> {
-                true
-            }
-
-            normalized == "restore from session memory" || normalized == "/restore from session memory" -> {
-                memory.refreshFromCurrentState(
-                    reason = "user_command_restore",
-                    explicitNote = "Restored state from persisted session memory.",
-                    force = true
-                )
-                resetThreadStatePreservingHistory()
-                true
-            }
-
-            normalized.startsWith("pin fact ") || normalized.startsWith("/pin fact ") -> {
-                val parsed =
-                    parseMemoryFactCommand(if (normalized.startsWith("/pin fact ")) "/pin fact" else "pin fact", raw)
-                if (parsed != null) {
-                    memory.pinFact(parsed.first, parsed.second)
-                }
-                true
-            }
-
-            normalized.startsWith("mark root cause ") || normalized.startsWith("/mark root cause ") -> {
-                val parsed =
-                    parseMemoryFactCommand(
-                        if (normalized.startsWith("/mark root cause ")) "/mark root cause" else "mark root cause",
-                        raw,
-                    )
-                if (parsed != null) {
-                    memory.markRootCause(parsed.first, parsed.second)
-                }
-                true
-            }
-
-            else -> false
-        }
-    }
+    private fun handleLocalMemoryCommand(text: String): Boolean = localMemoryCommandHandler.handle(text)
 
     fun generateImage(promptText: String): String {
         val params =
