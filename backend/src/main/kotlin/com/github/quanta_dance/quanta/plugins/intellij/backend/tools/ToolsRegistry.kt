@@ -3,6 +3,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.backend.tools
 
+import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.catalog.ListToolsCatalogTool
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.*
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.McpListServerToolsTool
@@ -79,10 +80,9 @@ object ToolsRegistry {
     }
 
     private fun baseEntries(project: Project?): List<ToolEntry> {
-        val settings =
-            com.github.quanta_dance.quanta.plugins.intellij.backend.settings.QuantaAISessionState.instance.state
-        val agentic = settings.agenticEnabled ?: true
-        val terminalEnabled = false //settings.terminalToolEnabled == true
+        val runtimeSettings = BackendRuntimeSettingsService.instance.settings
+        val agentic = runtimeSettings.agenticEnabled ?: true
+        val terminalEnabled = false // runtimeSettings.terminalToolEnabled == true
         val list =
             mutableListOf(
                 ToolEntry(ListToolsCatalogTool::class.java, Group.GENERIC),
@@ -168,9 +168,8 @@ object ToolsRegistry {
     }
 
     fun toolsFor(project: Project): List<Class<out ToolInterface<out Any>>> {
-        val settings =
-            com.github.quanta_dance.quanta.plugins.intellij.backend.settings.QuantaAISessionState.instance.state
-        val agentic = settings.agenticEnabled ?: true
+        val runtimeSettings = BackendRuntimeSettingsService.instance.settings
+        val agentic = runtimeSettings.agenticEnabled ?: true
         val basePath = project.basePath
         val gradle = basePath?.let { detectGradle(File(it)) } ?: false
         val go = basePath?.let { detectGo(File(it)) } ?: false

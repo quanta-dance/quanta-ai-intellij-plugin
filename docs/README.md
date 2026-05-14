@@ -4,7 +4,7 @@ This directory contains repo-level migration and architecture notes for Quanta A
 
 ## Files
 - `modular-migration-map.md` — current modular migration plan and ownership map
-- `architecture-overview.md` — eager-context architecture and documentation discovery guide for new sessions
+- `architecture-overview.md` — eager-context architecture and documentation discovery guide for new sessions, including the current settings ownership model and startup sync expectations
 - `behavioral-scenario-index.md` — index of executable scenarios/tests that serve as primary behavior documentation
 
 ## Maintenance

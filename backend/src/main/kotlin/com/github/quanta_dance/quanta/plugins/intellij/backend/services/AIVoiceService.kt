@@ -6,7 +6,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.services
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.OpenAIClientProvider
-import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQuantaSettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.SpeechChunkDto
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
@@ -85,7 +85,7 @@ class AIVoiceService(private val project: Project) {
         val worker =
             Thread({
                 try {
-                    val settings = BackendQuantaSettingsState.instance.settings
+                    val settings = BackendRuntimeSettingsService.instance.settings
                     val baseUrl = settings.openAiUrl.trim().trimEnd('/')
                     val requestJson =
                         objectMapper.writeValueAsString(

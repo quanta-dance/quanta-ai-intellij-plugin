@@ -3,23 +3,23 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.backend.openai
 
-import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQuantaSettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
 import com.intellij.openapi.project.Project
 import com.openai.client.OpenAIClient
 import com.openai.client.okhttp.OpenAIOkHttpClient
 
 /**
- * Provider for obtaining OpenAIClient instances configured from the backend plugin state.
+ * Provider for obtaining OpenAIClient instances configured from the backend runtime settings.
  */
 object OpenAIClientProvider {
     /**
-     * Builds a fresh OpenAI client from the current backend settings state.
+     * Builds a fresh OpenAI client from the current backend runtime settings snapshot.
      *
      * Callers that can outlive settings synchronization in split-mode should re-read the client
      * through this provider instead of assuming startup-time credentials remain current.
      */
     fun get(project: Project): OpenAIClient {
-        val state = BackendQuantaSettingsState.instance.settings
+        val state = BackendRuntimeSettingsService.instance.settings
         return OpenAIOkHttpClient
             .builder()
             .apiKey(state.openAiToken)

@@ -3,7 +3,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.backend.openai
 
-import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQuantaSettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
 import com.openai.models.ChatModel
 
 object ModelSelector {
@@ -37,13 +37,13 @@ object ModelSelector {
     }
 
     fun effectiveModel(currentModel: String): String {
-        val settings = BackendQuantaSettingsState.instance.settings
+        val settings = BackendRuntimeSettingsService.instance.settings
         val maxModel = settings.aiChatModel.ifBlank { ChatModel.GPT_5_MINI.toString() }
         return if (settings.dynamicModelEnabled == true) clampToMax(currentModel, maxModel) else normalize(maxModel)
     }
 
     fun initialModel(): String {
-        val settings = BackendQuantaSettingsState.instance.settings
+        val settings = BackendRuntimeSettingsService.instance.settings
         val dynamic = settings.dynamicModelEnabled == true
         val maxModel = settings.aiChatModel.ifBlank { ChatModel.GPT_5_MINI.toString() }
         val initial = if (dynamic) ChatModel.GPT_5_MINI.toString() else maxModel

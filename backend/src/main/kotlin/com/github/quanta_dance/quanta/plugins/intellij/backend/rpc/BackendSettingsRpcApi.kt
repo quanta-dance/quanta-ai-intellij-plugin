@@ -3,7 +3,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.backend.rpc
 
-import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQuantaSettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaSettingsApi
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.QuantaSettingsDto
 import com.openai.models.ChatModel
@@ -13,8 +13,9 @@ import kotlinx.coroutines.withContext
 /**
  * Backend implementation of the shared settings RPC.
  *
- * This class bridges frontend-owned configuration changes into [BackendQuantaSettingsState], which
- * is the source of truth for runtime services running on the backend process.
+ * This class bridges frontend-owned configuration changes into
+ * [BackendRuntimeSettingsService], which is the source of truth for runtime services running on the
+ * backend process.
  */
 class BackendSettingsRpcApi : QuantaSettingsApi {
     companion object {
@@ -37,23 +38,23 @@ class BackendSettingsRpcApi : QuantaSettingsApi {
 
     override suspend fun getSettings(): QuantaSettingsDto =
         withContext(Dispatchers.IO) {
-            val settings = BackendQuantaSettingsState.instance.settings
+            val runtimeSettings = BackendRuntimeSettingsService.instance.settings
             QuantaSettingsDto(
-                openAiUrl = settings.openAiUrl,
-                openAiToken = settings.openAiToken,
-                model = settings.model,
-                aiChatModel = settings.aiChatModel,
+                openAiUrl = runtimeSettings.openAiUrl,
+                openAiToken = runtimeSettings.openAiToken,
+                model = runtimeSettings.model,
+                aiChatModel = runtimeSettings.aiChatModel,
                 availableChatModels = AVAILABLE_CHAT_MODELS,
-                voiceEnabled = settings.voiceEnabled,
-                voiceByLocalTTS = settings.voiceByLocalTTS,
-                maxTokens = settings.maxTokens,
-                dynamicModelEnabled = settings.dynamicModelEnabled,
-                agenticEnabled = settings.agenticEnabled,
-                terminalToolEnabled = settings.terminalToolEnabled,
-                terminalAllowedCommandsCsv = settings.terminalAllowedCommandsCsv,
-                extraInstructions = settings.extraInstructions,
-                debugEnabled = settings.debugEnabled,
-                maxAutomaticTurns = 10,
+                voiceEnabled = runtimeSettings.voiceEnabled,
+                voiceByLocalTTS = runtimeSettings.voiceByLocalTTS,
+                maxTokens = runtimeSettings.maxTokens,
+                dynamicModelEnabled = runtimeSettings.dynamicModelEnabled,
+                agenticEnabled = runtimeSettings.agenticEnabled,
+                terminalToolEnabled = runtimeSettings.terminalToolEnabled,
+                terminalAllowedCommandsCsv = runtimeSettings.terminalAllowedCommandsCsv,
+                extraInstructions = runtimeSettings.extraInstructions,
+                debugEnabled = runtimeSettings.debugEnabled,
+                maxAutomaticTurns = runtimeSettings.maxAutomaticTurns,
                 followEnabled = true,
                 actionConfigsJson = "",
             )
@@ -61,20 +62,7 @@ class BackendSettingsRpcApi : QuantaSettingsApi {
 
     override suspend fun updateSettings(settings: QuantaSettingsDto) {
         withContext(Dispatchers.IO) {
-            val backendSettings = BackendQuantaSettingsState.instance.settings
-            backendSettings.openAiUrl = settings.openAiUrl
-            backendSettings.openAiToken = settings.openAiToken
-            backendSettings.model = settings.model
-            backendSettings.aiChatModel = settings.aiChatModel
-            backendSettings.voiceEnabled = settings.voiceEnabled
-            backendSettings.voiceByLocalTTS = settings.voiceByLocalTTS
-            backendSettings.maxTokens = settings.maxTokens
-            backendSettings.dynamicModelEnabled = settings.dynamicModelEnabled
-            backendSettings.agenticEnabled = settings.agenticEnabled
-            backendSettings.terminalToolEnabled = settings.terminalToolEnabled
-            backendSettings.terminalAllowedCommandsCsv = settings.terminalAllowedCommandsCsv
-            backendSettings.extraInstructions = settings.extraInstructions
-            backendSettings.debugEnabled = settings.debugEnabled
+            BackendRuntimeSettingsService.instance.updateFrom(settings)
         }
     }
 }

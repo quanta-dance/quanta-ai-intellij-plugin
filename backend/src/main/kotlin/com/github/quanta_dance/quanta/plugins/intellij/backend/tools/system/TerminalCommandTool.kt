@@ -5,7 +5,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.system
 
 import com.fasterxml.jackson.annotation.*
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
-import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQuantaSettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.execution.impl.ConsoleViewImpl
@@ -49,7 +49,7 @@ class TerminalCommandTool : ToolInterface<String> {
         // Each entry in terminalAllowedCommandsCsv may contain spaces (multi-token prefix), e.g. "git add", "git commit", "./gradlew".
         // The command is allowed only if its tokens start with one of these prefixes.
         try {
-            val settings = BackendQuantaSettingsState.instance.settings
+            val settings = BackendRuntimeSettingsService.instance.settings
             if (settings.terminalToolEnabled == true) {
                 val allowedPrefixes =
                     settings.terminalAllowedCommandsCsv

@@ -6,10 +6,11 @@ package com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models
 import kotlinx.serialization.Serializable
 
 /**
- * Transport-neutral settings snapshot exchanged between frontend and backend.
+ * Transport-neutral frontend settings snapshot exchanged between frontend and backend.
  *
- * This DTO is intentionally broader than a single UI form so split-mode startup sync can move the
- * effective runtime configuration to the backend in one call.
+ * The frontend remains the persistence owner for these values. In split-mode this DTO carries the
+ * effective user settings to the backend so runtime services can execute without persisting a second
+ * backend-owned copy.
  */
 @Serializable
 data class QuantaSettingsDto(

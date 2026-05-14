@@ -3,7 +3,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.backend.repository
 
-import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQuantaSettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.Instructions
 import com.openai.client.okhttp.OpenAIOkHttpClient
 import com.openai.models.ChatModel
@@ -22,7 +22,7 @@ class OpenAIBackendChatResponder(
         systemInstructions: String = mergedInstructions(),
         contextMessage: String? = null,
     ): String {
-        val settings = BackendQuantaSettingsState.instance.settings
+        val settings = BackendRuntimeSettingsService.instance.settings
         apiKey = settings.openAiToken
         model = settings.model
         baseUrl = settings.openAiUrl
@@ -55,7 +55,7 @@ class OpenAIBackendChatResponder(
 
     private fun mergedInstructions(): String {
         val base = Instructions.instructions
-        val extra = BackendQuantaSettingsState.instance.settings.extraInstructions?.trim().orEmpty()
+        val extra = BackendRuntimeSettingsService.instance.settings.extraInstructions?.trim().orEmpty()
         return if (extra.isNotEmpty()) base + "\n\n# User Custom Instructions\n" + extra else base
     }
 

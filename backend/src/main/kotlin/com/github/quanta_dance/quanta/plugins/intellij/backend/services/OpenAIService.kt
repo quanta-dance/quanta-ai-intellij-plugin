@@ -11,7 +11,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.*
 import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.models.OpenAIResponse
 import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.models.TeamAgentSpec
 import com.github.quanta_dance.quanta.plugins.intellij.backend.project.ProjectVersionUtil
-import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQuantaSettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.QuantaAISessionState
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ToolsRegistry
@@ -53,11 +53,11 @@ class OpenAIService(
 
     @Volatile
     private var clientKey: Pair<String, String> =
-        BackendQuantaSettingsState.instance.settings.let { it.openAiUrl to it.openAiToken }
+        BackendRuntimeSettingsService.instance.settings.let { it.openAiUrl to it.openAiToken }
 
     @Volatile
     private var modelKey: Pair<Boolean, String> =
-        BackendQuantaSettingsState.instance.settings.let { (it.dynamicModelEnabled == true) to it.aiChatModel }
+        BackendRuntimeSettingsService.instance.settings.let { (it.dynamicModelEnabled == true) to it.aiChatModel }
 
     private var lastResponseId: String? = QuantaAISessionState.instance.state.mainLastResponseId
     private var currentSessionId: String = UUID.randomUUID().toString()
@@ -495,11 +495,11 @@ class OpenAIService(
     init {
         thisLogger().warn("AI Service initialized.")
         QDLog.info(thisLogger()) { "AI Service initialized." }
-        // Backend settings are read directly from BackendQuantaSettingsState.
-        // The frontend owns UI refresh and display concerns.
-        clientKey = BackendQuantaSettingsState.instance.settings.let { it.openAiUrl to it.openAiToken }
+        // Backend runtime settings are synchronized from the frontend.
+        // The frontend owns persistence, UI refresh, and display concerns.
+        clientKey = BackendRuntimeSettingsService.instance.settings.let { it.openAiUrl to it.openAiToken }
         modelKey =
-            BackendQuantaSettingsState.instance.settings.let { (it.dynamicModelEnabled == true) to it.aiChatModel }
+            BackendRuntimeSettingsService.instance.settings.let { (it.dynamicModelEnabled == true) to it.aiChatModel }
 
         // Chat restore happens in the frontend ToolWindowService when UI is ready.
     }
@@ -513,7 +513,7 @@ class OpenAIService(
      * backend service has already been created.
      */
     private fun ensureClientIsCurrent() {
-        val settings = BackendQuantaSettingsState.instance.settings
+        val settings = BackendRuntimeSettingsService.instance.settings
         val latestClientKey = settings.openAiUrl to settings.openAiToken
         if (latestClientKey != clientKey) {
             QDLog.info(thisLogger()) {
@@ -857,7 +857,7 @@ class OpenAIService(
         var repeatedPlanLoopSignatureCount = 0
         val configuredContinuations =
             try {
-                QuantaAISessionState.instance.state.maxAutomaticTurns.coerceIn(1, 100)
+                BackendRuntimeSettingsService.instance.settings.maxAutomaticTurns.coerceIn(1, 100)
             } catch (_: Throwable) {
                 5
             }
