@@ -8,31 +8,33 @@ import com.intellij.openapi.components.*
 import kotlinx.serialization.Serializable
 
 /**
- * Application-level persisted AI session state.
+ * Application-level persisted session store for Quanta chat and agent state.
  *
- * This stores runtime/session data that should survive IDE restarts:
- * - agent profiles
+ * Despite living under `settings/`, this service no longer represents editable plugin settings.
+ * Its responsibility is durable session persistence only:
+ * - agent profiles and routing metadata
  * - chat conversation history
  * - per-agent inbox messages
- * - summaries and last response pointers
+ * - conversation summaries and last response pointers
  *
- * TODO: consider splitting agent registry data from conversation history
- * if the session state grows further.
- * TODO: rename the persisted state key from QuantaAISettingsState to
- * QuantaAISessionState after existing data migration is handled.
+ * The persisted state key intentionally remains `QuantaAISettingsState` for compatibility with
+ * existing `quanta-ai.xml` data. Keep migration-sensitive naming changes separate from routine
+ * session-state cleanup.
+ *
+ * TODO: if agent registry responsibilities keep diverging from conversation persistence, split them
+ * into dedicated persisted stores rather than growing this catch-all snapshot further.
  */
 @Service(Service.Level.APP)
 @State(
-    name = "QuantaAISettingsState",
-    storages = [Storage("quanta-ai.xml")],
+    name = QuantaAISessionState.PERSISTED_STATE_NAME,
+    storages = [Storage(QuantaAISessionState.STORAGE_FILE)],
 )
 @Serializable
 class QuantaAISessionState : PersistentStateComponent<QuantaAISessionState.State> {
     /**
      * Persisted agent identity/configuration for a session.
      *
-     * TODO: move this to a dedicated agent profile state if it becomes shared
-     * between session persistence and backend configuration.
+     * This belongs here only while agent roster persistence remains coupled to session history.
      */
     @Serializable
     data class AgentProfile(
@@ -66,14 +68,13 @@ class QuantaAISessionState : PersistentStateComponent<QuantaAISessionState.State
     )
 
     /**
-     * The complete persisted session snapshot.
+     * Complete persisted session snapshot.
      *
-     * TODO: split agent registry data from conversation state if the
-     * responsibilities continue to diverge.
+     * Keep this limited to durable conversation/agent-session data. User-editable runtime settings
+     * belong in frontend persistence plus backend runtime sync, not here.
      */
     @Serializable
     data class State(
-        // TODO: if agent profiles are shared with configuration later, extract a dedicated persistence type.
         var agents: MutableList<AgentProfile> = mutableListOf(),
         var conversations: MutableMap<String, MutableList<PersistedMessage>> = mutableMapOf(),
         var conversationSummaries: MutableMap<String, String> = mutableMapOf(),
@@ -82,6 +83,9 @@ class QuantaAISessionState : PersistentStateComponent<QuantaAISessionState.State
     )
 
     companion object {
+        const val PERSISTED_STATE_NAME: String = "QuantaAISettingsState"
+        const val STORAGE_FILE: String = "quanta-ai.xml"
+
         val instance: QuantaAISessionState
             get() = ApplicationManager.getApplication().service<QuantaAISessionState>()
     }
