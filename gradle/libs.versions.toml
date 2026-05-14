@@ -3,12 +3,12 @@
 junit = "4.13.2"
 
 # plugins
-kotlin = "2.3.0"
+kotlin = "2.2.0"
 intellij-platform = "2026.1"
 # https://github.com/JetBrains/intellij-platform-gradle-plugin
 intellij-gradle-plugin = "2.16.0"
 # https://mvnrepository.com/artifact/com.jetbrains.fleet/rpc-compiler-plugin/versions
-intellij-rpc-plugin = "2.3.0-0.2"
+intellij-rpc-plugin = "2.2.0-0.1"
 kotlin-serialization = "1.11.0"
 byte-buddy = "1.17.8"
 
