@@ -5,7 +5,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.system
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
-import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQuantaSettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.intellij.openapi.project.Project
 import com.openai.models.ChatModel
@@ -33,7 +33,7 @@ class RequestModelSwitch : ToolInterface<Map<String, Any>> {
     var currentModel: String? = null
 
     override fun execute(project: Project): Map<String, Any> {
-        val settings = BackendQuantaSettingsState.instance.settings
+        val settings = BackendRuntimeSettingsService.instance.settings
         val dynamicEnabled = settings.dynamicModelEnabled ?: true
         // Use model as the maximum allowed model (cap)
         val maxModel = settings.model.ifBlank { ChatModel.GPT_5_MINI.toString() }

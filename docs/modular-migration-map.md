@@ -52,9 +52,11 @@
 - tool window
 - settings configurable UI
 - icons/resources
+- durable user-owned settings persistence and startup sync ownership
 
 **Backend**
-- persisted project settings state if server-owned
+- runtime-only settings consumption
+- compatibility-state removal only after startup sync and migration safety are confirmed
 
 ## Proposed target ownership map
 
@@ -68,6 +70,8 @@
 - actions
 - tool window UI
 - settings UI
+- durable persistence of user-editable Quanta settings
+- startup sync that pushes the persisted settings snapshot to the backend
 - frontend adapters/callers
 - notifications/presentation helpers
 
@@ -77,7 +81,8 @@
 - terminal/build/test execution
 - MCP startup/runtime services
 - embeddings/search/indexing services
-- persisted project-side state
+- runtime-only settings snapshot consumed by backend services
+- compatibility storage only when needed for migration, not as a second source of truth
 
 ## Safety rules for next slices
 - Migrate one vertical slice at a time.

@@ -25,9 +25,26 @@ Quanta AI is a split IntelliJ plugin organized into three Gradle modules:
 ## Remote / split-mode notes
 - Frontend settings are synchronized to the backend through RPC.
 - In remote split mode, both frontend and backend parts of the plugin matter: backend owns execution and analysis, frontend owns UI.
-- Key code entry points for this flow include `QuantaSettingsApi`, `FrontendSettingsRpcService`, `BackendSettingsRpcApi`, `OpenAIClientProvider`, and `OpenAIService`.
+- Key code entry points for this flow include `FrontendQuantaSettingsState`, `FrontendSettingsStartupActivity`, `FrontendSettingsRpcService`, `QuantaSettingsApi`, `BackendSettingsRpcApi`, `BackendRuntimeSettingsService`, `OpenAIClientProvider`, and `OpenAIService`.
 - See `BackendSettingsSyncScenarioTest` for the current executable scenario that verifies backend settings sync and refreshed OpenAI connection settings.
 - If settings-related runtime behavior changes, update both the owning module docs and `AGENTS.md` when the maintenance strategy changes.
+
+## Settings ownership model
+- `FrontendQuantaSettingsState` is the durable user-facing source of truth for Quanta configuration edited in the settings UI.
+- `BackendRuntimeSettingsService` is the backend's in-memory runtime snapshot. It exists so backend services can use the effective settings without persisting frontend-owned secrets or UI choices on the backend machine.
+- `QuantaAISessionState` remains session-only and should hold transient conversation/session data rather than user configuration.
+- `BackendQuantaSettingsState` is currently an empty compatibility shell kept only for storage compatibility. Do not add new frontend-owned fields back into it.
+
+## Startup synchronization expectations
+- On project startup, `FrontendSettingsStartupActivity` reads the local frontend snapshot and pushes it to the backend through `FrontendSettingsRpcService` and `QuantaSettingsApi`.
+- `BackendSettingsRpcApi` applies that DTO to `BackendRuntimeSettingsService`, making the synced values available to backend runtime services.
+- Until that sync succeeds, backend services still see backend defaults. This is the current behavior and should be treated as a known startup window rather than as proof that defaults are the intended long-term source of truth.
+- The startup activity currently retries a few times and then gives up with warnings. Future hardening should focus on readiness/ordering, not on reintroducing duplicate persisted ownership.
+
+## Follow-up guidance for future cleanup
+- If startup ordering remains risky, introduce an explicit backend readiness or "settings synchronized" signal before removing the compatibility shell.
+- Remove `BackendQuantaSettingsState` entirely only after confirming no compatibility or migration path still depends on `quanta.backend.xml`.
+- Keep ownership single-sourced: frontend persists editable settings, backend consumes the synced runtime snapshot, and session services own only transient state.
 
 ## Documentation maintenance order
 1. Verify behavior through integration tests, scenario coverage, or other executable evidence.

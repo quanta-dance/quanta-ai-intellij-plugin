@@ -4,7 +4,7 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.services
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.OpenAIClientProvider
-import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQuantaSettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
@@ -24,7 +24,7 @@ class OpenAIPrewarmService(
     fun prewarm() {
         executor.submit {
             try {
-                val hostUrl = BackendQuantaSettingsState.instance.settings.openAiUrl
+                val hostUrl = BackendRuntimeSettingsService.instance.settings.openAiUrl
                 val uri =
                     try {
                         URI(hostUrl)

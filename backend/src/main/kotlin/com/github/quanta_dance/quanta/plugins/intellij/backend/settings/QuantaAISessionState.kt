@@ -73,10 +73,6 @@ class QuantaAISessionState : PersistentStateComponent<QuantaAISessionState.State
      */
     @Serializable
     data class State(
-        // TODO: verify whether this belongs in backend settings instead of session state.
-        var agenticEnabled: Boolean? = true,
-        // TODO: consider if automatic turn limits should live in a separate runtime policy object.
-        var maxAutomaticTurns: Int = 10,
         // TODO: if agent profiles are shared with configuration later, extract a dedicated persistence type.
         var agents: MutableList<AgentProfile> = mutableListOf(),
         var conversations: MutableMap<String, MutableList<PersistedMessage>> = mutableMapOf(),

@@ -34,7 +34,7 @@ models to assist developers with code modifications, reviews, and refactoring di
 ## Documentation
 
 - Module README files live in `backend/`, `frontend/`, and `shared/`.
-- Repo-level migration and ownership notes live in `docs/`, especially `docs/architecture-overview.md` and `docs/modular-migration-map.md`.
+- Repo-level migration and ownership notes live in `docs/`, especially `docs/architecture-overview.md` and `docs/modular-migration-map.md`. The architecture overview also explains the current frontend-persisted/backend-runtime settings ownership model.
 - Important behavioral questions should be answered by tests, integration scenarios, or other executable verification before relying on prose.
 - Code-level API documentation should use Kotlin KDoc.
 - Package-level documentation should be added only where boundaries need explanation, using package-level KDoc or a small dedicated package doc file.

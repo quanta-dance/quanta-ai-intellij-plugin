@@ -7,7 +7,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.AgentChannel
 import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.ChatConversationStateService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.rpc.BackendSettingsRpcApi
-import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQuantaSettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.Instructions
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.QuantaAISessionState
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelAuthorTypeDto
@@ -538,7 +538,7 @@ class AgentManagerService(
     }
 
     fun createAgent(config: AgentConfig): String {
-        val enabled = QuantaAISessionState.instance.state.agenticEnabled ?: true
+        val enabled = BackendRuntimeSettingsService.instance.settings.agenticEnabled ?: true
         if (!enabled) throw IllegalStateException("Agentic mode is disabled in settings")
         val id = UUID.randomUUID().toString()
         val baseInstr =
@@ -572,7 +572,7 @@ class AgentManagerService(
     }
 
     fun createDefaultTeam(): List<String> {
-        val enabled = QuantaAISessionState.instance.state.agenticEnabled ?: true
+        val enabled = BackendRuntimeSettingsService.instance.settings.agenticEnabled ?: true
         if (!enabled) return emptyList()
 
         // Idempotent: do not create duplicates if user already has agents.
@@ -674,7 +674,7 @@ class AgentManagerService(
     }
 
     private fun chooseDefaultTeamModels(): Map<String, String> {
-        val settings = BackendQuantaSettingsState.instance.state
+        val settings = BackendRuntimeSettingsService.instance.settings
         val availableModels = BackendSettingsRpcApi.AVAILABLE_CHAT_MODELS
         val prompt = buildString {
             append("Choose the best model for each default agent role from this allowed list only: ")
@@ -798,7 +798,7 @@ class AgentManagerService(
         message: String,
         existingTaskId: String? = null,
     ): CompletableFuture<AgentTaskResult> {
-        val enabled = QuantaAISessionState.instance.state.agenticEnabled ?: true
+        val enabled = BackendRuntimeSettingsService.instance.settings.agenticEnabled ?: true
         if (!enabled) return CompletableFuture.completedFuture(
             AgentTaskResult(
                 "",
@@ -1106,7 +1106,7 @@ class AgentManagerService(
         agentId: String,
         message: String,
     ): String { // unchanged
-        val enabled = QuantaAISessionState.instance.state.agenticEnabled ?: true
+        val enabled = BackendRuntimeSettingsService.instance.settings.agenticEnabled ?: true
         if (!enabled) throw IllegalStateException("Agentic mode is disabled in settings")
         val session = agents[agentId] ?: return "Agent not found: $agentId"
         val requestId = UUID.randomUUID().toString()

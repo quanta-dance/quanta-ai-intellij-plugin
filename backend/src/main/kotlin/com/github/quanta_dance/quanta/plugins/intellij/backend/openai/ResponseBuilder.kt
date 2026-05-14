@@ -9,7 +9,7 @@ import com.fasterxml.jackson.databind.JavaType
 import com.fasterxml.jackson.databind.introspect.BeanPropertyDefinition
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.models.OpenAIResponse
-import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendQuantaSettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.Instructions
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ToolsRegistry
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.DynamicMcpToolProvider
@@ -30,7 +30,7 @@ class ResponseBuilder(private val project: Project) {
 
     private fun mergedInstructions(): String {
         val base = Instructions.instructions
-        val extra = BackendQuantaSettingsState.instance.settings.extraInstructions?.trim().orEmpty()
+        val extra = BackendRuntimeSettingsService.instance.settings.extraInstructions?.trim().orEmpty()
         return if (extra.isNotEmpty()) "$base\n\n# User Custom Instructions\n$extra" else base
     }
 
