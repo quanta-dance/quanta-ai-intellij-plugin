@@ -6,8 +6,21 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.settings
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.QuantaSettingsDto
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+import kotlin.test.assertFailsWith
 
 class BackendRuntimeSettingsServiceTest {
+    @Test
+    fun `service starts unsynchronized until frontend pushes settings`() {
+        val service = BackendRuntimeSettingsService()
+
+        assertFalse(service.hasFrontendSync())
+        assertFailsWith<IllegalStateException> {
+            service.requireFrontendSync("test operation")
+        }
+    }
+
     @Test
     fun `updateFrom copies frontend owned settings into backend runtime snapshot`() {
         val service = BackendRuntimeSettingsService()
@@ -50,5 +63,8 @@ class BackendRuntimeSettingsServiceTest {
             assertEquals(dto.terminalToolEnabled, terminalToolEnabled)
             assertEquals(dto.terminalAllowedCommandsCsv, terminalAllowedCommandsCsv)
         }
+        assertTrue(service.hasFrontendSync())
+        service.requireFrontendSync("test operation")
+        assertEquals(dto.openAiUrl, service.snapshot().state.openAiUrl)
     }
 }

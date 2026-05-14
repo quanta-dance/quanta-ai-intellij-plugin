@@ -33,7 +33,7 @@ Quanta AI is a split IntelliJ plugin organized into three Gradle modules:
 - `FrontendQuantaSettingsState` is the durable user-facing source of truth for Quanta configuration edited in the settings UI.
 - `BackendRuntimeSettingsService` is the backend's in-memory runtime snapshot. It exists so backend services can use the effective settings without persisting frontend-owned secrets or UI choices on the backend machine.
 - `QuantaAISessionState` remains session-only and should hold transient conversation/session data rather than user configuration.
-- `BackendQuantaSettingsState` is currently an empty compatibility shell kept only for storage compatibility. Do not add new frontend-owned fields back into it.
+- The old backend compatibility shell has been removed; backend settings ownership now lives entirely in the runtime-only `BackendRuntimeSettingsService` snapshot rather than a second persisted backend state.
 
 ## Startup synchronization expectations
 - On project startup, `FrontendSettingsStartupActivity` reads the local frontend snapshot and pushes it to the backend through `FrontendSettingsRpcService` and `QuantaSettingsApi`.
@@ -42,8 +42,7 @@ Quanta AI is a split IntelliJ plugin organized into three Gradle modules:
 - The startup activity currently retries a few times and then gives up with warnings. Future hardening should focus on readiness/ordering, not on reintroducing duplicate persisted ownership.
 
 ## Follow-up guidance for future cleanup
-- If startup ordering remains risky, introduce an explicit backend readiness or "settings synchronized" signal before removing the compatibility shell.
-- Remove `BackendQuantaSettingsState` entirely only after confirming no compatibility or migration path still depends on `quanta.backend.xml`.
+- If startup ordering still proves risky, introduce an explicit backend readiness or "settings synchronized" signal at the UX boundary rather than reintroducing duplicate persisted ownership.
 - Keep ownership single-sourced: frontend persists editable settings, backend consumes the synced runtime snapshot, and session services own only transient state.
 
 ## Documentation maintenance order

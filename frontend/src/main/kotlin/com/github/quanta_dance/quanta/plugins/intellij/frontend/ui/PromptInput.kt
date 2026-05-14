@@ -28,6 +28,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.ChatAppColo
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.ChatAppIcons
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel.MessageInputState
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel.isSending
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendSettingsSyncStateService
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -55,11 +56,16 @@ fun PromptInput(
     onToggleMic: () -> Unit = {},
     onToggleAgenticMode: () -> Unit = {},
     onToggleVoiceFeedback: () -> Unit = {},
+    settingsSyncState: FrontendSettingsSyncStateService.State = FrontendSettingsSyncStateService.State(),
     onInputChanged: (String) -> Unit = {},
     onSend: (String) -> Unit = {},
     onStop: (String) -> Unit = {},
+    onSync: () -> Unit = {},
 ) {
     val isSending = promptInputState.isSending
+    val syncStatus = settingsSyncState.status
+    val isSettingsSyncing = syncStatus == FrontendSettingsSyncStateService.Status.SYNCING
+    val isSettingsSyncFailed = syncStatus == FrontendSettingsSyncStateService.Status.FAILED
     var skipInputChangeUpdate by remember { mutableStateOf(false) }
     var localVoiceEnabled by remember { mutableStateOf(voiceEnabled) }
     var planHovered by remember { mutableStateOf(false) }
@@ -111,10 +117,11 @@ fun PromptInput(
                             false
                         } else {
                             val message = textFieldState.text
-                            if (message.isNotBlank()) {
-                                if (isSending) {
-                                    onStop(message.toString())
-                                } else {
+                            when {
+                                isSending -> onStop(message.toString())
+                                isSettingsSyncFailed -> onSync()
+                                isSettingsSyncing -> {}
+                                message.isNotBlank() -> {
                                     onSend(message.toString())
                                     skipInputChangeUpdate = true
                                     textFieldState.setTextAndPlaceCursorAtEnd("")
@@ -208,11 +215,75 @@ fun PromptInput(
                 }
             }
 
-            when (promptInputState) {
-                MessageInputState.Disabled,
-                is MessageInputState.Enabled,
-                is MessageInputState.SendFailed,
-                is MessageInputState.Sent -> {
+            when {
+                isSettingsSyncing || isSettingsSyncFailed -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (availableModels.isNotEmpty()) {
+                            key(currentModel) {
+                                ComboBox(
+                                    labelText = currentModel,
+                                    modifier = Modifier.widthIn(min = 120.dp).padding(end = 6.dp),
+                                    popupContent = {
+                                        Column {
+                                            availableModels.forEach { model ->
+                                                Text(
+                                                    text = model,
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .clickable { onModelSelected(model) }
+                                                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                                                )
+                                            }
+                                        }
+                                    },
+                                )
+                            }
+                        }
+                        IconButton(onClick = onToggleMic) {
+                            Icon(
+                                key = when {
+                                    micActive -> ChatAppIcons.Header.micActive
+                                    micEnabled -> ChatAppIcons.Header.micOn
+                                    else -> ChatAppIcons.Header.micOff
+                                },
+                                contentDescription = "Toggle Microphone",
+                            )
+                        }
+
+                        IconButton(onClick = onToggleVoiceFeedback) {
+                            Icon(
+                                key = if (voiceEnabled) ChatAppIcons.Header.speakerOn else ChatAppIcons.Header.speakerOff,
+                                contentDescription = "Toggle Voice Feedback",
+                            )
+                        }
+
+                        DefaultButton(
+                            modifier = Modifier.wrapContentSize(),
+                            enabled = isSettingsSyncFailed,
+                            onClick = onSync,
+                            content = {
+                                Row(
+                                    Modifier.padding(4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceEvenly,
+                                ) {
+                                    Text("Sync")
+                                    Icon(
+                                        modifier = Modifier.size(JewelTheme.iconButtonStyle.metrics.minSize.height),
+                                        key = ChatAppIcons.Header.settings,
+                                        contentDescription = if (isSettingsSyncFailed) "Retry settings sync" else "Settings syncing",
+                                        tint = if (isSettingsSyncFailed) ChatAppColors.Icon.enabledIconTint else ChatAppColors.Icon.disabledIconTint,
+                                    )
+                                }
+                            },
+                        )
+                    }
+                }
+
+                promptInputState == MessageInputState.Disabled ||
+                        promptInputState is MessageInputState.Enabled ||
+                        promptInputState is MessageInputState.SendFailed ||
+                        promptInputState is MessageInputState.Sent -> {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (availableModels.isNotEmpty()) {
                             key(currentModel) {
@@ -282,7 +353,7 @@ fun PromptInput(
                     }
                 }
 
-                is MessageInputState.Sending -> {
+                promptInputState is MessageInputState.Sending -> {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (availableModels.isNotEmpty()) {
                             key(currentModel) {

@@ -35,6 +35,11 @@ class BackendRuntimeSettingsService {
         var terminalAllowedCommandsCsv: String = "git status,git diff,git add,git commit",
     )
 
+    data class Snapshot(
+        val state: State,
+        val hasFrontendSync: Boolean,
+    )
+
     companion object {
         val instance: BackendRuntimeSettingsService
             get() = ApplicationManager.getApplication().getService(BackendRuntimeSettingsService::class.java)
@@ -43,8 +48,22 @@ class BackendRuntimeSettingsService {
     @Volatile
     private var state: State = State()
 
+    @Volatile
+    private var hasFrontendSync: Boolean = false
+
     val settings: State
         get() = state
+
+    fun snapshot(): Snapshot = Snapshot(state = state, hasFrontendSync = hasFrontendSync)
+
+    fun hasFrontendSync(): Boolean = hasFrontendSync
+
+    fun requireFrontendSync(operationName: String) {
+        check(hasFrontendSync) {
+            "Quanta settings have not been synchronized from the frontend yet. " +
+                    "$operationName must wait for frontend startup sync before using backend runtime settings."
+        }
+    }
 
     fun updateFrom(settings: QuantaSettingsDto) {
         state =
@@ -64,5 +83,6 @@ class BackendRuntimeSettingsService {
                 terminalToolEnabled = settings.terminalToolEnabled,
                 terminalAllowedCommandsCsv = settings.terminalAllowedCommandsCsv,
             )
+        hasFrontendSync = true
     }
 }
