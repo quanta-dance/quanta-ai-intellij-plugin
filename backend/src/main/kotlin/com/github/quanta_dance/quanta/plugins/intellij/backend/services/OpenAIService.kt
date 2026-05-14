@@ -49,7 +49,7 @@ class OpenAIService(
     private val pcs = PropertyChangeSupport(this)
 
     @Volatile
-    private var oAI: OpenAIClient = OpenAIClientProvider.get(project)
+    private var oAI: OpenAIClient? = null
 
     @Volatile
     private var clientKey: Pair<String, String> =
@@ -515,12 +515,23 @@ class OpenAIService(
     private fun ensureClientIsCurrent() {
         val settings = BackendRuntimeSettingsService.instance.settings
         val latestClientKey = settings.openAiUrl to settings.openAiToken
-        if (latestClientKey != clientKey) {
+        if (!BackendRuntimeSettingsService.instance.hasFrontendSync()) {
+            return
+        }
+        if (oAI == null || latestClientKey != clientKey) {
             QDLog.info(thisLogger()) {
                 "OpenAIService: rebuilding OpenAI client due to backend settings change. url=${settings.openAiUrl}, tokenPresent=${settings.openAiToken.isNotBlank()}"
             }
             oAI = OpenAIClientProvider.get(project)
             clientKey = latestClientKey
+        }
+    }
+
+    private fun requireClientReady(): OpenAIClient {
+        ensureClientIsCurrent()
+        BackendRuntimeSettingsService.instance.requireFrontendSync("OpenAI requests")
+        return checkNotNull(oAI) {
+            "OpenAI client was not initialized after frontend settings sync completed."
         }
     }
 
@@ -787,9 +798,9 @@ class OpenAIService(
                 includeMcp = includeMcp,
                 previousResponseId = previousId,
             )
-        ensureClientIsCurrent()
+        val client = requireClientReady()
         QDLog.info(thisLogger()) { "OpenAIService.createResponse: request built, sending to OpenAI" }
-        val structResponse = oAI.responses().create(createParams)
+        val structResponse = client.responses().create(createParams)
         QDLog.info(thisLogger()) {
             "OpenAIService.createResponse: response received id=${runCatching { structResponse.id() }.getOrNull()} outputSize=${
                 runCatching { structResponse.output().size }.getOrDefault(
@@ -1346,7 +1357,7 @@ class OpenAIService(
                 .size(ImageGenerateParams.Size._1024X1024)
                 .model(ImageModel.DALL_E_3)
                 .build()
-        return oAI
+        return requireClientReady()
             .images()
             .generate(params)
             .data()

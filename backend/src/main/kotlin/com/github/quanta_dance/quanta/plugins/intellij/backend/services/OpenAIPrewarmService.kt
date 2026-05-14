@@ -24,7 +24,12 @@ class OpenAIPrewarmService(
     fun prewarm() {
         executor.submit {
             try {
-                val hostUrl = BackendRuntimeSettingsService.instance.settings.openAiUrl
+                val snapshot = BackendRuntimeSettingsService.instance.snapshot()
+                if (!snapshot.hasFrontendSync) {
+                    thisLogger().info("Skipping OpenAI prewarm until frontend settings sync completes")
+                    return@submit
+                }
+                val hostUrl = snapshot.state.openAiUrl
                 val uri =
                     try {
                         URI(hostUrl)

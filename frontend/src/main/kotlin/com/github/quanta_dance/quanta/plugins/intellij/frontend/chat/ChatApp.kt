@@ -29,6 +29,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.frontend.ModularPluginFro
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel.ChatViewModel
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel.MessageInputState
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendQuantaSettingsState
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendSettingsSyncStateService
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.ui.*
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.voice.FrontendAIVoiceService
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.voice.FrontendMicrophoneService
@@ -39,6 +40,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.Orientation
 import org.jetbrains.jewel.ui.component.*
@@ -49,6 +51,9 @@ fun ChatApp(project: Project, viewModel: ChatViewModel, voiceService: FrontendAI
     val sessions by viewModel.sessionsFlow.collectAsState(emptyList())
     val searchState by viewModel.searchChatMessagesHandler().searchStateFlow.collectAsState(SearchState.Idle)
     val messageInputState by viewModel.promptInputState.collectAsState(MessageInputState.Disabled)
+    val settingsSyncService = project.service<FrontendSettingsSyncStateService>()
+    val settingsSyncState by settingsSyncService.stateFlow.collectAsState()
+    val scope = rememberCoroutineScope()
     var voiceEnabled by remember { mutableStateOf(FrontendQuantaSettingsState.instance.state.voiceEnabled) }
     var selectedModel by remember { mutableStateOf(FrontendQuantaSettingsState.instance.state.aiChatModel) }
     var availableModels by remember { mutableStateOf(FrontendQuantaSettingsState.instance.state.availableChatModels) }
@@ -225,9 +230,11 @@ fun ChatApp(project: Project, viewModel: ChatViewModel, voiceService: FrontendAI
                         voiceService.stopTalking()
                     }
                 },
+                settingsSyncState = settingsSyncState,
                 onInputChanged = { viewModel.onPromptInputChanged(it) },
                 onSend = { viewModel.onSendMessage() },
-                onStop = { viewModel.onAbortSendingMessage() }
+                onStop = { viewModel.onAbortSendingMessage() },
+                onSync = { scope.launch { settingsSyncService.retryNow() } }
             )
         }
     )

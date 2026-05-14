@@ -18,7 +18,8 @@ import kotlinx.coroutines.withContext
 @Service(Service.Level.PROJECT)
 class EmbeddingService(private val project: Project) {
     private val log = Logger.getInstance(EmbeddingService::class.java)
-    private val oAI: OpenAIClient = OpenAIClientProvider.get(project)
+
+    private fun client(): OpenAIClient = OpenAIClientProvider.get(project)
 
     suspend fun createEmbeddings(
         texts: List<String>,
@@ -30,7 +31,7 @@ class EmbeddingService(private val project: Project) {
                     .model(EmbeddingModel.of(model))
                     .input(texts.first())
                     .build()
-            val output = oAI.embeddings().create(params).data()
+            val output = client().embeddings().create(params).data()
             output.map { item -> item.embedding().map { it.toFloat() }.toFloatArray() }
         }
 

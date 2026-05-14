@@ -19,7 +19,11 @@ object OpenAIClientProvider {
      * through this provider instead of assuming startup-time credentials remain current.
      */
     fun get(project: Project): OpenAIClient {
-        val state = BackendRuntimeSettingsService.instance.settings
+        val snapshot = BackendRuntimeSettingsService.instance.snapshot()
+        check(snapshot.hasFrontendSync) {
+            "OpenAI client creation requested before frontend settings sync completed."
+        }
+        val state = snapshot.state
         return OpenAIOkHttpClient
             .builder()
             .apiKey(state.openAiToken)
