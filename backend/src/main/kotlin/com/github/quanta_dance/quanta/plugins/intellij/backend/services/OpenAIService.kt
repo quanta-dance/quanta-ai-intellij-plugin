@@ -3,7 +3,6 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.backend.services
 
-import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.ChatConversationService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
@@ -30,7 +29,6 @@ import com.openai.models.images.ImageGenerateParams
 import com.openai.models.images.ImageModel
 import com.openai.models.responses.ResponseFunctionToolCall
 import com.openai.models.responses.ResponseInputItem
-import com.openai.models.responses.ResponseUsage
 import com.openai.models.responses.StructuredResponse
 import java.beans.PropertyChangeListener
 import java.beans.PropertyChangeSupport
@@ -38,7 +36,6 @@ import java.io.File
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Future
-import java.util.concurrent.atomic.AtomicLong
 
 @Service(Service.Level.PROJECT)
 class OpenAIService(
@@ -66,6 +63,11 @@ class OpenAIService(
     private val mapper = ObjectMapper()
     private val toolRouter = ToolRouter(project, toolInvoker, mapper)
     private val responseBuilder = ResponseBuilder(project)
+    private val contextInjector = AgentContextInjector(project, ::systemMessage)
+    private val toolExecutionPresenter = ToolExecutionPresenter(mapper)
+    private val usageTracker = OpenAIUsageTracker(thisLogger()) { snapshot ->
+        pcs.firePropertyChange("usage", null, snapshot)
+    }
 
     private var currentModel: String = ModelSelector.initialModel()
 
@@ -78,16 +80,7 @@ class OpenAIService(
     private var pendingTeamRemoveRoles: List<String>? = null
 
     @Volatile
-    private var initialContextInjectedThisIdeSession: Boolean = false
-
-    @Volatile
     private var lastInjectedSummaryHash: Int? = null
-
-    @Volatile
-    private var lastInjectedAgentsMdHash: Int? = null
-
-    @Volatile
-    private var lastInjectedAgentsRosterHash: Int? = null
 
     @Volatile
     private var lastInjectedPlanHash: Int? = null
@@ -104,62 +97,7 @@ class OpenAIService(
         val totalTokens: Long,
     )
 
-    private data class UsageTotals(
-        val inputTokens: AtomicLong = AtomicLong(0),
-        val outputTokens: AtomicLong = AtomicLong(0),
-        val totalTokens: AtomicLong = AtomicLong(0),
-    )
-
-    private val globalUsageTotals: UsageTotals = UsageTotals()
-
-    fun getUsageSnapshot(): UsageSnapshot =
-        UsageSnapshot(
-            inputTokens = globalUsageTotals.inputTokens.get(),
-            outputTokens = globalUsageTotals.outputTokens.get(),
-            totalTokens = globalUsageTotals.totalTokens.get(),
-        )
-
-    private fun recordUsage(
-        tag: String,
-        usage: ResponseUsage,
-        reportToUi: Boolean,
-    ) {
-        // Note: tag is intentionally ignored for UI; we show only global totals.
-        val inTok =
-            try {
-                usage.inputTokens()
-            } catch (_: Throwable) {
-                0L
-            }
-        val outTok =
-            try {
-                usage.outputTokens()
-            } catch (_: Throwable) {
-                0L
-            }
-        val totalTok =
-            try {
-                usage.totalTokens()
-            } catch (_: Throwable) {
-                inTok + outTok
-            }
-
-        val tIn = globalUsageTotals.inputTokens.addAndGet(inTok)
-        val tOut = globalUsageTotals.outputTokens.addAndGet(outTok)
-        val tTot = globalUsageTotals.totalTokens.addAndGet(totalTok)
-
-        try {
-            pcs.firePropertyChange("usage", null, UsageSnapshot(tIn, tOut, tTot))
-        } catch (_: Throwable) {
-        }
-
-        try {
-            thisLogger().info(
-                "Usage: tag=$tag in=$inTok out=$outTok total=$totalTok global(in=$tIn out=$tOut total=$tTot)",
-            )
-        } catch (_: Throwable) {
-        }
-    }
+    fun getUsageSnapshot(): UsageSnapshot = usageTracker.snapshot()
 
     @Volatile
     private var lastCtxHash: Int? = null
@@ -676,10 +614,8 @@ class OpenAIService(
         } catch (_: Throwable) {
         }
         lastCtxHash = null
-        initialContextInjectedThisIdeSession = false
+        contextInjector.reset()
         lastInjectedSummaryHash = null
-        lastInjectedAgentsMdHash = null
-        lastInjectedAgentsRosterHash = null
         lastInjectedPlanHash = null
 
         // Reset agents thread pointers as well; keep their transcripts.
@@ -696,20 +632,12 @@ class OpenAIService(
         lastResponseId = null
         QuantaAISessionState.instance.state.mainLastResponseId = null
         lastCtxHash = null
-        initialContextInjectedThisIdeSession = false
+        contextInjector.reset()
         lastInjectedSummaryHash = null
-        lastInjectedAgentsMdHash = null
-        lastInjectedAgentsRosterHash = null
         lastInjectedPlanHash = null
 
         // Reset global token usage counters
-        try {
-            globalUsageTotals.inputTokens.set(0)
-            globalUsageTotals.outputTokens.set(0)
-            globalUsageTotals.totalTokens.set(0)
-            pcs.firePropertyChange("usage", null, UsageSnapshot(0, 0, 0))
-        } catch (_: Throwable) {
-        }
+        usageTracker.reset(reportToUi = true)
 
         // Clear persisted chat for current branch so "new session" is a clean slate on restart too
         try {
@@ -739,10 +667,8 @@ class OpenAIService(
         this.lastResponseId = lastResponseId
         QuantaAISessionState.instance.state.mainLastResponseId = lastResponseId
         lastCtxHash = null
-        initialContextInjectedThisIdeSession = false
+        contextInjector.reset()
         lastInjectedSummaryHash = null
-        lastInjectedAgentsMdHash = null
-        lastInjectedAgentsRosterHash = null
         lastInjectedPlanHash = null
     }
 
@@ -751,26 +677,6 @@ class OpenAIService(
         newSession()
     }
 
-    private fun buildAgentsRosterContext(): String {
-        val agents =
-            try {
-                project.service<AgentManagerService>().getAgentsSnapshot()
-            } catch (_: Throwable) {
-                emptyList()
-            }
-        val b = StringBuilder()
-        b.append("Agents roster (auto):\n")
-        if (agents.isEmpty()) {
-            b.append("- <none>")
-            return b.toString()
-        }
-        agents.forEach { a ->
-            b.append("- id=").append(a.id).append(", role=").append(a.role)
-            a.model?.let { m -> b.append(", model=").append(m) }
-            b.append('\n')
-        }
-        return b.toString().trimEnd()
-    }
 
     /**
      * Core request/response API used by newer code paths.
@@ -812,7 +718,7 @@ class OpenAIService(
         try {
             val usage = structResponse.usage().orElse(null)
             if (usage != null) {
-                recordUsage(usageTag, usage, reportToUi = reportUsageToUi)
+                usageTracker.recordUsage(usageTag, usage, reportToUi = reportUsageToUi)
             }
         } catch (_: Throwable) {
         }
@@ -856,7 +762,7 @@ class OpenAIService(
         onToolUpdate: ((ToolTurnUpdate) -> Unit)? = null,
     ): Pair<String, String?> {
         var localPrevId = previousId
-        injectBaseContextForAgentTurn(inputs, localPrevId)
+        contextInjector.injectBaseContextForAgentTurn(inputs, localPrevId)
         val aggregated = StringBuilder()
         val processedCallIds = mutableSetOf<String>()
         val planService = SessionPlanService(project)
@@ -918,7 +824,7 @@ class OpenAIService(
                         if (functionCall.name().contains("SessionPlan", ignoreCase = true)) {
                             sessionPlanToolCalledThisTurn = true
                         }
-                        val startedItem = buildToolExecutionItem(
+                        val startedItem = toolExecutionPresenter.buildToolExecutionItem(
                             functionCall,
                             ToolExecutionStatus.EXECUTING
                         )
@@ -929,7 +835,7 @@ class OpenAIService(
                             QDLog.info(thisLogger()) {
                                 "OpenAIService.agentTurn: executed tool call name=${functionCall.name()} callId=$callId"
                             }
-                            val completedItem = buildToolExecutionItem(
+                            val completedItem = toolExecutionPresenter.buildToolExecutionItem(
                                 functionCall,
                                 if (toolResult.succeeded) {
                                     ToolExecutionStatus.SUCCEEDED
@@ -944,7 +850,7 @@ class OpenAIService(
                                 ResponseInputItem.ofFunctionCallOutput(toolResult.toolOutput),
                             )
                         } catch (t: Throwable) {
-                            val failedItem = buildToolExecutionItem(
+                            val failedItem = toolExecutionPresenter.buildToolExecutionItem(
                                 functionCall,
                                 ToolExecutionStatus.FAILED,
                                 errorText = t.message,
@@ -1154,102 +1060,6 @@ class OpenAIService(
         return aggregated.toString().trim() to localPrevId
     }
 
-    private fun injectBaseContextForAgentTurn(
-        inputs: MutableList<ResponseInputItem>,
-        previousId: String?,
-    ) {
-        val needBaseContext = (previousId == null) || (!initialContextInjectedThisIdeSession)
-
-        try {
-            val ctx = ProjectAgentsFileManager(project).readAgentsFile(maxChars = 8_000)
-            if (ctx.isNotBlank()) {
-                val h = ctx.hashCode()
-                if (needBaseContext || lastInjectedAgentsMdHash == null || lastInjectedAgentsMdHash != h) {
-                    inputs.add(0, systemMessage("AGENTS.md:\n" + ctx))
-                    lastInjectedAgentsMdHash = h
-                }
-            }
-        } catch (_: Throwable) {
-        }
-
-        try {
-            val roster = buildAgentsRosterContext()
-            val h = roster.hashCode()
-            if (needBaseContext || lastInjectedAgentsRosterHash == null || lastInjectedAgentsRosterHash != h) {
-                inputs.add(0, systemMessage(roster))
-                lastInjectedAgentsRosterHash = h
-            }
-        } catch (_: Throwable) {
-        }
-
-        if (needBaseContext) {
-            initialContextInjectedThisIdeSession = true
-        }
-    }
-
-    private fun buildToolExecutionItem(
-        functionCall: ResponseFunctionToolCall,
-        status: ToolExecutionStatus,
-        errorText: String? = null,
-        detailText: String? = null,
-    ): ToolExecutionItem {
-        val toolName = functionCall.name()
-        val argsText = runCatching { functionCall.arguments() }.getOrDefault("")
-        val argsJson = runCatching { mapper.readTree(argsText) }.getOrNull()
-        val filePath = extractFilePath(argsJson)
-        val displayText = buildToolDisplayText(toolName, filePath, argsJson)
-        return ToolExecutionItem(
-            callId = functionCall.callId(),
-            toolName = toolName,
-            displayText = displayText,
-            status = status,
-            filePath = filePath,
-            errorText = errorText,
-            detailText = detailText,
-        )
-    }
-
-    private fun extractFilePath(argsJson: JsonNode?): String? {
-        if (argsJson == null) return null
-        val direct = argsJson.path("filePath").asText("").trim()
-        if (direct.isNotBlank()) return direct
-        val path = argsJson.path("path").asText("").trim()
-        if (path.isNotBlank()) return path
-        val source = argsJson.path("sourcePath").asText("").trim()
-        if (source.isNotBlank()) return source
-        return null
-    }
-
-    private fun buildToolDisplayText(
-        toolName: String,
-        filePath: String?,
-        argsJson: JsonNode?,
-    ): String {
-        val fileName = filePath?.substringAfterLast('/')?.substringAfterLast('\\')
-        return when {
-            toolName.contains("SessionPlan", ignoreCase = true) -> {
-                val action = argsJson?.path("action")?.asText("")?.trim()?.uppercase().orEmpty()
-                when (action) {
-                    "ACTIVATE" -> "Session Plan: Active"
-                    "COMPLETE" -> "Session Plan: Update"
-                    "DRAFT" -> "Session Plan: Draft"
-                    else -> "Session Plan"
-                }
-            }
-
-            toolName.contains("ReadFile", ignoreCase = true) && !fileName.isNullOrBlank() -> "Reading $fileName"
-            toolName.contains("OpenFile", ignoreCase = true) && !fileName.isNullOrBlank() -> "Opening $fileName"
-            toolName.contains("SearchInFiles", ignoreCase = true) -> "Searching files"
-            toolName.contains("ListFiles", ignoreCase = true) -> "Listing files"
-            toolName.contains("PatchFile", ignoreCase = true) && !fileName.isNullOrBlank() -> "Patching $fileName"
-            toolName.contains(
-                "CreateOrUpdateFile",
-                ignoreCase = true
-            ) && !fileName.isNullOrBlank() -> "Updating $fileName"
-
-            else -> toolName.replace(Regex("([a-z])([A-Z])"), "$1 $2")
-        }
-    }
 
     private fun normalizePlanLoopSummary(text: String): String =
         text.lowercase()
