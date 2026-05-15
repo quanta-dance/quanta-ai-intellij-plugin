@@ -41,4 +41,6 @@ class BackendChatRepositoryModel(
 
     suspend fun sendScheduledReminder(reminderContext: String) =
         conversationService.sendScheduledReminder(reminderContext)
+
+    fun stopAllAgents(): Int = conversationService.stopAllAgents()
 }

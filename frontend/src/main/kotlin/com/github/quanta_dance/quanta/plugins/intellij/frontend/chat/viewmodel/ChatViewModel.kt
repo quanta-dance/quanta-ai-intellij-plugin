@@ -26,6 +26,8 @@ interface ChatViewModelApi : Disposable {
 
     fun onAbortSendingMessage()
 
+    fun onStopAllAgents()
+
     fun onCreateNewSession()
 
     fun onActivateSession(sessionId: String)
@@ -112,6 +114,12 @@ class ChatViewModel(
                 else -> MessageInputState.Enabled(currentPromptInput)
             },
         )
+    }
+
+    override fun onStopAllAgents() {
+        coroutineScope.launch {
+            repository.stopAllAgents()
+        }
     }
 
     override fun onCreateNewSession() {

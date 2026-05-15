@@ -5,7 +5,8 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.services
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
-import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.*
+import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.OpenAIClientProvider
+import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.ResponseBuilder
 import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.models.OpenAIResponse
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.QuantaAISessionState
@@ -19,14 +20,11 @@ import com.openai.client.OpenAIClient
 import com.openai.models.responses.ResponseInputItem
 import com.openai.models.responses.StructuredResponse
 import java.beans.PropertyChangeSupport
-import java.util.concurrent.Future
 
 @Service(Service.Level.PROJECT)
 class OpenAIService(
     private val project: Project,
 ) : Disposable {
-    private var processingFuture: Future<*>? = null
-    private var operationInProgress = false
     private val pcs = PropertyChangeSupport(this)
 
     @Volatile
@@ -40,9 +38,7 @@ class OpenAIService(
     private var modelKey: Pair<Boolean, String> =
         BackendRuntimeSettingsService.instance.settings.let { (it.dynamicModelEnabled == true) to it.aiChatModel }
 
-    private val toolInvoker: ToolInvoker = DefaultToolInvoker()
     private val mapper = ObjectMapper()
-    private val toolRouter = ToolRouter(project, toolInvoker, mapper)
     private val responseBuilder = ResponseBuilder(project)
     private val contextInjector = AgentContextInjector(project, ::systemMessage)
     private val toolExecutionPresenter = ToolExecutionPresenter(mapper)
@@ -84,6 +80,9 @@ class OpenAIService(
         val totalTokens: Long,
     )
 
+    // TODO: currently unused after the service refactor, but keep this facade as the stable read path
+    // if we surface token usage in the UI/diagnostics again. Remove only if we intentionally drop
+    // usage snapshot reporting as a supported service capability.
     fun getUsageSnapshot(): UsageSnapshot = usageTracker.snapshot()
 
     @Volatile
@@ -184,42 +183,6 @@ class OpenAIService(
                 .build(),
         )
 
-    fun stopProcessing() {
-        try {
-            processingFuture?.run {
-                if (!isDone) {
-                    cancel(true)
-                    thisLogger().info("Processing was cancelled.")
-                }
-            }
-        } catch (e: InterruptedException) {
-            Thread.currentThread().interrupt()
-            thisLogger().warn("Interrupted exception: ", e)
-        } catch (e: Exception) {
-            thisLogger().error("Error while stopping processing: ", e)
-        }
-    }
-
-    fun resetThreadStatePreservingHistory() {
-        thisLogger().info("Resetting AI thread state (preserve history). session=${sessionCoordinator.currentSessionId()}")
-        sessionCoordinator.clearLastResponseId()
-        lastCtxHash = null
-        contextInjector.reset()
-        lastInjectedSummaryHash = null
-        lastInjectedPlanHash = null
-
-        // Reset agents thread pointers as well; keep their transcripts.
-        try {
-            project.service<AgentManagerService>().resetForNewSession()
-        } catch (_: Throwable) {
-        }
-    }
-
-    fun newSession(): String {
-        thisLogger().info("Starting new AI session. Previous session: ${sessionCoordinator.currentSessionId()}")
-        usageTracker.reset(reportToUi = true)
-        return sessionCoordinator.newSession()
-    }
 
     fun getLastResponseId(): String? = sessionCoordinator.lastResponseId()
 

@@ -50,4 +50,9 @@ class BackendChatRepositoryRpcApi : ChatRepositoryRpcApi {
         val backendProject = projectId.findProjectOrNull() ?: return
         return BackendChatRepositoryModel.getInstance(backendProject).sendMessage(messageContent)
     }
+
+    override suspend fun stopAllAgents(projectId: ProjectId): Int {
+        val backendProject = projectId.findProjectOrNull() ?: return 0
+        return BackendChatRepositoryModel.getInstance(backendProject).stopAllAgents()
+    }
 }
