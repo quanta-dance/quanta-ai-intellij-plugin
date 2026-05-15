@@ -15,7 +15,6 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.QuantaAI
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ToolsRegistry
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem
-import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
@@ -27,7 +26,6 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.openai.client.OpenAIClient
 import com.openai.models.images.ImageGenerateParams
 import com.openai.models.images.ImageModel
-import com.openai.models.responses.ResponseFunctionToolCall
 import com.openai.models.responses.ResponseInputItem
 import com.openai.models.responses.StructuredResponse
 import java.beans.PropertyChangeListener
@@ -72,6 +70,15 @@ class OpenAIService(
         },
     )
     private val continuationPolicy = AgentTurnContinuationPolicy()
+    private val agentTurnOrchestrator = AgentTurnOrchestrator(
+        project = project,
+        contextInjector = contextInjector,
+        toolExecutionPresenter = toolExecutionPresenter,
+        continuationPolicy = continuationPolicy,
+        createResponse = ::createResponse,
+        systemMessage = ::systemMessage,
+        persistAndShow = ::persistAndShow,
+    )
     private val sessionCoordinator = OpenAISessionCoordinator(
         project = project,
         onSessionStateReset = {
@@ -742,301 +749,20 @@ class OpenAIService(
         allowedMcpNames: Set<String>? = null,
         onAssistantMessage: ((AssistantTurnMessage) -> Unit)? = null,
         onToolUpdate: ((ToolTurnUpdate) -> Unit)? = null,
-    ): Pair<String, String?> {
-        var localPrevId = previousId
-        contextInjector.injectBaseContextForAgentTurn(inputs, localPrevId)
-        val aggregated = StringBuilder()
-        val processedCallIds = mutableSetOf<String>()
-        val planService = SessionPlanService(project)
-        val planIsActive = runCatching { planService.isActive() }.getOrDefault(false)
-        var reprocess = true
-        var continuationCount = 0
-        var forcePlanPersistenceAttempts = 0
-        var lastPlanLoopSignature: String? = null
-        var repeatedPlanLoopSignatureCount = 0
-        val configuredContinuations =
-            try {
-                BackendRuntimeSettingsService.instance.settings.maxAutomaticTurns.coerceIn(1, 100)
-            } catch (_: Throwable) {
-                5
-            }
-        val maxContinuations = if (planIsActive) maxOf(configuredContinuations, 30) else configuredContinuations
-        val maxPlanPersistenceAttempts = 5
-
-        while (reprocess) {
-            reprocess = false
-            val (structResponse, newId) =
-                createResponse(
-                    inputs,
-                    localPrevId,
-                    overrideInstructions,
-                    overrideModel,
-                    allowedToolClassFilter,
-                    includeMcp,
-                    allowedBuiltInNames,
-                    allowedMcpNames,
-                )
-            localPrevId = newId
-            inputs.clear()
-            val pendingToolOutputs = mutableListOf<ResponseInputItem>()
-            var sessionPlanToolCalledThisTurn = false
-
-            structResponse.output().map { item ->
-                when {
-                    item.isReasoning() -> {
-                        val reasoning = item.asReasoning()
-                        reasoning.summary().forEach { summary ->
-                            val text = summary.text().trim()
-                            if (text.isBlank()) return@forEach
-                            aggregated.append(text).append('\n')
-                            onAssistantMessage?.invoke(
-                                AssistantTurnMessage(
-                                    text = text,
-                                    ttsSummary = null,
-                                    isReasoning = true,
-                                ),
-                            )
-                        }
-                    }
-
-                    item.isFunctionCall() -> {
-                        val functionCall: ResponseFunctionToolCall = item.asFunctionCall()
-                        val callId = functionCall.callId()
-                        if (!processedCallIds.add(callId)) return@map
-                        if (functionCall.name().contains("SessionPlan", ignoreCase = true)) {
-                            sessionPlanToolCalledThisTurn = true
-                        }
-                        val startedItem = toolExecutionPresenter.buildToolExecutionItem(
-                            functionCall,
-                            ToolExecutionStatus.EXECUTING
-                        )
-                        onToolUpdate?.invoke(ToolTurnUpdate(startedItem))
-                        try {
-                            val toolResult =
-                                project.service<ToolExecutionService>().executeToolCall(functionCall, agentLabel)
-                            QDLog.info(thisLogger()) {
-                                "OpenAIService.agentTurn: executed tool call name=${functionCall.name()} callId=$callId"
-                            }
-                            val completedItem = toolExecutionPresenter.buildToolExecutionItem(
-                                functionCall,
-                                if (toolResult.succeeded) {
-                                    ToolExecutionStatus.SUCCEEDED
-                                } else {
-                                    ToolExecutionStatus.FAILED
-                                },
-                                errorText = toolResult.errorText,
-                                detailText = toolResult.detailText,
-                            )
-                            onToolUpdate?.invoke(ToolTurnUpdate(completedItem))
-                            pendingToolOutputs.add(
-                                ResponseInputItem.ofFunctionCallOutput(toolResult.toolOutput),
-                            )
-                        } catch (t: Throwable) {
-                            val failedItem = toolExecutionPresenter.buildToolExecutionItem(
-                                functionCall,
-                                ToolExecutionStatus.FAILED,
-                                errorText = t.message,
-                                detailText = t.stackTraceToString().take(2_000),
-                            )
-                            onToolUpdate?.invoke(ToolTurnUpdate(failedItem))
-                            throw t
-                        }
-                    }
-
-                    item.isMessage() -> {
-                        item.message().map { m ->
-                            m.content().forEach { c ->
-                                val message = c.asOutputText()
-                                val txt = message.summaryMessage
-                                QDLog.info(thisLogger()) {
-                                    "OpenAIService.agentTurn outputText: nextStep=${message.nextStep} planStatus=${message.planStatus} planNeedsUserConfirmation=${message.planNeedsUserConfirmation} completedTasks=${message.planCompletedTasks?.size ?: 0} summary='${
-                                        txt.take(
-                                            160
-                                        )
-                                    }'"
-                                }
-
-                                aggregated.append(txt).append('\n')
-
-                                var effectivePlanStatus = message.planStatus?.uppercase()
-                                val hasBlankPlanMetadataInActiveMode =
-                                    planIsActive &&
-                                            effectivePlanStatus.isNullOrBlank() &&
-                                            message.planGoal.isNullOrBlank() &&
-                                            message.planDefinitionOfDone.isNullOrBlank() &&
-                                            message.planTasks.isNullOrEmpty()
-
-                                if (hasBlankPlanMetadataInActiveMode) {
-                                    if (forcePlanPersistenceAttempts < maxPlanPersistenceAttempts) {
-                                        forcePlanPersistenceAttempts++
-                                        continuationCount++
-                                        reprocess = true
-                                        inputs.add(
-                                            systemMessage(
-                                                "The session plan is ACTIVE, but your response omitted required structured plan fields. Return complete plan metadata and/or call SessionPlanTool before concluding the turn. Do not return DONE with blank planStatus/planGoal/planTasks while the plan is still active.",
-                                            ),
-                                        )
-                                        return@forEach
-                                    }
-                                }
-
-                                if (
-                                    planIsActive &&
-                                    !sessionPlanToolCalledThisTurn &&
-                                    (message.planStatus?.uppercase() == "DONE" || !message.planCompletedTasks.isNullOrEmpty())
-                                ) {
-                                    if (forcePlanPersistenceAttempts < maxPlanPersistenceAttempts) {
-                                        forcePlanPersistenceAttempts++
-                                        continuationCount++
-                                        reprocess = true
-                                        inputs.add(
-                                            systemMessage(
-                                                "The session plan is ACTIVE. Before finishing or marking tasks complete, you MUST call SessionPlanTool to persist the current plan state. Do not only report planStatus/planCompletedTasks in your response fields. Update the plan file first, then continue.",
-                                            ),
-                                        )
-                                        return@forEach
-                                    }
-                                }
-
-                                try {
-                                    if (!sessionPlanToolCalledThisTurn) {
-                                        when (effectivePlanStatus) {
-                                            "DRAFT" -> planService.applyDraftFromResponse(
-                                                goal = message.planGoal,
-                                                definitionOfDone = message.planDefinitionOfDone,
-                                                tasks = message.planTasks,
-                                            )
-
-                                            "ACTIVE" -> {
-                                                if (!planService.isActive()) {
-                                                    planService.applyDraftFromResponse(
-                                                        goal = message.planGoal,
-                                                        definitionOfDone = message.planDefinitionOfDone,
-                                                        tasks = message.planTasks,
-                                                    )
-                                                    planService.activate()
-                                                }
-                                            }
-
-                                            "DONE" -> planService.markAllTasksDone()
-                                        }
-                                    }
-                                } catch (_: Throwable) {
-                                }
-
-                                try {
-                                    val completed = message.planCompletedTasks
-                                        ?.mapNotNull { it.trim().ifBlank { null } }
-                                        .orEmpty()
-                                    if (completed.isNotEmpty()) {
-                                        planService.markTasksDone(completed)
-                                    }
-                                    effectivePlanStatus = planService.getStatus().uppercase()
-                                } catch (_: Throwable) {
-                                }
-
-                                if (message.nextStep?.uppercase() == "DONE" && effectivePlanStatus != "DONE") {
-                                    try {
-                                        if (planService.onlyPassiveTailTasksRemain()) {
-                                            planService.markAllTasksDone()
-                                            effectivePlanStatus = planService.getStatus().uppercase()
-                                        }
-                                    } catch (_: Throwable) {
-                                    }
-                                }
-
-                                val activePlanStillHasWork =
-                                    try {
-                                        (planService.isActive() || effectivePlanStatus == "ACTIVE") && planService.hasUncheckedTasks()
-                                    } catch (_: Throwable) {
-                                        false
-                                    }
-
-                                val currentPlanLoopSignature =
-                                    continuationPolicy.buildPlanLoopSignature(
-                                        message = message,
-                                        effectivePlanStatus = effectivePlanStatus,
-                                        summaryText = txt,
-                                    )
-                                if (activePlanStillHasWork) {
-                                    if (currentPlanLoopSignature == lastPlanLoopSignature) {
-                                        repeatedPlanLoopSignatureCount++
-                                    } else {
-                                        lastPlanLoopSignature = currentPlanLoopSignature
-                                        repeatedPlanLoopSignatureCount = 0
-                                    }
-                                    if (repeatedPlanLoopSignatureCount >= 1 && pendingToolOutputs.isEmpty()) {
-                                        return@forEach
-                                    }
-                                } else {
-                                    lastPlanLoopSignature = currentPlanLoopSignature
-                                    repeatedPlanLoopSignatureCount = 0
-                                }
-
-                                if (planIsActive && message.nextStep?.uppercase() == "WAIT_USER") {
-                                    val blockingQuestion = message.planBlockingQuestion?.trim().orEmpty()
-                                    val hardBlocked =
-                                        message.planNeedsUserConfirmation == true &&
-                                                blockingQuestion.isNotBlank() &&
-                                                !continuationPolicy.isRoutineConfirmationQuestion(blockingQuestion)
-                                    if (!hardBlocked) {
-                                        if (continuationCount < maxContinuations) {
-                                            continuationCount++
-                                            reprocess = true
-                                            inputs.add(
-                                                systemMessage(
-                                                    "Continue executing the ACTIVE plan autonomously. Do not ask the user questions unless truly blocked by a missing external dependency or unavailable information. Do not stop for routine confirmations such as asking permission to continue, apply safe changes, inspect files, or run the next planned step.",
-                                                ),
-                                            )
-                                            return@forEach
-                                        }
-                                    }
-                                }
-
-                                if (activePlanStillHasWork && message.nextStep?.uppercase() != "WAIT_USER") {
-                                    if (continuationCount < maxContinuations && effectivePlanStatus != "DONE") {
-                                        continuationCount++
-                                        reprocess = true
-                                        inputs.add(
-                                            systemMessage(
-                                                "The session plan is ACTIVE and still has unchecked tasks. Continue executing until tasks are completed or you are truly blocked. Avoid asking for simple confirmations while the plan can still be executed safely.",
-                                            ),
-                                        )
-                                        return@forEach
-                                    }
-                                }
-
-                                if (txt.isNotBlank()) {
-                                    persistAndShow("assistant", agentLabel, txt)
-                                    onAssistantMessage?.invoke(
-                                        AssistantTurnMessage(
-                                            text = txt,
-                                            ttsSummary = message.ttsSummary?.trim()?.ifBlank { null },
-                                            isReasoning = false,
-                                        ),
-                                    )
-                                }
-
-                                // Option 3: 3-state conversation control
-                                if (message.nextStep?.uppercase() == "CONTINUE") {
-                                    if (continuationCount < maxContinuations) {
-                                        continuationCount++
-                                        // Nudge follow-up (no tools pending)
-                                        inputs.add(systemMessage("Continue."))
-                                        reprocess = true
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            val hasPending = pendingToolOutputs.isNotEmpty()
-            if (hasPending) inputs.addAll(pendingToolOutputs)
-            if (hasPending) reprocess = true
-        }
-        return aggregated.toString().trim() to localPrevId
-    }
+    ): Pair<String, String?> =
+        agentTurnOrchestrator.run(
+            inputs = inputs,
+            previousId = previousId,
+            overrideInstructions = overrideInstructions,
+            overrideModel = overrideModel,
+            allowedToolClassFilter = allowedToolClassFilter,
+            includeMcp = includeMcp,
+            agentLabel = agentLabel,
+            allowedBuiltInNames = allowedBuiltInNames,
+            allowedMcpNames = allowedMcpNames,
+            onAssistantMessage = onAssistantMessage,
+            onToolUpdate = onToolUpdate,
+        )
 
 
     private fun handleLocalMemoryCommand(text: String): Boolean = localMemoryCommandHandler.handle(text)
