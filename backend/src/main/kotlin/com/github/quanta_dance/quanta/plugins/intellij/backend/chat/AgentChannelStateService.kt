@@ -173,4 +173,34 @@ class AgentChannelStateService(
             }
         }
     }
+
+    fun stopAllAgentWork(reason: String = "Stopped by user"): Int {
+        val stoppableStatuses =
+            setOf(DelegatedTaskStatusDto.RUNNING, DelegatedTaskStatusDto.QUEUED, DelegatedTaskStatusDto.BLOCKED)
+        val affected = _tasks.value.filter { it.status in stoppableStatuses }
+        if (affected.isEmpty()) return 0
+
+        val now = System.currentTimeMillis()
+        val stoppedIds = affected.map { it.id }.toSet()
+        runningTaskIds.removeAll(stoppedIds)
+        _tasks.value = _tasks.value.map { task ->
+            if (task.id in stoppedIds) {
+                task.copy(
+                    status = DelegatedTaskStatusDto.FAILED,
+                    summary = reason,
+                    result = reason,
+                    updatedAtEpochMs = now,
+                )
+            } else {
+                task
+            }
+        }
+        persistence.saveActiveDelegatedTasks(_tasks.value)
+        appendEvent(
+            kind = AgentChannelEventKindDto.DELEGATION_UPDATED,
+            authorType = AgentChannelAuthorTypeDto.SYSTEM,
+            text = reason,
+        )
+        return stoppedIds.size
+    }
 }

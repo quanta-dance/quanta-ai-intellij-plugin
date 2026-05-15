@@ -120,4 +120,7 @@ class FrontendChatRepositoryModel(
     override suspend fun createDefaultAgentTeam() {
         QuantaBackendApi.getInstance().createDefaultAgentTeam(project.projectId())
     }
+
+    override suspend fun stopAllAgents(): Int =
+        ChatRepositoryRpcApi.getInstance().stopAllAgents(project.projectId())
 }

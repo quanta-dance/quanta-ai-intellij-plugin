@@ -21,4 +21,5 @@ interface ChatRepositoryApi {
     suspend fun deleteSession(sessionId: String)
     suspend fun setAgenticMode(enabled: Boolean)
     suspend fun createDefaultAgentTeam()
+    suspend fun stopAllAgents(): Int
 }

@@ -57,15 +57,19 @@ fun PromptInput(
     onToggleAgenticMode: () -> Unit = {},
     onToggleVoiceFeedback: () -> Unit = {},
     settingsSyncState: FrontendSettingsSyncStateService.State = FrontendSettingsSyncStateService.State(),
+    hasActiveAgentWork: Boolean = false,
     onInputChanged: (String) -> Unit = {},
     onSend: (String) -> Unit = {},
     onStop: (String) -> Unit = {},
+    onStopAgents: () -> Unit = {},
     onSync: () -> Unit = {},
 ) {
     val isSending = promptInputState.isSending
     val syncStatus = settingsSyncState.status
     val isSettingsSyncing = syncStatus == FrontendSettingsSyncStateService.Status.SYNCING
     val isSettingsSyncFailed = syncStatus == FrontendSettingsSyncStateService.Status.FAILED
+    val shouldShowAgentsStop =
+        !isSettingsSyncing && !isSettingsSyncFailed && !isSending && hasActiveAgentWork && textFieldState.text.isBlank()
     var skipInputChangeUpdate by remember { mutableStateOf(false) }
     var localVoiceEnabled by remember { mutableStateOf(voiceEnabled) }
     var planHovered by remember { mutableStateOf(false) }
@@ -328,11 +332,15 @@ fun PromptInput(
 
                         DefaultButton(
                             modifier = Modifier.wrapContentSize(),
-                            enabled = promptInputState != MessageInputState.Disabled,
+                            enabled = shouldShowAgentsStop || promptInputState != MessageInputState.Disabled,
                             onClick = {
-                                onSend(textFieldState.text.toString())
-                                skipInputChangeUpdate = true
-                                textFieldState.setTextAndPlaceCursorAtEnd("")
+                                if (shouldShowAgentsStop) {
+                                    onStopAgents()
+                                } else {
+                                    onSend(textFieldState.text.toString())
+                                    skipInputChangeUpdate = true
+                                    textFieldState.setTextAndPlaceCursorAtEnd("")
+                                }
                             },
                             content = {
                                 Row(
@@ -340,12 +348,12 @@ fun PromptInput(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceEvenly,
                                 ) {
-                                    Text("Send")
+                                    Text(if (shouldShowAgentsStop) "Agents Stop" else "Send")
                                     Icon(
                                         modifier = Modifier.size(JewelTheme.iconButtonStyle.metrics.minSize.height),
-                                        key = ChatAppIcons.Prompt.send,
-                                        contentDescription = "Send",
-                                        tint = if (promptInputState != MessageInputState.Disabled) ChatAppColors.Icon.enabledIconTint else ChatAppColors.Icon.disabledIconTint,
+                                        key = if (shouldShowAgentsStop) ChatAppIcons.Prompt.stop else ChatAppIcons.Prompt.send,
+                                        contentDescription = if (shouldShowAgentsStop) "Stop agents" else "Send",
+                                        tint = if (shouldShowAgentsStop || promptInputState != MessageInputState.Disabled) ChatAppColors.Icon.enabledIconTint else ChatAppColors.Icon.disabledIconTint,
                                     )
                                 }
                             },

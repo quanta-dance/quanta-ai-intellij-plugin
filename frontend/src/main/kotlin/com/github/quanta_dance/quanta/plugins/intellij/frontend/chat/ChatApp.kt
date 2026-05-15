@@ -62,6 +62,7 @@ fun ChatApp(project: Project, viewModel: ChatViewModel, voiceService: FrontendAI
     val agents by viewModel.agentsFlow.collectAsState(emptyList())
     val delegatedTasks by viewModel.delegatedTasksFlow.collectAsState(emptyList())
     val channelEvents by viewModel.channelEventsFlow.collectAsState(emptyList())
+    val hasRunningAgentWork = delegatedTasks.any { it.status == DelegatedTaskStatusDto.RUNNING }
     val activeSession = sessions.firstOrNull { it.isActive }
     val microphoneService = remember(project) { project.service<FrontendMicrophoneService>() }
     val micEnabled by microphoneService.isListening.collectAsState(false)
@@ -231,9 +232,11 @@ fun ChatApp(project: Project, viewModel: ChatViewModel, voiceService: FrontendAI
                     }
                 },
                 settingsSyncState = settingsSyncState,
+                hasActiveAgentWork = hasRunningAgentWork,
                 onInputChanged = { viewModel.onPromptInputChanged(it) },
                 onSend = { viewModel.onSendMessage() },
                 onStop = { viewModel.onAbortSendingMessage() },
+                onStopAgents = { viewModel.onStopAllAgents() },
                 onSync = { scope.launch { settingsSyncService.retryNow() } }
             )
         }

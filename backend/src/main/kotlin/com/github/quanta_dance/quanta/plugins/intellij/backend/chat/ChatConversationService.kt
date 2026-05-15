@@ -95,6 +95,12 @@ class ChatConversationService(
         agentManager.reloadAgentsFromSession()
     }
 
+    fun stopAllAgents(): Int {
+        val stopped = agentManager.stopAllAgents()
+        val affectedTasks = project.service<AgentChannelStateService>().stopAllAgentWork()
+        return maxOf(stopped, affectedTasks)
+    }
+
     fun activateSession(sessionId: String) {
         persistence.saveActiveAgents(agentManager.getPersistedAgentProfiles())
         if (!persistence.activateSession(sessionId)) return

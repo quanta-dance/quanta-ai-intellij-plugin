@@ -46,4 +46,6 @@ interface ChatRepositoryRpcApi : RemoteApi<Unit> {
      * @param messageContent The content of the message to be sent.
      */
     suspend fun sendMessage(projectId: ProjectId, messageContent: String)
+
+    suspend fun stopAllAgents(projectId: ProjectId): Int
 }
