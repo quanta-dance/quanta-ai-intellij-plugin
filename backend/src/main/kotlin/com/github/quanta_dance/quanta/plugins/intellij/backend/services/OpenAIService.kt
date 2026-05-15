@@ -71,6 +71,7 @@ class OpenAIService(
             project.service<ChatConversationService>().compactConversationWithBrief(brief)
         },
     )
+    private val continuationPolicy = AgentTurnContinuationPolicy()
     private val sessionCoordinator = OpenAISessionCoordinator(
         project = project,
         onSessionStateReset = {
@@ -952,15 +953,11 @@ class OpenAIService(
                                     }
 
                                 val currentPlanLoopSignature =
-                                    buildString {
-                                        append(message.nextStep?.uppercase().orEmpty())
-                                        append('|').append(effectivePlanStatus.orEmpty())
-                                        append('|').append(message.planNeedsUserConfirmation == true)
-                                        append('|').append(
-                                            message.planCompletedTasks?.sorted()?.joinToString("||").orEmpty()
-                                        )
-                                        append('|').append(normalizePlanLoopSummary(txt))
-                                    }
+                                    continuationPolicy.buildPlanLoopSignature(
+                                        message = message,
+                                        effectivePlanStatus = effectivePlanStatus,
+                                        summaryText = txt,
+                                    )
                                 if (activePlanStillHasWork) {
                                     if (currentPlanLoopSignature == lastPlanLoopSignature) {
                                         repeatedPlanLoopSignatureCount++
@@ -981,7 +978,7 @@ class OpenAIService(
                                     val hardBlocked =
                                         message.planNeedsUserConfirmation == true &&
                                                 blockingQuestion.isNotBlank() &&
-                                                !isRoutineConfirmationQuestion(blockingQuestion)
+                                                !continuationPolicy.isRoutineConfirmationQuestion(blockingQuestion)
                                     if (!hardBlocked) {
                                         if (continuationCount < maxContinuations) {
                                             continuationCount++
@@ -1041,35 +1038,6 @@ class OpenAIService(
         return aggregated.toString().trim() to localPrevId
     }
 
-
-    private fun normalizePlanLoopSummary(text: String): String =
-        text.lowercase()
-            .replace(Regex("\\s+"), " ")
-            .replace(Regex("[^a-z0-9 _|:-]"), "")
-            .trim()
-            .take(240)
-
-    private fun isRoutineConfirmationQuestion(question: String): Boolean {
-        val q = question.trim().lowercase()
-        if (q.isBlank()) return false
-        val patterns = listOf(
-            "should i",
-            "do you want",
-            "would you like",
-            "shall i",
-            "may i",
-            "can i continue",
-            "can i proceed",
-            "please confirm",
-            "confirm that i should",
-            "before i continue",
-            "before proceeding",
-            "before i make changes",
-            "before applying",
-            "before running",
-        )
-        return patterns.any { q.contains(it) }
-    }
 
     private fun handleLocalMemoryCommand(text: String): Boolean = localMemoryCommandHandler.handle(text)
 
