@@ -9,7 +9,6 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.*
 import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.models.OpenAIResponse
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.QuantaAISessionState
-import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
@@ -20,7 +19,6 @@ import com.openai.client.OpenAIClient
 import com.openai.models.responses.ResponseInputItem
 import com.openai.models.responses.StructuredResponse
 import java.beans.PropertyChangeSupport
-import java.io.File
 import java.util.concurrent.Future
 
 @Service(Service.Level.PROJECT)
@@ -91,49 +89,7 @@ class OpenAIService(
     @Volatile
     private var lastCtxHash: Int? = null
 
-    // Helper to form conversation key including git branch if available
-    private fun conversationKeyForMain(): String {
-        val base = "main"
-        val branch =
-            try {
-                // Try Git IDEA API via reflection to avoid hard dependency
-                val gitClass = Class.forName("git4idea.repo.GitRepositoryManager")
-                val method = gitClass.getMethod("getInstance", Project::class.java)
-                val mgr = method.invoke(null, project)
-                val reposMethod = gitClass.getMethod("getRepositories")
-                val repos = reposMethod.invoke(mgr) as java.util.List<*>
-                if (repos.isNotEmpty()) {
-                    val repo = repos[0]
-                    val branchMethod = repo.javaClass.getMethod("getCurrentBranchName")
-                    branchMethod.invoke(repo) as String? ?: "no-branch"
-                } else {
-                    "no-branch"
-                }
-            } catch (_: Throwable) {
-                // Fallback to running git in project base dir
-                try {
-                    val basePath = PathUtils.projectRootPath(project)
-                    if (basePath != null) {
-                        val pb = ProcessBuilder("git", "rev-parse", "--abbrev-ref", "HEAD")
-                        pb.directory(File(basePath))
-                        pb.redirectErrorStream(true)
-                        val proc = pb.start()
-                        val out =
-                            proc.inputStream
-                                .bufferedReader()
-                                .readText()
-                                .trim()
-                        proc.waitFor()
-                        if (out.isNotBlank()) out else "no-branch"
-                    } else {
-                        "no-branch"
-                    }
-                } catch (_: Throwable) {
-                    "no-branch"
-                }
-            }
-        return "$base@${branch.replace(' ', '_')}"
-    }
+    private val mainConversationKeyResolver = MainConversationKeyResolver(project)
 
     private val maxPersistedMessagesPerConversation: Int = 500
 
@@ -143,7 +99,7 @@ class OpenAIService(
         responseId: String? = null,
     ) {
         try {
-            val key = conversationKeyForMain()
+            val key = mainConversationKeyResolver.conversationKeyForMain()
             val state = QuantaAISessionState.instance.state
             val list = state.conversations.getOrPut(key) { mutableListOf() }
             list.add(QuantaAISessionState.PersistedMessage(System.currentTimeMillis(), role, text, responseId))
