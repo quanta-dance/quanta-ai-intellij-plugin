@@ -9,7 +9,6 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.*
 import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.models.OpenAIResponse
 import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.models.TeamAgentSpec
-import com.github.quanta_dance.quanta.plugins.intellij.backend.project.ProjectVersionUtil
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.QuantaAISessionState
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
@@ -21,8 +20,6 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.vfs.LocalFileSystem
-import com.intellij.openapi.vfs.VirtualFile
 import com.openai.client.OpenAIClient
 import com.openai.models.images.ImageGenerateParams
 import com.openai.models.images.ImageModel
@@ -62,6 +59,7 @@ class OpenAIService(
     private val usageTracker = OpenAIUsageTracker(thisLogger()) { snapshot ->
         pcs.firePropertyChange("usage", null, snapshot)
     }
+    private val projectDetailsContextBuilder = ProjectDetailsContextBuilder(project)
     private val localMemoryCommandHandler = LocalMemoryCommandHandler(
         project = project,
         resetThreadStatePreservingHistory = ::resetThreadStatePreservingHistory,
@@ -400,58 +398,7 @@ class OpenAIService(
         return if (text.length <= maxSummaryChars) text else text.take(maxSummaryChars) + "\n... (truncated)"
     }
 
-    private fun buildProjectDetailsSystemMessage(): String {
-        val sdkVersion =
-            try {
-                ProjectVersionUtil.getProjectCompileVersion(project)
-            } catch (_: Throwable) {
-                null
-            }
-        val buildFiles =
-            try {
-                ProjectVersionUtil.getProjectBuildFiles(project)
-            } catch (_: Throwable) {
-                null
-            }
-
-        val filesCount =
-            try {
-                val basePath = PathUtils.projectRootPath(project)
-                if (basePath != null) {
-                    val root =
-                        LocalFileSystem
-                            .getInstance()
-                            .findFileByPath(basePath)
-                    if (root != null) {
-                        var cnt = 0
-
-                        fun dfs(v: VirtualFile) {
-                            if (!v.isValid) return
-                            if (v.isDirectory) {
-                                v.children?.forEach { dfs(it) }
-                            } else {
-                                cnt++
-                            }
-                        }
-                        dfs(root)
-                        cnt
-                    } else {
-                        0
-                    }
-                } else {
-                    0
-                }
-            } catch (_: Throwable) {
-                0
-            }
-
-        val b = StringBuilder()
-        b.append("Project details (auto, hidden).\n")
-        b.append("Available build files: ").append(buildFiles).append('\n')
-        sdkVersion?.let { b.append(it).append('\n') }
-        b.append("Files in the project: ").append(filesCount)
-        return b.toString()
-    }
+    private fun buildProjectDetailsSystemMessage(): String = projectDetailsContextBuilder.buildSystemMessage()
 
     init {
         thisLogger().warn("AI Service initialized.")
