@@ -5,10 +5,10 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.media
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
-import com.github.quanta_dance.quanta.plugins.intellij.backend.services.OpenAIService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
-import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.OpenAIImageService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
@@ -40,8 +40,8 @@ class GenerateImage : ToolInterface<String> {
         val title = imageTitle ?: "Generated image"
 
         try {
-            val openAIService = project.service<OpenAIService>()
-            val url = openAIService.generateImage(prompt)
+            val openAIImageService = project.service<OpenAIImageService>()
+            val url = openAIImageService.generateImage(prompt)
             QDLog.info(logger) { "Image generated: $url" }
 
             // Show in tool window

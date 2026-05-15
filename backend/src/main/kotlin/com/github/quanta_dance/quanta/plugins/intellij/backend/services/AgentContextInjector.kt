@@ -26,10 +26,14 @@ class AgentContextInjector(
     @Volatile
     private var lastInjectedAgentsRosterHash: Int? = null
 
+    @Volatile
+    private var lastInjectedProjectLandscapeHash: Int? = null
+
     fun reset() {
         initialContextInjectedThisIdeSession = false
         lastInjectedAgentsMdHash = null
         lastInjectedAgentsRosterHash = null
+        lastInjectedProjectLandscapeHash = null
     }
 
     fun injectBaseContextForAgentTurn(
@@ -56,6 +60,16 @@ class AgentContextInjector(
             if (needBaseContext || lastInjectedAgentsRosterHash == null || lastInjectedAgentsRosterHash != hash) {
                 inputs.add(0, systemMessageFactory(roster))
                 lastInjectedAgentsRosterHash = hash
+            }
+        } catch (_: Throwable) {
+        }
+
+        try {
+            val landscape = ProjectLandscapeContextBuilder(project).buildMessage()
+            val hash = landscape.hashCode()
+            if (needBaseContext || lastInjectedProjectLandscapeHash == null || lastInjectedProjectLandscapeHash != hash) {
+                inputs.add(0, systemMessageFactory(landscape))
+                lastInjectedProjectLandscapeHash = hash
             }
         } catch (_: Throwable) {
         }
