@@ -39,8 +39,8 @@ class ProjectLandscapeContextBuilder(
 
         return buildString {
             append("Project landscape (auto, compact).\n")
-            if (buildFiles.isNotBlank()) {
-                append("Build files: ").append(buildFiles).append('\n')
+            if (buildFiles.isNotEmpty()) {
+                append("Build files: ").append(buildFiles.joinToString(", ")).append('\n')
             }
             sdkVersion?.takeIf { it.isNotBlank() }?.let {
                 append(it).append('\n')
