@@ -29,7 +29,16 @@ object DynamicMcpToolProvider {
         method: String,
     ): String = "mcp_" + sanitize(server) + "_" + sanitize(method)
 
-    fun buildTools(mcp: McpClientService): List<Tool> {
+    fun buildTools(
+        mcp: McpClientService,
+        allowedToolNames: Set<String>? = null,
+    ): List<Tool> {
+        val normalizedAllowedNames =
+            allowedToolNames
+                ?.map { it.trim() }
+                ?.filter { it.isNotEmpty() }
+                ?.toSet()
+
         val out = mutableListOf<Tool>()
         nameMap.clear()
         val servers = mcp.listServers()
@@ -39,6 +48,8 @@ object DynamicMcpToolProvider {
             for (t in tools) {
                 val method = t.name
                 val fnName = buildName(server, method)
+                val dottedName = "$server.$method"
+                if (normalizedAllowedNames != null && fnName !in normalizedAllowedNames && dottedName !in normalizedAllowedNames) continue
                 nameMap[fnName] = server to method
 
                 val description =
@@ -53,7 +64,7 @@ object DynamicMcpToolProvider {
 
                 val map: MutableMap<String, JsonValue> = hashMapOf<String, JsonValue>()
 
-                t.inputSchema.properties.entries.forEach { entry: Map.Entry<String, JsonElement> ->
+                t.inputSchema.properties!!.entries.forEach { entry: Map.Entry<String, JsonElement> ->
                     map[entry.key] = JsonValue.fromJsonNode(jsonElementToJsonNode(entry.value))
                 }
 

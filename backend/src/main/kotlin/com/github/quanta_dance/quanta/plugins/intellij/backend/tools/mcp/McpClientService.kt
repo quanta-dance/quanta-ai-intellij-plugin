@@ -4,28 +4,29 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.BackendExecutionContextsService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
-import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
-import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.vfs.LocalFileSystem
 import io.ktor.client.*
-import io.ktor.client.engine.cio.*
+import io.ktor.client.engine.java.*
 import io.ktor.client.plugins.*
 import io.ktor.client.plugins.sse.*
 import io.ktor.client.plugins.websocket.*
 import io.ktor.http.*
-import io.modelcontextprotocol.kotlin.sdk.Implementation
-import io.modelcontextprotocol.kotlin.sdk.ListToolsRequest
-import io.modelcontextprotocol.kotlin.sdk.Tool
 import io.modelcontextprotocol.kotlin.sdk.client.*
 import io.modelcontextprotocol.kotlin.sdk.shared.AbstractTransport
+import io.modelcontextprotocol.kotlin.sdk.types.Implementation
+import io.modelcontextprotocol.kotlin.sdk.types.ListToolsRequest
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
+import io.modelcontextprotocol.kotlin.sdk.types.Tool
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.io.asSink
@@ -37,8 +38,6 @@ import java.io.InputStreamReader
 import java.net.URI
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.seconds
 
@@ -47,14 +46,17 @@ class McpClientService(
     private val project: Project,
 ) : Disposable {
     private val log = Logger.getInstance(McpClientService::class.java)
+    private val executionContexts = project.getService(BackendExecutionContextsService::class.java)
 
     @Volatile
     private var serversConfig: McpServersFile = McpServersFile()
     private val processes = ConcurrentHashMap<String, Process>()
     private val clients = ConcurrentHashMap<String, Client>()
     private val toolCache = ConcurrentHashMap<String, List<Tool>>()
-    private val executor: ExecutorService = Executors.newCachedThreadPool()
     private val initialized = AtomicBoolean(false)
+
+    @Volatile
+    private var lastLoadedConfigHash: Int? = null
 
     init {
         // Do not schedule refresh here; perform initial refresh from ProjectActivity when project is open
@@ -69,30 +71,15 @@ class McpClientService(
             } catch (_: Throwable) {
             }
         }
-        executor.shutdownNow()
     }
 
-    private fun notifyWithOpenAction(
+    private fun notifyRuntimeConfigIssue(
         title: String,
         content: String,
         type: NotificationType,
     ) {
         val group = NotificationGroupManager.getInstance().getNotificationGroup("Plugin Notifications")
-        val notification = group.createNotification(title, content, type)
-        val base = PathUtils.projectRootPath(project)
-        if (base != null) {
-            val file = File(base, ".quantadance/mcp-servers.json")
-            notification.addAction(
-                NotificationAction.create("Open config") { _, n ->
-                    val vFile = LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)
-                    if (vFile != null) {
-                        FileEditorManager.getInstance(project).openFile(vFile, true)
-                    }
-                    n.expire()
-                },
-            )
-        }
-        notification.notify(project)
+        group.createNotification(title, content, type).notify(project)
     }
 
     fun refresh() {
@@ -103,11 +90,17 @@ class McpClientService(
             QDLog.info(log) { "McpClientService refresh: reloading config and reconciling servers" }
         }
 
-        val load = McpServersConfigLoader.loadWithDiagnostics(project)
+        val mcpConfigJson = BackendRuntimeSettingsService.instance.settings.mcpServersJson
+        lastLoadedConfigHash = mcpConfigJson.hashCode()
+        QDLog.info(log) { "McpClientService refresh: using synced frontend MCP config, chars=${mcpConfigJson.length}" }
+        val load = McpServersConfigLoader.loadJsonWithDiagnostics(
+            mcpConfigJson,
+            sourceName = "frontend-synced mcp-servers.json"
+        )
         if (load.parseError != null) {
             // Keep existing config running; inform the user with clickable link
-            notifyWithOpenAction(
-                "Invalid .quantadance/mcp-servers.json",
+            notifyRuntimeConfigIssue(
+                "Invalid synced MCP configuration",
                 load.parseError,
                 NotificationType.ERROR,
             )
@@ -115,10 +108,14 @@ class McpClientService(
             return
         }
         val newConfig = load.file ?: McpServersFile()
+        QDLog.info(log) { "McpClientService refresh: loaded ${newConfig.mcpServers.size} configured server(s)" }
+        if (newConfig.mcpServers.isEmpty()) {
+            QDLog.warn(log) { "McpClientService refresh: zero MCP servers configured after load; check file content and resolved path" }
+        }
         if (load.validationWarnings.isNotEmpty()) {
             val msg = load.validationWarnings.joinToString("\n")
-            notifyWithOpenAction(
-                "mcp-servers.json warnings",
+            notifyRuntimeConfigIssue(
+                "Synced MCP configuration warnings",
                 msg,
                 NotificationType.WARNING,
             )
@@ -128,13 +125,57 @@ class McpClientService(
         QDLog.debug(log) { "Loaded mcpServers: ${newConfig.mcpServers.keys.joinToString()}" }
 
         // Reconcile current running state with new config
-        reconcileConfigs(serversConfig, newConfig)
-        serversConfig = newConfig
+        try {
+            reconcileConfigs(serversConfig, newConfig)
+            serversConfig = newConfig
+        } catch (t: Throwable) {
+            logRuntimeDependencyFailure("refresh reconcile", t)
+            throw t
+        }
 
-        // Schedule tool discovery for all active servers
+        // Refresh tool discovery for all configured servers immediately so MCP tools are available
+        // for the next request without depending on async timing alone.
         serversConfig.mcpServers.keys.forEach { name ->
-            QDLog.debug(log) { "Scheduling tool discovery for server '$name'" }
-            discoverToolsAsync(name)
+            QDLog.info(log) { "McpClientService refresh: discovering tools for configured server '$name'" }
+            try {
+                discoverTools(name)
+            } catch (t: Throwable) {
+                logRuntimeDependencyFailure("refresh discovery for '$name'", t)
+                QDLog.warn(log) { "McpClientService refresh: tool discovery failed for '$name' - ${t.message}" }
+                discoverToolsAsync(name)
+            }
+        }
+    }
+
+    private fun logRuntimeDependencyFailure(
+        operation: String,
+        error: Throwable,
+    ) {
+        val details =
+            generateSequence(error as Throwable?) { it.cause }
+                .take(8)
+                .joinToString(" <- ") { current ->
+                    val type = current::class.qualifiedName ?: current.javaClass.name
+                    val message = current.message ?: "<no message>"
+                    "$type: $message"
+                }
+        val missingDependency =
+            generateSequence(error as Throwable?) { it.cause }
+                .mapNotNull { current ->
+                    when (current) {
+                        is NoClassDefFoundError -> current.message
+                        is ClassNotFoundException -> current.message
+                        else -> null
+                    }
+                }.firstOrNull()
+        if (missingDependency != null) {
+            QDLog.error(
+                log,
+                { "McpClientService $operation failed due to missing runtime dependency: $missingDependency. Cause chain: $details" },
+                error
+            )
+        } else {
+            QDLog.error(log, { "McpClientService $operation failed. Cause chain: $details" }, error)
         }
     }
 
@@ -217,7 +258,7 @@ class McpClientService(
             QDLog.info(log) { "Starting MCP server '$name' with command: ${cmd.joinToString(" ")}" }
             val proc = pb.start()
             processes[name] = proc
-            executor.submit {
+            executionContexts.mcpScope.launch {
                 try {
                     BufferedReader(InputStreamReader(proc.errorStream, StandardCharsets.UTF_8)).use { r ->
                         var line = r.readLine()
@@ -247,7 +288,7 @@ class McpClientService(
             val transport = StdioClientTransport(source, sink)
             val client = Client(Implementation("Quanta-AI-IDE", "1.0"), ClientOptions())
             QDLog.debug(log) { "ensureClient: connecting client for '$name'" }
-            runBlocking { client.connect(transport) }
+            runBlocking(executionContexts.mcpDispatcher) { client.connect(transport) }
             QDLog.info(log) { "ensureClient: connected to MCP server '$name'" }
             clients[name] = client
             client
@@ -257,7 +298,56 @@ class McpClientService(
         }
     }
 
-    fun getTools(server: String): List<Tool> = toolCache[server] ?: emptyList()
+    fun getTools(server: String): List<Tool> {
+        refreshIfConfigChanged()
+        toolCache[server]?.let { cached ->
+            if (cached.isNotEmpty()) return cached
+        }
+        return try {
+            discoverTools(server)
+        } catch (e: Exception) {
+            QDLog.warn(log) { "getTools($server): discovery failed - ${e.message}" }
+            toolCache[server] ?: emptyList()
+        }
+    }
+
+    private fun urlTransportLabels(
+        scheme: String?,
+        pref: String?,
+    ): List<String> =
+        when {
+            pref == "websocket" -> listOf("websocket")
+            pref == "sse" -> listOf("sse")
+            pref == "http" || pref == "https" -> listOf("streamable-http")
+            scheme == "ws" || scheme == "wss" -> listOf("websocket")
+            scheme == "http" || scheme == "https" -> listOf("streamable-http", "sse")
+            else -> emptyList()
+        }
+
+    private fun buildUrlTransport(
+        label: String,
+        httpClient: HttpClient,
+        url: String,
+        scheme: String?,
+    ): AbstractTransport =
+        when (label) {
+            "websocket" -> {
+                require(scheme == "ws" || scheme == "wss") { "transport=websocket requires ws:// or wss:// URL" }
+                WebSocketClientTransport(httpClient, url)
+            }
+
+            "sse" -> {
+                require(scheme == "http" || scheme == "https") { "transport=sse requires http:// or https:// URL" }
+                SseClientTransport(httpClient, url, 1.seconds) { }
+            }
+
+            "streamable-http" -> {
+                require(scheme == "http" || scheme == "https") { "transport=http requires http:// or https:// URL" }
+                StreamableHttpClientTransport(httpClient, url = url)
+            }
+
+            else -> error("Unsupported URL transport label: $label")
+        }
 
     private fun ensureClientUrl(
         name: String,
@@ -270,7 +360,7 @@ class McpClientService(
             val scheme = uri.scheme?.lowercase()
             val pref = cfg.transport?.lowercase()
             val httpClient =
-                HttpClient(CIO) {
+                HttpClient(Java) {
                     install(SSE) { reconnectionTime = 1.seconds }
                     install(WebSockets)
                     install(HttpTimeout) {
@@ -285,76 +375,88 @@ class McpClientService(
                     }
                 }
 
-            QDLog.debug(log) { "ensureClient(url): connecting '$name' to $url via scheme=$scheme, pref=$pref" }
+            val transportLabels = urlTransportLabels(scheme, pref)
+            require(transportLabels.isNotEmpty()) { "Unsupported URL scheme: $scheme" }
 
-            val client = Client(Implementation("Quanta-AI-IDE", "1.0"), ClientOptions())
-
-            val transport: AbstractTransport =
-                when {
-                    pref == "websocket" -> {
-                        require(scheme == "ws" || scheme == "wss") { "transport=websocket requires ws:// or wss:// URL" }
-                        WebSocketClientTransport(httpClient, url)
-                    }
-
-                    pref == "sse" -> {
-                        require(scheme == "http" || scheme == "https") { "transport=sse requires http:// or https:// URL" }
-                        StreamableHttpClientTransport(httpClient, url = url)
-                    }
-
-                    scheme == "ws" || scheme == "wss" -> {
-                        WebSocketClientTransport(httpClient, url)
-                    }
-
-                    scheme == "http" || scheme == "https" -> {
-                        StreamableHttpClientTransport(httpClient, url = url)
-                    }
-
-                    else -> {
-                        error("Unsupported URL scheme: $scheme")
-                    }
+            transportLabels.forEach { label ->
+                val client = Client(Implementation("Quanta-AI-IDE", "1.0"), ClientOptions())
+                try {
+                    QDLog.info(log) { "ensureClient(url): connecting '$name' to $url via scheme=$scheme, pref=$pref, attempt=$label" }
+                    val transport = buildUrlTransport(label, httpClient, url, scheme)
+                    runBlocking(executionContexts.mcpDispatcher) { withTimeout(30_000) { client.connect(transport) } }
+                    QDLog.info(log) { "ensureClient(url): connected to MCP server '$name' via $label" }
+                    clients[name] = client
+                    return client
+                } catch (_: TimeoutCancellationException) {
+                    QDLog.warn(log) { "ensureClient(url): timed out connecting '$name' via $label" }
+                } catch (e: Exception) {
+                    QDLog.warn(log) { "ensureClient(url): failed connecting '$name' via $label - ${e.message}" }
                 }
+            }
 
-            runBlocking { client.connect(transport) }
-
-            QDLog.info(log) { "ensureClient(url): connected to MCP server '$name'" }
-            clients[name] = client
-            client
+            null
         } catch (e: Exception) {
+            QDLog.warn(log) { "ensureClient(url) failed for '$name': ${e.message}" }
             QDLog.error(log, { "ensureClient(url) failed for '$name'" }, e)
             null
         }
     }
 
+    private fun discoverTools(server: String): List<Tool> {
+        QDLog.info(log) { "discoverTools[$server]: starting discovery" }
+        val client =
+            clients[server] ?: run {
+                val cfg = serversConfig.mcpServers[server]
+                if (cfg?.url != null) {
+                    ensureClientUrl(
+                        server,
+                        cfg,
+                    )
+                } else {
+                    processes[server]?.let { ensureClient(server, it) }
+                }
+            } ?: return emptyList()
+        val res = runBlocking(executionContexts.mcpDispatcher) {
+            withTimeout(30_000) {
+                client.listTools(
+                    ListToolsRequest(),
+                    null
+                )
+            }
+        }
+        val tools = res.tools
+        toolCache[server] = tools
+        QDLog.info(log) { "discoverTools[$server]: discovered ${tools.size} tool(s): ${tools.joinToString { it.name }}" }
+        return tools
+    }
+
     private fun discoverToolsAsync(server: String) {
-        executor.submit {
+        executionContexts.mcpScope.launch {
             try {
-                val client =
-                    clients[server] ?: run {
-                        val cfg = serversConfig.mcpServers[server]
-                        if (cfg?.url != null) {
-                            ensureClientUrl(
-                                server,
-                                cfg,
-                            )
-                        } else {
-                            processes[server]?.let { ensureClient(server, it) }
-                        }
-                    } ?: return@submit
-                val res = runBlocking { client.listTools(ListToolsRequest()) }
-                val tools = res.tools
-                toolCache[server] = tools
-                QDLog.info(log) { "discoverToolsAsync[$server]: discovered ${tools.size} tool(s): ${tools.joinToString { it.name }}" }
+                discoverTools(server)
             } catch (e: Exception) {
                 QDLog.warn(log) { "discoverToolsAsync[$server]: failed - ${e.message}" }
             }
         }
     }
 
-    fun listServers(): List<String> = serversConfig.mcpServers.keys.sorted()
+    fun listServers(): List<String> {
+        refreshIfConfigChanged()
+        return serversConfig.mcpServers.keys.sorted()
+    }
 
     private fun extractFirstNumber(text: String): Number? {
         val m = Regex("[-+]?\\d+(?:\\.\\d+)?").find(text)
         return m?.value?.let { it.toLongOrNull() ?: it.toDoubleOrNull() }
+    }
+
+
+    private fun refreshIfConfigChanged() {
+        val currentHash = BackendRuntimeSettingsService.instance.settings.mcpServersJson.hashCode()
+        if (!initialized.get() || currentHash != lastLoadedConfigHash) {
+            QDLog.info(log) { "McpClientService: synced MCP config changed or not initialized, refreshing before serving MCP data" }
+            refresh()
+        }
     }
 
     private fun coerceArgsHeuristics(args: MutableMap<String, Any?>) {
@@ -440,6 +542,7 @@ class McpClientService(
         input: Map<String, Any?>,
         timeoutSec: Int? = null,
     ): String {
+        refreshIfConfigChanged()
         if (!serversConfig.mcpServers.containsKey(server)) return "MCP server '$server' not found in claude_desktop_config.json"
         val client =
             clients[server] ?: run {
@@ -461,7 +564,7 @@ class McpClientService(
                 val missing = required.filter { req -> !args.containsKey(req) || args[req] == null }
                 if (missing.isNotEmpty()) {
                     val propsSummary =
-                        if (props.isEmpty()) {
+                        if (props!!.isEmpty()) {
                             "<unknown>"
                         } else {
                             props.entries.joinToString(", ") { (k, v) ->
@@ -490,18 +593,25 @@ class McpClientService(
         val timeoutMs = ((timeoutSec ?: 120).toLong()) * 1000
         return try {
             val started = System.currentTimeMillis()
-            val result = runBlocking { withTimeout(timeoutMs) { client.callTool(toolName, args, false) } }
+            val result =
+                runBlocking(executionContexts.mcpDispatcher) {
+                    withTimeout(timeoutMs) {
+                        client.callTool(
+                            name = toolName,
+                            arguments = args,
+                            meta = emptyMap<String, Any>(),
+                            options = null,
+                        )
+                    }
+                }
             val duration = System.currentTimeMillis() - started
             val contents = result?.content ?: emptyList()
             val text =
                 contents
-                    .mapNotNull {
-                        try {
-                            val cls = it::class.java
-                            val getter = cls.methods.firstOrNull { m -> m.name == "getText" && m.parameterCount == 0 }
-                            getter?.invoke(it) as? String
-                        } catch (_: Throwable) {
-                            null
+                    .mapNotNull { content ->
+                        when (content) {
+                            is TextContent -> content.text
+                            else -> null
                         }
                     }.joinToString("\n")
                     .trim()

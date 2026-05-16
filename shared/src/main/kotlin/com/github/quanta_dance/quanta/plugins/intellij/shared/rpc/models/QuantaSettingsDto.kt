@@ -31,4 +31,5 @@ data class QuantaSettingsDto(
     val terminalToolEnabled: Boolean?,
     val terminalAllowedCommandsCsv: String,
     val actionConfigsJson: String,
+    val mcpServersJson: String = "",
 )

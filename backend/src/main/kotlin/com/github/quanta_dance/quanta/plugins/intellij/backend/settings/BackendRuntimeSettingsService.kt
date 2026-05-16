@@ -33,6 +33,7 @@ class BackendRuntimeSettingsService {
         var maxAutomaticTurns: Int = 10,
         var terminalToolEnabled: Boolean? = false,
         var terminalAllowedCommandsCsv: String = "git status,git diff,git add,git commit",
+        var mcpServersJson: String = "",
     )
 
     data class Snapshot(
@@ -82,6 +83,7 @@ class BackendRuntimeSettingsService {
                 maxAutomaticTurns = settings.maxAutomaticTurns,
                 terminalToolEnabled = settings.terminalToolEnabled,
                 terminalAllowedCommandsCsv = settings.terminalAllowedCommandsCsv,
+                mcpServersJson = settings.mcpServersJson,
             )
         hasFrontendSync = true
     }

@@ -36,23 +36,22 @@ object McpServersConfigLoader {
         val validationWarnings: List<String> = emptyList(),
     )
 
-    fun load(project: Project): McpServersFile {
-        val res = loadWithDiagnostics(project)
-        return res.file ?: McpServersFile()
-    }
 
-    fun loadWithDiagnostics(project: Project): LoadResult {
-        val base = PathUtils.projectRootPath(project) ?: return LoadResult(McpServersFile())
-        val file = File(base, ".quantadance/mcp-servers.json")
-        if (!file.exists()) return LoadResult(McpServersFile())
+
+    fun loadJsonWithDiagnostics(
+        jsonText: String,
+        sourceName: String = "mcp-servers.json",
+    ): LoadResult {
+        if (jsonText.isBlank()) {
+            return LoadResult(McpServersFile())
+        }
         return try {
-            val parsed: McpServersFile = mapper.readValue(file)
+            val parsed: McpServersFile = mapper.readValue(jsonText)
             val warnings = validate(parsed)
             LoadResult(parsed, null, warnings)
         } catch (e: Exception) {
-            val msg = "Failed to read ${file.name}: ${e.message}"
+            val msg = "Failed to read $sourceName: ${e.message}"
             log.warn(msg, e)
-            // Do not notify here to avoid duplicates; caller is responsible for user-facing alerts
             LoadResult(null, msg, emptyList())
         }
     }

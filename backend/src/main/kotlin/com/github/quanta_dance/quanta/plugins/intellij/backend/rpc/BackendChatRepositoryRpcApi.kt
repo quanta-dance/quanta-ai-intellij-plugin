@@ -23,9 +23,19 @@ class BackendChatRepositoryRpcApi : ChatRepositoryRpcApi {
         return BackendChatRepositoryModel.getInstance(backendProject).getMessagesFlow()
     }
 
+    override suspend fun getCurrentMessages(projectId: ProjectId): List<ChatMessageDto> {
+        val backendProject = projectId.findProjectOrNull() ?: return emptyList()
+        return BackendChatRepositoryModel.getInstance(backendProject).getCurrentMessages()
+    }
+
     override suspend fun getSessionsFlow(projectId: ProjectId): Flow<List<ChatSessionDto>> {
         val backendProject = projectId.findProjectOrNull() ?: return emptyFlow()
         return BackendChatRepositoryModel.getInstance(backendProject).getSessionsFlow()
+    }
+
+    override suspend fun getCurrentSessions(projectId: ProjectId): List<ChatSessionDto> {
+        val backendProject = projectId.findProjectOrNull() ?: return emptyList()
+        return BackendChatRepositoryModel.getInstance(backendProject).getCurrentSessions()
     }
 
     override suspend fun createNewSession(projectId: ProjectId) {

@@ -195,9 +195,10 @@ class OpenAIService(
 
 
     /**
-     * Core request/response API used by newer code paths.
+     * Core request/response API used by higher-level turn orchestration and selected backend flows.
      *
-     * TODO: keep this as the primary low-level API once the legacy sendMessage flow is removed.
+     * Supports per-request instruction/model overrides and tool exposure controls before the higher-
+     * level `agentTurn(...)` loop layers continuation and callback behavior on top.
      */
     fun createResponse(
         inputs: MutableList<ResponseInputItem>,
@@ -219,6 +220,11 @@ class OpenAIService(
                 inputs = inputs,
                 includeMcp = includeMcp,
                 previousResponseId = previousId,
+                overrideInstructions = overrideInstructions,
+                overrideModel = overrideModel,
+                allowedToolClassFilter = allowedToolClassFilter,
+                allowedBuiltInNames = allowedBuiltInNames,
+                allowedMcpNames = allowedMcpNames,
             )
         val client = requireClientReady()
         QDLog.info(thisLogger()) { "OpenAIService.createResponse: request built, sending to OpenAI" }
@@ -259,10 +265,10 @@ class OpenAIService(
     )
 
     /**
-     * High-level agent loop that coordinates tool calls, context injection, and assistant callbacks.
+     * High-level agent-turn facade over [AgentTurnOrchestrator].
      *
-     * TODO: migrate any remaining legacy chat-only behavior to this path (or delete the legacy path) once
-     * the old frontend entry point is removed.
+     * This is the main entry point for manager and delegated-agent turns. Keep the orchestration logic
+     * in the collaborator and keep this method as the stable service-level API.
      */
     fun agentTurn(
         inputs: MutableList<ResponseInputItem>,
