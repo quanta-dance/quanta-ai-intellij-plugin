@@ -82,6 +82,7 @@ class AgentManagerService(
         reloadAgentsFromSession()
     }
 
+    @Synchronized
     fun reloadAgentsFromSession() {
         agents.clear()
         executors.keys.toList().forEach { id ->
@@ -101,13 +102,26 @@ class AgentManagerService(
         pcs.firePropertyChange("agents", null, persisted.toList())
     }
 
+    @Synchronized
+    fun ensureAgentsLoadedFromSession() {
+        if (agents.isNotEmpty()) return
+        val persisted = project.service<ChatConversationStateService>().loadActiveAgents()
+        if (persisted.isNotEmpty()) {
+            reloadAgentsFromSession()
+        }
+    }
+
     fun addPropertyChangeListener(listener: PropertyChangeListener) = pcs.addPropertyChangeListener(listener)
 
-    fun getAgentsSnapshot(): List<AgentSnapshot> =
-        agents.values.map { AgentSnapshot(it.id, it.config.role, it.config.instructions, it.config.model) }
+    fun getAgentsSnapshot(): List<AgentSnapshot> {
+        ensureAgentsLoadedFromSession()
+        return agents.values.map { AgentSnapshot(it.id, it.config.role, it.config.instructions, it.config.model) }
+    }
 
-    fun getPersistedAgentProfiles(): List<QuantaAISessionState.AgentProfile> =
-        QuantaAISessionState.instance.state.agents.map { it.copy() }
+    fun getPersistedAgentProfiles(): List<QuantaAISessionState.AgentProfile> {
+        ensureAgentsLoadedFromSession()
+        return QuantaAISessionState.instance.state.agents.map { it.copy() }
+    }
 
     fun getAgentAllowedBuiltInNames(agentId: String): Set<String>? = agents[agentId]?.config?.allowedBuiltInNames
 
@@ -567,6 +581,7 @@ class AgentManagerService(
                 previousId = session.previousId,
             ),
         )
+        project.service<ChatConversationStateService>().saveActiveAgents(st.agents)
         pcs.firePropertyChange("agents", null, id)
         return id
     }
@@ -574,6 +589,15 @@ class AgentManagerService(
     fun createDefaultTeam(): List<String> {
         val enabled = BackendRuntimeSettingsService.instance.settings.agenticEnabled ?: true
         if (!enabled) return emptyList()
+
+        // Rehydrate from persisted session state if this service was not initialized with the current
+        // session agents yet. This keeps team creation idempotent across IDE restarts.
+        if (agents.isEmpty()) {
+            val persisted = project.service<ChatConversationStateService>().loadActiveAgents()
+            if (persisted.isNotEmpty()) {
+                reloadAgentsFromSession()
+            }
+        }
 
         // Idempotent: do not create duplicates if user already has agents.
         if (agents.isNotEmpty()) {
@@ -722,30 +746,44 @@ class AgentManagerService(
         }
     }
 
+    fun resolveAgentId(agentIdOrRole: String): String? {
+        ensureAgentsLoadedFromSession()
+        val query = agentIdOrRole.trim()
+        if (query.isBlank()) return null
+        if (agents.containsKey(query)) return query
+
+        val roleMatches = agents.values
+            .filter { it.config.role.equals(query, ignoreCase = true) }
+            .map { it.id }
+
+        return if (roleMatches.size == 1) roleMatches.first() else null
+    }
+
     fun removeAgent(agentId: String): Boolean {
-        val removed = agents.remove(agentId) ?: return false
-        executors.remove(agentId)?.let { exec ->
+        val resolvedAgentId = resolveAgentId(agentId) ?: return false
+        val removed = agents.remove(resolvedAgentId) ?: return false
+        executors.remove(resolvedAgentId)?.let { exec ->
             try {
                 exec.shutdownNow()
             } catch (_: Throwable) {
             }
         }
         val st = QuantaAISessionState.instance.state
-        st.agents.removeIf { it.id == agentId }
+        st.agents.removeIf { it.id == resolvedAgentId }
         project.service<ChatConversationStateService>().saveActiveAgents(st.agents)
         project.service<AgentChannelStateService>().appendEvent(
             kind = AgentChannelEventKindDto.AGENT_REMOVED,
             authorType = AgentChannelAuthorTypeDto.MANAGER,
             text = "Removed ${removed.config.role}",
-            authorId = agentId,
+            authorId = resolvedAgentId,
             authorRole = removed.config.role,
         )
         try {
             broadcastRosterUpdate(from = "AgentManager")
         } catch (_: Throwable) {
         }
-        pcs.firePropertyChange("agents", null, agentId)
-        pcs.firePropertyChange("agent_removed", null, agentId)
+        pcs.firePropertyChange("agents", null, resolvedAgentId)
+        pcs.firePropertyChange("agent_removed", null, resolvedAgentId)
         return true
     }
 
@@ -1312,7 +1350,10 @@ class AgentManagerService(
         }
     }
 
-    fun exists(agentId: String): Boolean = agents.containsKey(agentId)
+    fun exists(agentId: String): Boolean {
+        ensureAgentsLoadedFromSession()
+        return agents.containsKey(agentId)
+    }
 
     override fun dispose() {
         executors.values.forEach { e ->

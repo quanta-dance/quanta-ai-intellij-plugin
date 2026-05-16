@@ -12,6 +12,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.repository.ChatMe
 import com.github.quanta_dance.quanta.plugins.intellij.backend.repository.OpenAIBackendChatResponder
 import com.github.quanta_dance.quanta.plugins.intellij.backend.repository.OpenAIBackendChatResponder.ChatTurn
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentManagerService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.BackendExecutionContextsService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.OpenAIService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage.ChatMessageType.AI_THINKING
@@ -27,6 +28,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -49,6 +51,7 @@ class ChatConversationService(
     private val lifecycle: AgentLifecycleService get() = project.service()
     private val wake: AgentWakeService get() = project.service()
     private val persistence: ChatConversationStateService get() = project.service()
+    private val executionContexts: BackendExecutionContextsService get() = project.service()
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     private val _sessions = MutableStateFlow<List<ChatSessionDto>>(emptyList())
 
@@ -84,15 +87,25 @@ class ChatConversationService(
     fun messagesFlow(): Flow<List<ChatMessageDto>> =
         _messages.map { messagesList -> messagesList.map { it.toChatMessageDto() } }
 
+    fun currentMessages(): List<ChatMessageDto> =
+        _messages.value.map { it.toChatMessageDto() }
+
     fun sessionsFlow(): Flow<List<ChatSessionDto>> = _sessions
 
+    fun currentSessions(): List<ChatSessionDto> = _sessions.value
+
+    private fun <T> onChatPublicationThread(action: () -> T): T =
+        runBlocking(executionContexts.chatPublicationDispatcher) { action() }
+
     fun createNewSession() {
-        persistence.saveActiveAgents(agentManager.getPersistedAgentProfiles())
-        val sessionId = persistence.createSession()
-        _messages.value = emptyList()
-        _sessions.value = persistence.listSessions()
-        openAIService.switchToSession(sessionId, null)
-        agentManager.reloadAgentsFromSession()
+        onChatPublicationThread {
+            persistence.saveActiveAgents(agentManager.getPersistedAgentProfiles())
+            val sessionId = persistence.createSession()
+            _messages.value = emptyList()
+            _sessions.value = persistence.listSessions()
+            openAIService.switchToSession(sessionId, null)
+            agentManager.reloadAgentsFromSession()
+        }
     }
 
     fun stopAllAgents(): Int {
@@ -102,21 +115,25 @@ class ChatConversationService(
     }
 
     fun activateSession(sessionId: String) {
-        persistence.saveActiveAgents(agentManager.getPersistedAgentProfiles())
-        if (!persistence.activateSession(sessionId)) return
-        _messages.value = persistence.loadActiveMessages()
-        _sessions.value = persistence.listSessions()
-        openAIService.switchToSession(sessionId, persistence.getActiveLastResponseId())
-        agentManager.reloadAgentsFromSession()
+        onChatPublicationThread {
+            persistence.saveActiveAgents(agentManager.getPersistedAgentProfiles())
+            if (!persistence.activateSession(sessionId)) return@onChatPublicationThread
+            _messages.value = persistence.loadActiveMessages()
+            _sessions.value = persistence.listSessions()
+            openAIService.switchToSession(sessionId, persistence.getActiveLastResponseId())
+            agentManager.reloadAgentsFromSession()
+        }
     }
 
     fun deleteSession(sessionId: String) {
-        persistence.saveActiveAgents(agentManager.getPersistedAgentProfiles())
-        val nextSessionId = persistence.deleteSession(sessionId)
-        _messages.value = persistence.loadActiveMessages()
-        _sessions.value = persistence.listSessions()
-        openAIService.switchToSession(nextSessionId, persistence.getActiveLastResponseId())
-        agentManager.reloadAgentsFromSession()
+        onChatPublicationThread {
+            persistence.saveActiveAgents(agentManager.getPersistedAgentProfiles())
+            val nextSessionId = persistence.deleteSession(sessionId)
+            _messages.value = persistence.loadActiveMessages()
+            _sessions.value = persistence.listSessions()
+            openAIService.switchToSession(nextSessionId, persistence.getActiveLastResponseId())
+            agentManager.reloadAgentsFromSession()
+        }
     }
 
     suspend fun sendUserMessage(messageContent: String) {
@@ -217,51 +234,58 @@ class ChatConversationService(
         }.toMutableList()
 
     private fun appendUserMessage(messageContent: String) {
-        _messages.value += chatMessageFactory.createUserMessage(messageContent)
-        persistMessages()
+        onChatPublicationThread {
+            _messages.value += chatMessageFactory.createUserMessage(messageContent)
+            persistMessages()
+        }
     }
 
     private fun appendAgentThreadMessage(
         agentId: String,
         content: String,
     ) {
-        val agent = registry.getAgentsSnapshot().firstOrNull { it.id == agentId }
-        val parentMessageId = _messages.value.lastOrNull { it.isMyMessage }?.id
-        _messages.value += chatMessageFactory.createAIMessage(
-            content = content,
-            parentMessageId = parentMessageId,
-        ).copy(author = agent?.role ?: "Agent")
-        persistMessages()
+        onChatPublicationThread {
+            val agent = registry.getAgentsSnapshot().firstOrNull { it.id == agentId }
+            val parentMessageId = _messages.value.lastOrNull { it.isMyMessage }?.id
+            _messages.value += chatMessageFactory.createAIMessage(
+                content = content,
+                parentMessageId = parentMessageId,
+            ).copy(author = agent?.role ?: "Agent")
+            persistMessages()
+        }
     }
 
     private fun appendAiMessage(messageContent: String) {
-        _messages.value += chatMessageFactory.createAIMessage(messageContent)
-        persistMessages()
+        onChatPublicationThread {
+            _messages.value += chatMessageFactory.createAIMessage(messageContent)
+            persistMessages()
+        }
     }
 
     fun appendAiToolMessage(
         toolItems: List<com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem>,
         beforeMessageId: String? = null,
-    ): String {
-        val message = chatMessageFactory.createAIToolMessage(toolItems)
-        _messages.value =
-            if (beforeMessageId == null) {
-                _messages.value + message
-            } else {
-                val idx = _messages.value.indexOfFirst { it.id == beforeMessageId }
-                if (idx < 0) {
+    ): String =
+        onChatPublicationThread {
+            val message = chatMessageFactory.createAIToolMessage(toolItems)
+            _messages.value =
+                if (beforeMessageId == null) {
                     _messages.value + message
                 } else {
-                    buildList {
-                        addAll(_messages.value.take(idx))
-                        add(message)
-                        addAll(_messages.value.drop(idx))
+                    val idx = _messages.value.indexOfFirst { it.id == beforeMessageId }
+                    if (idx < 0) {
+                        _messages.value + message
+                    } else {
+                        buildList {
+                            addAll(_messages.value.take(idx))
+                            add(message)
+                            addAll(_messages.value.drop(idx))
+                        }
                     }
                 }
-            }
-        persistMessages()
-        return message.id
-    }
+            persistMessages()
+            message.id
+        }
 
     private fun currentToolItems(messageId: String): List<com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem> =
         _messages.value.firstOrNull { it.id == messageId }?.toolItems.orEmpty()
@@ -278,36 +302,41 @@ class ChatConversationService(
         }
     }
 
-    private fun appendAiThinkingMessage(): String {
-        val message =
-            ChatMessage(
-                content = "AI is thinking…",
-                author = "AI Manager",
-                type = AI_THINKING,
-            )
-        _messages.value += message
-        persistMessages()
-        return message.id
-    }
+    private fun appendAiThinkingMessage(): String =
+        onChatPublicationThread {
+            val message =
+                ChatMessage(
+                    content = "AI is thinking…",
+                    author = "AI Manager",
+                    type = AI_THINKING,
+                )
+            _messages.value += message
+            persistMessages()
+            message.id
+        }
 
     private fun replaceMessage(
         messageId: String,
         newMessage: ChatMessage,
     ) {
-        _messages.value =
-            _messages.value.map { message ->
-                if (message.id == messageId) {
-                    newMessage.copy(id = messageId)
-                } else {
-                    message
+        onChatPublicationThread {
+            _messages.value =
+                _messages.value.map { message ->
+                    if (message.id == messageId) {
+                        newMessage.copy(id = messageId)
+                    } else {
+                        message
+                    }
                 }
-            }
-        persistMessages()
+            persistMessages()
+        }
     }
 
     private fun clearThinkingMessages() {
-        _messages.value = _messages.value.filterNot { it.type == AI_THINKING }
-        persistMessages()
+        onChatPublicationThread {
+            _messages.value = _messages.value.filterNot { it.type == AI_THINKING }
+            persistMessages()
+        }
     }
 
     suspend fun sendScheduledReminder(reminderContext: String) {

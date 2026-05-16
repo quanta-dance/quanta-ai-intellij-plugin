@@ -29,7 +29,11 @@ class BackendChatRepositoryModel(
 
     fun getMessagesFlow(): Flow<List<ChatMessageDto>> = conversationService.messagesFlow()
 
+    fun getCurrentMessages(): List<ChatMessageDto> = conversationService.currentMessages()
+
     fun getSessionsFlow(): Flow<List<ChatSessionDto>> = conversationService.sessionsFlow()
+
+    fun getCurrentSessions(): List<ChatSessionDto> = conversationService.currentSessions()
 
     fun createNewSession() = conversationService.createNewSession()
 

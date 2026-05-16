@@ -52,6 +52,8 @@ dependencies {
         pluginModule(implementation(project(":backend")))
         pluginModule(implementation(project(":frontend")))
     }
+
+    implementation(project(path = ":backend", configuration = "runtimeElements"))
 }
 
 intellijPlatform {
@@ -103,3 +105,15 @@ tasks.named("buildPlugin") {
 }
 
 
+tasks {
+    runIdeBackend {
+        splitModeServerPort.set(12345)
+    }
+}
+
+tasks.named<JavaExec>("runIde") {
+    dependsOn(":backend:processResources")
+    jvmArgumentProviders += CommandLineArgumentProvider {
+        listOf("-Dnosplash=true")
+    }
+}

@@ -3,9 +3,9 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.tools.mcp
 
-import io.modelcontextprotocol.kotlin.sdk.Implementation
 import io.modelcontextprotocol.kotlin.sdk.client.Client
 import io.modelcontextprotocol.kotlin.sdk.client.ClientOptions
+import io.modelcontextprotocol.kotlin.sdk.types.Implementation
 import kotlin.test.Test
 import kotlin.test.assertNotNull
 

@@ -3,8 +3,10 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.settings
 
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.logging.FrontendBackendLogBridge
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.rpc.FrontendSettingsRpcService
 import com.intellij.openapi.components.Service
+import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
 import kotlinx.coroutines.delay
@@ -34,6 +36,7 @@ class FrontendSettingsSyncStateService(
     )
 
     private val logger = thisLogger()
+    private val backendLog = project.service<FrontendBackendLogBridge>()
 
     private val _stateFlow = MutableStateFlow(State())
     val stateFlow: StateFlow<State> = _stateFlow.asStateFlow()
@@ -73,7 +76,15 @@ class FrontendSettingsSyncStateService(
                 logger.info(
                     "Quanta AI frontend settings sync attempt ${attemptIndex + 1} starting for project=${project.name}, reason=$reason",
                 )
-                rpc.updateSettings(currentState.toDto())
+                val mcpServersJson = project.service<FrontendMcpConfigService>().readForSync()
+                if (mcpServersJson == null) {
+                    backendLog.warn("Skipping frontend settings sync because MCP config is empty or unreadable for project=${project.name}, reason=$reason")
+                    return false
+                }
+                backendLog.info(
+                    "Frontend settings sync sending MCP config to backend for project=${project.name}, reason=$reason, chars=${mcpServersJson.length}",
+                )
+                rpc.updateSettings(currentState.toDto(project, mcpServersJson))
                 val backendSettings = rpc.getSettings()
                 FrontendQuantaSettingsState.instance.loadState(backendSettings.toFrontendState())
                 _stateFlow.value = State(status = Status.READY)

@@ -4,7 +4,10 @@ plugins {
     kotlin("jvm")
     kotlin("plugin.serialization")
     id("rpc")
+    id("org.jetbrains.intellij.platform.module") // Handles subproject integration natively
 }
+
+val quantaRuntime by configurations.creating
 
 repositories {
     mavenCentral()
@@ -13,12 +16,9 @@ repositories {
     }
 }
 
-val quantaRuntime by configurations.creating
-
 dependencies {
     intellijPlatform {
         intellijIdea(libs.versions.intellij.platform)
-
         bundledModule("intellij.platform.kernel.backend")
         bundledModule("intellij.platform.rpc.backend")
         bundledModule("intellij.platform.backend")
@@ -29,20 +29,24 @@ dependencies {
 
     compileOnly(project(":shared"))
 
+    // Plain standard implementations. No complex shadow configs needed here.
     implementation(libs.kotlin.serialization.core.jvm)
     implementation(libs.kotlin.serialization.json.jvm)
     implementation(libs.openai)
     implementation("com.openai:openai-java-client-okhttp:4.31.0")
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.2")
     implementation("org.eclipse.jgit:org.eclipse.jgit:6.10.0.202406032230-r")
+    implementation("io.modelcontextprotocol:kotlin-sdk-client:0.12.0")
+    implementation(libs.ktor.client.java)
 
+    quantaRuntime(libs.kotlin.serialization.core.jvm)
+    quantaRuntime(libs.kotlin.serialization.json.jvm)
     quantaRuntime(libs.openai)
     quantaRuntime("com.openai:openai-java-client-okhttp:4.31.0")
+    quantaRuntime("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.2")
     quantaRuntime("org.eclipse.jgit:org.eclipse.jgit:6.10.0.202406032230-r")
-
-    // MCP SDK: BOM for alignment and then the specific SDK
-    implementation(platform("io.modelcontextprotocol.sdk:mcp-bom:0.14.0"))
-    implementation("io.modelcontextprotocol:kotlin-sdk:0.7.2")
+    quantaRuntime("io.modelcontextprotocol:kotlin-sdk-client:0.12.0")
+    quantaRuntime(libs.ktor.client.java)
 
     testImplementation(kotlin("test"))
     testImplementation(kotlin("stdlib"))
@@ -62,12 +66,28 @@ tasks {
         systemProperty("kotlinx.coroutines.debug", "off")
     }
 
-    withType<Jar>().configureEach {
+    // Package backend runtime libraries into the backend module jar so split-mode runIde has the
+    // required domain classes (OpenAI, MCP, JGit), but avoid bundling common infrastructure jars
+    // that can conflict with the IDE/runtime classpath.
+    named<Jar>("jar") {
+        archiveClassifier.set("")
+        enabled = true
         duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-        val runtimeFiles =
-            quantaRuntime
-                .filter { it.name.endsWith(".jar") }
-                .map { zipTree(it) }
+
+        val excludedRuntimeJarMarkers = listOf(
+            "slf4j",
+            "kotlinx-coroutines",
+            "kotlinx-serialization",
+            "ktor-",
+            "netty",
+        )
+
+        val runtimeFiles = quantaRuntime
+            .filter { file ->
+                file.name.endsWith(".jar") &&
+                        excludedRuntimeJarMarkers.none { marker -> file.name.contains(marker, ignoreCase = true) }
+            }
+            .map { zipTree(it) }
         from(runtimeFiles)
     }
 }

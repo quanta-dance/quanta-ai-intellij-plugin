@@ -19,10 +19,15 @@ class ListToolsCatalogTool : ToolInterface<Map<String, Any>> {
     override fun execute(project: Project): Map<String, Any> {
         val builtInNames = toolsFor(project).map { toolClass: Class<*> -> toolClass.simpleName }.sorted()
         val mcp = project.service<McpClientService>()
-        val servers = mcp.listServers().sorted()
-        val toolsByServer = if (includeMcpDetails) servers.associateWith { s ->
-            mcp.getTools(s).map { it.name }.sorted()
-        } else emptyMap()
+        val servers: List<String> = mcp.listServers().sorted()
+        val toolsByServer: Map<String, List<String>> =
+            if (includeMcpDetails) {
+                servers.associateWith { server: String ->
+                    mcp.getTools(server).map { tool -> tool.name }.sorted()
+                }
+            } else {
+                emptyMap()
+            }
         return mapOf(
             "builtIns" to builtInNames,
             "mcp" to

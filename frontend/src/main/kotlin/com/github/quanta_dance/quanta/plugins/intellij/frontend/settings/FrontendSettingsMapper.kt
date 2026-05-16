@@ -4,8 +4,12 @@
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.settings
 
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.QuantaSettingsDto
+import com.intellij.openapi.project.Project
 
-fun FrontendQuantaSettingsState.State.toDto(): QuantaSettingsDto =
+fun FrontendQuantaSettingsState.State.toDto(
+    project: Project,
+    mcpServersJson: String,
+): QuantaSettingsDto =
     QuantaSettingsDto(
         openAiUrl = openAiUrl,
         openAiToken = openAiToken,
@@ -24,6 +28,7 @@ fun FrontendQuantaSettingsState.State.toDto(): QuantaSettingsDto =
         terminalToolEnabled = terminalToolEnabled,
         terminalAllowedCommandsCsv = terminalAllowedCommandsCsv,
         actionConfigsJson = actionConfigsJson,
+        mcpServersJson = mcpServersJson,
     )
 
 fun QuantaSettingsDto.toFrontendState(): FrontendQuantaSettingsState.State =

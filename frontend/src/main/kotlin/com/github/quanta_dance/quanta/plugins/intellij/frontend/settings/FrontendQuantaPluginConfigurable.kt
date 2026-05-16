@@ -3,9 +3,11 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.settings
 
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.logging.FrontendBackendLogBridge
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.rpc.FrontendSettingsRpcService
 import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.components.service
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.project.Project
@@ -20,7 +22,6 @@ import java.awt.Color
 import java.awt.Cursor
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
-import java.io.File
 import javax.swing.JButton
 import javax.swing.JComponent
 import javax.swing.JPanel
@@ -106,7 +107,14 @@ class FrontendQuantaPluginConfigurable : Configurable {
         ApplicationManager.getApplication().executeOnPooledThread {
             runCatching {
                 val rpc = FrontendSettingsRpcService.getInstance(project)
-                runBlocking { rpc.updateSettings(settings.toDto()) }
+                val mcpServersJson = project.service<FrontendMcpConfigService>().readForSync()
+                val log = project.service<FrontendBackendLogBridge>()
+                if (mcpServersJson == null) {
+                    log.warn("Skipping settings apply sync because MCP config is empty or unreadable for project=${project.name}")
+                    return@executeOnPooledThread
+                }
+                log.info("Settings apply sync sending MCP config to backend for project=${project.name}, chars=${mcpServersJson.length}")
+                runBlocking { rpc.updateSettings(settings.toDto(project, mcpServersJson)) }
             }
         }
     }
@@ -169,17 +177,10 @@ private class FrontendQuantaSettingsComponent {
                 )
                 return@addActionListener
             }
-            val basePath = project.basePath
-            if (basePath == null) {
-                Messages.showWarningDialog(project, "Project base path is unavailable.", "QuantaDance")
-                return@addActionListener
-            }
-            val file = File(basePath, ".quantadance/mcp-servers.json")
+            val file = project.service<FrontendMcpConfigService>().ensureExists()
+            project.service<FrontendBackendLogBridge>()
+                .info("Edit MCP Servers opened path=${file.absolutePath} for project=${project.name}")
             try {
-                if (!file.parentFile.exists()) file.parentFile.mkdirs()
-                if (!file.exists()) {
-                    file.writeText("{\n  \"mcpServers\": { }\n}")
-                }
                 LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)?.let { vFile ->
                     ApplicationManager.getApplication().invokeLater {
                         FileEditorManager.getInstance(project).openFile(vFile, true)

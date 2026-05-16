@@ -33,8 +33,9 @@ class AgentRosterService(
         _agentsFlow.value = currentAgents()
     }
 
-    private fun currentAgents(): List<AgentInfoDto> =
-        agentManager.getAgentsSnapshot().map {
+    private fun currentAgents(): List<AgentInfoDto> {
+        agentManager.ensureAgentsLoadedFromSession()
+        return agentManager.getAgentsSnapshot().map {
             AgentInfoDto(
                 id = it.id,
                 role = it.role,
@@ -43,4 +44,5 @@ class AgentRosterService(
                 instructions = it.instructions,
             )
         }
+    }
 }

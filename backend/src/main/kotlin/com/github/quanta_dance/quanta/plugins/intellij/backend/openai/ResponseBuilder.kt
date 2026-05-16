@@ -123,23 +123,35 @@ class ResponseBuilder(private val project: Project) {
             .build()
     }
 
-    private fun availableTools(includeMcp: Boolean): List<Tool> {
+    private fun availableTools(
+        includeMcp: Boolean,
+        allowedToolClassFilter: ((Class<*>) -> Boolean)? = null,
+        allowedBuiltInNames: Set<String>? = null,
+        allowedMcpNames: Set<String>? = null,
+    ): List<Tool> {
         val builtInTools: List<Tool> =
-            ToolsRegistry.toolsFor(project).map { toolClass ->
-                val toolName = toolClass.simpleName
-                Tool.ofFunction(
-                    FunctionTool.builder()
-                        .name(toolName)
-                        .description(builtInToolDescription(toolClass))
-                        .parameters(builtInToolParameters(toolClass))
-                        .strict(true)
-                        .build(),
-                )
-            }
+            ToolsRegistry.toolsFor(project)
+                .asSequence()
+                .filter { toolClass -> allowedToolClassFilter?.invoke(toolClass) ?: true }
+                .filter { toolClass -> allowedBuiltInNames?.contains(toolClass.simpleName) ?: true }
+                .map { toolClass ->
+                    val toolName = toolClass.simpleName
+                    Tool.ofFunction(
+                        FunctionTool.builder()
+                            .name(toolName)
+                            .description(builtInToolDescription(toolClass))
+                            .parameters(builtInToolParameters(toolClass))
+                            .strict(true)
+                            .build(),
+                    )
+                }.toList()
         if (!includeMcp) return builtInTools
 
         val mcpTools = runCatching {
-            DynamicMcpToolProvider.buildTools(project.service<McpClientService>())
+            DynamicMcpToolProvider.buildTools(
+                mcp = project.service<McpClientService>(),
+                allowedToolNames = allowedMcpNames,
+            )
         }.getOrDefault(emptyList())
         return builtInTools + mcpTools
     }
@@ -148,8 +160,14 @@ class ResponseBuilder(private val project: Project) {
         inputs: List<ResponseInputItem>,
         includeMcp: Boolean = true,
         previousResponseId: String? = null,
+        overrideInstructions: String? = null,
+        overrideModel: String? = null,
+        allowedToolClassFilter: ((Class<*>) -> Boolean)? = null,
+        allowedBuiltInNames: Set<String>? = null,
+        allowedMcpNames: Set<String>? = null,
     ): StructuredResponseCreateParams<OpenAIResponse> {
-        val model = ModelSelector.effectiveModel(ModelSelector.initialModel())
+        val model =
+            overrideModel?.takeIf { it.isNotBlank() } ?: ModelSelector.effectiveModel(ModelSelector.initialModel())
 
         val format = ResponseTextConfig.builder()
             .verbosity(ResponseTextConfig.Verbosity.HIGH)
@@ -158,14 +176,21 @@ class ResponseBuilder(private val project: Project) {
 
         val rawParams =
             ResponseCreateParams.builder()
-                .instructions(mergedInstructions())
+                .instructions(overrideInstructions?.takeIf { it.isNotBlank() } ?: mergedInstructions())
                 .previousResponseId(previousResponseId)
                 .inputOfResponse(inputs)
                 //.reasoning(TODO)
                 //.maxOutputTokens(TODO)
                 .model(ChatModel.of(model))
                 .text(format)
-                .tools(availableTools(includeMcp))
+                .tools(
+                    availableTools(
+                        includeMcp = includeMcp,
+                        allowedToolClassFilter = allowedToolClassFilter,
+                        allowedBuiltInNames = allowedBuiltInNames,
+                        allowedMcpNames = allowedMcpNames,
+                    ),
+                )
                 .build()
         return rawParams
     }

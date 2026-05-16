@@ -61,7 +61,10 @@ class QuantaBackendRpcApi : QuantaBackendApi {
 
     override suspend fun getCurrentAgents(projectId: ProjectId): List<AgentInfoDto> {
         val backendProject = projectId.findProjectOrNull() ?: return emptyList()
-        return backendProject.service<AgentRosterService>().agentsFlow.value
+        return backendProject.service<AgentRosterService>().agentsFlow.value.ifEmpty {
+            backendProject.service<AgentManagerService>().ensureAgentsLoadedFromSession()
+            backendProject.service<AgentRosterService>().agentsFlow.value
+        }
     }
 
     override suspend fun getAgentsFlow(projectId: ProjectId): Flow<List<AgentInfoDto>> {
@@ -92,7 +95,7 @@ class QuantaBackendRpcApi : QuantaBackendApi {
     override suspend fun createDefaultAgentTeam(projectId: ProjectId): List<AgentInfoDto> {
         val backendProject = projectId.findProjectOrNull() ?: return emptyList()
         backendProject.service<AgentManagerService>().createDefaultTeam()
-        return backendProject.service<AgentRosterService>().agentsFlow.value
+        return getCurrentAgents(projectId)
     }
 
     override suspend fun synthesizeSpeech(

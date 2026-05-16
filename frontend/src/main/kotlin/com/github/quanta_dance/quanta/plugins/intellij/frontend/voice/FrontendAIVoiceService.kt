@@ -19,7 +19,8 @@ import java.util.*
 @Service(Service.Level.PROJECT)
 class FrontendAIVoiceService(private val project: Project) {
     private var process: Process? = null
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val voiceRpcScope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
+    private val frontendLogScope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
 
     @Volatile
     private var currentSpeechJob: Job? = null
@@ -38,7 +39,7 @@ class FrontendAIVoiceService(private val project: Project) {
             FrontendLogLevel.WARN -> QDLog.warn(logger) { message }
             FrontendLogLevel.ERROR -> QDLog.error(logger, { message }, null)
         }
-        scope.launch {
+        frontendLogScope.launch {
             runCatching {
                 QuantaBackendApi.getInstance().logFrontend(
                     project.projectId(),
@@ -69,7 +70,7 @@ class FrontendAIVoiceService(private val project: Project) {
         } catch (_: Throwable) {
         }
         if (stopBackend) {
-            scope.launch {
+            voiceRpcScope.launch {
                 runCatching {
                     QuantaBackendApi.getInstance().stopSpeech(project.projectId())
                 }.onFailure { e ->
@@ -109,7 +110,7 @@ class FrontendAIVoiceService(private val project: Project) {
         }
 
         currentSpeechJob =
-            scope.launch {
+            voiceRpcScope.launch {
                 runCatching {
                     val sessionId = UUID.randomUUID().toString()
                     val backendApi = QuantaBackendApi.getInstance()
@@ -117,7 +118,7 @@ class FrontendAIVoiceService(private val project: Project) {
                     val feed =
                         Player.startStreamingPcm(
                             onDebugLog = { level, debug ->
-                                scope.launch {
+                                frontendLogScope.launch {
                                     runCatching {
                                         backendApi.logFrontend(
                                             project.projectId(),

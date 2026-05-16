@@ -38,10 +38,10 @@ class QuantaAISessionState : PersistentStateComponent<QuantaAISessionState.State
      */
     @Serializable
     data class AgentProfile(
-        val id: String,
-        val role: String,
-        val model: String? = null,
-        val instructions: String? = null,
+        var id: String = "",
+        var role: String = "",
+        var model: String? = null,
+        var instructions: String? = null,
         var previousId: String? = null,
     )
 
@@ -50,10 +50,10 @@ class QuantaAISessionState : PersistentStateComponent<QuantaAISessionState.State
      */
     @Serializable
     data class PersistedMessage(
-        val timestamp: Long,
-        val role: String,
-        val text: String,
-        val responseId: String? = null,
+        var timestamp: Long = 0L,
+        var role: String = "",
+        var text: String = "",
+        var responseId: String? = null,
     )
 
     /**
@@ -61,10 +61,10 @@ class QuantaAISessionState : PersistentStateComponent<QuantaAISessionState.State
      */
     @Serializable
     data class AgentInboxMessage(
-        val timestamp: Long,
-        val from: String?,
-        val text: String,
-        val kind: String?,
+        var timestamp: Long = 0L,
+        var from: String? = null,
+        var text: String = "",
+        var kind: String? = null,
     )
 
     /**

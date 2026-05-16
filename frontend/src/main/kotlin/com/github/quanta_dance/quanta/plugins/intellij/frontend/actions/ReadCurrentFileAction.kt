@@ -41,9 +41,6 @@ class ReadCurrentFileAction : AnAction("Read Current File") {
                     "backend: ERROR: ${result.error ?: "Unknown error"}"
                 }
 
-
-                val set = FrontendQuantaSettingsState.instance.state.toDto()
-                FrontendSettingsRpcService.getInstance(project).updateSettings(set)
                 FrontendChatRepositoryModel.getInstance(project).sendMessage(message)
                 log.info("Read Current File posted content to chat for $filePath")
             } catch (t: Throwable) {

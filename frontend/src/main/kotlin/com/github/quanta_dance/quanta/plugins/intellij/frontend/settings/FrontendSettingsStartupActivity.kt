@@ -15,6 +15,7 @@ import com.intellij.openapi.startup.ProjectActivity
  */
 class FrontendSettingsStartupActivity : ProjectActivity {
     override suspend fun execute(project: Project) {
+        project.service<FrontendMcpConfigService>()
         project.service<FrontendSettingsSyncStateService>().syncOnStartup()
     }
 }

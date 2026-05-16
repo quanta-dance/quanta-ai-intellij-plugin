@@ -4,11 +4,11 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.chat
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentManagerService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.BackendExecutionContextsService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.*
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,6 +20,8 @@ class AgentChannelStateService(
     private val project: Project,
 ) {
     private val persistence: ChatConversationStateService = project.getService(ChatConversationStateService::class.java)
+    private val executionContexts: BackendExecutionContextsService =
+        project.getService(BackendExecutionContextsService::class.java)
     private val runningTaskIds = Collections.synchronizedSet(mutableSetOf<String>())
 
     private val _events = MutableStateFlow(persistence.loadActiveChannelEvents())
@@ -167,7 +169,7 @@ class AgentChannelStateService(
             )
             manager.sendMessageAsync(agentId, task.requestText, task.id).whenComplete { _, _ ->
                 runningTaskIds.remove(task.id)
-                kotlinx.coroutines.CoroutineScope(Dispatchers.Default).launch {
+                executionContexts.agentOrchestrationScope.launch {
                     triggerReadyTasks()
                 }
             }

@@ -32,7 +32,11 @@ interface ChatRepositoryRpcApi : RemoteApi<Unit> {
      */
     suspend fun getMessagesFlow(projectId: ProjectId): Flow<List<ChatMessageDto>>
 
+    suspend fun getCurrentMessages(projectId: ProjectId): List<ChatMessageDto>
+
     suspend fun getSessionsFlow(projectId: ProjectId): Flow<List<ChatSessionDto>>
+
+    suspend fun getCurrentSessions(projectId: ProjectId): List<ChatSessionDto>
 
     suspend fun createNewSession(projectId: ProjectId)
 
