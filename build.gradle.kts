@@ -64,9 +64,8 @@ intellijPlatform {
     pluginVerification {
         ides {
             create(
-                IntelliJPlatformType.IntellijIdeaCommunity,
-                libs.versions.intellij.platform
-                    .get(),
+                IntelliJPlatformType.IntellijIdeaUltimate,
+                libs.versions.intellij.platform.get(),
             )
         }
     }
