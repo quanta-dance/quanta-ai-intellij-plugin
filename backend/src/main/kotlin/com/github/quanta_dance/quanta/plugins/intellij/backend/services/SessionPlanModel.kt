@@ -17,6 +17,7 @@ data class SessionPlan(
     val goal: String = "",
     val definitionOfDone: String = "",
     val tasks: List<SessionPlanTask> = emptyList(),
+    val revision: Long = 0,
 ) {
     fun normalizedStatus(): String = status.trim().ifBlank { "DRAFT" }.uppercase()
 

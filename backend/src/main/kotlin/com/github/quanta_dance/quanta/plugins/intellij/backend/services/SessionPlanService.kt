@@ -18,6 +18,13 @@ class SessionPlanService(private val project: Project) {
     data class ActivationCheck(
         val valid: Boolean,
         val issues: List<String> = emptyList(),
+        val currentRevision: Long = 0,
+    )
+
+    data class PlanWriteResult(
+        val changed: Boolean,
+        val plan: SessionPlan,
+        val issue: String? = null,
     )
 
     private val log = Logger.getInstance(SessionPlanService::class.java)
@@ -44,7 +51,8 @@ class SessionPlanService(private val project: Project) {
         goal: String,
         definitionOfDone: String,
         tasks: List<String>,
-    ) {
+        expectedRevision: Long? = null,
+    ): PlanWriteResult =
         savePlan(
             SessionPlan(
                 status = "DRAFT",
@@ -52,8 +60,8 @@ class SessionPlanService(private val project: Project) {
                 definitionOfDone = definitionOfDone,
                 tasks = tasks.map { SessionPlanTask(text = it.trim()) }.filter { it.text.isNotBlank() },
             ),
+            expectedRevision = expectedRevision,
         )
-    }
 
     fun validateForActivation(): ActivationCheck {
         val plan = loadPlanSnapshot()
@@ -61,26 +69,33 @@ class SessionPlanService(private val project: Project) {
         if (plan.goal.isBlank()) issues += "Goal is missing."
         if (plan.definitionOfDone.isBlank()) issues += "Definition of done is missing."
         if (plan.tasks.isEmpty()) issues += "At least one task is required."
-        return ActivationCheck(valid = issues.isEmpty(), issues = issues)
+        return ActivationCheck(valid = issues.isEmpty(), issues = issues, currentRevision = plan.revision)
     }
 
-    fun activate(): ActivationCheck {
+    fun activate(expectedRevision: Long? = null): ActivationCheck {
         val plan = loadPlanSnapshot()
         if (!plan.hasMeaningfulContent()) {
-            return ActivationCheck(valid = false, issues = listOf("Plan is empty."))
+            return ActivationCheck(valid = false, issues = listOf("Plan is empty."), currentRevision = plan.revision)
         }
         val validation = validateForActivation()
         if (!validation.valid) return validation
-        savePlan(plan.copy(status = "ACTIVE"))
-        return ActivationCheck(valid = true)
+        val result = savePlan(plan.copy(status = "ACTIVE"), expectedRevision = expectedRevision)
+        return if (result.issue == null) {
+            ActivationCheck(valid = true, currentRevision = result.plan.revision)
+        } else {
+            ActivationCheck(valid = false, issues = listOf(result.issue), currentRevision = result.plan.revision)
+        }
     }
 
-    fun markTasksDone(completed: List<String>): Boolean {
+    fun markTasksDone(
+        completed: List<String>,
+        expectedRevision: Long? = null,
+    ): PlanWriteResult {
         val completedSet = completed.map { it.trim() }.filter { it.isNotBlank() }.toSet()
-        if (completedSet.isEmpty()) return false
+        if (completedSet.isEmpty()) return PlanWriteResult(changed = false, plan = loadPlanSnapshot())
 
         val current = loadPlanSnapshot()
-        if (current.tasks.isEmpty()) return false
+        if (current.tasks.isEmpty()) return PlanWriteResult(changed = false, plan = current)
 
         var changed = false
         val updatedTasks =
@@ -92,15 +107,14 @@ class SessionPlanService(private val project: Project) {
                     task
                 }
             }
-        if (!changed) return false
+        if (!changed) return PlanWriteResult(changed = false, plan = current)
 
         val updatedPlan =
             current.copy(
                 status = if (updatedTasks.isNotEmpty() && updatedTasks.all { it.completed }) "DONE" else current.normalizedStatus(),
                 tasks = updatedTasks,
             )
-        savePlan(updatedPlan)
-        return true
+        return savePlan(updatedPlan, expectedRevision = expectedRevision)
     }
 
     fun isActive(): Boolean = loadPlanSnapshot().isActive()
@@ -125,10 +139,14 @@ class SessionPlanService(private val project: Project) {
             tasks = plan.tasks.map { it.text },
             completedTasks = plan.completedTaskTexts(),
             uncheckedTasks = plan.uncheckedTaskTexts(),
+            revision = plan.revision,
         )
     }
 
-    private fun savePlan(plan: SessionPlan) {
+    private fun savePlan(
+        plan: SessionPlan,
+        expectedRevision: Long? = null,
+    ): PlanWriteResult {
         val normalizedPlan =
             plan.copy(
                 status = plan.normalizedStatus(),
@@ -138,21 +156,33 @@ class SessionPlanService(private val project: Project) {
             )
         try {
             val state = QuantaAISessionState.instance.state
-            if (normalizedPlan.hasMeaningfulContent()) {
-                state.sessionPlans[conversationKey()] = normalizedPlan
+            val key = conversationKey()
+            val current = state.sessionPlans[key] ?: SessionPlan()
+            if (expectedRevision != null && expectedRevision != current.revision) {
+                return PlanWriteResult(
+                    changed = false,
+                    plan = current,
+                    issue = "Plan revision mismatch. Expected revision $expectedRevision but current revision is ${current.revision}.",
+                )
+            }
+            val nextPlan = normalizedPlan.copy(revision = current.revision + 1)
+            if (nextPlan.hasMeaningfulContent()) {
+                state.sessionPlans[key] = nextPlan
             } else {
-                state.sessionPlans.remove(conversationKey())
+                state.sessionPlans.remove(key)
             }
             publishCurrentStatus()
             try {
                 project.service<SessionMemoryService>().refreshFromCurrentState(
                     reason = "plan_update",
-                    explicitNote = "Session plan updated: ${normalizedPlan.normalizedStatus()}",
+                    explicitNote = "Session plan updated: ${nextPlan.normalizedStatus()}",
                 )
             } catch (_: Throwable) {
             }
+            return PlanWriteResult(changed = true, plan = nextPlan)
         } catch (t: Throwable) {
             log.warn("Failed to persist session plan state: ${t.message}", t)
+            return PlanWriteResult(changed = false, plan = loadPlanSnapshot(), issue = t.message)
         }
     }
 

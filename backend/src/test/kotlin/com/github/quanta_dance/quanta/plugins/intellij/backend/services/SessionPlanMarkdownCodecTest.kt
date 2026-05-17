@@ -21,6 +21,7 @@ class SessionPlanMarkdownCodecTest {
                         SessionPlanTask("Extract coordinator", completed = true),
                         SessionPlanTask("Add tests", completed = false),
                     ),
+                revision = 7,
             )
 
         val rendered = SessionPlanMarkdownCodec.render(plan)
@@ -30,6 +31,7 @@ class SessionPlanMarkdownCodecTest {
         assertEquals(plan.goal, parsed.goal)
         assertEquals(plan.definitionOfDone, parsed.definitionOfDone)
         assertEquals(plan.tasks, parsed.tasks)
+        assertEquals(0, parsed.revision)
     }
 
     @Test

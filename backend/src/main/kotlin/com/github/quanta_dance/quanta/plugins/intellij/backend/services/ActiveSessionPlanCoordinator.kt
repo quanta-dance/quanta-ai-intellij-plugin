@@ -89,7 +89,7 @@ class ActiveSessionPlanCoordinator(
             if (!hardBlocked) {
                 return retry(
                     message =
-                        "Continue executing the ACTIVE plan autonomously. Do not ask the user questions unless truly blocked by a missing external dependency or unavailable information. Do not stop for routine confirmations such as asking permission to continue, apply safe changes, inspect files, or run the next planned step.",
+                        "Continue executing the ACTIVE plan autonomously. Do not ask the user questions unless truly blocked by a missing external dependency or unavailable information. When WAIT_USER is necessary, include one specific blocking question and set blockingReasonType to an approved category such as MISSING_EXTERNAL_INFO, MISSING_CREDENTIAL, USER_DECISION_REQUIRED, or TOOL_FAILURE_REQUIRES_USER. Do not stop for routine confirmations such as asking permission to continue, apply safe changes, inspect files, or run the next planned step.",
                     loopState = progressedLoopState.loopState,
                     countAsPlanToolEnforcement = false,
                     maxContinuations = maxContinuations,
@@ -184,7 +184,7 @@ class ActiveSessionPlanCoordinator(
             return if (nextLoopState.continuationCount < maxContinuations) {
                 ActivePlanEvaluation(
                     retryInstruction =
-                        "You repeated the ACTIVE-plan response without making progress. Take the next concrete action now. If you are truly blocked, return WAIT_USER with one specific missing external dependency or unavailable-information question.",
+                        "You repeated the ACTIVE-plan response without making progress. Take the next concrete action now. If you are truly blocked, return WAIT_USER with one specific missing external dependency or unavailable-information question and set blockingReasonType to an approved category.",
                     loopState = nextLoopState.copy(continuationCount = nextLoopState.continuationCount + 1),
                     effectivePlanStatus = "",
                     activePlanStillHasWork = activePlanStillHasWork,

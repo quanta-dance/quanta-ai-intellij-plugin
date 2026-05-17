@@ -78,6 +78,7 @@ class ActiveSessionPlanCoordinatorTest {
                         nextStep = "WAIT_USER",
                         planNeedsUserConfirmation = true,
                         planBlockingQuestion = "What API token should I use for the staging environment?",
+                        blockingReasonType = "MISSING_CREDENTIAL",
                     ),
                 summaryText = "Blocked on missing credential.",
                 sessionPlanToolCalledThisTurn = false,

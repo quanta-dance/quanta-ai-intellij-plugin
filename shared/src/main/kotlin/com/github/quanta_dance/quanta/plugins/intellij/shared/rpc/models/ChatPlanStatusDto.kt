@@ -14,4 +14,5 @@ data class ChatPlanStatusDto(
     val tasks: List<String> = emptyList(),
     val completedTasks: List<String> = emptyList(),
     val uncheckedTasks: List<String> = emptyList(),
+    val revision: Long = 0,
 )

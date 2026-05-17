@@ -12,6 +12,16 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.models.Ope
  * [OpenAIService], making the remaining agent-loop extraction easier.
  */
 class AgentTurnContinuationPolicy {
+    companion object {
+        private val APPROVED_BLOCKING_REASON_TYPES =
+            setOf(
+                "MISSING_EXTERNAL_INFO",
+                "MISSING_CREDENTIAL",
+                "USER_DECISION_REQUIRED",
+                "TOOL_FAILURE_REQUIRES_USER",
+            )
+    }
+
     fun buildPlanLoopSignature(
         message: OpenAIResponse,
         effectivePlanStatus: String?,
@@ -21,6 +31,7 @@ class AgentTurnContinuationPolicy {
             append(message.nextStep?.uppercase().orEmpty())
             append('|').append(effectivePlanStatus.orEmpty())
             append('|').append(message.planNeedsUserConfirmation == true)
+            append('|').append(message.blockingReasonType?.trim()?.uppercase().orEmpty())
             append('|').append(message.planCompletedTasks?.sorted()?.joinToString("||").orEmpty())
             append('|').append(normalizePlanLoopSummary(summaryText))
         }
@@ -34,15 +45,19 @@ class AgentTurnContinuationPolicy {
 
     fun isHardBlockedActivePlanResponse(message: OpenAIResponse): Boolean {
         val blockingQuestion = message.planBlockingQuestion?.trim().orEmpty()
-        return message.planNeedsUserConfirmation == true &&
-                blockingQuestion.isNotBlank() &&
-                !isRoutineConfirmationQuestion(blockingQuestion)
+        val approvedReasonType = normalizeBlockingReasonType(message.blockingReasonType)
+        if (message.planNeedsUserConfirmation != true || message.nextStep?.uppercase() != "WAIT_USER") return false
+        if (approvedReasonType != null) return blockingQuestion.isNotBlank()
+        return blockingQuestion.isNotBlank() && !isRoutineConfirmationQuestion(blockingQuestion)
     }
+
+    fun isApprovedBlockingReasonType(blockingReasonType: String?): Boolean =
+        normalizeBlockingReasonType(blockingReasonType) != null
 
     fun isRoutineConfirmationQuestion(question: String): Boolean {
         val q = question.trim().lowercase()
         if (q.isBlank()) return false
-        val patterns = listOf(
+        val leadingPatterns = listOf(
             "should i",
             "do you want",
             "would you like",
@@ -52,13 +67,21 @@ class AgentTurnContinuationPolicy {
             "can i proceed",
             "please confirm",
             "confirm that i should",
+        )
+        if (leadingPatterns.any { q.startsWith(it) }) return true
+        val contextualPatterns = listOf(
             "before i continue",
             "before proceeding",
             "before i make changes",
             "before applying",
             "before running",
         )
-        return patterns.any { q.contains(it) }
+        return contextualPatterns.any { q.contains(it) }
+    }
+
+    private fun normalizeBlockingReasonType(blockingReasonType: String?): String? {
+        val normalized = blockingReasonType?.trim()?.uppercase().orEmpty()
+        return normalized.takeIf { APPROVED_BLOCKING_REASON_TYPES.contains(it) }
     }
 
     private fun normalizePlanLoopSummary(text: String): String =
