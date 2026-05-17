@@ -56,24 +56,23 @@ class AgentTurnOrchestrator(
         contextInjector.injectBaseContextForAgentTurn(inputs, localPrevId)
         val aggregated = StringBuilder()
         val processedCallIds = mutableSetOf<String>()
-        val planService = SessionPlanService(project)
-        val planIsActive = runCatching { planService.isActive() }.getOrDefault(false)
+        val planService = project.service<SessionPlanService>()
+        val activePlanCoordinator = ActiveSessionPlanCoordinator(continuationPolicy)
         var reprocess = true
-        var continuationCount = 0
-        var forcePlanPersistenceAttempts = 0
-        var lastPlanLoopSignature: String? = null
-        var repeatedPlanLoopSignatureCount = 0
+        var loopState = ActivePlanLoopState()
         val configuredContinuations =
             try {
                 BackendRuntimeSettingsService.instance.settings.maxAutomaticTurns.coerceIn(1, 100)
             } catch (_: Throwable) {
                 5
             }
-        val maxContinuations = if (planIsActive) maxOf(configuredContinuations, 30) else configuredContinuations
-        val maxPlanPersistenceAttempts = 5
+        val maxPlanToolEnforcementAttempts = 5
 
         while (reprocess) {
             reprocess = false
+            val planIsActiveAtTurnStart = runCatching { planService.isActive() }.getOrDefault(false)
+            val maxContinuations =
+                if (planIsActiveAtTurnStart) maxOf(configuredContinuations, 30) else configuredContinuations
             val (structResponse, newId) =
                 createResponse(
                     inputs,
@@ -161,151 +160,25 @@ class AgentTurnOrchestrator(
 
                                 aggregated.append(txt).append('\n')
 
-                                var effectivePlanStatus = message.planStatus?.uppercase()
-                                val hasBlankPlanMetadataInActiveMode =
-                                    planIsActive &&
-                                            effectivePlanStatus.isNullOrBlank() &&
-                                            message.planGoal.isNullOrBlank() &&
-                                            message.planDefinitionOfDone.isNullOrBlank() &&
-                                            message.planTasks.isNullOrEmpty()
+                                val evaluation =
+                                    activePlanCoordinator.evaluateAssistantMessage(
+                                        message = message,
+                                        summaryText = txt,
+                                        sessionPlanToolCalledThisTurn = sessionPlanToolCalledThisTurn,
+                                        planAtEvaluation = planService.loadPlanSnapshot(),
+                                        planWasActiveAtTurnStart = planIsActiveAtTurnStart,
+                                        pendingToolOutputsEmpty = pendingToolOutputs.isEmpty(),
+                                        maxContinuations = maxContinuations,
+                                        maxPlanToolEnforcementAttempts = maxPlanToolEnforcementAttempts,
+                                        loopState = loopState,
+                                    )
+                                loopState = evaluation.loopState
+                                val effectivePlanStatus = evaluation.effectivePlanStatus
 
-                                if (hasBlankPlanMetadataInActiveMode) {
-                                    if (forcePlanPersistenceAttempts < maxPlanPersistenceAttempts) {
-                                        forcePlanPersistenceAttempts++
-                                        continuationCount++
-                                        reprocess = true
-                                        inputs.add(
-                                            systemMessage(
-                                                "The session plan is ACTIVE, but your response omitted required structured plan fields. Return complete plan metadata and/or call SessionPlanTool before concluding the turn. Do not return DONE with blank planStatus/planGoal/planTasks while the plan is still active.",
-                                            ),
-                                        )
-                                        return@forEach
-                                    }
-                                }
-
-                                if (
-                                    planIsActive &&
-                                    !sessionPlanToolCalledThisTurn &&
-                                    (message.planStatus?.uppercase() == "DONE" || !message.planCompletedTasks.isNullOrEmpty())
-                                ) {
-                                    if (forcePlanPersistenceAttempts < maxPlanPersistenceAttempts) {
-                                        forcePlanPersistenceAttempts++
-                                        continuationCount++
-                                        reprocess = true
-                                        inputs.add(
-                                            systemMessage(
-                                                "The session plan is ACTIVE. Before finishing or marking tasks complete, you MUST call SessionPlanTool to persist the current plan state. Do not only report planStatus/planCompletedTasks in your response fields. Update the plan file first, then continue.",
-                                            ),
-                                        )
-                                        return@forEach
-                                    }
-                                }
-
-                                try {
-                                    if (!sessionPlanToolCalledThisTurn) {
-                                        when (effectivePlanStatus) {
-                                            "DRAFT" -> planService.applyDraftFromResponse(
-                                                goal = message.planGoal,
-                                                definitionOfDone = message.planDefinitionOfDone,
-                                                tasks = message.planTasks,
-                                            )
-
-                                            "ACTIVE" -> {
-                                                if (!planService.isActive()) {
-                                                    planService.applyDraftFromResponse(
-                                                        goal = message.planGoal,
-                                                        definitionOfDone = message.planDefinitionOfDone,
-                                                        tasks = message.planTasks,
-                                                    )
-                                                    planService.activate()
-                                                }
-                                            }
-
-                                            "DONE" -> planService.markAllTasksDone()
-                                        }
-                                    }
-                                } catch (_: Throwable) {
-                                }
-
-                                try {
-                                    val completed = message.planCompletedTasks
-                                        ?.mapNotNull { it.trim().ifBlank { null } }
-                                        .orEmpty()
-                                    if (completed.isNotEmpty()) {
-                                        planService.markTasksDone(completed)
-                                    }
-                                    effectivePlanStatus = planService.getStatus().uppercase()
-                                } catch (_: Throwable) {
-                                }
-
-                                if (message.nextStep?.uppercase() == "DONE" && effectivePlanStatus != "DONE") {
-                                    try {
-                                        if (planService.onlyPassiveTailTasksRemain()) {
-                                            planService.markAllTasksDone()
-                                            effectivePlanStatus = planService.getStatus().uppercase()
-                                        }
-                                    } catch (_: Throwable) {
-                                    }
-                                }
-
-                                val activePlanStillHasWork =
-                                    try {
-                                        (planService.isActive() || effectivePlanStatus == "ACTIVE") && planService.hasUncheckedTasks()
-                                    } catch (_: Throwable) {
-                                        false
-                                    }
-
-                                val currentPlanLoopSignature = continuationPolicy.buildPlanLoopSignature(
-                                    message = message,
-                                    effectivePlanStatus = effectivePlanStatus,
-                                    summaryText = txt,
-                                )
-                                if (activePlanStillHasWork) {
-                                    if (currentPlanLoopSignature == lastPlanLoopSignature) {
-                                        repeatedPlanLoopSignatureCount++
-                                    } else {
-                                        lastPlanLoopSignature = currentPlanLoopSignature
-                                        repeatedPlanLoopSignatureCount = 0
-                                    }
-                                    if (repeatedPlanLoopSignatureCount >= 1 && pendingToolOutputs.isEmpty()) {
-                                        return@forEach
-                                    }
-                                } else {
-                                    lastPlanLoopSignature = currentPlanLoopSignature
-                                    repeatedPlanLoopSignatureCount = 0
-                                }
-
-                                if (planIsActive && message.nextStep?.uppercase() == "WAIT_USER") {
-                                    val blockingQuestion = message.planBlockingQuestion?.trim().orEmpty()
-                                    val hardBlocked =
-                                        message.planNeedsUserConfirmation == true &&
-                                                blockingQuestion.isNotBlank() &&
-                                                !continuationPolicy.isRoutineConfirmationQuestion(blockingQuestion)
-                                    if (!hardBlocked) {
-                                        if (continuationCount < maxContinuations) {
-                                            continuationCount++
-                                            reprocess = true
-                                            inputs.add(
-                                                systemMessage(
-                                                    "Continue executing the ACTIVE plan autonomously. Do not ask the user questions unless truly blocked by a missing external dependency or unavailable information. Do not stop for routine confirmations such as asking permission to continue, apply safe changes, inspect files, or run the next planned step.",
-                                                ),
-                                            )
-                                            return@forEach
-                                        }
-                                    }
-                                }
-
-                                if (activePlanStillHasWork && message.nextStep?.uppercase() != "WAIT_USER") {
-                                    if (continuationCount < maxContinuations && effectivePlanStatus != "DONE") {
-                                        continuationCount++
-                                        reprocess = true
-                                        inputs.add(
-                                            systemMessage(
-                                                "The session plan is ACTIVE and still has unchecked tasks. Continue executing until tasks are completed or you are truly blocked. Avoid asking for simple confirmations while the plan can still be executed safely.",
-                                            ),
-                                        )
-                                        return@forEach
-                                    }
+                                evaluation.retryInstruction?.let { retryInstruction ->
+                                    reprocess = true
+                                    inputs.add(systemMessage(retryInstruction))
+                                    return@forEach
                                 }
 
                                 if (txt.isNotBlank()) {
@@ -320,8 +193,8 @@ class AgentTurnOrchestrator(
                                 }
 
                                 if (message.nextStep?.uppercase() == "CONTINUE") {
-                                    if (continuationCount < maxContinuations) {
-                                        continuationCount++
+                                    if (loopState.continuationCount < maxContinuations) {
+                                        loopState = loopState.copy(continuationCount = loopState.continuationCount + 1)
                                         inputs.add(systemMessage("Continue."))
                                         reprocess = true
                                     }

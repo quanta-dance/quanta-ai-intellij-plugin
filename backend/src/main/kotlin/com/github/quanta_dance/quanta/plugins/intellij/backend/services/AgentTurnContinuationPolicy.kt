@@ -25,6 +25,20 @@ class AgentTurnContinuationPolicy {
             append('|').append(normalizePlanLoopSummary(summaryText))
         }
 
+    fun responseAttemptsPlanMutationWithoutTool(message: OpenAIResponse): Boolean =
+        !message.planStatus.isNullOrBlank() ||
+                !message.planGoal.isNullOrBlank() ||
+                !message.planDefinitionOfDone.isNullOrBlank() ||
+                !message.planTasks.isNullOrEmpty() ||
+                !message.planCompletedTasks.isNullOrEmpty()
+
+    fun isHardBlockedActivePlanResponse(message: OpenAIResponse): Boolean {
+        val blockingQuestion = message.planBlockingQuestion?.trim().orEmpty()
+        return message.planNeedsUserConfirmation == true &&
+                blockingQuestion.isNotBlank() &&
+                !isRoutineConfirmationQuestion(blockingQuestion)
+    }
+
     fun isRoutineConfirmationQuestion(question: String): Boolean {
         val q = question.trim().lowercase()
         if (q.isBlank()) return false

@@ -3,6 +3,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.backend.settings
 
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SessionPlan
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.*
 import kotlinx.serialization.Serializable
@@ -79,6 +80,7 @@ class QuantaAISessionState : PersistentStateComponent<QuantaAISessionState.State
         var conversations: MutableMap<String, MutableList<PersistedMessage>> = mutableMapOf(),
         var conversationSummaries: MutableMap<String, String> = mutableMapOf(),
         var agentInboxes: MutableMap<String, MutableList<AgentInboxMessage>> = mutableMapOf(),
+        var sessionPlans: MutableMap<String, SessionPlan> = mutableMapOf(),
         var mainLastResponseId: String? = null,
     )
 

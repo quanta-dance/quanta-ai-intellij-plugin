@@ -9,6 +9,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.QuantaAI
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
+import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
@@ -199,22 +200,18 @@ class SessionMemoryService(
     }
 
     private fun mergePlanState(facts: SessionFacts) {
-        val planText = try {
-            SessionPlanService(project).loadText(maxChars = 8_000)
+        val plan = try {
+            project.service<SessionPlanService>().loadPlanSnapshot()
         } catch (_: Throwable) {
-            ""
+            SessionPlan()
         }
-        if (planText.isBlank()) return
-        val lines = planText.lines().map { it.trim() }
-        val status = lines.firstOrNull { it.startsWith("Status:", ignoreCase = true) }
-        status?.let { addUniqueFront(facts.current_state, "Plan ${it.removePrefix("Status:").trim()}.") }
-
-        collectSectionValue(lines, "Goal:")?.let {
-            if (facts.goal.isBlank()) facts.goal = it
+        if (!plan.hasMeaningfulContent()) return
+        addUniqueFront(facts.current_state, "Plan ${plan.normalizedStatus()}.")
+        if (facts.goal.isBlank() && plan.goal.isNotBlank()) {
+            facts.goal = plan.goal
         }
-
-        lines.filter { it.startsWith("- [ ] ") }.take(5).forEach {
-            addUniqueFront(facts.next_steps, it.removePrefix("- [ ] ").trim())
+        plan.uncheckedTaskTexts().take(5).forEach {
+            addUniqueFront(facts.next_steps, it)
         }
     }
 
