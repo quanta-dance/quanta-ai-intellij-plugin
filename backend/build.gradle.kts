@@ -30,14 +30,14 @@ dependencies {
     compileOnly(project(":shared"))
 
     // Plain standard implementations. No complex shadow configs needed here.
-    implementation(libs.kotlin.serialization.core.jvm)
-    implementation(libs.kotlin.serialization.json.jvm)
-    implementation(libs.openai)
-    implementation("com.openai:openai-java-client-okhttp:4.31.0")
-    implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.2")
-    implementation("org.eclipse.jgit:org.eclipse.jgit:6.10.0.202406032230-r")
-    implementation("io.modelcontextprotocol:kotlin-sdk-client:0.12.0")
-    implementation(libs.ktor.client.java)
+    compileOnly(libs.kotlin.serialization.core.jvm)
+    compileOnly(libs.kotlin.serialization.json.jvm)
+    compileOnly(libs.openai)
+    compileOnly("com.openai:openai-java-client-okhttp:4.31.0")
+    compileOnly("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.2")
+    compileOnly("org.eclipse.jgit:org.eclipse.jgit:6.10.0.202406032230-r")
+    compileOnly("io.modelcontextprotocol:kotlin-sdk-client:0.12.0")
+    compileOnly(libs.ktor.client.java)
 
     quantaRuntime(libs.kotlin.serialization.core.jvm)
     quantaRuntime(libs.kotlin.serialization.json.jvm)
