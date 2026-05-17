@@ -21,7 +21,7 @@ import com.intellij.openapi.project.Project
  * read, and complete work items through typed session state.
  */
 class SessionPlanTool : ToolInterface<String> {
-    @field:JsonPropertyDescription("Action to perform: READ | DRAFT | ACTIVATE | COMPLETE")
+    @field:JsonPropertyDescription("Action to perform: READ | DRAFT | ACTIVATE | COMPLETE | SET_DONE")
     var action: String? = null
 
     @field:JsonPropertyDescription("Plan goal (used for DRAFT)")
@@ -36,6 +36,9 @@ class SessionPlanTool : ToolInterface<String> {
     @field:JsonPropertyDescription("Completed tasks to mark as [x] (used for COMPLETE). Must match existing task text.")
     var completedTasks: List<String>? = null
 
+    @field:JsonPropertyDescription("Optional expected current plan revision for stale-write protection.")
+    var expectedRevision: Long? = null
+
     @field:JsonPropertyDescription("Maximum characters to return (default 8000)")
     var maxChars: Int? = null
 
@@ -47,35 +50,60 @@ class SessionPlanTool : ToolInterface<String> {
         return when (act) {
             "READ" -> svc.loadText(maxChars = limit)
             "DRAFT" -> {
-                svc.saveDraft(
-                    goal = goal?.trim().orEmpty(),
-                    definitionOfDone = definitionOfDone?.trim().orEmpty(),
-                    tasks = (tasks ?: emptyList()).map { it.trim() }.filter { it.isNotBlank() },
-                )
-                svc.loadText(maxChars = limit)
+                val result =
+                    svc.saveDraft(
+                        goal = goal?.trim().orEmpty(),
+                        definitionOfDone = definitionOfDone?.trim().orEmpty(),
+                        tasks = (tasks ?: emptyList()).map { it.trim() }.filter { it.isNotBlank() },
+                        expectedRevision = expectedRevision,
+                    )
+                renderResult(result.issue, svc.loadText(maxChars = limit), result.plan.revision)
             }
 
             "ACTIVATE" -> {
-                val result = svc.activate()
+                val result = svc.activate(expectedRevision = expectedRevision)
                 if (result.valid) {
-                    svc.loadText(maxChars = limit)
+                    renderResult(null, svc.loadText(maxChars = limit), result.currentRevision)
                 } else {
                     buildString {
-                        appendLine("Plan remains DRAFT because it is not specific enough to execute safely.")
+                        appendLine("Plan remains DRAFT because it is not ready to activate.")
                         result.issues.forEach { appendLine("- $it") }
                         appendLine()
-                        append(svc.loadText(maxChars = limit))
+                        append(renderResult(null, svc.loadText(maxChars = limit), result.currentRevision))
                     }
                 }
             }
 
             "COMPLETE" -> {
                 val completed = (completedTasks ?: emptyList()).map { it.trim() }.filter { it.isNotBlank() }
-                svc.markTasksDone(completed)
-                svc.loadText(maxChars = limit)
+                val result = svc.markTasksDone(completed, expectedRevision = expectedRevision)
+                renderResult(result.issue, svc.loadText(maxChars = limit), result.plan.revision)
             }
 
-            else -> "Unknown action: '$act'. Supported: READ, DRAFT, ACTIVATE, COMPLETE."
+            "SET_DONE" -> {
+                val plan = svc.loadPlanSnapshot()
+                val result = svc.markTasksDone(plan.uncheckedTaskTexts(), expectedRevision = expectedRevision)
+                renderResult(result.issue, svc.loadText(maxChars = limit), result.plan.revision)
+            }
+
+            else -> "Unknown action '$act'. Supported actions: READ, DRAFT, ACTIVATE, COMPLETE, SET_DONE"
         }
     }
+
+    private fun renderResult(
+        issue: String?,
+        planText: String,
+        revision: Long,
+    ): String =
+        buildString {
+            issue?.takeIf { it.isNotBlank() }?.let {
+                appendLine(it)
+                appendLine()
+            }
+            appendLine("Revision: $revision")
+            if (planText.isNotBlank()) {
+                appendLine()
+                append(planText)
+            }
+        }.trim()
 }

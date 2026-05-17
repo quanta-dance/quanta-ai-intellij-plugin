@@ -74,6 +74,12 @@ data class OpenAIResponse @JsonCreator constructor(
     )
     val planBlockingQuestion: String? = null,
 
+    @param:JsonProperty("blockingReasonType")
+    @field:JsonPropertyDescription(
+        "Optional explicit blocking reason when nextStep=WAIT_USER during ACTIVE plan execution. Approved values: MISSING_EXTERNAL_INFO, MISSING_CREDENTIAL, USER_DECISION_REQUIRED, TOOL_FAILURE_REQUIRES_USER. Prefer this over heuristic-only blocking questions."
+    )
+    val blockingReasonType: String? = null,
+
     @param:JsonProperty("teamAddAgents")
     @field:JsonPropertyDescription(
         "Optional: propose adding agents before plan activation. Applied only after user approval."

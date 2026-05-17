@@ -54,7 +54,23 @@ class AgentTurnContinuationPolicyTest {
     }
 
     @Test
-    fun `missing external dependency is treated as a hard block`() {
+    fun `approved blocking reason type allows hard blocked active plan response`() {
+        val message =
+            OpenAIResponse(
+                summaryMessage = "Blocked on missing credential",
+                ttsSummary = "Blocked",
+                nextStep = "WAIT_USER",
+                planNeedsUserConfirmation = true,
+                planBlockingQuestion = "What API token should I use for the configured staging environment?",
+                blockingReasonType = "MISSING_CREDENTIAL",
+            )
+
+        assertTrue(policy.isApprovedBlockingReasonType(message.blockingReasonType))
+        assertTrue(policy.isHardBlockedActivePlanResponse(message))
+    }
+
+    @Test
+    fun `fallback heuristic still treats missing external dependency as hard block`() {
         val message =
             OpenAIResponse(
                 summaryMessage = "Blocked on missing credential",
