@@ -3,14 +3,17 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel
 
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.flow.*
-import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
-
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.ui.SearchState
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.ui.hasResults
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.ui.isSearching
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.ui.searchQuery
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 
 /**
  * Implementation of the SearchChatMessagesHandler interface for handling
@@ -26,7 +29,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.frontend.ui.searchQuery
  */
 class SearchChatMessagesHandlerImpl(
     private val messagesFlow: StateFlow<List<ChatMessage>> = MutableStateFlow(emptyList()),
-    coroutineScope: CoroutineScope
+    coroutineScope: CoroutineScope,
 ) : SearchChatMessagesHandler {
     private val _searchStateFlow: MutableStateFlow<SearchState> = MutableStateFlow(SearchState.Idle)
 
@@ -41,8 +44,7 @@ class SearchChatMessagesHandlerImpl(
                 if (searchState.isSearching) {
                     searchState.searchQuery?.let { query -> onSearchQuery(query) }
                 }
-            }
-            .launchIn(coroutineScope)
+            }.launchIn(coroutineScope)
     }
 
     override fun onStartSearch() {
@@ -75,28 +77,34 @@ class SearchChatMessagesHandlerImpl(
         moveSearchResultSelectionToIndex(searchState, searchState.currentSelectedSearchResultIndex - 1)
     }
 
-    private fun moveSearchResultSelectionToIndex(searchState: SearchState.SearchResults, newSearchResultIndex: Int) {
-        val nextSearchResultIndex = when {
-            newSearchResultIndex < 0 -> searchState.searchResultIds.lastIndex
-            newSearchResultIndex > searchState.searchResultIds.lastIndex -> 0
-            else -> newSearchResultIndex
-        }
+    private fun moveSearchResultSelectionToIndex(
+        searchState: SearchState.SearchResults,
+        newSearchResultIndex: Int,
+    ) {
+        val nextSearchResultIndex =
+            when {
+                newSearchResultIndex < 0 -> searchState.searchResultIds.lastIndex
+                newSearchResultIndex > searchState.searchResultIds.lastIndex -> 0
+                else -> newSearchResultIndex
+            }
 
         _searchStateFlow.value = searchState.copy(currentSelectedSearchResultIndex = nextSearchResultIndex)
     }
 
     private fun performSearch(
         query: String,
-        messages: List<ChatMessage>
+        messages: List<ChatMessage>,
     ) {
-        val matchingIds = messages
-            .filter { message -> message.matches(query) }
-            .map { it.id }
+        val matchingIds =
+            messages
+                .filter { message -> message.matches(query) }
+                .map { it.id }
 
-        _searchStateFlow.value = SearchState.SearchResults(
-            query = query,
-            searchResultIds = matchingIds,
-            currentSelectedSearchResultIndex = if (matchingIds.isNotEmpty()) 0 else -1
-        )
+        _searchStateFlow.value =
+            SearchState.SearchResults(
+                query = query,
+                searchResultIds = matchingIds,
+                currentSelectedSearchResultIndex = if (matchingIds.isNotEmpty()) 0 else -1,
+            )
     }
 }

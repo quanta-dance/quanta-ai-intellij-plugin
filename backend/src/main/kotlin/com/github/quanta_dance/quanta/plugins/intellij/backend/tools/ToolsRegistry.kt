@@ -5,7 +5,16 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.catalog.ListToolsCatalogTool
-import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.*
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.CopyFileOrDirectoryTool
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.CreateOrUpdateFile
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.DeleteFileTool
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.GetFileReferencesAndDependencies
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.ListFiles
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.OpenFileInEditorTool
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.PatchFile
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.ReadFile
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.ReadPsiBlockAtPosition
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.ValidateClassFileTool
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.McpListServerToolsTool
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.McpListServersTool
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.project.GetProjectDetails
@@ -108,7 +117,7 @@ object ToolsRegistry {
                 ToolEntry(ScheduleTaskTool::class.java, Group.GENERIC),
                 ToolEntry(
                     com.github.quanta_dance.quanta.plugins.intellij.backend.tools.go.RunGoTestsTool::class.java,
-                    Group.GO
+                    Group.GO,
                 ),
             )
 
@@ -116,54 +125,56 @@ object ToolsRegistry {
         list.add(
             ToolEntry(
                 com.github.quanta_dance.quanta.plugins.intellij.backend.tools.media.GenerateImage::class.java,
-                Group.GENERIC
-            )
+                Group.GENERIC,
+            ),
         )
         list.add(
             ToolEntry(
                 com.github.quanta_dance.quanta.plugins.intellij.backend.tools.media.SoundGeneratorTool::class.java,
-                Group.GENERIC
-            )
+                Group.GENERIC,
+            ),
         )
 
         if (agentic) {
             list.add(
                 ToolEntry(
                     com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent.AgentCreateTool::class.java,
-                    Group.GENERIC
-                )
+                    Group.GENERIC,
+                ),
             )
             list.add(
                 ToolEntry(
                     com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent.AgentSendMessageTool::class.java,
-                    Group.GENERIC
-                )
+                    Group.GENERIC,
+                ),
             )
             list.add(
                 ToolEntry(
                     com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent.AgentPostMessageTool::class.java,
-                    Group.GENERIC
-                )
+                    Group.GENERIC,
+                ),
             )
             list.add(
                 ToolEntry(
                     com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent.AgentReadInboxTool::class.java,
-                    Group.GENERIC
-                )
+                    Group.GENERIC,
+                ),
             )
             list.add(
                 ToolEntry(
                     com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent.AgentRemoveTool::class.java,
-                    Group.GENERIC
-                )
+                    Group.GENERIC,
+                ),
             )
         }
-        if (javaPsiAvailable(project)) list.add(
-            ToolEntry(
-                com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.InspectDependencies::class.java,
-                Group.GENERIC
+        if (javaPsiAvailable(project)) {
+            list.add(
+                ToolEntry(
+                    com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.InspectDependencies::class.java,
+                    Group.GENERIC,
+                ),
             )
-        )
+        }
         return list
     }
 
@@ -190,26 +201,26 @@ object ToolsRegistry {
             entries.add(
                 ToolEntry(
                     com.github.quanta_dance.quanta.plugins.intellij.backend.tools.builder.GradleSyncTool::class.java,
-                    Group.GRADLE
-                )
+                    Group.GRADLE,
+                ),
             )
             entries.add(
                 ToolEntry(
                     com.github.quanta_dance.quanta.plugins.intellij.backend.tools.builder.GetTestInfoTool::class.java,
-                    Group.GRADLE
-                )
+                    Group.GRADLE,
+                ),
             )
             entries.add(
                 ToolEntry(
                     com.github.quanta_dance.quanta.plugins.intellij.backend.tools.builder.RunGradleBuildTool::class.java,
-                    Group.GRADLE
-                )
+                    Group.GRADLE,
+                ),
             )
             entries.add(
                 ToolEntry(
                     com.github.quanta_dance.quanta.plugins.intellij.backend.tools.builder.RunGradleTestsTool::class.java,
-                    Group.GRADLE
-                )
+                    Group.GRADLE,
+                ),
             )
         }
 
@@ -217,13 +228,14 @@ object ToolsRegistry {
             if (basePath == null) {
                 entries.map { it.clazz }
             } else {
-                entries.filter { e ->
-                    when (e.group) {
-                        Group.GENERIC -> true
-                        Group.GRADLE -> gradle
-                        Group.GO -> go
-                    }
-                }.map { it.clazz }
+                entries
+                    .filter { e ->
+                        when (e.group) {
+                            Group.GENERIC -> true
+                            Group.GRADLE -> gradle
+                            Group.GO -> go
+                        }
+                    }.map { it.clazz }
             }
 
         cache[project] = CacheEntry(signature, tools)
@@ -232,7 +244,7 @@ object ToolsRegistry {
 
     private fun detectGradle(root: File): Boolean =
         File(root, "gradlew").exists() || File(root, "gradlew.bat").exists() ||
-                File(root, "build.gradle").exists() || File(root, "build.gradle.kts").exists()
+            File(root, "build.gradle").exists() || File(root, "build.gradle.kts").exists()
 
     private fun detectGo(root: File): Boolean {
         if (File(root, "go.mod").exists()) return true
@@ -257,7 +269,8 @@ object ToolsRegistry {
         }
         val dirs = listOf(root, File(root, "cmd"), File(root, "pkg"), File(root, "internal"))
         return dirs.any { dir ->
-            dir.exists() && dir.isDirectory && dir.listFiles()
+            dir.exists() && dir.isDirectory && dir
+                .listFiles()
                 ?.any { it.isFile && it.extension.equals("go", true) } == true
         }
     }

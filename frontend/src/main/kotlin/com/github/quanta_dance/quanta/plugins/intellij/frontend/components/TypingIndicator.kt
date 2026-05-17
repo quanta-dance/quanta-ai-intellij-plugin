@@ -3,7 +3,12 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.components
 
-import androidx.compose.animation.core.*
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
@@ -17,7 +22,7 @@ import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.Text
 
 @Composable
-fun TypingIndicator(
+fun typingIndicator(
     modifier: Modifier = Modifier,
     color: Color = JewelTheme.defaultTextStyle.color,
 ) {
@@ -28,27 +33,31 @@ fun TypingIndicator(
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         repeat(3) { index ->
-            val alpha = transition.animateFloat(
-                initialValue = 0.25f,
-                targetValue = 1f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(
-                        durationMillis = 600,
-                        delayMillis = index * 150,
-                        easing = FastOutSlowInEasing,
-                    ),
-                    repeatMode = RepeatMode.Reverse,
-                ),
-                label = "typing_dot_$index",
-            )
+            val alpha =
+                transition.animateFloat(
+                    initialValue = 0.25f,
+                    targetValue = 1f,
+                    animationSpec =
+                        infiniteRepeatable(
+                            animation =
+                                tween(
+                                    durationMillis = 600,
+                                    delayMillis = index * 150,
+                                    easing = FastOutSlowInEasing,
+                                ),
+                            repeatMode = RepeatMode.Reverse,
+                        ),
+                    label = "typing_dot_$index",
+                )
 
             Text(
                 text = "•",
                 color = color.copy(alpha = alpha.value),
-                style = JewelTheme.defaultTextStyle.copy(
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                ),
+                style =
+                    JewelTheme.defaultTextStyle.copy(
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                    ),
             )
         }
     }

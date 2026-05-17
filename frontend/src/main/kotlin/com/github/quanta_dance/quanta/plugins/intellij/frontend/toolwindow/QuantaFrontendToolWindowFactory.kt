@@ -3,7 +3,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.toolwindow
 
-import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.ChatApp
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.chatApp
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel.ChatViewModel
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel.FrontendChatRepositoryModel
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.coroutines.CoroutineScopeHolder
@@ -27,18 +27,24 @@ import org.jetbrains.jewel.bridge.addComposeTab
  * frontend-only presentation layer used in local and split-mode IDE sessions.
  */
 class QuantaFrontendToolWindowFactory : ToolWindowFactory {
-
     override fun shouldBeAvailable(project: Project) = true
 
-    override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
+    override fun createToolWindowContent(
+        project: Project,
+        toolWindow: ToolWindow,
+    ) {
         chatApp(project, toolWindow)
     }
 
-    private fun chatApp(project: Project, toolWindow: ToolWindow) {
-        val viewModel = ChatViewModel(
-            CoroutineScopeHolder.getInstance(project).createScope(ChatViewModel::class.java.simpleName),
-            FrontendChatRepositoryModel.getInstance(project)
-        )
+    private fun chatApp(
+        project: Project,
+        toolWindow: ToolWindow,
+    ) {
+        val viewModel =
+            ChatViewModel(
+                CoroutineScopeHolder.getInstance(project).createScope(ChatViewModel::class.java.simpleName),
+                FrontendChatRepositoryModel.getInstance(project),
+            )
         val voiceService = project.service<FrontendAIVoiceService>()
         Disposer.register(toolWindow.disposable, viewModel)
 
@@ -61,7 +67,8 @@ class QuantaFrontendToolWindowFactory : ToolWindowFactory {
                 },
                 object : AnAction("Settings", "Open settings", com.intellij.icons.AllIcons.Actions.InlayGear) {
                     override fun actionPerformed(e: AnActionEvent) {
-                        ShowSettingsUtil.getInstance()
+                        ShowSettingsUtil
+                            .getInstance()
                             .showSettingsDialog(project, FrontendQuantaPluginConfigurable::class.java)
                     }
                 },
@@ -69,8 +76,7 @@ class QuantaFrontendToolWindowFactory : ToolWindowFactory {
         )
 
         toolWindow.addComposeTab("Quanta AI") {
-            ChatApp(project, viewModel, voiceService)
+            chatApp(project, viewModel, voiceService)
         }
-
     }
 }

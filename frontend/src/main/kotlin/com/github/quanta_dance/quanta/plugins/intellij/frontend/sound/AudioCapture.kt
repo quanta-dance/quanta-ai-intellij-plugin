@@ -10,7 +10,13 @@ import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.concurrent.atomic.AtomicBoolean
-import javax.sound.sampled.*
+import javax.sound.sampled.AudioFileFormat
+import javax.sound.sampled.AudioFormat
+import javax.sound.sampled.AudioInputStream
+import javax.sound.sampled.AudioSystem
+import javax.sound.sampled.DataLine
+import javax.sound.sampled.LineUnavailableException
+import javax.sound.sampled.TargetDataLine
 import kotlin.concurrent.thread
 
 /**
@@ -78,7 +84,6 @@ class AudioCapture(
 
     @Volatile
     private var captureThread: Thread? = null
-
 
     init {
         val info = DataLine.Info(TargetDataLine::class.java, audioFormat)
@@ -212,14 +217,17 @@ class AudioCapture(
                                 } catch (t: Throwable) {
                                     QDLog.warn(logger) { "onStreamBytes failed: ${t.message}" }
                                 }
-
                             }
                         }
 
                         if (inSpeech && inSilence && silenceStart > 0 && now - silenceStart >= SPEECH_PAUSE_DURATION_MIN_MS) {
                             inSpeech = false
                             val speechDuration = now - speechStart
-                            QDLog.info(logger) { "AudioCapture.streamEnd reason=silence speechDurationMs=$speechDuration bufferedBytes=${outputBuffer.size()}" }
+                            QDLog.info(
+                                logger,
+                            ) {
+                                "AudioCapture.streamEnd reason=silence speechDurationMs=$speechDuration bufferedBytes=${outputBuffer.size()}"
+                            }
                             try {
                                 onStreamEnd?.invoke()
                             } catch (_: Throwable) {

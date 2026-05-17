@@ -22,18 +22,21 @@ class ProjectLandscapeContextBuilder(
     fun buildMessage(): String {
         val sdkVersion = runCatching { ProjectVersionUtil.getProjectCompileVersion(project) }.getOrNull()
         val buildFiles = runCatching { ProjectVersionUtil.getProjectBuildFiles(project) }.getOrNull().orEmpty()
-        val root = PathUtils.projectRootPath(project)
-            ?.let { LocalFileSystem.getInstance().findFileByPath(it) }
+        val root =
+            PathUtils
+                .projectRootPath(project)
+                ?.let { LocalFileSystem.getInstance().findFileByPath(it) }
 
-        val topLevelEntries = root
-            ?.children
-            ?.asSequence()
-            ?.filter { it.isValid }
-            ?.map { if (it.isDirectory) "${it.name}/" else it.name }
-            ?.sorted()
-            ?.take(12)
-            ?.toList()
-            .orEmpty()
+        val topLevelEntries =
+            root
+                ?.children
+                ?.asSequence()
+                ?.filter { it.isValid }
+                ?.map { if (it.isDirectory) "${it.name}/" else it.name }
+                ?.sorted()
+                ?.take(12)
+                ?.toList()
+                .orEmpty()
 
         val likelySourceRoots = findLikelySourceRoots(root)
 

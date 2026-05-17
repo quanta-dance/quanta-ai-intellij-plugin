@@ -17,12 +17,10 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.Workspac
 class FrontendWorkspaceFileClient(
     private val workspaceFileService: WorkspaceFileService,
 ) {
-    suspend fun read(path: String): WorkspaceFileReadResult =
-        workspaceFileService.read(WorkspaceFileReadRequest(path))
+    suspend fun read(path: String): WorkspaceFileReadResult = workspaceFileService.read(WorkspaceFileReadRequest(path))
 
     suspend fun write(
         path: String,
         content: String,
-    ): WorkspaceFileWriteResult =
-        workspaceFileService.write(WorkspaceFileWriteRequest(path, content))
+    ): WorkspaceFileWriteResult = workspaceFileService.write(WorkspaceFileWriteRequest(path, content))
 }

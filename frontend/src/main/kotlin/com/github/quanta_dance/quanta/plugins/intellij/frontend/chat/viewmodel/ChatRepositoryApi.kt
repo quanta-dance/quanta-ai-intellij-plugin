@@ -4,7 +4,11 @@
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel
 
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
-import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.*
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskDto
 import kotlinx.coroutines.flow.StateFlow
 
 interface ChatRepositoryApi {
@@ -16,10 +20,16 @@ interface ChatRepositoryApi {
     val channelEventsFlow: StateFlow<List<AgentChannelEventDto>>
 
     suspend fun sendMessage(messageContent: String)
+
     suspend fun createNewSession()
+
     suspend fun activateSession(sessionId: String)
+
     suspend fun deleteSession(sessionId: String)
+
     suspend fun setAgenticMode(enabled: Boolean)
+
     suspend fun createDefaultAgentTeam()
+
     suspend fun stopAllAgents(): Int
 }

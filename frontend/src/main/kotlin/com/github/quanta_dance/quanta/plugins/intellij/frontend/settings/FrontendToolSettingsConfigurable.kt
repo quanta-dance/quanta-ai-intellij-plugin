@@ -11,11 +11,9 @@ class FrontendToolSettingsConfigurable : Configurable {
 
     override fun getDisplayName(): String = "QuantaDance Actions"
 
-    override fun createComponent(): JComponent =
-        FrontendActionEditorDialog(actionConfigsJson).createContentComponent()
+    override fun createComponent(): JComponent = FrontendActionEditorDialog(actionConfigsJson).createContentComponent()
 
-    override fun isModified(): Boolean =
-        actionConfigsJson != FrontendQuantaSettingsState.instance.state.actionConfigsJson
+    override fun isModified(): Boolean = actionConfigsJson != FrontendQuantaSettingsState.instance.state.actionConfigsJson
 
     override fun apply() {
         FrontendQuantaSettingsState.instance.state.actionConfigsJson = actionConfigsJson

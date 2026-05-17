@@ -30,48 +30,51 @@ class AgentLifecycleService(
         val commonComms = setOf("AgentSendMessageTool", "AgentPostMessageTool")
         val developerTools =
             commonComms +
-                    setOf(
-                        "CodeRefactorSuggester",
-                        "CreateOrUpdateFile",
-                        "PatchFile",
-                        "ReadFileContent",
-                        "ReadPsiBlockAtPosition",
-                        "SearchInFiles",
-                        "SearchProjectEmbeddings",
-                        "UpsertProjectEmbedding",
-                        "GetProjectDetails",
-                        "ListFiles",
-                        "ReadFileContentPlatformTest",
-                    )
+                setOf(
+                    "CodeRefactorSuggester",
+                    "CreateOrUpdateFile",
+                    "PatchFile",
+                    "ReadFileContent",
+                    "ReadPsiBlockAtPosition",
+                    "SearchInFiles",
+                    "SearchProjectEmbeddings",
+                    "UpsertProjectEmbedding",
+                    "GetProjectDetails",
+                    "ListFiles",
+                    "ReadFileContentPlatformTest",
+                )
 
         val ids = mutableListOf<String>()
-        ids += registry.createAgent(
-            AgentRegistryService.AgentConfig(
-                role = "developer",
-                model = null,
-                instructions = "Focus on implementation details and code changes.",
-                allowedBuiltInNames = developerTools,
-                allowedMcpNames = null,
-            ),
-        )
-        ids += registry.createAgent(
-            AgentRegistryService.AgentConfig(
-                role = "reviewer",
-                model = null,
-                instructions = "Focus on correctness, regressions and concise reviews.",
-                allowedBuiltInNames = commonComms,
-                allowedMcpNames = null,
-            ),
-        )
-        ids += registry.createAgent(
-            AgentRegistryService.AgentConfig(
-                role = "commentator",
-                model = null,
-                instructions = "Focus on explanatory notes and user-facing summaries.",
-                allowedBuiltInNames = commonComms,
-                allowedMcpNames = null,
-            ),
-        )
+        ids +=
+            registry.createAgent(
+                AgentRegistryService.AgentConfig(
+                    role = "developer",
+                    model = null,
+                    instructions = "Focus on implementation details and code changes.",
+                    allowedBuiltInNames = developerTools,
+                    allowedMcpNames = null,
+                ),
+            )
+        ids +=
+            registry.createAgent(
+                AgentRegistryService.AgentConfig(
+                    role = "reviewer",
+                    model = null,
+                    instructions = "Focus on correctness, regressions and concise reviews.",
+                    allowedBuiltInNames = commonComms,
+                    allowedMcpNames = null,
+                ),
+            )
+        ids +=
+            registry.createAgent(
+                AgentRegistryService.AgentConfig(
+                    role = "commentator",
+                    model = null,
+                    instructions = "Focus on explanatory notes and user-facing summaries.",
+                    allowedBuiltInNames = commonComms,
+                    allowedMcpNames = null,
+                ),
+            )
         pcs.firePropertyChange("agents", null, ids)
         return ids
     }

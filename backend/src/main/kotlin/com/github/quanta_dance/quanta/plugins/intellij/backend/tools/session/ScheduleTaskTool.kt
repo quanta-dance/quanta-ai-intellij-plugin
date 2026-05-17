@@ -10,16 +10,16 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterfac
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 
-@JsonClassDescription(
-    "Schedule a follow-up manager turn in this IDE session. Session-only: tasks are not persisted across IDE restarts. " +
-            "Actions: ADD | LIST | CANCEL. If no specific agent is provided, the task is assigned to the main AI by default.",
-)
 /**
  * Backend tool for manipulating the in-memory session scheduler.
  *
  * Compared with [SessionPlanTool], this tool schedules time-based follow-up turns, while the plan
  * tool manages durable task structure and execution state.
  */
+@JsonClassDescription(
+    "Schedule a follow-up manager turn in this IDE session. Session-only: tasks are not persisted across IDE restarts. " +
+        "Actions: ADD | LIST | CANCEL. If no specific agent is provided, the task is assigned to the main AI by default.",
+)
 class ScheduleTaskTool : ToolInterface<Map<String, Any>> {
     @field:JsonPropertyDescription("Action: ADD | LIST | CANCEL")
     var action: String? = null
@@ -46,7 +46,12 @@ class ScheduleTaskTool : ToolInterface<Map<String, Any>> {
 
     override fun execute(project: Project): Map<String, Any> {
         val svc = project.service<SessionSchedulerService>()
-        val act = action?.trim()?.uppercase().orEmpty().ifBlank { "LIST" }
+        val act =
+            action
+                ?.trim()
+                ?.uppercase()
+                .orEmpty()
+                .ifBlank { "LIST" }
         return when (act) {
             "LIST" -> {
                 val items =
@@ -93,16 +98,18 @@ class ScheduleTaskTool : ToolInterface<Map<String, Any>> {
                 mapOf(
                     "status" to "ok",
                     "job" to
-                            mapOf(
-                                "id" to info.id,
-                                "name" to info.name,
-                                "nextRunAtMs" to info.nextRunAtMs,
-                                "ownerAgentId" to info.ownerAgentId,
-                            ),
+                        mapOf(
+                            "id" to info.id,
+                            "name" to info.name,
+                            "nextRunAtMs" to info.nextRunAtMs,
+                            "ownerAgentId" to info.ownerAgentId,
+                        ),
                 )
             }
 
-            else -> mapOf("status" to "error", "message" to "Unknown action: $act")
+            else -> {
+                mapOf("status" to "error", "message" to "Unknown action: $act")
+            }
         }
     }
 }

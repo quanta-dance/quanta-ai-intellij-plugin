@@ -18,53 +18,46 @@ import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.isFile
 import java.security.MessageDigest
 
-@JsonClassDescription(
-    "Read the content of a file. REQUIRED ARGUMENT: filePath. Use filePath, not path. Example: {\"filePath\": \"README.md\"}. Supports optional truncation and windowed reading around caret/selection for the current file.",
-)
 /**
  * Backend tool for reading file content with optional slicing and truncation strategies.
  *
  * Compared with [ReadPsiBlockAtPosition], this tool stays text-oriented: it is best for whole-file or
  * line-range reads, while PSI-aware structural extraction belongs to the PSI block tool.
  */
+@JsonClassDescription(
+    "Read the content of a file. REQUIRED ARGUMENT: filePath. Use filePath, not path. Example: {\"filePath\": \"README.md\"}. Supports optional truncation and windowed reading around caret/selection for the current file.",
+)
 data class ReadFile(
-    @field:JsonPropertyDescription("REQUIRED. Use this exact field name: filePath. Relative to the project root path to the requested file. Example: README.md")
+    @field:JsonPropertyDescription(
+        "REQUIRED. Use this exact field name: filePath. Relative to the project root path to the requested file. Example: README.md",
+    )
     val filePath: String,
-
     @field:JsonPropertyDescription("If true, returns content with prefixed line numbers. Default false.")
     var includeLineNumbers: Boolean = false,
-
     @field:JsonPropertyDescription("Maximum characters to return; if exceeded, tool truncates per strategy. Default 6000.")
     var maxChars: Int = 6_000,
-
     @field:JsonPropertyDescription("Preferred truncation strategy when file exceeds maxChars: head | tail | window. Default window.")
     var strategy: String = "window",
-
     @field:JsonPropertyDescription(
         "If true, and the file is the current editor file with caret/selection, " +
-                "return a window around caret/selection when truncating.",
+            "return a window around caret/selection when truncating.",
     )
     var preferWindowIfCurrentFile: Boolean = true,
-
     @field:JsonPropertyDescription("Window radius in lines (before and after caret or selection) when strategy=window. Default 300.")
     var windowRadiusLines: Int = 300,
-
     @field:JsonPropertyDescription(
         "Optional 1-based starting line (inclusive). If set, content is first sliced to start from this line. " +
-                "When provided together with toLine, returns that exact line range. " +
-                "Takes precedence over strategy/window behavior.",
+            "When provided together with toLine, returns that exact line range. " +
+            "Takes precedence over strategy/window behavior.",
     )
     var fromLine: Int? = null,
-
     @field:JsonPropertyDescription(
         "Optional 1-based ending line (inclusive). If set, content is first sliced to end at this line. " +
-                "If set without fromLine, fromLine defaults to 1. " +
-                "Takes precedence over strategy/window behavior.",
+            "If set without fromLine, fromLine defaults to 1. " +
+            "Takes precedence over strategy/window behavior.",
     )
-    var toLine: Int? = null
+    var toLine: Int? = null,
 ) : ToolInterface<ReadFileResult> {
-
-
     companion object {
         private val logger = Logger.getInstance(ReadFile::class.java)
     }
@@ -299,10 +292,10 @@ data class ReadFile(
             val (format, content) =
                 if (includeLineNumbers) {
                     "00001 line_content" to
-                            withLineNumbers(
-                                finalContent,
-                                firstLineNumber,
-                            )
+                        withLineNumbers(
+                            finalContent,
+                            firstLineNumber,
+                        )
                 } else {
                     "plain" to finalContent
                 }
@@ -310,7 +303,7 @@ data class ReadFile(
             val hash = sha256Normalized(rawContent)
             QDLog.debug(logger) {
                 "Read file content: $relToBase, lineNumbers=$includeLineNumbers, truncated=$truncated, " +
-                        "startLine=$firstLineNumber fromLine=${fromLine ?: ""} toLine=${toLine ?: ""}"
+                    "startLine=$firstLineNumber fromLine=${fromLine ?: ""} toLine=${toLine ?: ""}"
             }
 
             ReadFileResult(format, content, "", hash)

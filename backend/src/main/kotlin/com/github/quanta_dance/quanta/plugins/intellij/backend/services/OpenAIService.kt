@@ -42,31 +42,34 @@ class OpenAIService(
     private val responseBuilder = ResponseBuilder(project)
     private val contextInjector = AgentContextInjector(project, ::systemMessage)
     private val toolExecutionPresenter = ToolExecutionPresenter(mapper)
-    private val usageTracker = OpenAIUsageTracker(thisLogger()) { snapshot ->
-        pcs.firePropertyChange("usage", null, snapshot)
-    }
+    private val usageTracker =
+        OpenAIUsageTracker(thisLogger()) { snapshot ->
+            pcs.firePropertyChange("usage", null, snapshot)
+        }
     private val continuationPolicy = AgentTurnContinuationPolicy()
-    private val agentTurnOrchestrator = AgentTurnOrchestrator(
-        project = project,
-        contextInjector = contextInjector,
-        toolExecutionPresenter = toolExecutionPresenter,
-        continuationPolicy = continuationPolicy,
-        createResponse = ::createResponse,
-        systemMessage = ::systemMessage,
-        persistAndShow = ::persistAndShow,
-    )
-    private val sessionCoordinator = OpenAISessionCoordinator(
-        project = project,
-        onSessionStateReset = {
-            lastCtxHash = null
-            contextInjector.reset()
-            lastInjectedSummaryHash = null
-            lastInjectedPlanHash = null
-        },
-        onSessionChanged = { oldSessionId, newSessionId ->
-            pcs.firePropertyChange("session", oldSessionId, newSessionId)
-        },
-    )
+    private val agentTurnOrchestrator =
+        AgentTurnOrchestrator(
+            project = project,
+            contextInjector = contextInjector,
+            toolExecutionPresenter = toolExecutionPresenter,
+            continuationPolicy = continuationPolicy,
+            createResponse = ::createResponse,
+            systemMessage = ::systemMessage,
+            persistAndShow = ::persistAndShow,
+        )
+    private val sessionCoordinator =
+        OpenAISessionCoordinator(
+            project = project,
+            onSessionStateReset = {
+                lastCtxHash = null
+                contextInjector.reset()
+                lastInjectedSummaryHash = null
+                lastInjectedPlanHash = null
+            },
+            onSessionChanged = { oldSessionId, newSessionId ->
+                pcs.firePropertyChange("session", oldSessionId, newSessionId)
+            },
+        )
 
     @Volatile
     private var lastInjectedSummaryHash: Int? = null
@@ -130,7 +133,6 @@ class OpenAIService(
         }
     }
 
-
     init {
         thisLogger().warn("AI Service initialized.")
         QDLog.info(thisLogger()) { "AI Service initialized." }
@@ -183,7 +185,6 @@ class OpenAIService(
                 .build(),
         )
 
-
     fun getLastResponseId(): String? = sessionCoordinator.lastResponseId()
 
     fun switchToSession(
@@ -192,7 +193,6 @@ class OpenAIService(
     ) {
         sessionCoordinator.switchToSession(sessionId, lastResponseId)
     }
-
 
     /**
      * Core request/response API used by higher-level turn orchestration and selected backend flows.
@@ -232,7 +232,7 @@ class OpenAIService(
         QDLog.info(thisLogger()) {
             "OpenAIService.createResponse: response received id=${runCatching { structResponse.id() }.getOrNull()} outputSize=${
                 runCatching { structResponse.output().size }.getOrDefault(
-                    -1
+                    -1,
                 )
             }"
         }
@@ -296,6 +296,4 @@ class OpenAIService(
             onAssistantMessage = onAssistantMessage,
             onToolUpdate = onToolUpdate,
         )
-
-
 }

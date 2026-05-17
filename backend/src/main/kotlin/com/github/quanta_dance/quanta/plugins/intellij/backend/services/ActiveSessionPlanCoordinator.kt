@@ -37,7 +37,7 @@ class ActiveSessionPlanCoordinator(
             return retry(
                 message =
                     "Persist all session plan changes exclusively through SessionPlanTool. Do not rely on planStatus, " +
-                            "planGoal, planTasks, or planCompletedTasks response fields to change the plan. Call SessionPlanTool first, then respond.",
+                        "planGoal, planTasks, or planCompletedTasks response fields to change the plan. Call SessionPlanTool first, then respond.",
                 loopState = loopState,
                 countAsPlanToolEnforcement = true,
                 maxContinuations = maxContinuations,
@@ -54,7 +54,7 @@ class ActiveSessionPlanCoordinator(
             return retry(
                 message =
                     "The session plan is ACTIVE. Do not finish the turn with nextStep=DONE until the persisted plan is actually DONE. " +
-                            "Either continue executing, or if work completed call SessionPlanTool to mark the plan complete first.",
+                        "Either continue executing, or if work completed call SessionPlanTool to mark the plan complete first.",
                 loopState = loopState,
                 countAsPlanToolEnforcement = true,
                 maxContinuations = maxContinuations,
@@ -70,13 +70,14 @@ class ActiveSessionPlanCoordinator(
                 effectivePlanStatus = effectivePlanStatus,
                 summaryText = summaryText,
             )
-        val progressedLoopState = advanceLoopSignature(
-            currentPlanLoopSignature = currentPlanLoopSignature,
-            activePlanStillHasWork = activePlanStillHasWork,
-            pendingToolOutputsEmpty = pendingToolOutputsEmpty,
-            maxContinuations = maxContinuations,
-            loopState = loopState,
-        )
+        val progressedLoopState =
+            advanceLoopSignature(
+                currentPlanLoopSignature = currentPlanLoopSignature,
+                activePlanStillHasWork = activePlanStillHasWork,
+                pendingToolOutputsEmpty = pendingToolOutputsEmpty,
+                maxContinuations = maxContinuations,
+                loopState = loopState,
+            )
         if (progressedLoopState.retryInstruction != null) {
             return progressedLoopState.copy(
                 effectivePlanStatus = effectivePlanStatus,

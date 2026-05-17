@@ -4,12 +4,20 @@
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel
 
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
-import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.*
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskDto
 import com.intellij.openapi.Disposable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 
 interface ChatViewModelApi : Disposable {
@@ -61,10 +69,11 @@ class ChatViewModel(
     private val _promptInputState = MutableStateFlow<MessageInputState>(MessageInputState.Disabled)
     override val promptInputState: StateFlow<MessageInputState> = _promptInputState.asStateFlow()
 
-    private val searchChatMessagesHandler: SearchChatMessagesHandler = SearchChatMessagesHandlerImpl(
-        coroutineScope = coroutineScope,
-        messagesFlow = repository.messagesFlow,
-    )
+    private val searchChatMessagesHandler: SearchChatMessagesHandler =
+        SearchChatMessagesHandlerImpl(
+            coroutineScope = coroutineScope,
+            messagesFlow = repository.messagesFlow,
+        )
 
     private var currentSendMessageJob: Job? = null
 
@@ -80,30 +89,32 @@ class ChatViewModel(
 
     override fun onPromptInputChanged(input: String) {
         val currentPromptInputState = _promptInputState.value
-        _promptInputState.value = when {
-            currentPromptInputState is MessageInputState.Sending -> MessageInputState.Sending(input)
-            input.isEmpty() -> MessageInputState.Disabled
-            else -> MessageInputState.Enabled(input)
-        }
+        _promptInputState.value =
+            when {
+                currentPromptInputState is MessageInputState.Sending -> MessageInputState.Sending(input)
+                input.isEmpty() -> MessageInputState.Disabled
+                else -> MessageInputState.Enabled(input)
+            }
     }
 
     override fun onSendMessage() {
-        currentSendMessageJob = coroutineScope.launch {
-            try {
-                val currentUserMessage = getCurrentInputTextIfNotEmpty() ?: return@launch
-                emitPromptInputState(MessageInputState.Sending(""))
-                repository.sendMessage(currentUserMessage)
-                emitPromptInputState(
-                    when (val currentInputState = getCurrentInputTextIfNotEmpty()) {
-                        null -> MessageInputState.Disabled
-                        else -> MessageInputState.Enabled(currentInputState)
-                    },
-                )
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                emitPromptInputState(MessageInputState.SendFailed(e.message ?: "Unknown error", e))
+        currentSendMessageJob =
+            coroutineScope.launch {
+                try {
+                    val currentUserMessage = getCurrentInputTextIfNotEmpty() ?: return@launch
+                    emitPromptInputState(MessageInputState.Sending(""))
+                    repository.sendMessage(currentUserMessage)
+                    emitPromptInputState(
+                        when (val currentInputState = getCurrentInputTextIfNotEmpty()) {
+                            null -> MessageInputState.Disabled
+                            else -> MessageInputState.Enabled(currentInputState)
+                        },
+                    )
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    emitPromptInputState(MessageInputState.SendFailed(e.message ?: "Unknown error", e))
+                }
             }
-        }
     }
 
     override fun onAbortSendingMessage() {
@@ -155,8 +166,10 @@ class ChatViewModel(
     override fun searchChatMessagesHandler(): SearchChatMessagesHandler = searchChatMessagesHandler
 
     private fun getCurrentInputTextIfNotEmpty(): String? =
-        _promptInputState.value.takeIf { it is MessageInputState.Enabled || it is MessageInputState.Sending }
-            ?.inputText?.takeIf { input -> input.isNotEmpty() }
+        _promptInputState.value
+            .takeIf { it is MessageInputState.Enabled || it is MessageInputState.Sending }
+            ?.inputText
+            ?.takeIf { input -> input.isNotEmpty() }
 
     private fun emitPromptInputState(newState: MessageInputState) {
         _promptInputState.value = newState

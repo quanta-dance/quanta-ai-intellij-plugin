@@ -4,8 +4,8 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.openai
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ToolsRegistry
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ToolsRegistry
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.openai.models.responses.ResponseFunctionToolCall
@@ -19,7 +19,8 @@ class DefaultToolInvoker : ToolInvoker {
         functionCall: ResponseFunctionToolCall,
     ): Any {
         val toolClass =
-            ToolsRegistry.toolsFor(project)
+            ToolsRegistry
+                .toolsFor(project)
                 .firstOrNull { it.simpleName == functionCall.name() || it.name.endsWith(".${functionCall.name()}") }
                 ?: error("Unknown tool '${functionCall.name()}'")
 
@@ -48,8 +49,8 @@ class DefaultToolInvoker : ToolInvoker {
         if (tool !is com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface<*>) {
             error("Tool '${functionCall.name()}' does not implement ToolInterface")
         }
-        return (tool as com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface<Any?>).execute(
-            project
-        ) as Any
+        @Suppress("UNCHECKED_CAST")
+        val typedTool = tool as com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface<Any?>
+        return typedTool.execute(project) as Any
     }
 }

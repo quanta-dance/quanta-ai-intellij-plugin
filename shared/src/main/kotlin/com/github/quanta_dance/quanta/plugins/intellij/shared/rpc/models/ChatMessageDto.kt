@@ -22,8 +22,8 @@ data class ChatMessageDto(
     val parentMessageId: String? = null,
 )
 
-fun ChatMessageDto.toChatMessage(): ChatMessage {
-    return ChatMessage(
+fun ChatMessageDto.toChatMessage(): ChatMessage =
+    ChatMessage(
         id = id,
         content = content,
         author = author,
@@ -34,10 +34,9 @@ fun ChatMessageDto.toChatMessage(): ChatMessage {
         toolItems = toolItems,
         parentMessageId = parentMessageId,
     )
-}
 
-fun ChatMessage.toChatMessageDto(): ChatMessageDto {
-    return ChatMessageDto(
+fun ChatMessage.toChatMessageDto(): ChatMessageDto =
+    ChatMessageDto(
         id = id,
         content = content,
         author = author,
@@ -48,7 +47,6 @@ fun ChatMessage.toChatMessageDto(): ChatMessageDto {
         toolItems = toolItems,
         parentMessageId = parentMessageId,
     )
-}
 
 @Serializable
 data class ApplyRefactorSuggestionResultDto(

@@ -23,10 +23,12 @@ class FrontendWorkspaceFileReadService(
             project.getService(FrontendWorkspaceFileReadService::class.java)
     }
 
-    suspend fun readCurrentFile(path: String): WorkspaceFileReadResult = durable {
-        val result = FrontendWorkspaceFileClient(
-            FrontendWorkspaceFileRemoteAdapter(project),
-        ).read(path)
-        result.copy(source = "backend")
-    }
+    suspend fun readCurrentFile(path: String): WorkspaceFileReadResult =
+        durable {
+            val result =
+                FrontendWorkspaceFileClient(
+                    FrontendWorkspaceFileRemoteAdapter(project),
+                ).read(path)
+            result.copy(source = "backend")
+        }
 }

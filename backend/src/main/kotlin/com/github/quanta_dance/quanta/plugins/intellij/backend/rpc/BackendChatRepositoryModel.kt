@@ -21,8 +21,7 @@ class BackendChatRepositoryModel(
     private val project: Project,
 ) {
     companion object {
-        fun getInstance(project: Project): BackendChatRepositoryModel =
-            project.getService(BackendChatRepositoryModel::class.java)
+        fun getInstance(project: Project): BackendChatRepositoryModel = project.getService(BackendChatRepositoryModel::class.java)
     }
 
     private val conversationService = project.getService(ChatConversationService::class.java)
@@ -43,8 +42,7 @@ class BackendChatRepositoryModel(
 
     suspend fun sendMessage(messageContent: String) = conversationService.sendUserMessage(messageContent)
 
-    suspend fun sendScheduledReminder(reminderContext: String) =
-        conversationService.sendScheduledReminder(reminderContext)
+    suspend fun sendScheduledReminder(reminderContext: String) = conversationService.sendScheduledReminder(reminderContext)
 
     fun stopAllAgents(): Int = conversationService.stopAllAgents()
 }

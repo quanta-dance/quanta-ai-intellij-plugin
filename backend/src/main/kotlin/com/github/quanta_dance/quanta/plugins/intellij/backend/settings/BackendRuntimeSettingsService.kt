@@ -62,7 +62,7 @@ class BackendRuntimeSettingsService {
     fun requireFrontendSync(operationName: String) {
         check(hasFrontendSync) {
             "Quanta settings have not been synchronized from the frontend yet. " +
-                    "$operationName must wait for frontend startup sync before using backend runtime settings."
+                "$operationName must wait for frontend startup sync before using backend runtime settings."
         }
     }
 

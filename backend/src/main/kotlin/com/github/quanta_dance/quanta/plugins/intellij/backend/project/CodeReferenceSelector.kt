@@ -111,9 +111,9 @@ object CodeReferenceSelector {
                     val lineNumber = getLineNumberOneBased(element)
                     methodUsages.add(
                         "Method: '${method.name}' Line ${currFileLine}\n" +
-                                "Used in Class: '${containingClass.name}'\n" +
-                                "File: '$relativeFilePath'\n" +
-                                "Line: $lineNumber\n",
+                            "Used in Class: '${containingClass.name}'\n" +
+                            "File: '$relativeFilePath'\n" +
+                            "Line: $lineNumber\n",
                     )
                 }
             }
@@ -123,8 +123,7 @@ object CodeReferenceSelector {
         return methodUsages
     }
 
-    private fun isStandardLibrary(className: String): Boolean =
-        className.isNotEmpty() && excludedPackages.any { className.startsWith(it) }
+    private fun isStandardLibrary(className: String): Boolean = className.isNotEmpty() && excludedPackages.any { className.startsWith(it) }
 
     fun findClassReferences(psiClass: PsiClass): List<String> {
         val visited = mutableSetOf<String>()
@@ -178,8 +177,7 @@ object CodeReferenceSelector {
         return references
     }
 
-    fun getClassesFromPsiFile(file: PsiFile): List<PsiClass> =
-        PsiTreeUtil.findChildrenOfType(file, PsiClass::class.java).toList()
+    fun getClassesFromPsiFile(file: PsiFile): List<PsiClass> = PsiTreeUtil.findChildrenOfType(file, PsiClass::class.java).toList()
 
     fun getAllReferencesAndDefinitions(
         psiFile: PsiFile,

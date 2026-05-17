@@ -6,10 +6,10 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.project
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.models.SearchInFilesResult
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolProgressEvent
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolProgressKind
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolProgressService
-import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.models.SearchInFilesResult
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.intellij.find.FindModel
 import com.intellij.find.impl.FindInProjectUtil
@@ -25,20 +25,20 @@ import com.intellij.usageView.UsageInfo
 import com.intellij.usages.UsageViewPresentation
 import com.intellij.util.Processor
 import java.nio.file.Paths
-import java.util.*
+import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
-@JsonClassDescription(
-    "Search for a text query across project files using IDE Find-in-Files (regex supported). " +
-            "Returns concise matches and a modelSummary for AI context.",
-)
 /**
  * Backend search tool that wraps IntelliJ Find-in-Files and returns AI-friendly summaries.
  *
  * It is one of the primary exploration tools for agents because it can search broadly while still
  * capping result volume and producing a concise model summary.
  */
+@JsonClassDescription(
+    "Search for a text query across project files using IDE Find-in-Files (regex supported). " +
+        "Returns concise matches and a modelSummary for AI context.",
+)
 class SearchInFiles : ToolInterface<SearchInFilesResult> {
     @field:JsonPropertyDescription("Text to search for in project files (regex supported). Use a|b|c for OR.")
     var query: String? = null
@@ -48,7 +48,7 @@ class SearchInFiles : ToolInterface<SearchInFilesResult> {
 
     @field:JsonPropertyDescription(
         "Optional list of file extensions to include (e.g., ['kt','java','txt']). " +
-                "To search across all extensions, omit this field or pass ['*'].",
+            "To search across all extensions, omit this field or pass ['*'].",
     )
     var includeExtensions: List<String>? = null
 
@@ -223,8 +223,11 @@ class SearchInFiles : ToolInterface<SearchInFilesResult> {
                     val safeOff = off.coerceIn(0, text.length)
                     val lineNumber =
                         try {
-                            doc?.getLineNumber(safeOff)?.plus(1) ?: (text.substring(0, safeOff)
-                                .count { it == '\n' } + 1)
+                            doc?.getLineNumber(safeOff)?.plus(1) ?: (
+                                text
+                                    .substring(0, safeOff)
+                                    .count { it == '\n' } + 1
+                            )
                         } catch (e: Throwable) {
                             try {
                                 text.substring(0, safeOff).count { it == '\n' } + 1
@@ -239,10 +242,11 @@ class SearchInFiles : ToolInterface<SearchInFilesResult> {
                         )
                     var snippet =
                         try {
-                            text.substring(
-                                start.coerceAtLeast(0).coerceAtMost(text.length),
-                                end.coerceAtLeast(0).coerceAtMost(text.length),
-                            ).replace('\n', ' ')
+                            text
+                                .substring(
+                                    start.coerceAtLeast(0).coerceAtMost(text.length),
+                                    end.coerceAtLeast(0).coerceAtMost(text.length),
+                                ).replace('\n', ' ')
                         } catch (_: Throwable) {
                             ""
                         }
@@ -268,10 +272,11 @@ class SearchInFiles : ToolInterface<SearchInFilesResult> {
                     )
                 var snippet =
                     try {
-                        text.substring(
-                            start.coerceAtLeast(0).coerceAtMost(text.length),
-                            end.coerceAtLeast(0).coerceAtMost(text.length),
-                        ).replace('\n', ' ')
+                        text
+                            .substring(
+                                start.coerceAtLeast(0).coerceAtMost(text.length),
+                                end.coerceAtLeast(0).coerceAtMost(text.length),
+                            ).replace('\n', ' ')
                     } catch (_: Throwable) {
                         ""
                     }
@@ -300,7 +305,6 @@ class SearchInFiles : ToolInterface<SearchInFilesResult> {
             }
             if (grouped.size > 5) display.append("...+${grouped.size - 5} more files\n")
         } catch (e: Throwable) {
-
         }
 
         return SearchInFilesResult(flatResults.take(resultLimit), modelSummary.toString())

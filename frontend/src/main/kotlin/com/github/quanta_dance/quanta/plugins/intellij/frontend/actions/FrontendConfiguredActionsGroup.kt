@@ -32,11 +32,12 @@ private class FrontendConfiguredAction(
 ) : AnAction(config.label, config.instruction, null) {
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
-        val text = buildString {
-            append(config.label)
-            append(": ")
-            append(config.instruction)
-        }
+        val text =
+            buildString {
+                append(config.label)
+                append(": ")
+                append(config.instruction)
+            }
         CoroutineScopeHolder.getInstance(project).getPluginScope().launch {
             runCatching {
                 FrontendChatRepositoryModel.getInstance(project).sendMessage(text)

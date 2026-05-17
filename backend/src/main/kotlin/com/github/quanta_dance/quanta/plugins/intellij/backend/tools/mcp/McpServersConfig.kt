@@ -36,8 +36,6 @@ object McpServersConfigLoader {
         val validationWarnings: List<String> = emptyList(),
     )
 
-
-
     fun loadJsonWithDiagnostics(
         jsonText: String,
         sourceName: String = "mcp-servers.json",

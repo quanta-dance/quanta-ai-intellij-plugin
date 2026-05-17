@@ -30,10 +30,14 @@ object ChatAppColors {
     object MessageBubble {
         // Backgrounds
         val myBackground: Color
-            @Composable get() = JewelTheme.defaultBannerStyle.information.colors.background.copy(alpha = 0.75f)
+            @Composable get() =
+                JewelTheme.defaultBannerStyle.information.colors.background
+                    .copy(alpha = 0.75f)
 
         val othersBackground: Color
-            @Composable get() = JewelTheme.defaultBannerStyle.success.colors.background.copy(alpha = 0.75f)
+            @Composable get() =
+                JewelTheme.defaultBannerStyle.success.colors.background
+                    .copy(alpha = 0.75f)
 
         // Borders
         val myBackgroundBorder: Color
@@ -53,11 +57,14 @@ object ChatAppColors {
         val searchHighlightedBackgroundBorder: Color = Color(0xFFDF9303)
 
         val matchingMyBorder: Color
-            @Composable get() = JewelTheme.defaultBannerStyle.information.colors.border.copy(alpha = 0.75f)
+            @Composable get() =
+                JewelTheme.defaultBannerStyle.information.colors.border
+                    .copy(alpha = 0.75f)
 
         val matchingOthersBorder: Color
-            @Composable get() = JewelTheme.defaultBannerStyle.success.colors.border.copy(alpha = 0.75f)
-
+            @Composable get() =
+                JewelTheme.defaultBannerStyle.success.colors.border
+                    .copy(alpha = 0.75f)
     }
 
     object Prompt {

@@ -42,6 +42,7 @@ import kotlin.coroutines.cancellation.CancellationException
 class ChatConversationService(
     private val project: Project,
 ) {
+    @Suppress("ktlint:standard:backing-property-naming")
     private val chatMessageFactory = ChatMessageFactory("Quanta AI", "Me")
     private val openAIBackendChatResponder = OpenAIBackendChatResponder()
     private val openAIService: OpenAIService get() = project.service()
@@ -52,7 +53,11 @@ class ChatConversationService(
     private val wake: AgentWakeService get() = project.service()
     private val persistence: ChatConversationStateService get() = project.service()
     private val executionContexts: BackendExecutionContextsService get() = project.service()
+
+    @Suppress("ktlint:standard:backing-property-naming")
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
+
+    @Suppress("ktlint:standard:backing-property-naming")
     private val _sessions = MutableStateFlow<List<ChatSessionDto>>(emptyList())
 
     init {
@@ -84,18 +89,15 @@ class ChatConversationService(
         }
     }
 
-    fun messagesFlow(): Flow<List<ChatMessageDto>> =
-        _messages.map { messagesList -> messagesList.map { it.toChatMessageDto() } }
+    fun messagesFlow(): Flow<List<ChatMessageDto>> = _messages.map { messagesList -> messagesList.map { it.toChatMessageDto() } }
 
-    fun currentMessages(): List<ChatMessageDto> =
-        _messages.value.map { it.toChatMessageDto() }
+    fun currentMessages(): List<ChatMessageDto> = _messages.value.map { it.toChatMessageDto() }
 
     fun sessionsFlow(): Flow<List<ChatSessionDto>> = _sessions
 
     fun currentSessions(): List<ChatSessionDto> = _sessions.value
 
-    private fun <T> onChatPublicationThread(action: () -> T): T =
-        runBlocking(executionContexts.chatPublicationDispatcher) { action() }
+    private fun <T> onChatPublicationThread(action: () -> T): T = runBlocking(executionContexts.chatPublicationDispatcher) { action() }
 
     fun createNewSession() {
         onChatPublicationThread {
@@ -145,41 +147,42 @@ class ChatConversationService(
                 appendUserMessage(messageContent)
                 val inputs = buildRequestInputs()
                 thinkingMessageId = appendAiThinkingMessage()
-                val (responseText, _) = openAIService.agentTurn(
-                    inputs = inputs,
-                    previousId = null,
-                    agentLabel = "AI Manager",
-                    onAssistantMessage = { assistantMessage ->
-                        val visibleContent =
-                            if (assistantMessage.isReasoning) {
-                                "Reasoning\n${assistantMessage.text}"
-                            } else {
-                                assistantMessage.text
-                            }
-                        replaceMessage(
-                            thinkingMessageId,
-                            chatMessageFactory.createAIMessage(
-                                content = visibleContent,
-                                voiceSummary = assistantMessage.ttsSummary,
-                            ),
-                        )
-                        firstAssistantMessageShown = true
-                        thinkingMessageId = appendAiThinkingMessage()
-                    },
-                    onToolUpdate = { update ->
-                        val targetId =
-                            toolMessageId ?: appendAiToolMessage(
-                                toolItems = emptyList(),
-                                beforeMessageId = thinkingMessageId,
-                            ).also { toolMessageId = it }
-                        val existingItems = currentToolItems(targetId)
-                        val mergedItems = mergeToolItems(existingItems, update.item)
-                        replaceMessage(
-                            targetId,
-                            chatMessageFactory.createAIToolMessage(mergedItems),
-                        )
-                    },
-                )
+                val (responseText, _) =
+                    openAIService.agentTurn(
+                        inputs = inputs,
+                        previousId = null,
+                        agentLabel = "AI Manager",
+                        onAssistantMessage = { assistantMessage ->
+                            val visibleContent =
+                                if (assistantMessage.isReasoning) {
+                                    "Reasoning\n${assistantMessage.text}"
+                                } else {
+                                    assistantMessage.text
+                                }
+                            replaceMessage(
+                                thinkingMessageId,
+                                chatMessageFactory.createAIMessage(
+                                    content = visibleContent,
+                                    voiceSummary = assistantMessage.ttsSummary,
+                                ),
+                            )
+                            firstAssistantMessageShown = true
+                            thinkingMessageId = appendAiThinkingMessage()
+                        },
+                        onToolUpdate = { update ->
+                            val targetId =
+                                toolMessageId ?: appendAiToolMessage(
+                                    toolItems = emptyList(),
+                                    beforeMessageId = thinkingMessageId,
+                                ).also { toolMessageId = it }
+                            val existingItems = currentToolItems(targetId)
+                            val mergedItems = mergeToolItems(existingItems, update.item)
+                            replaceMessage(
+                                targetId,
+                                chatMessageFactory.createAIToolMessage(mergedItems),
+                            )
+                        },
+                    )
                 if (!firstAssistantMessageShown) {
                     replaceMessage(
                         thinkingMessageId,
@@ -194,15 +197,16 @@ class ChatConversationService(
                     clearThinkingMessages()
                     throw e
                 }
-                val errorText = buildString {
-                    append("Backend error: ")
-                    append(e::class.java.simpleName)
-                    val message = e.message?.trim().orEmpty()
-                    if (message.isNotEmpty()) {
-                        append(" - ").append(message)
+                val errorText =
+                    buildString {
+                        append("Backend error: ")
+                        append(e::class.java.simpleName)
+                        val message = e.message?.trim().orEmpty()
+                        if (message.isNotEmpty()) {
+                            append(" - ").append(message)
+                        }
+                        append(e.stackTrace.joinToString("\n"))
                     }
-                    append(e.stackTrace.joinToString("\n"))
-                }
                 clearThinkingMessages()
                 appendAiMessage(errorText)
             }
@@ -214,7 +218,8 @@ class ChatConversationService(
             buildContextMessage()?.let { contextMessage ->
                 add(
                     ResponseInputItem.ofEasyInputMessage(
-                        EasyInputMessage.builder()
+                        EasyInputMessage
+                            .builder()
                             .role(EasyInputMessage.Role.SYSTEM)
                             .content(contextMessage)
                             .build(),
@@ -224,7 +229,8 @@ class ChatConversationService(
             buildHistory().forEach { turn ->
                 add(
                     ResponseInputItem.ofEasyInputMessage(
-                        EasyInputMessage.builder()
+                        EasyInputMessage
+                            .builder()
                             .role(if (turn.role == "user") EasyInputMessage.Role.USER else EasyInputMessage.Role.ASSISTANT)
                             .content(turn.content)
                             .build(),
@@ -247,10 +253,12 @@ class ChatConversationService(
         onChatPublicationThread {
             val agent = registry.getAgentsSnapshot().firstOrNull { it.id == agentId }
             val parentMessageId = _messages.value.lastOrNull { it.isMyMessage }?.id
-            _messages.value += chatMessageFactory.createAIMessage(
-                content = content,
-                parentMessageId = parentMessageId,
-            ).copy(author = agent?.role ?: "Agent")
+            _messages.value +=
+                chatMessageFactory
+                    .createAIMessage(
+                        content = content,
+                        parentMessageId = parentMessageId,
+                    ).copy(author = agent?.role ?: "Agent")
             persistMessages()
         }
     }
@@ -287,8 +295,13 @@ class ChatConversationService(
             message.id
         }
 
-    private fun currentToolItems(messageId: String): List<com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem> =
-        _messages.value.firstOrNull { it.id == messageId }?.toolItems.orEmpty()
+    private fun currentToolItems(
+        messageId: String,
+    ): List<com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem> =
+        _messages.value
+            .firstOrNull { it.id == messageId }
+            ?.toolItems
+            .orEmpty()
 
     private fun mergeToolItems(
         existing: List<com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem>,
@@ -344,11 +357,12 @@ class ChatConversationService(
             val thinkingMessageId = appendAiThinkingMessage()
             try {
                 val inputs = buildReminderRequestInputs(reminderContext)
-                val (responseText, _) = openAIService.agentTurn(
-                    inputs = inputs,
-                    previousId = null,
-                    agentLabel = "AI Manager",
-                )
+                val (responseText, _) =
+                    openAIService.agentTurn(
+                        inputs = inputs,
+                        previousId = null,
+                        agentLabel = "AI Manager",
+                    )
                 replaceMessage(
                     thinkingMessageId,
                     chatMessageFactory.createAIMessage(responseText),
@@ -365,7 +379,7 @@ class ChatConversationService(
                         "I want to remind you: ${
                             reminderContext.trim().removePrefix("Reminder:").trim()
                                 .ifBlank { "please check your reminder." }
-                        }"
+                        }",
                     ),
                 )
                 persistMessages()
@@ -381,13 +395,12 @@ class ChatConversationService(
                         .builder()
                         .addInputTextContent(
                             "Scheduled reminder context (internal only):\n" +
-                                    reminderContext +
-                                    "\n\nWrite a short, natural reminder to the user. " +
-                                    "Do not say the reminder was acknowledged, delivered, fired, or triggered. " +
-                                    "Do not repeat the reminder context verbatim. " +
-                                    "Use first-person phrasing like 'I want to remind you ...'.",
-                        )
-                        .role(ResponseInputItem.Message.Role.SYSTEM)
+                                reminderContext +
+                                "\n\nWrite a short, natural reminder to the user. " +
+                                "Do not say the reminder was acknowledged, delivered, fired, or triggered. " +
+                                "Do not repeat the reminder context verbatim. " +
+                                "Use first-person phrasing like 'I want to remind you ...'.",
+                        ).role(ResponseInputItem.Message.Role.SYSTEM)
                         .build(),
                 ),
             )
@@ -405,7 +418,7 @@ class ChatConversationService(
         val ctx = runCatching { CurrentFileContextProvider(project).getCurrent() }.getOrNull() ?: return null
         val header =
             "Current file open: ${ctx.filePathRelative}, file version: ${ctx.version} - " +
-                    "you must always reread file if version changed"
+                "you must always reread file if version changed"
 
         return buildString {
             append(header)

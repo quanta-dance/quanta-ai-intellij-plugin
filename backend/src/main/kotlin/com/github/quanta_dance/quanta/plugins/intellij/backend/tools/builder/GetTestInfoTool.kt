@@ -13,13 +13,13 @@ import org.w3c.dom.Element
 import java.io.File
 import javax.xml.parsers.DocumentBuilderFactory
 
-@JsonClassDescription("Get detailed information for a specific test case from Gradle XML reports")
 /**
  * Backend tool that reads detailed information for one test case from Gradle XML reports.
  *
  * It complements [RunGradleTestsTool]: use the test runner to execute and list failures, then this
  * tool to inspect one specific failed test in more detail.
  */
+@JsonClassDescription("Get detailed information for a specific test case from Gradle XML reports")
 class GetTestInfoTool : ToolInterface<GetTestInfoResult> {
     @field:JsonPropertyDescription("Fully qualified test class name to look up")
     var testClass: String? = null
@@ -29,7 +29,6 @@ class GetTestInfoTool : ToolInterface<GetTestInfoResult> {
 
     @field:JsonPropertyDescription("Path to XML reports directory relative to project root. Default: 'build/test-results/test'")
     var reportsDir: String? = null
-
 
     override fun execute(project: Project): GetTestInfoResult {
         val basePath = project.basePath ?: return GetTestInfoResult(error = "Project base path not found")

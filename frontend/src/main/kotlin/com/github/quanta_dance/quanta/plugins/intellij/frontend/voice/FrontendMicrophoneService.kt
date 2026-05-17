@@ -10,14 +10,22 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.platform.project.projectId
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import java.util.*
+import kotlinx.coroutines.launch
+import java.util.Base64
+import java.util.UUID
 
 @Service(Service.Level.PROJECT)
-class FrontendMicrophoneService(private val project: Project) {
+class FrontendMicrophoneService(
+    private val project: Project,
+) {
     companion object {
         private val logger = Logger.getInstance(FrontendMicrophoneService::class.java)
         private const val MIC_PASSIVE_DELAY_MS = 600L
@@ -63,7 +71,7 @@ class FrontendMicrophoneService(private val project: Project) {
                             QDLog.warn(
                                 logger,
                                 { "FrontendMicrophoneService.startSession failed: ${error.message}" },
-                                error
+                                error,
                             )
                         }
                     }
@@ -73,13 +81,14 @@ class FrontendMicrophoneService(private val project: Project) {
                     val chunkBase64 = Base64.getEncoder().encodeToString(bytes.copyOf(length))
                     scope.launch {
                         runCatching {
-                            QuantaBackendApi.getInstance()
+                            QuantaBackendApi
+                                .getInstance()
                                 .appendMicrophoneAudioChunk(project.projectId(), sessionId, chunkBase64)
                         }.onFailure { error ->
                             QDLog.warn(
                                 logger,
                                 { "FrontendMicrophoneService.appendChunk failed: ${error.message}" },
-                                error
+                                error,
                             )
                         }
                     }
@@ -95,7 +104,7 @@ class FrontendMicrophoneService(private val project: Project) {
                             QDLog.info(logger) {
                                 "FrontendMicrophoneService.finishSession sessionId=$sessionId submitted=${result.submitted} transcript=${
                                     result.transcript.take(
-                                        120
+                                        120,
                                     )
                                 }"
                             }
@@ -103,7 +112,7 @@ class FrontendMicrophoneService(private val project: Project) {
                             QDLog.warn(
                                 logger,
                                 { "FrontendMicrophoneService.finishSession failed: ${error.message}" },
-                                error
+                                error,
                             )
                         }
                     }

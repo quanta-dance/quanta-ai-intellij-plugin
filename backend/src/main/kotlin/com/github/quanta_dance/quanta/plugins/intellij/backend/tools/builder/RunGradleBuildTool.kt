@@ -12,13 +12,13 @@ import java.io.File
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
 
-@JsonClassDescription("Run Gradle compile tasks and return result summary with optional stdout tail.")
 /**
  * Backend tool for running Gradle build/compile tasks through the project wrapper.
  *
  * Compared with [RunGradleTestsTool], this tool is intended for compilation and general build
  * verification rather than parsing test results from XML reports.
  */
+@JsonClassDescription("Run Gradle compile tasks and return result summary with optional stdout tail.")
 class RunGradleBuildTool : ToolInterface<String> {
     @field:JsonPropertyDescription("Gradle task names to run, space-separated. Default: 'compileKotlin compileJava'")
     var tasks: String? = null
@@ -28,8 +28,10 @@ class RunGradleBuildTool : ToolInterface<String> {
 
     override fun execute(project: Project): String {
         val basePath = project.basePath ?: return "Project base path not found"
-        val tasksList = (tasks?.trim()?.takeIf { it.isNotEmpty() } ?: "compileKotlin compileJava").split(" ")
-            .filter { it.isNotBlank() }
+        val tasksList =
+            (tasks?.trim()?.takeIf { it.isNotEmpty() } ?: "compileKotlin compileJava")
+                .split(" ")
+                .filter { it.isNotBlank() }
 
         val gradlewName = if (SystemInfo.isWindows) "gradlew.bat" else "gradlew"
         val gradlew = File(basePath, gradlewName)

@@ -6,7 +6,6 @@ package com.github.quanta_dance.quanta.plugins.intellij.frontend
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 
-
 object QDLog {
     private fun isDevMode(): Boolean =
         try {

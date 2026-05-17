@@ -6,9 +6,9 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.settings
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.QuantaSettingsDto
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
-import kotlin.test.assertFailsWith
 
 class BackendRuntimeSettingsServiceTest {
     @Test

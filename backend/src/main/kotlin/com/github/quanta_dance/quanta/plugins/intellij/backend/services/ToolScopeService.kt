@@ -16,7 +16,9 @@ import java.util.concurrent.ConcurrentHashMap
  * controls, but it is currently disabled because no public tool entrypoint registers it.
  */
 @Service(Service.Level.PROJECT)
-class ToolScopeService(private val project: Project) {
+class ToolScopeService(
+    private val project: Project,
+) {
     private val log = Logger.getInstance(ToolScopeService::class.java)
 
     // Sticky scope persists across turns until changed.

@@ -93,7 +93,11 @@ class AgentContextInjector(
             return builder.toString()
         }
         agents.forEach { agent ->
-            builder.append("- id=").append(agent.id).append(", role=").append(agent.role)
+            builder
+                .append("- id=")
+                .append(agent.id)
+                .append(", role=")
+                .append(agent.role)
             agent.model?.let { model -> builder.append(", model=").append(model) }
             builder.append('\n')
         }

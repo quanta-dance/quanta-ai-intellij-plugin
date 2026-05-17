@@ -14,7 +14,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 @Service(Service.Level.PROJECT)
-class SessionPlanService(private val project: Project) {
+class SessionPlanService(
+    private val project: Project,
+) {
     data class ActivationCheck(
         val valid: Boolean,
         val issues: List<String> = emptyList(),

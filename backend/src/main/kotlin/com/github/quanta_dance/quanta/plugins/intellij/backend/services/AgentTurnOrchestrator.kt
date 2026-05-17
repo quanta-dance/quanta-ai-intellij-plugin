@@ -62,7 +62,8 @@ class AgentTurnOrchestrator(
         var loopState = ActivePlanLoopState()
         val configuredContinuations =
             try {
-                BackendRuntimeSettingsService.instance.settings.maxAutomaticTurns.coerceIn(1, 100)
+                BackendRuntimeSettingsService.instance.settings.maxAutomaticTurns
+                    .coerceIn(1, 100)
             } catch (_: Throwable) {
                 5
             }
@@ -114,10 +115,11 @@ class AgentTurnOrchestrator(
                         if (functionCall.name().contains("SessionPlan", ignoreCase = true)) {
                             sessionPlanToolCalledThisTurn = true
                         }
-                        val startedItem = toolExecutionPresenter.buildToolExecutionItem(
-                            functionCall,
-                            ToolExecutionStatus.EXECUTING,
-                        )
+                        val startedItem =
+                            toolExecutionPresenter.buildToolExecutionItem(
+                                functionCall,
+                                ToolExecutionStatus.EXECUTING,
+                            )
                         onToolUpdate?.invoke(OpenAIService.ToolTurnUpdate(startedItem))
                         try {
                             val toolResult =
@@ -125,21 +127,23 @@ class AgentTurnOrchestrator(
                             QDLog.info(thisLogger()) {
                                 "OpenAIService.agentTurn: executed tool call name=${functionCall.name()} callId=$callId"
                             }
-                            val completedItem = toolExecutionPresenter.buildToolExecutionItem(
-                                functionCall,
-                                if (toolResult.succeeded) ToolExecutionStatus.SUCCEEDED else ToolExecutionStatus.FAILED,
-                                errorText = toolResult.errorText,
-                                detailText = toolResult.detailText,
-                            )
+                            val completedItem =
+                                toolExecutionPresenter.buildToolExecutionItem(
+                                    functionCall,
+                                    if (toolResult.succeeded) ToolExecutionStatus.SUCCEEDED else ToolExecutionStatus.FAILED,
+                                    errorText = toolResult.errorText,
+                                    detailText = toolResult.detailText,
+                                )
                             onToolUpdate?.invoke(OpenAIService.ToolTurnUpdate(completedItem))
                             pendingToolOutputs.add(ResponseInputItem.ofFunctionCallOutput(toolResult.toolOutput))
                         } catch (t: Throwable) {
-                            val failedItem = toolExecutionPresenter.buildToolExecutionItem(
-                                functionCall,
-                                ToolExecutionStatus.FAILED,
-                                errorText = t.message,
-                                detailText = t.stackTraceToString().take(2_000),
-                            )
+                            val failedItem =
+                                toolExecutionPresenter.buildToolExecutionItem(
+                                    functionCall,
+                                    ToolExecutionStatus.FAILED,
+                                    errorText = t.message,
+                                    detailText = t.stackTraceToString().take(2_000),
+                                )
                             onToolUpdate?.invoke(OpenAIService.ToolTurnUpdate(failedItem))
                             throw t
                         }
@@ -151,11 +155,13 @@ class AgentTurnOrchestrator(
                                 val message = content.asOutputText()
                                 val txt = message.summaryMessage
                                 QDLog.info(thisLogger()) {
-                                    "OpenAIService.agentTurn outputText: nextStep=${message.nextStep} planStatus=${message.planStatus} planNeedsUserConfirmation=${message.planNeedsUserConfirmation} completedTasks=${message.planCompletedTasks?.size ?: 0} summary='${
-                                        txt.take(
-                                            160
-                                        )
-                                    }'"
+                                    "OpenAIService.agentTurn outputText: nextStep=${message.nextStep} " +
+                                        "planStatus=${message.planStatus} planNeedsUserConfirmation=${message.planNeedsUserConfirmation} " +
+                                        "completedTasks=${message.planCompletedTasks?.size ?: 0} summary='${
+                                            txt.take(
+                                                160,
+                                            )
+                                        }'"
                                 }
 
                                 aggregated.append(txt).append('\n')

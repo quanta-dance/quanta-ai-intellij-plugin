@@ -15,9 +15,13 @@ import java.nio.ByteOrder
 import java.security.MessageDigest
 import java.sql.Connection
 import java.sql.DriverManager
-import java.util.*
+import java.util.Properties
 
-data class SearchResult(val id: String, val score: Double, val metadata: Map<String, String>)
+data class SearchResult(
+    val id: String,
+    val score: Double,
+    val metadata: Map<String, String>,
+)
 
 /**
  * SQLite-backed persistent store for embeddings.
@@ -26,7 +30,9 @@ data class SearchResult(val id: String, val score: Double, val metadata: Map<Str
  * minimal CRUD/search operations used by the embedding tools and services.
  */
 @Service(Service.Level.PROJECT)
-class SQLiteVectorStore(private val project: Project) {
+class SQLiteVectorStore(
+    private val project: Project,
+) {
     private val dbFile: File
     private val conn: Connection
 

@@ -26,7 +26,8 @@ object DependencyResolver {
                     val importText = importStatement.qualifiedName
                     if (importText != null) {
                         val psiClass =
-                            JavaPsiFacade.getInstance(project)
+                            JavaPsiFacade
+                                .getInstance(project)
                                 .findClass(importText, GlobalSearchScope.allScope(project))
 
                         if (psiClass != null) {

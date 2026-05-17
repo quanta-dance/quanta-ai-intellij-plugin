@@ -15,7 +15,11 @@ import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.vfs.LocalFileSystem
-import com.intellij.ui.components.*
+import com.intellij.ui.components.JBCheckBox
+import com.intellij.ui.components.JBLabel
+import com.intellij.ui.components.JBPasswordField
+import com.intellij.ui.components.JBTextArea
+import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.FormBuilder
 import kotlinx.coroutines.runBlocking
 import java.awt.Color
@@ -44,18 +48,18 @@ class FrontendQuantaPluginConfigurable : Configurable {
         val settings = FrontendQuantaSettingsState.instance.state
         return settingsComponent.run {
             hostValue != settings.openAiUrl ||
-                    tokenValue != settings.openAiToken ||
-                    voiceEnabled != settings.voiceEnabled ||
-                    voiceByLocalTTS != settings.voiceByLocalTTS ||
-                    maxTokensValue != settings.maxTokens ||
-                    aiChatModelValue != settings.aiChatModel ||
-                    dynamicModelEnabled != (settings.dynamicModelEnabled ?: false) ||
-                    debugEnabled != settings.debugEnabled ||
-                    maxAutomaticTurns != settings.maxAutomaticTurns ||
-                    terminalToolEnabled != (settings.terminalToolEnabled ?: false) ||
-                    terminalAllowedCommandsCsv != settings.terminalAllowedCommandsCsv ||
-                    extraInstructionsValue != (settings.extraInstructions ?: "") ||
-                    actionConfigsValue != settings.actionConfigsJson
+                tokenValue != settings.openAiToken ||
+                voiceEnabled != settings.voiceEnabled ||
+                voiceByLocalTTS != settings.voiceByLocalTTS ||
+                maxTokensValue != settings.maxTokens ||
+                aiChatModelValue != settings.aiChatModel ||
+                dynamicModelEnabled != (settings.dynamicModelEnabled ?: false) ||
+                debugEnabled != settings.debugEnabled ||
+                maxAutomaticTurns != settings.maxAutomaticTurns ||
+                terminalToolEnabled != (settings.terminalToolEnabled ?: false) ||
+                terminalAllowedCommandsCsv != settings.terminalAllowedCommandsCsv ||
+                extraInstructionsValue != (settings.extraInstructions ?: "") ||
+                actionConfigsValue != settings.actionConfigsJson
         }
     }
 
@@ -121,99 +125,110 @@ class FrontendQuantaPluginConfigurable : Configurable {
 }
 
 private class FrontendQuantaSettingsComponent {
-    private val hostField = JBTextField().apply {
-        emptyText.text = FrontendQuantaSettingsState.DEFAULT_OPENAI_URL
-        toolTipText = "Default host is ${FrontendQuantaSettingsState.DEFAULT_OPENAI_URL}"
-    }
-    private val tokenField = JBPasswordField().apply {
-        columns = 30
-        toolTipText = "JWT token for authentication"
-    }
+    private val hostField =
+        JBTextField().apply {
+            emptyText.text = FrontendQuantaSettingsState.DEFAULT_OPENAI_URL
+            toolTipText = "Default host is ${FrontendQuantaSettingsState.DEFAULT_OPENAI_URL}"
+        }
+    private val tokenField =
+        JBPasswordField().apply {
+            columns = 30
+            toolTipText = "JWT token for authentication"
+        }
     private val voiceEnabledField = JBCheckBox("Voice enabled")
     private val voiceByLocalTTSField = JBCheckBox("Use Local TTS")
     private val maxOutputTokensField = JBTextField()
     private val modelField = ComboBox<String>()
     private val dynamicModelEnabledField = JBCheckBox("Enable dynamic model switching")
     private val debugEnabledField = JBCheckBox("Enable debug")
-    private val maxAutomaticTurnsField = JBTextField().apply {
-        toolTipText = "Maximum automatic CONTINUE turns per user request (1..100)."
-    }
+    private val maxAutomaticTurnsField =
+        JBTextField().apply {
+            toolTipText = "Maximum automatic CONTINUE turns per user request (1..100)."
+        }
     private val followEnabledField = JBCheckBox("Follow enabled")
     private val terminalToolEnabledField = JBCheckBox("Enable Terminal tool (dangerous)")
-    private val terminalAllowedCommandsCsvField = JBTextField().apply {
-        toolTipText = "Comma-separated allowed command prefixes (strict token-prefix match)."
-    }
-    private val extraInstructionsArea = JBTextArea(8, 60).apply {
-        lineWrap = true
-        wrapStyleWord = true
-        toolTipText = "These lines will be appended to the system instructions for every request."
-    }
+    private val terminalAllowedCommandsCsvField =
+        JBTextField().apply {
+            toolTipText = "Comma-separated allowed command prefixes (strict token-prefix match)."
+        }
+    private val extraInstructionsArea =
+        JBTextArea(8, 60).apply {
+            lineWrap = true
+            wrapStyleWord = true
+            toolTipText = "These lines will be appended to the system instructions for every request."
+        }
     private val extraInstructionsScroll = JScrollPane(extraInstructionsArea)
-    private val actionConfigsArea = JBTextArea(10, 60).apply {
-        lineWrap = true
-        wrapStyleWord = true
-        toolTipText = "JSON array of actions. Each item needs id, label, and instruction. Label max is 20 chars."
-    }
+    private val actionConfigsArea =
+        JBTextArea(10, 60).apply {
+            lineWrap = true
+            wrapStyleWord = true
+            toolTipText = "JSON array of actions. Each item needs id, label, and instruction. Label max is 20 chars."
+        }
     private val actionConfigsScroll = JScrollPane(actionConfigsArea)
 
-    private val actionEditorButton = JButton("Edit Actions…").apply {
-        toolTipText = "Open the action list editor"
-        addActionListener {
-            val dialog = FrontendActionEditorDialog(FrontendQuantaSettingsState.instance.state.actionConfigsJson)
-            if (dialog.showAndGet()) {
-                actionConfigsValue = dialog.getActionsJson()
+    private val actionEditorButton =
+        JButton("Edit Actions…").apply {
+            toolTipText = "Open the action list editor"
+            addActionListener {
+                val dialog = FrontendActionEditorDialog(FrontendQuantaSettingsState.instance.state.actionConfigsJson)
+                if (dialog.showAndGet()) {
+                    actionConfigsValue = dialog.getActionsJson()
+                }
             }
         }
-    }
 
-    private val editMcpButton = JButton("Edit MCP Servers…").apply {
-        toolTipText = "Open or create .quantadance/mcp-servers.json in the current project"
-        addActionListener {
-            val project: Project? = ProjectManager.getInstance().openProjects.firstOrNull()
-            if (project == null) {
-                Messages.showWarningDialog(
-                    "No open project found. Open a project to edit its MCP servers file.",
-                    "QuantaDance",
-                )
-                return@addActionListener
-            }
-            val file = project.service<FrontendMcpConfigService>().ensureExists()
-            project.service<FrontendBackendLogBridge>()
-                .info("Edit MCP Servers opened path=${file.absolutePath} for project=${project.name}")
-            try {
-                LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)?.let { vFile ->
-                    ApplicationManager.getApplication().invokeLater {
-                        FileEditorManager.getInstance(project).openFile(vFile, true)
+    private val editMcpButton =
+        JButton("Edit MCP Servers…").apply {
+            toolTipText = "Open or create .quantadance/mcp-servers.json in the current project"
+            addActionListener {
+                val project: Project? = ProjectManager.getInstance().openProjects.firstOrNull()
+                if (project == null) {
+                    Messages.showWarningDialog(
+                        "No open project found. Open a project to edit its MCP servers file.",
+                        "QuantaDance",
+                    )
+                    return@addActionListener
+                }
+                val file = project.service<FrontendMcpConfigService>().ensureExists()
+                project
+                    .service<FrontendBackendLogBridge>()
+                    .info("Edit MCP Servers opened path=${file.absolutePath} for project=${project.name}")
+                try {
+                    LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)?.let { vFile ->
+                        ApplicationManager.getApplication().invokeLater {
+                            FileEditorManager.getInstance(project).openFile(vFile, true)
+                        }
+                    } ?: run {
+                        Messages.showErrorDialog(project, "Failed to open mcp-servers.json in editor.", "QuantaDance")
                     }
-                } ?: run {
-                    Messages.showErrorDialog(project, "Failed to open mcp-servers.json in editor.", "QuantaDance")
+                } catch (e: Exception) {
+                    Messages.showErrorDialog(
+                        project,
+                        "Failed to create or open mcp-servers.json: ${e.message}",
+                        "QuantaDance",
+                    )
                 }
-            } catch (e: Exception) {
-                Messages.showErrorDialog(
-                    project,
-                    "Failed to create or open mcp-servers.json: ${e.message}",
-                    "QuantaDance",
-                )
             }
         }
-    }
 
-    private val linkLabel = JBLabel(
-        "<html>Model Pricing details available at <a href=\"https://platform.openai.com/docs/pricing\">https://platform.openai.com/docs/pricing</a></html>",
-    ).apply {
-        cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-        foreground = Color(42, 122, 255)
-        addMouseListener(
-            object : MouseAdapter() {
-                override fun mouseClicked(e: MouseEvent?) {
-                    BrowserUtil.browse("https://platform.openai.com/docs/pricing")
-                }
-            },
-        )
-    }
+    private val linkLabel =
+        JBLabel(
+            "<html>Model Pricing details available at <a href=\"https://platform.openai.com/docs/pricing\">https://platform.openai.com/docs/pricing</a></html>",
+        ).apply {
+            cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+            foreground = Color(42, 122, 255)
+            addMouseListener(
+                object : MouseAdapter() {
+                    override fun mouseClicked(e: MouseEvent?) {
+                        BrowserUtil.browse("https://platform.openai.com/docs/pricing")
+                    }
+                },
+            )
+        }
 
     val panel: JPanel =
-        FormBuilder.createFormBuilder()
+        FormBuilder
+            .createFormBuilder()
             .addLabeledComponent(JBLabel("Host: "), hostField, 1, false)
             .addLabeledComponent(JBLabel("Token: "), tokenField, 1, false)
             .addSeparator()

@@ -6,7 +6,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.services
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.QuantaAISessionState
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
-import java.util.*
+import java.util.UUID
 
 /**
  * Owns OpenAI session bookkeeping for the main chat session.
@@ -63,7 +63,8 @@ class OpenAISessionCoordinator(
 
     private fun clearPersistedMainConversation() {
         try {
-            QuantaAISessionState.instance.state.conversations.remove(mainConversationKeyResolver.conversationKeyForMain())
+            QuantaAISessionState.instance.state.conversations
+                .remove(mainConversationKeyResolver.conversationKeyForMain())
         } catch (_: Throwable) {
         }
     }
@@ -74,5 +75,4 @@ class OpenAISessionCoordinator(
         } catch (_: Throwable) {
         }
     }
-
 }

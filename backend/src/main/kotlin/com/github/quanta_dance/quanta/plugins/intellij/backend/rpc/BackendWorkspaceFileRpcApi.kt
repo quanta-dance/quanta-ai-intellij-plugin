@@ -17,9 +17,10 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.WorkspaceFileR
 class BackendWorkspaceFileRpcApi : WorkspaceFileRpcApi {
     private val service = BackendWorkspaceFileService()
 
-    override suspend fun read(path: String): String =
-        service.read(WorkspaceFileReadRequest(path)).content
+    override suspend fun read(path: String): String = service.read(WorkspaceFileReadRequest(path)).content
 
-    override suspend fun write(path: String, content: String): Boolean =
-        service.write(WorkspaceFileWriteRequest(path, content)).success
+    override suspend fun write(
+        path: String,
+        content: String,
+    ): Boolean = service.write(WorkspaceFileWriteRequest(path, content)).success
 }

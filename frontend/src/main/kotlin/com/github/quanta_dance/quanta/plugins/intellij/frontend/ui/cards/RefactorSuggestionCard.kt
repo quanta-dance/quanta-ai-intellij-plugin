@@ -6,9 +6,18 @@ package com.github.quanta_dance.quanta.plugins.intellij.frontend.ui.cards
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -49,12 +58,16 @@ import java.awt.Dimension
 import java.awt.EventQueue
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
+import kotlin.getValue
 
 private val refactorCardScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 private val logger = Logger.getInstance("RefactorSuggestionCard")
 private val refactorCardPersistentStates = mutableMapOf<String, RefactorCardPersistentState>()
 
-private fun frontendLog(project: Project, message: String) {
+private fun frontendLog(
+    project: Project,
+    message: String,
+) {
     QDLog.info(logger) { message }
     refactorCardScope.launch {
         runCatching {
@@ -74,12 +87,14 @@ private fun resolveFileType(filePath: String?) =
 
 private const val MAX_CODE_BLOCK_HEIGHT = 320
 
-private fun contentPreferredHeight(lineCount: Int, lineHeight: Int): Int =
-    (lineCount.coerceAtLeast(1) * lineHeight).coerceAtMost(MAX_CODE_BLOCK_HEIGHT)
+private fun contentPreferredHeight(
+    lineCount: Int,
+    lineHeight: Int,
+): Int = (lineCount.coerceAtLeast(1) * lineHeight).coerceAtMost(MAX_CODE_BLOCK_HEIGHT)
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-fun RefactorSuggestionCard(
+fun refactorSuggestionCard(
     project: Project,
     item: ToolExecutionItem,
 ) {
@@ -104,14 +119,18 @@ fun RefactorSuggestionCard(
             ""
         }
 
-    val handPointer = remember { PointerIcon(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)) }
+    val handPointer =
+        remember {
+            PointerIcon(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR))
+        }
     val fileLabel = item.filePath?.substringAfterLast('/') ?: item.displayText
     val originalRange = extractLineRange(item.displayText)
     val suggestedRange =
         originalRange.first to (originalRange.first + suggestedText.lineSequence().count().coerceAtLeast(1) - 1)
-    val suggestion = remember(item.filePath, message, currentText, suggestedText, originalRange) {
-        buildSuggestion(item, message, currentText, suggestedText, originalRange)
-    }
+    val suggestion =
+        remember(item.filePath, message, currentText, suggestedText, originalRange) {
+            buildSuggestion(item, message, currentText, suggestedText, originalRange)
+        }
 
     val editorScheme = EditorColorsManager.getInstance().globalScheme
     val foreground = Color(editorScheme.defaultForeground.rgb)
@@ -149,42 +168,48 @@ fun RefactorSuggestionCard(
             Icon(key = ChatAppIcons.ToolStatus.success, contentDescription = null)
             Text(
                 text = "Refactor suggestion",
-                style = JewelTheme.defaultTextStyle.copy(
-                    fontWeight = FontWeight.SemiBold,
-                    color = foreground,
-                ),
+                style =
+                    JewelTheme.defaultTextStyle.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        color = foreground,
+                    ),
             )
         }
 
         if (item.filePath != null) {
             Text(
-                text = "$fileLabel:${originalRange.first}-${originalRange.second} → ${displayedSuggestedRange.first}-${displayedSuggestedRange.second}",
-                style = JewelTheme.defaultTextStyle.copy(
-                    color = foreground.copy(alpha = 0.75f),
-                ),
+                text =
+                    "$fileLabel:${originalRange.first}-${originalRange.second}" +
+                        " → ${displayedSuggestedRange.first}-${displayedSuggestedRange.second}",
+                style =
+                    JewelTheme.defaultTextStyle.copy(
+                        color = foreground.copy(alpha = 0.75f),
+                    ),
             )
         }
 
         if (message.isNotBlank()) {
             Text(
                 text = message,
-                style = JewelTheme.defaultTextStyle.copy(
-                    color = foreground,
-                ),
+                style =
+                    JewelTheme.defaultTextStyle.copy(
+                        color = foreground,
+                    ),
             )
         }
 
         applyError?.let { error ->
             Text(
                 text = error,
-                style = JewelTheme.defaultTextStyle.copy(
-                    fontSize = 11.sp,
-                    color = originalAccent,
-                ),
+                style =
+                    JewelTheme.defaultTextStyle.copy(
+                        fontSize = 11.sp,
+                        color = originalAccent,
+                    ),
             )
         }
 
-        SectionHeader(
+        sectionHeader(
             title = "Original",
             expanded = isOriginalExpanded,
             accent = originalAccent,
@@ -194,7 +219,7 @@ fun RefactorSuggestionCard(
         )
 
         if (isOriginalExpanded) {
-            SyntaxHighlightedBlock(
+            syntaxHighlightedBlock(
                 project = project,
                 text = currentText.ifBlank { item.displayText },
                 filePath = item.filePath,
@@ -204,7 +229,7 @@ fun RefactorSuggestionCard(
             )
         }
 
-        SectionHeader(
+        sectionHeader(
             title = "Suggested",
             expanded = isSuggestedExpanded,
             accent = suggestedAccent,
@@ -214,7 +239,7 @@ fun RefactorSuggestionCard(
         )
 
         if (isSuggestedExpanded) {
-            SyntaxHighlightedBlock(
+            syntaxHighlightedBlock(
                 project = project,
                 text = suggestedText.ifBlank { detail },
                 filePath = item.filePath,
@@ -225,7 +250,7 @@ fun RefactorSuggestionCard(
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ActionButton(
+            actionButton(
                 text = "Open",
                 accent = actionAccent,
                 handPointer = handPointer,
@@ -248,19 +273,21 @@ fun RefactorSuggestionCard(
             )
 
             if (actionState == null) {
-                ActionButton(
+                actionButton(
                     text = if (isApplying) "Applying..." else "Apply",
                     accent = suggestedAccent,
                     handPointer = handPointer,
                     enabled = !isApplying,
                     onClick = {
-                        if (suggestion == null || isApplying) return@ActionButton
+                        if (suggestion == null || isApplying) return@actionButton
                         frontendLog(project, "RefactorSuggestionCard.apply requested: ${item.displayText}")
                         applyError = null
                         isApplying = true
                         refactorCardScope.launch {
                             runCatching {
-                                QuantaBackendApi.getInstance().applyRefactorSuggestion(project.projectId(), suggestion)
+                                QuantaBackendApi
+                                    .getInstance()
+                                    .applyRefactorSuggestion(project.projectId(), suggestion)
                             }.onSuccess { result ->
                                 EventQueue.invokeLater {
                                     if (result.applied) {
@@ -289,13 +316,13 @@ fun RefactorSuggestionCard(
                     },
                 )
 
-                ActionButton(
+                actionButton(
                     text = "Decline",
                     accent = originalAccent,
                     handPointer = handPointer,
                     enabled = !isApplying,
                     onClick = {
-                        if (isApplying) return@ActionButton
+                        if (isApplying) return@actionButton
                         frontendLog(project, "RefactorSuggestionCard.decline requested: ${item.displayText}")
                         applyError = null
                         actionState = RefactorActionState.DECLINED
@@ -309,16 +336,27 @@ fun RefactorSuggestionCard(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Icon(
-                        key = if (actionState == RefactorActionState.APPLIED) ChatAppIcons.ToolStatus.success else ChatAppIcons.ToolStatus.failed,
+                        key =
+                            if (actionState == RefactorActionState.APPLIED) {
+                                ChatAppIcons.ToolStatus.success
+                            } else {
+                                ChatAppIcons.ToolStatus.failed
+                            },
                         contentDescription = null,
                     )
                     Text(
                         text = if (actionState == RefactorActionState.APPLIED) "Applied" else "Declined",
-                        style = JewelTheme.defaultTextStyle.copy(
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (actionState == RefactorActionState.APPLIED) suggestedAccent else originalAccent,
-                        ),
+                        style =
+                            JewelTheme.defaultTextStyle.copy(
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color =
+                                    if (actionState == RefactorActionState.APPLIED) {
+                                        suggestedAccent
+                                    } else {
+                                        originalAccent
+                                    },
+                            ),
                     )
                 }
             }
@@ -326,8 +364,9 @@ fun RefactorSuggestionCard(
     }
 }
 
+@Suppress("ktlint:standard:max-line-length")
 @Composable
-private fun SyntaxHighlightedBlock(
+private fun syntaxHighlightedBlock(
     project: Project,
     text: String,
     filePath: String?,
@@ -337,57 +376,83 @@ private fun SyntaxHighlightedBlock(
 ) {
     val fileType = resolveFileType(filePath)
 
-    val editorData = remember(text, filePath, startLine, scheme) {
-        val document = EditorFactory.getInstance().createDocument(text)
-        val editor = EditorFactory.getInstance().createViewer(document) as EditorEx
+    val editorData =
+        remember(text, filePath, startLine, scheme) {
+            val document =
+                EditorFactory
+                    .getInstance()
+                    .createDocument(text)
+            val editor =
+                EditorFactory
+                    .getInstance()
+                    .createViewer(document) as EditorEx
 
-        editor.isOneLineMode = false
-        editor.colorsScheme = scheme
-        editor.backgroundColor = scheme.defaultBackground
-        editor.setFontSize(11f)
-        editor.settings.isLineMarkerAreaShown = true
-        editor.settings.isLineNumbersShown = true
-        editor.settings.isFoldingOutlineShown = true
-        editor.settings.isUseSoftWraps = true
-        editor.settings.isCaretRowShown = false
-        editor.settings.isWhitespacesShown = false
-        editor.settings.setAdditionalLinesCount(0)
-        editor.settings.isVirtualSpace = false
-        editor.settings.isAdditionalPageAtBottom = false
-        editor.setHorizontalScrollbarVisible(false)
-        editor.setVerticalScrollbarVisible(true)
-        editor.highlighter =
-            filePath
-                ?.let { EditorHighlighterFactory.getInstance().createEditorHighlighter(scheme, it, project) }
-                ?: EditorHighlighterFactory.getInstance().createEditorHighlighter(fileType, scheme, project)
+            editor.isOneLineMode = false
+            editor.colorsScheme = scheme
+            editor.backgroundColor = scheme.defaultBackground
+            editor.setFontSize(11f)
+            editor.settings.isLineMarkerAreaShown = true
+            editor.settings.isLineNumbersShown = true
+            editor.settings.isFoldingOutlineShown = true
+            editor.settings.isUseSoftWraps = true
+            editor.settings.isCaretRowShown = false
+            editor.settings.isWhitespacesShown = false
+            editor.settings.setAdditionalLinesCount(0)
+            editor.settings.isVirtualSpace = false
+            editor.settings.isAdditionalPageAtBottom = false
+            editor.setHorizontalScrollbarVisible(false)
+            editor.setVerticalScrollbarVisible(true)
+            editor.highlighter =
+                filePath
+                    ?.let {
+                        EditorHighlighterFactory
+                            .getInstance()
+                            .createEditorHighlighter(scheme, it, project)
+                    }
+                    ?: EditorHighlighterFactory
+                        .getInstance()
+                        .createEditorHighlighter(fileType, scheme, project)
 
-        editor.gutterComponentEx.setLineNumberConverter(
-            object : LineNumberConverter {
-                override fun convert(editor: com.intellij.openapi.editor.Editor, line: Int): Int =
-                    line + startLine - 1
+            editor.gutterComponentEx.setLineNumberConverter(
+                object : LineNumberConverter {
+                    override fun convert(
+                        editor: com.intellij.openapi.editor.Editor,
+                        line: Int,
+                    ): Int = line + startLine - 1
 
-                override fun getMaxLineNumber(editor: com.intellij.openapi.editor.Editor): Int =
-                    editor.document.lineCount + startLine - 1
-            },
-        )
+                    override fun getMaxLineNumber(editor: com.intellij.openapi.editor.Editor): Int =
+                        editor.document.lineCount + startLine - 1
+                },
+            )
 
-        editor.component.background = scheme.defaultBackground
-        editor.contentComponent.background = scheme.defaultBackground
-        editor.scrollPane.background = scheme.defaultBackground
-        editor.scrollPane.viewport.background = scheme.defaultBackground
-        editor.gutterComponentEx.background = scheme.defaultBackground
-        editor.component.isOpaque = true
-        editor.contentComponent.isOpaque = true
-        editor.scrollPane.isOpaque = true
-        editor.scrollPane.viewport.isOpaque = true
-        editor.gutterComponentEx.isOpaque = true
+            editor.component.background = scheme.defaultBackground
+            editor.contentComponent.background = scheme.defaultBackground
+            editor.scrollPane.background = scheme.defaultBackground
+            editor.scrollPane.viewport.background = scheme.defaultBackground
+            editor.gutterComponentEx.background = scheme.defaultBackground
+            editor.component.isOpaque = true
+            editor.contentComponent.isOpaque = true
+            editor.scrollPane.isOpaque = true
+            editor.scrollPane.viewport.isOpaque = true
+            editor.gutterComponentEx.isOpaque = true
 
-        val preferredHeight = contentPreferredHeight(document.lineCount, editor.lineHeight)
-        editor.component.preferredSize = Dimension(editor.component.preferredSize.width, preferredHeight)
-        editor.scrollPane.preferredSize = Dimension(editor.scrollPane.preferredSize.width, preferredHeight)
+            val preferredHeight = contentPreferredHeight(document.lineCount, editor.lineHeight)
+            val componentWidth = editor.component.preferredSize.width
+            val scrollPaneWidth = editor.scrollPane.preferredSize.width
 
-        editor to document
-    }
+            editor.component.preferredSize =
+                Dimension(
+                    componentWidth,
+                    preferredHeight,
+                )
+            editor.scrollPane.preferredSize =
+                Dimension(
+                    scrollPaneWidth,
+                    preferredHeight,
+                )
+
+            editor to document
+        }
 
     DisposableEffect(editorData) {
         onDispose {
@@ -404,15 +469,27 @@ private fun SyntaxHighlightedBlock(
                 add(editorData.first.component, java.awt.BorderLayout.CENTER)
             }
         },
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color(scheme.defaultBackground.rgb), RoundedCornerShape(8.dp))
-            .border(1.dp, borderColor, RoundedCornerShape(8.dp)),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .background(Color(scheme.defaultBackground.rgb), RoundedCornerShape(8.dp))
+                .border(1.dp, borderColor, RoundedCornerShape(8.dp)),
     )
 }
 
+private fun setPreferredHeight(
+    target: javax.swing.JComponent,
+    width: Int,
+    height: Int,
+) {
+    target.preferredSize = Dimension(width, height)
+}
+
 private fun extractLineRange(displayText: String): Pair<Int, Int> {
-    val match = Regex("(\\d+)-(\\d+)").find(displayText) ?: return 1 to 1
+    val match =
+        Regex("(\\d+)-(\\d+)")
+            .find(displayText)
+            ?: return 1 to 1
     return match.groupValues[1].toInt() to match.groupValues[2].toInt()
 }
 
@@ -452,7 +529,7 @@ private fun copyToClipboard(text: String) {
 }
 
 @Composable
-private fun ActionButton(
+private fun actionButton(
     text: String,
     accent: Color,
     handPointer: PointerIcon,
@@ -465,11 +542,12 @@ private fun ActionButton(
 
     Text(
         text = text,
-        style = JewelTheme.defaultTextStyle.copy(
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
-            color = textColor,
-        ),
+        style =
+            JewelTheme.defaultTextStyle.copy(
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = textColor,
+            ),
         modifier =
             Modifier
                 .background(background, RoundedCornerShape(8.dp))
@@ -481,7 +559,7 @@ private fun ActionButton(
 }
 
 @Composable
-private fun SectionHeader(
+private fun sectionHeader(
     title: String,
     expanded: Boolean,
     accent: Color,
@@ -496,11 +574,12 @@ private fun SectionHeader(
     ) {
         Text(
             text = if (expanded) "▼ $title" else "▶ $title",
-            style = JewelTheme.defaultTextStyle.copy(
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = accent,
-            ),
+            style =
+                JewelTheme.defaultTextStyle.copy(
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = accent,
+                ),
             modifier = Modifier.clickable { onToggle() },
         )
         IconButton(onClick = onCopy) {

@@ -6,17 +6,25 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.project
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.EmbeddingService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SQLiteVectorStore
-import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.VectorStoreService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 
 @Service(Service.Level.PROJECT)
-class EmbeddingManager(private val project: com.intellij.openapi.project.Project) {
+class EmbeddingManager(
+    private val project: com.intellij.openapi.project.Project,
+) {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val pending = ConcurrentHashMap<String, Job>()
     private val debounceMillis = 2000L
@@ -88,5 +96,9 @@ class EmbeddingManager(private val project: com.intellij.openapi.project.Project
         )
     }
 
-    private fun slidingWindowChunk(text: String, size: Int, overlap: Int): List<String> = emptyList()
+    private fun slidingWindowChunk(
+        text: String,
+        size: Int,
+        overlap: Int,
+    ): List<String> = emptyList()
 }

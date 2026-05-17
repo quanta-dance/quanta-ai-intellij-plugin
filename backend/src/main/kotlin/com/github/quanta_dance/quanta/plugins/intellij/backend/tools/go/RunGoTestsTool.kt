@@ -12,7 +12,7 @@ import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.vfs.VfsUtil
 import java.io.File
 import java.nio.charset.StandardCharsets
-import java.util.*
+import java.util.LinkedList
 import java.util.concurrent.TimeUnit
 
 @JsonClassDescription("Run Go tests (go test) with optional -run filter and stream progress; auto-detects go module in project root")
@@ -36,7 +36,7 @@ class RunGoTestsTool : ToolInterface<RunGoTestsTool.Result> {
 
     @field:JsonPropertyDescription(
         "Working directory relative to the project root (default: project root). " +
-                "If autoDetectModule=true and go.mod exists in project root, it will be used.",
+            "If autoDetectModule=true and go.mod exists in project root, it will be used.",
     )
     var workingDir: String? = null
 
@@ -53,7 +53,6 @@ class RunGoTestsTool : ToolInterface<RunGoTestsTool.Result> {
         "Absolute path to go binary (optional). If omitted, we try GOROOT/bin/go, common locations, or '/usr/bin/env go'.",
     )
     var goBinary: String? = null
-
 
     private fun resolveGoBinary(): String? {
         // 1) Explicit field
@@ -98,8 +97,8 @@ class RunGoTestsTool : ToolInterface<RunGoTestsTool.Result> {
     private fun canInvoke(
         cmd: Array<String>,
         wd: File? = null,
-    ): Boolean {
-        return try {
+    ): Boolean =
+        try {
             val p =
                 ProcessBuilder(*cmd)
                     .directory(wd)
@@ -109,7 +108,6 @@ class RunGoTestsTool : ToolInterface<RunGoTestsTool.Result> {
         } catch (_: Throwable) {
             false
         }
-    }
 
     override fun execute(project: Project): Result {
         val basePath =
@@ -181,7 +179,11 @@ class RunGoTestsTool : ToolInterface<RunGoTestsTool.Result> {
                     buildString {
                         append(taskLine)
                         append("\nElapsed: ").append(elapsed).append("s\n")
-                        append("Packages: ").append(totalPkgs).append(", Failed: ").append(failedPkgs).append("\n")
+                        append("Packages: ")
+                            .append(totalPkgs)
+                            .append(", Failed: ")
+                            .append(failedPkgs)
+                            .append("\n")
                         if (recent.isNotEmpty()) append(recent.joinToString("\n"))
                     }
             }

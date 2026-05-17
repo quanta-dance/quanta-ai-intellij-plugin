@@ -200,11 +200,12 @@ class SessionMemoryService(
     }
 
     private fun mergePlanState(facts: SessionFacts) {
-        val plan = try {
-            project.service<SessionPlanService>().loadPlanSnapshot()
-        } catch (_: Throwable) {
-            SessionPlan()
-        }
+        val plan =
+            try {
+                project.service<SessionPlanService>().loadPlanSnapshot()
+            } catch (_: Throwable) {
+                SessionPlan()
+            }
         if (!plan.hasMeaningfulContent()) return
         addUniqueFront(facts.current_state, "Plan ${plan.normalizedStatus()}.")
         if (facts.goal.isBlank() && plan.goal.isNotBlank()) {
@@ -221,17 +222,33 @@ class SessionMemoryService(
         assistantText: String?,
     ) {
         val key = conversationKeyForMain()
-        val messages = try {
-            QuantaAISessionState.instance.state.conversations[key].orEmpty()
-        } catch (_: Throwable) {
-            emptyList()
-        }
-        val recentUsers = messages.asReversed().filter { it.role == "user" }.take(3)
-            .mapNotNull { it.text?.trim()?.takeIf(String::isNotBlank) }
-        val recentAssistant = messages.asReversed().firstOrNull { it.role == "assistant" }?.text?.trim().orEmpty()
-        userText?.trim()?.takeIf { it.isNotBlank() }
+        val messages =
+            try {
+                QuantaAISessionState.instance.state.conversations[key]
+                    .orEmpty()
+            } catch (_: Throwable) {
+                emptyList()
+            }
+        val recentUsers =
+            messages
+                .asReversed()
+                .filter { it.role == "user" }
+                .take(3)
+                .mapNotNull { it.text?.trim()?.takeIf(String::isNotBlank) }
+        val recentAssistant =
+            messages
+                .asReversed()
+                .firstOrNull { it.role == "assistant" }
+                ?.text
+                ?.trim()
+                .orEmpty()
+        userText
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
             ?.let { addUniqueFront(facts.current_state, "User request: ${singleLine(it, 220)}") }
-        assistantText?.trim()?.takeIf { it.isNotBlank() }
+        assistantText
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
             ?.let { addUniqueFront(facts.current_state, "Assistant update: ${singleLine(it, 220)}") }
 
         recentUsers.firstOrNull()?.let {
@@ -244,11 +261,13 @@ class SessionMemoryService(
             addUniqueFront(facts.current_state, "Latest assistant response: ${singleLine(recentAssistant, 220)}")
         }
 
-        val rollingSummary = try {
-            QuantaAISessionState.instance.state.conversationSummaries[key].orEmpty()
-        } catch (_: Throwable) {
-            ""
-        }
+        val rollingSummary =
+            try {
+                QuantaAISessionState.instance.state.conversationSummaries[key]
+                    .orEmpty()
+            } catch (_: Throwable) {
+                ""
+            }
         if (rollingSummary.isNotBlank()) {
             addUniqueFront(facts.current_state, "Rolling summary: ${singleLine(rollingSummary, 220)}")
         }
@@ -256,12 +275,20 @@ class SessionMemoryService(
 
     private fun inferGoalFromConversation(): String {
         val key = conversationKeyForMain()
-        val messages = try {
-            QuantaAISessionState.instance.state.conversations[key].orEmpty()
-        } catch (_: Throwable) {
-            emptyList()
-        }
-        return messages.asReversed().firstOrNull { it.role == "user" }?.text?.trim()?.take(220).orEmpty()
+        val messages =
+            try {
+                QuantaAISessionState.instance.state.conversations[key]
+                    .orEmpty()
+            } catch (_: Throwable) {
+                emptyList()
+            }
+        return messages
+            .asReversed()
+            .firstOrNull { it.role == "user" }
+            ?.text
+            ?.trim()
+            ?.take(220)
+            .orEmpty()
     }
 
     private fun writeAllUnsafe(
@@ -294,7 +321,7 @@ class SessionMemoryService(
             appendSection("Service endpoints, ports, DNS, cert assumptions", facts.service_endpoints)
             appendSection(
                 "Files changed",
-                if (facts.files_changed_notes.isNotEmpty()) facts.files_changed_notes else facts.changed_files
+                if (facts.files_changed_notes.isNotEmpty()) facts.files_changed_notes else facts.changed_files,
             )
             appendSection("Important commands and logs", facts.important_commands + facts.important_logs)
             appendSection("Open questions", facts.open_questions)
@@ -303,21 +330,22 @@ class SessionMemoryService(
         }.trim() + "\n"
 
     private fun renderBriefMarkdown(facts: SessionFacts): String {
-        val out = buildString {
-            appendLine("# Session Brief")
-            appendSection("Goal", facts.goal.takeIf { it.isNotBlank() }?.let(::listOf) ?: emptyList())
-            appendSection("Decisions made", facts.decisions.take(4))
-            appendSection("Current state", facts.current_state.take(6))
-            appendSection("Verified facts", facts.verified_facts.take(5))
-            appendSection("Root cause findings", facts.root_causes.take(4))
-            appendSection("Rejected hypotheses / dead ends", facts.rejected_hypotheses.take(3))
-            appendSection("Important environment/runtime details", facts.environment_details.take(4))
-            appendSection("Service endpoints, ports, DNS, cert assumptions", facts.service_endpoints.take(4))
-            appendSection("Files changed", facts.changed_files.take(6))
-            appendSection("Important commands and logs", (facts.important_commands + facts.important_logs).take(6))
-            appendSection("Open questions", facts.open_questions.take(4))
-            appendSection("Next steps", facts.next_steps.take(5))
-        }.trim() + "\n"
+        val out =
+            buildString {
+                appendLine("# Session Brief")
+                appendSection("Goal", facts.goal.takeIf { it.isNotBlank() }?.let(::listOf) ?: emptyList())
+                appendSection("Decisions made", facts.decisions.take(4))
+                appendSection("Current state", facts.current_state.take(6))
+                appendSection("Verified facts", facts.verified_facts.take(5))
+                appendSection("Root cause findings", facts.root_causes.take(4))
+                appendSection("Rejected hypotheses / dead ends", facts.rejected_hypotheses.take(3))
+                appendSection("Important environment/runtime details", facts.environment_details.take(4))
+                appendSection("Service endpoints, ports, DNS, cert assumptions", facts.service_endpoints.take(4))
+                appendSection("Files changed", facts.changed_files.take(6))
+                appendSection("Important commands and logs", (facts.important_commands + facts.important_logs).take(6))
+                appendSection("Open questions", facts.open_questions.take(4))
+                appendSection("Next steps", facts.next_steps.take(5))
+            }.trim() + "\n"
         return if (out.length <= MAX_BRIEF_CHARS) out else out.take(MAX_BRIEF_CHARS) + "\n... (truncated)"
     }
 
@@ -353,7 +381,8 @@ class SessionMemoryService(
     }
 
     private fun MutableList<String>.distinctTrimmed(limit: Int): MutableList<String> =
-        this.map { it.trim() }
+        this
+            .map { it.trim() }
             .filter { it.isNotBlank() }
             .distinct()
             .take(limit)
@@ -408,31 +437,53 @@ class SessionMemoryService(
         args: Map<String, Any?>,
     ): String =
         when (toolName) {
-            "RunGradleBuildTool" -> "./gradlew ${
-                args["tasks"]?.toString()?.ifBlank { "compileKotlin compileJava" } ?: "compileKotlin compileJava"
-            }"
+            "RunGradleBuildTool" -> {
+                "./gradlew ${
+                    args["tasks"]?.toString()?.ifBlank { "compileKotlin compileJava" } ?: "compileKotlin compileJava"
+                }"
+            }
 
-            "RunGradleTestsTool" -> "./gradlew ${args["tasks"]?.toString()?.ifBlank { "test" } ?: "test"}"
-            "GradleSyncTool" -> "Gradle sync${
-                args["projectPath"]?.toString()?.takeIf { it.isNotBlank() }?.let { " ($it)" } ?: ""
-            }"
+            "RunGradleTestsTool" -> {
+                "./gradlew ${args["tasks"]?.toString()?.ifBlank { "test" } ?: "test"}"
+            }
 
-            "GetTestInfoTool" -> "Read test report for ${args["testClass"] ?: "unknown"}.${args["testName"] ?: "unknown"}"
-            else -> ""
+            "GradleSyncTool" -> {
+                "Gradle sync${
+                    args["projectPath"]?.toString()?.takeIf { it.isNotBlank() }?.let { " ($it)" } ?: ""
+                }"
+            }
+
+            "GetTestInfoTool" -> {
+                "Read test report for ${args["testClass"] ?: "unknown"}.${args["testName"] ?: "unknown"}"
+            }
+
+            else -> {
+                ""
+            }
         }
 
     private fun summarizeResult(result: Any?): String {
         val raw =
             when (result) {
-                null -> ""
-                is String -> result
-                is Map<*, *> -> try {
-                    mapper.writeValueAsString(result)
-                } catch (_: Throwable) {
-                    result.toString()
+                null -> {
+                    ""
                 }
 
-                else -> result.toString()
+                is String -> {
+                    result
+                }
+
+                is Map<*, *> -> {
+                    try {
+                        mapper.writeValueAsString(result)
+                    } catch (_: Throwable) {
+                        result.toString()
+                    }
+                }
+
+                else -> {
+                    result.toString()
+                }
             }
         return singleLine(raw, 320)
     }
@@ -440,7 +491,12 @@ class SessionMemoryService(
     private fun singleLine(
         text: String,
         maxChars: Int,
-    ): String = text.replace("\n", " ").replace(Regex("\\s+"), " ").trim().take(maxChars)
+    ): String =
+        text
+            .replace("\n", " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .take(maxChars)
 
     private fun collectSectionValue(
         lines: List<String>,
@@ -448,7 +504,11 @@ class SessionMemoryService(
     ): String? {
         val idx = lines.indexOfFirst { it.equals(header, ignoreCase = true) }
         if (idx < 0) return null
-        return lines.drop(idx + 1).firstOrNull { it.isNotBlank() }?.removePrefix("- ")?.trim()
+        return lines
+            .drop(idx + 1)
+            .firstOrNull { it.isNotBlank() }
+            ?.removePrefix("- ")
+            ?.trim()
     }
 
     private fun writeFactsUnsafe(
@@ -503,16 +563,17 @@ class SessionMemoryService(
     private fun readTextLimited(
         file: File,
         maxChars: Int,
-    ): String {
-        return try {
-            if (!file.exists()) "" else {
+    ): String =
+        try {
+            if (!file.exists()) {
+                ""
+            } else {
                 val text = file.readText()
                 if (text.length <= maxChars) text else text.take(maxChars) + "\n... (truncated)"
             }
         } catch (_: Throwable) {
             ""
         }
-    }
 
     private fun sessionDirIo(): File? {
         val base = PathUtils.projectRootPath(project)
@@ -546,7 +607,11 @@ class SessionMemoryService(
                         pb.directory(File(basePath))
                         pb.redirectErrorStream(true)
                         val proc = pb.start()
-                        val out = proc.inputStream.bufferedReader().readText().trim()
+                        val out =
+                            proc.inputStream
+                                .bufferedReader()
+                                .readText()
+                                .trim()
                         proc.waitFor()
                         if (out.isNotBlank()) out else "no-branch"
                     } else {

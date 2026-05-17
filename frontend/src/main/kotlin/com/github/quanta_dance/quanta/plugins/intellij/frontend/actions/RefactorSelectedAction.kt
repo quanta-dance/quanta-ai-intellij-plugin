@@ -41,10 +41,11 @@ class RefactorSelectedAction : AnAction("Refactor") {
 
     override fun update(event: AnActionEvent) {
         templatePresentation.text =
-            FrontendActionCatalog.actionById(
-                FrontendQuantaSettingsState.instance.state.actionConfigsJson,
-                "refactor"
-            )?.label
+            FrontendActionCatalog
+                .actionById(
+                    FrontendQuantaSettingsState.instance.state.actionConfigsJson,
+                    "refactor",
+                )?.label
                 ?: "Refactor"
     }
 

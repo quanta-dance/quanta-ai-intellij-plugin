@@ -21,9 +21,7 @@ import kotlinx.coroutines.flow.Flow
 @Rpc
 interface ChatRepositoryRpcApi : RemoteApi<Unit> {
     companion object {
-        suspend fun getInstance(): ChatRepositoryRpcApi {
-            return RemoteApiProviderService.resolve(remoteApiDescriptor<ChatRepositoryRpcApi>())
-        }
+        suspend fun getInstance(): ChatRepositoryRpcApi = RemoteApiProviderService.resolve(remoteApiDescriptor<ChatRepositoryRpcApi>())
     }
 
     /**
@@ -40,16 +38,25 @@ interface ChatRepositoryRpcApi : RemoteApi<Unit> {
 
     suspend fun createNewSession(projectId: ProjectId)
 
-    suspend fun activateSession(projectId: ProjectId, sessionId: String)
+    suspend fun activateSession(
+        projectId: ProjectId,
+        sessionId: String,
+    )
 
-    suspend fun deleteSession(projectId: ProjectId, sessionId: String)
+    suspend fun deleteSession(
+        projectId: ProjectId,
+        sessionId: String,
+    )
 
     /**
      * Sends a message with the provided content.
      *
      * @param messageContent The content of the message to be sent.
      */
-    suspend fun sendMessage(projectId: ProjectId, messageContent: String)
+    suspend fun sendMessage(
+        projectId: ProjectId,
+        messageContent: String,
+    )
 
     suspend fun stopAllAgents(projectId: ProjectId): Int
 }

@@ -17,7 +17,6 @@ import kotlinx.coroutines.runBlocking
 
 class CommentSelectedAction : AnAction("Comment") {
     override fun actionPerformed(event: AnActionEvent) {
-
         val project = event.project ?: return
         val selectedText = event.getData(CommonDataKeys.EDITOR)?.selectionModel?.selectedText
         val filePath = event.getData(CommonDataKeys.VIRTUAL_FILE)?.path
@@ -42,10 +41,11 @@ class CommentSelectedAction : AnAction("Comment") {
 
     override fun update(event: AnActionEvent) {
         templatePresentation.text =
-            FrontendActionCatalog.actionById(
-                FrontendQuantaSettingsState.instance.state.actionConfigsJson,
-                "comment"
-            )?.label
+            FrontendActionCatalog
+                .actionById(
+                    FrontendQuantaSettingsState.instance.state.actionConfigsJson,
+                    "comment",
+                )?.label
                 ?: "Comment"
     }
 

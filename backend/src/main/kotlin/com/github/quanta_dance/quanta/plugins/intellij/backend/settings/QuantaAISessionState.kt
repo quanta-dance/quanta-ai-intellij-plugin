@@ -5,7 +5,11 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.settings
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SessionPlan
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.components.*
+import com.intellij.openapi.components.PersistentStateComponent
+import com.intellij.openapi.components.Service
+import com.intellij.openapi.components.State
+import com.intellij.openapi.components.Storage
+import com.intellij.openapi.components.service
 import kotlinx.serialization.Serializable
 
 /**

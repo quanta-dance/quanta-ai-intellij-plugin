@@ -26,16 +26,16 @@ import com.intellij.psi.codeStyle.CodeStyleManager
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 
-@JsonClassDescription(
-    "Create or Update specified file. Supports full replacement via 'content' or partial line-range updates via 'patches'. " +
-            "Before modifying methods in the file you may need to check for method references as they might need updates.",
-)
 /**
  * Backend tool for file creation, full replacement, or guarded line-range updates.
  *
  * This tool is the higher-level sibling of [PatchFile]: it supports whole-file writes as well as
  * small targeted patches while keeping validation, formatting, and import optimization in one place.
  */
+@JsonClassDescription(
+    "Create or Update specified file. Supports full replacement via 'content' or partial line-range updates via 'patches'. " +
+        "Before modifying methods in the file you may need to check for method references as they might need updates.",
+)
 class CreateOrUpdateFile : ToolInterface<String> {
     data class Patch(
         @field:JsonPropertyDescription("1-based start line (inclusive)")
@@ -53,7 +53,7 @@ class CreateOrUpdateFile : ToolInterface<String> {
 
     @field:JsonPropertyDescription(
         "New content for the file to be modified. If provided and 'patches' is empty, " +
-                "this fully replaces file content.",
+            "this fully replaces file content.",
     )
     var content: String? = null
 
@@ -62,13 +62,13 @@ class CreateOrUpdateFile : ToolInterface<String> {
 
     @field:JsonPropertyDescription(
         "Optional list of line-range patches to apply (1-based inclusive lines). If non-empty, " +
-                "patches are applied instead of full replace.",
+            "patches are applied instead of full replace.",
     )
     var patches: List<Patch>? = null
 
     @field:JsonPropertyDescription(
         "If true, force synchronous save/commit/refresh " +
-                "to surface PSI errors immediately (no Gradle run). Default: true",
+            "to surface PSI errors immediately (no Gradle run). Default: true",
     )
     var validateBuildAfterUpdate: Boolean = true
 
@@ -78,7 +78,7 @@ class CreateOrUpdateFile : ToolInterface<String> {
 
     @field:JsonPropertyDescription(
         "Optional expected SHA-256 hash of normalized file content (\\r\\n/\\r -> \\n)." +
-                " If provided and matches current, patches can proceed.",
+            " If provided and matches current, patches can proceed.",
     )
     var expectedFileHashSha256: String? = null
 
@@ -170,8 +170,9 @@ class CreateOrUpdateFile : ToolInterface<String> {
         ApplicationManager.getApplication().invokeAndWait {
             WriteCommandAction.runWriteCommandAction(project) {
                 try {
-                    val rootVf = PathUtils.projectRootVirtualFile(project)
-                        ?: throw IllegalStateException("Project root not found")
+                    val rootVf =
+                        PathUtils.projectRootVirtualFile(project)
+                            ?: throw IllegalStateException("Project root not found")
                     val parentRel = relToBase.substringBeforeLast('/', "")
                     val fileName = relToBase.substringAfterLast('/')
                     val parentVf =

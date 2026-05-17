@@ -26,7 +26,7 @@ class GenerateImage : ToolInterface<String> {
 
     @field:JsonPropertyDescription(
         "Optional file path (including filename) where the image will be saved." +
-                " If omitted, only the URL is returned and shown in tool window.",
+            " If omitted, only the URL is returned and shown in tool window.",
     )
     var filePath: String? = null
 

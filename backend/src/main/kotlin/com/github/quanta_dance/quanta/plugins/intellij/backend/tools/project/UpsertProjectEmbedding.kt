@@ -14,13 +14,13 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import kotlinx.coroutines.runBlocking
 
-@JsonClassDescription("Create or update embedding for a given id and text in project-local vector DB.")
 /**
  * Tool that turns a single text chunk into an embedding and stores it in the local vector DB.
  *
  * The tool is intentionally lightweight: it accepts the embedding id, raw text, and optional
  * metadata, then delegates the actual embedding generation/storage to [EmbeddingService].
  */
+@JsonClassDescription("Create or update embedding for a given id and text in project-local vector DB.")
 class UpsertProjectEmbedding : ToolInterface<UpsertEmbeddingResult> {
     @field:JsonPropertyDescription("Unique id for the embedding (e.g., project|path|chunkIndex)")
     var id: String? = null

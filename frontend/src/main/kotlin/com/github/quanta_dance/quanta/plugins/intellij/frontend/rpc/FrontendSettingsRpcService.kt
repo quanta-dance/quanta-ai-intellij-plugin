@@ -23,8 +23,7 @@ class FrontendSettingsRpcService(
     private val logger = thisLogger()
 
     companion object {
-        fun getInstance(project: Project): FrontendSettingsRpcService =
-            project.getService(FrontendSettingsRpcService::class.java)
+        fun getInstance(project: Project): FrontendSettingsRpcService = project.getService(FrontendSettingsRpcService::class.java)
     }
 
     suspend fun getSettings(): QuantaSettingsDto {
@@ -35,9 +34,9 @@ class FrontendSettingsRpcService(
     suspend fun updateSettings(settings: QuantaSettingsDto) {
         logger.info(
             "Quanta AI frontend settings RPC update requested for project=${project.name}: " +
-                    "model=${settings.model}, aiChatModel=${settings.aiChatModel}, openAiUrl=${settings.openAiUrl}, " +
-                    "voiceEnabled=${settings.voiceEnabled}, dynamicModelEnabled=${settings.dynamicModelEnabled}, " +
-                    "agenticEnabled=${settings.agenticEnabled}, terminalToolEnabled=${settings.terminalToolEnabled}",
+                "model=${settings.model}, aiChatModel=${settings.aiChatModel}, openAiUrl=${settings.openAiUrl}, " +
+                "voiceEnabled=${settings.voiceEnabled}, dynamicModelEnabled=${settings.dynamicModelEnabled}, " +
+                "agenticEnabled=${settings.agenticEnabled}, terminalToolEnabled=${settings.terminalToolEnabled}",
         )
 
         try {

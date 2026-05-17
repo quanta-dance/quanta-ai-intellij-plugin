@@ -16,7 +16,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 @Service(Service.Level.PROJECT)
-class EmbeddingService(private val project: Project) {
+class EmbeddingService(
+    private val project: Project,
+) {
     private val log = Logger.getInstance(EmbeddingService::class.java)
 
     private fun client(): OpenAIClient = OpenAIClientProvider.get(project)
@@ -27,7 +29,8 @@ class EmbeddingService(private val project: Project) {
     ): List<FloatArray> =
         withContext(Dispatchers.IO) {
             val params =
-                EmbeddingCreateParams.builder()
+                EmbeddingCreateParams
+                    .builder()
                     .model(EmbeddingModel.of(model))
                     .input(texts.first())
                     .build()

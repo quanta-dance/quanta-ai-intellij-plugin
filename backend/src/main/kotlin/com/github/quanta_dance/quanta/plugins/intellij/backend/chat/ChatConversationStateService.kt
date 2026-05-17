@@ -7,10 +7,20 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.QuantaAI
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus
-import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.*
-import com.intellij.openapi.components.*
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelAuthorTypeDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventKindDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelVisibilityDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskStatusDto
+import com.intellij.openapi.components.PersistentStateComponent
+import com.intellij.openapi.components.Service
+import com.intellij.openapi.components.State
+import com.intellij.openapi.components.Storage
+import com.intellij.openapi.components.StoragePathMacros
 import java.time.LocalDateTime
-import java.util.*
+import java.util.UUID
 
 /**
  * Persistent project-level state for chat sessions, messages, delegated tasks, and channel events.
@@ -117,10 +127,11 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
 
     fun ensureSessionExists(): String {
         if (state.sessions.isEmpty()) {
-            val session = PersistedChatSession(
-                title = "Chat 1",
-                updatedAtEpochMs = System.currentTimeMillis(),
-            )
+            val session =
+                PersistedChatSession(
+                    title = "Chat 1",
+                    updatedAtEpochMs = System.currentTimeMillis(),
+                )
             state.sessions.add(session)
             state.activeSessionId = session.id
         }
@@ -149,10 +160,11 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
 
     fun createSession(title: String? = null): String {
         val nextIndex = state.sessions.size + 1
-        val session = PersistedChatSession(
-            title = title?.ifBlank { null } ?: "Chat $nextIndex",
-            updatedAtEpochMs = System.currentTimeMillis(),
-        )
+        val session =
+            PersistedChatSession(
+                title = title?.ifBlank { null } ?: "Chat $nextIndex",
+                updatedAtEpochMs = System.currentTimeMillis(),
+            )
         state.sessions.add(0, session)
         state.activeSessionId = session.id
         QuantaAISessionState.instance.state.agents = mutableListOf()
@@ -222,15 +234,17 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
 
     fun saveActiveAgents(agents: List<QuantaAISessionState.AgentProfile>) {
         val session = getOrCreateActiveSession()
-        session.agents = agents.map { agent ->
-            PersistedAgentProfile(
-                id = agent.id,
-                role = agent.role,
-                model = agent.model,
-                instructions = agent.instructions,
-                previousId = agent.previousId,
-            )
-        }.toMutableList()
+        session.agents =
+            agents
+                .map { agent ->
+                    PersistedAgentProfile(
+                        id = agent.id,
+                        role = agent.role,
+                        model = agent.model,
+                        instructions = agent.instructions,
+                        previousId = agent.previousId,
+                    )
+                }.toMutableList()
         session.updatedAtEpochMs = System.currentTimeMillis()
     }
 
@@ -245,9 +259,10 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
                 assignedAgentIds = saved.assignedAgentIds,
                 assignedRoles = saved.assignedRoles,
                 dependsOnTaskIds = saved.dependsOnTaskIds,
-                status = runCatching { DelegatedTaskStatusDto.valueOf(saved.status) }.getOrDefault(
-                    DelegatedTaskStatusDto.QUEUED
-                ),
+                status =
+                    runCatching { DelegatedTaskStatusDto.valueOf(saved.status) }.getOrDefault(
+                        DelegatedTaskStatusDto.QUEUED,
+                    ),
                 summary = saved.summary,
                 result = saved.result,
                 relatedMessageId = saved.relatedMessageId,
@@ -259,25 +274,27 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
 
     fun saveActiveDelegatedTasks(tasks: List<DelegatedTaskDto>) {
         val session = getOrCreateActiveSession()
-        session.delegatedTasks = tasks.map { task ->
-            PersistedDelegatedTask(
-                id = task.id,
-                title = task.title,
-                requestText = task.requestText,
-                createdByAgentId = task.createdByAgentId,
-                createdByRole = task.createdByRole,
-                assignedAgentIds = task.assignedAgentIds.toMutableList(),
-                assignedRoles = task.assignedRoles.toMutableList(),
-                dependsOnTaskIds = task.dependsOnTaskIds.toMutableList(),
-                status = task.status.name,
-                summary = task.summary,
-                result = task.result,
-                relatedMessageId = task.relatedMessageId,
-                relatedPlanTask = task.relatedPlanTask,
-                createdAtEpochMs = task.createdAtEpochMs,
-                updatedAtEpochMs = task.updatedAtEpochMs,
-            )
-        }.toMutableList()
+        session.delegatedTasks =
+            tasks
+                .map { task ->
+                    PersistedDelegatedTask(
+                        id = task.id,
+                        title = task.title,
+                        requestText = task.requestText,
+                        createdByAgentId = task.createdByAgentId,
+                        createdByRole = task.createdByRole,
+                        assignedAgentIds = task.assignedAgentIds.toMutableList(),
+                        assignedRoles = task.assignedRoles.toMutableList(),
+                        dependsOnTaskIds = task.dependsOnTaskIds.toMutableList(),
+                        status = task.status.name,
+                        summary = task.summary,
+                        result = task.result,
+                        relatedMessageId = task.relatedMessageId,
+                        relatedPlanTask = task.relatedPlanTask,
+                        createdAtEpochMs = task.createdAtEpochMs,
+                        updatedAtEpochMs = task.updatedAtEpochMs,
+                    )
+                }.toMutableList()
         session.updatedAtEpochMs = System.currentTimeMillis()
     }
 
@@ -290,29 +307,33 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
                 parentEventId = saved.parentEventId,
                 relatedTaskId = saved.relatedTaskId,
                 relatedMessageId = saved.relatedMessageId,
-                kind = runCatching { AgentChannelEventKindDto.valueOf(saved.kind) }.getOrDefault(
-                    AgentChannelEventKindDto.MANAGER_MESSAGE
-                ),
-                authorType = runCatching { AgentChannelAuthorTypeDto.valueOf(saved.authorType) }.getOrDefault(
-                    AgentChannelAuthorTypeDto.MANAGER
-                ),
+                kind =
+                    runCatching { AgentChannelEventKindDto.valueOf(saved.kind) }.getOrDefault(
+                        AgentChannelEventKindDto.MANAGER_MESSAGE,
+                    ),
+                authorType =
+                    runCatching { AgentChannelAuthorTypeDto.valueOf(saved.authorType) }.getOrDefault(
+                        AgentChannelAuthorTypeDto.MANAGER,
+                    ),
                 authorId = saved.authorId,
                 authorRole = saved.authorRole,
-                visibility = runCatching { AgentChannelVisibilityDto.valueOf(saved.visibility) }.getOrDefault(
-                    AgentChannelVisibilityDto.CHANNEL
-                ),
+                visibility =
+                    runCatching { AgentChannelVisibilityDto.valueOf(saved.visibility) }.getOrDefault(
+                        AgentChannelVisibilityDto.CHANNEL,
+                    ),
                 text = saved.text,
-                toolItems = saved.toolItems.map { item ->
-                    ToolExecutionItem(
-                        callId = item.callId,
-                        toolName = item.toolName,
-                        displayText = item.displayText,
-                        status = ToolExecutionStatus.valueOf(item.status),
-                        filePath = item.filePath,
-                        errorText = item.errorText,
-                        detailText = item.detailText,
-                    )
-                },
+                toolItems =
+                    saved.toolItems.map { item ->
+                        ToolExecutionItem(
+                            callId = item.callId,
+                            toolName = item.toolName,
+                            displayText = item.displayText,
+                            status = ToolExecutionStatus.valueOf(item.status),
+                            filePath = item.filePath,
+                            errorText = item.errorText,
+                            detailText = item.detailText,
+                        )
+                    },
                 status = saved.status?.let { runCatching { DelegatedTaskStatusDto.valueOf(it) }.getOrNull() },
                 createdAtEpochMs = saved.createdAtEpochMs,
             )
@@ -320,35 +341,39 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
 
     fun saveActiveChannelEvents(events: List<AgentChannelEventDto>) {
         val session = getOrCreateActiveSession()
-        session.channelEvents = events.map { event ->
-            PersistedChannelEvent(
-                id = event.id,
-                sessionId = event.sessionId,
-                threadId = event.threadId,
-                parentEventId = event.parentEventId,
-                relatedTaskId = event.relatedTaskId,
-                relatedMessageId = event.relatedMessageId,
-                kind = event.kind.name,
-                authorType = event.authorType.name,
-                authorId = event.authorId,
-                authorRole = event.authorRole,
-                visibility = event.visibility.name,
-                text = event.text,
-                toolItems = event.toolItems.map { item ->
-                    PersistedToolItem(
-                        callId = item.callId,
-                        toolName = item.toolName,
-                        displayText = item.displayText,
-                        status = item.status.name,
-                        filePath = item.filePath,
-                        errorText = item.errorText,
-                        detailText = item.detailText,
+        session.channelEvents =
+            events
+                .map { event ->
+                    PersistedChannelEvent(
+                        id = event.id,
+                        sessionId = event.sessionId,
+                        threadId = event.threadId,
+                        parentEventId = event.parentEventId,
+                        relatedTaskId = event.relatedTaskId,
+                        relatedMessageId = event.relatedMessageId,
+                        kind = event.kind.name,
+                        authorType = event.authorType.name,
+                        authorId = event.authorId,
+                        authorRole = event.authorRole,
+                        visibility = event.visibility.name,
+                        text = event.text,
+                        toolItems =
+                            event.toolItems
+                                .map { item ->
+                                    PersistedToolItem(
+                                        callId = item.callId,
+                                        toolName = item.toolName,
+                                        displayText = item.displayText,
+                                        status = item.status.name,
+                                        filePath = item.filePath,
+                                        errorText = item.errorText,
+                                        detailText = item.detailText,
+                                    )
+                                }.toMutableList(),
+                        status = event.status?.name,
+                        createdAtEpochMs = event.createdAtEpochMs,
                     )
-                }.toMutableList(),
-                status = event.status?.name,
-                createdAtEpochMs = event.createdAtEpochMs,
-            )
-        }.toMutableList()
+                }.toMutableList()
         session.updatedAtEpochMs = System.currentTimeMillis()
     }
 
@@ -358,34 +383,41 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
     ) {
         val session = getOrCreateActiveSession()
         session.messages =
-            messages.map { message ->
-                PersistedChatMessage(
-                    id = message.id,
-                    content = message.content,
-                    author = message.author,
-                    isMyMessage = message.isMyMessage,
-                    timestamp = message.timestamp.toString(),
-                    type = message.type.name,
-                    voiceSummary = message.voiceSummary,
-                    toolItems =
-                        message.toolItems.map { item ->
-                            PersistedToolItem(
-                                callId = item.callId,
-                                toolName = item.toolName,
-                                displayText = item.displayText,
-                                status = item.status.name,
-                                filePath = item.filePath,
-                                errorText = item.errorText,
-                                detailText = item.detailText,
-                            )
-                        }.toMutableList(),
-                    parentMessageId = message.parentMessageId,
-                )
-            }.toMutableList()
+            messages
+                .map { message ->
+                    PersistedChatMessage(
+                        id = message.id,
+                        content = message.content,
+                        author = message.author,
+                        isMyMessage = message.isMyMessage,
+                        timestamp = message.timestamp.toString(),
+                        type = message.type.name,
+                        voiceSummary = message.voiceSummary,
+                        toolItems =
+                            message.toolItems
+                                .map { item ->
+                                    PersistedToolItem(
+                                        callId = item.callId,
+                                        toolName = item.toolName,
+                                        displayText = item.displayText,
+                                        status = item.status.name,
+                                        filePath = item.filePath,
+                                        errorText = item.errorText,
+                                        detailText = item.detailText,
+                                    )
+                                }.toMutableList(),
+                        parentMessageId = message.parentMessageId,
+                    )
+                }.toMutableList()
         session.lastResponseId = lastResponseId
         session.updatedAtEpochMs = System.currentTimeMillis()
         if (session.title.startsWith("Chat ")) {
-            val firstUser = messages.firstOrNull { it.isMyMessage }?.content?.trim().orEmpty()
+            val firstUser =
+                messages
+                    .firstOrNull { it.isMyMessage }
+                    ?.content
+                    ?.trim()
+                    .orEmpty()
             if (firstUser.isNotBlank()) {
                 session.title = firstUser.take(40)
             }
@@ -405,10 +437,9 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
         return state.sessions.firstOrNull { it.id == id }
     }
 
-    private fun getOrCreateActiveSession(): PersistedChatSession {
-        return getActiveSession() ?: run {
+    private fun getOrCreateActiveSession(): PersistedChatSession =
+        getActiveSession() ?: run {
             val id = createSession()
             state.sessions.first { it.id == id }
         }
-    }
 }

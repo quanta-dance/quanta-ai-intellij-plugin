@@ -14,17 +14,17 @@ import com.intellij.openapi.vfs.VfsUtil
 import org.w3c.dom.Element
 import java.io.File
 import java.nio.charset.StandardCharsets
-import java.util.*
+import java.util.LinkedList
 import java.util.concurrent.TimeUnit
 import javax.xml.parsers.DocumentBuilderFactory
 
-@JsonClassDescription("Run Gradle tests and collect failed tests from XML reports")
 /**
  * Backend tool for executing Gradle test tasks and summarizing test outcomes.
  *
  * Compared with [RunGradleBuildTool], this tool focuses on test execution and augments the raw
  * process result with parsed failed-test details from Gradle XML reports.
  */
+@JsonClassDescription("Run Gradle tests and collect failed tests from XML reports")
 class RunGradleTestsTool : ToolInterface<RunTestsResult> {
     @field:JsonPropertyDescription("Gradle task names to run, space-separated. Default: 'test'")
     var tasks: String? = null
@@ -47,7 +47,7 @@ class RunGradleTestsTool : ToolInterface<RunTestsResult> {
                 0,
                 emptyList<TestCaseResult>(),
                 null,
-                "Project base path not found"
+                "Project base path not found",
             )
         val tasksList = (tasks?.trim()?.takeIf { it.isNotEmpty() } ?: "test").split(" ").filter { it.isNotBlank() }
 
@@ -61,7 +61,7 @@ class RunGradleTestsTool : ToolInterface<RunTestsResult> {
                 0,
                 emptyList<TestCaseResult>(),
                 null,
-                "Gradle wrapper not found: $gradlewName"
+                "Gradle wrapper not found: $gradlewName",
             )
         }
 
@@ -89,7 +89,7 @@ class RunGradleTestsTool : ToolInterface<RunTestsResult> {
                     0,
                     emptyList<TestCaseResult>(),
                     null,
-                    "Failed to start gradle: ${e.message}"
+                    "Failed to start gradle: ${e.message}",
                 )
             }
 

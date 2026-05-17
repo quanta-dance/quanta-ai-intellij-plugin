@@ -4,10 +4,10 @@
 package com.github.quanta_dance.quanta.plugins.intellij.shared.rpc
 
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.QuantaSettingsDto
+import com.intellij.platform.rpc.RemoteApiProviderService
 import fleet.rpc.RemoteApi
 import fleet.rpc.Rpc
 import fleet.rpc.remoteApiDescriptor
-import com.intellij.platform.rpc.RemoteApiProviderService
 
 /**
  * Shared RPC API for synchronizing Quanta settings between frontend UI and backend runtime state.
@@ -18,11 +18,10 @@ import com.intellij.platform.rpc.RemoteApiProviderService
 @Rpc
 interface QuantaSettingsApi : RemoteApi<Unit> {
     companion object {
-        suspend fun getInstance(): QuantaSettingsApi {
-            return RemoteApiProviderService.resolve(remoteApiDescriptor<QuantaSettingsApi>())
-        }
+        suspend fun getInstance(): QuantaSettingsApi = RemoteApiProviderService.resolve(remoteApiDescriptor<QuantaSettingsApi>())
     }
 
     suspend fun getSettings(): QuantaSettingsDto
+
     suspend fun updateSettings(settings: QuantaSettingsDto)
 }

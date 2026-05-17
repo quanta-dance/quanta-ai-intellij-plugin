@@ -17,15 +17,15 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiManager
 
-@JsonClassDescription(
-    "Get file dependencies (imports resolved to libraries with versions) and PSI-based references/definitions for a given file.",
-)
 /**
  * Backend analysis tool that combines dependency resolution with PSI reference discovery for one file.
  *
  * It is useful when an agent needs to understand both external library usage and internal code
  * connections before making a targeted change.
  */
+@JsonClassDescription(
+    "Get file dependencies (imports resolved to libraries with versions) and PSI-based references/definitions for a given file.",
+)
 class GetFileReferencesAndDependencies : ToolInterface<Map<String, Any>> {
     @field:JsonPropertyDescription("Relative to the project root path to the requested file.")
     var filePath: String? = null
@@ -35,10 +35,11 @@ class GetFileReferencesAndDependencies : ToolInterface<Map<String, Any>> {
     override fun execute(project: Project): Map<String, Any> {
         val rel = filePath?.trim().orEmpty()
         if (rel.isEmpty()) return mapOf("status" to "error", "message" to "filePath is required")
-        val base = PathUtils.projectRootPath(project) ?: return mapOf(
-            "status" to "error",
-            "message" to "Project base path not found."
-        )
+        val base =
+            PathUtils.projectRootPath(project) ?: return mapOf(
+                "status" to "error",
+                "message" to "Project base path not found.",
+            )
         val vFile =
             try {
                 PathUtils.resolveVirtualFileWithinProject(project, rel)

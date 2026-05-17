@@ -17,11 +17,14 @@ import javax.swing.DefaultListModel
 import javax.swing.JComponent
 import javax.swing.JPanel
 
-class FrontendActionEditorDialog(actionsJson: String) : DialogWrapper(true) {
+class FrontendActionEditorDialog(
+    actionsJson: String,
+) : DialogWrapper(true) {
     private val listModel = DefaultListModel<FrontendActionCatalog.ActionConfig>()
-    private val list = JBList(listModel).apply {
-        cellRenderer = ActionConfigListRenderer()
-    }
+    private val list =
+        JBList(listModel).apply {
+            cellRenderer = ActionConfigListRenderer()
+        }
 
     init {
         list.selectionMode = javax.swing.ListSelectionModel.SINGLE_SELECTION
@@ -36,7 +39,8 @@ class FrontendActionEditorDialog(actionsJson: String) : DialogWrapper(true) {
     override fun createCenterPanel(): JComponent {
         val center = JPanel(BorderLayout())
         val decorator =
-            ToolbarDecorator.createDecorator(list)
+            ToolbarDecorator
+                .createDecorator(list)
                 .setAddAction {
                     listModel.addElement(
                         FrontendActionCatalog.ActionConfig(
@@ -45,20 +49,17 @@ class FrontendActionEditorDialog(actionsJson: String) : DialogWrapper(true) {
                             instruction = "Describe what this action should do.",
                         ),
                     )
-                }
-                .setRemoveAction {
+                }.setRemoveAction {
                     val idx = list.selectedIndex
                     if (idx >= 0) listModel.remove(idx)
-                }
-                .setEditAction {
+                }.setEditAction {
                     val idx = list.selectedIndex
                     if (idx >= 0) {
                         val current = listModel.getElementAt(idx)
                         val result = ActionConfigEditDialog(current).showAndGetResult() ?: return@setEditAction
                         listModel.set(idx, result)
                     }
-                }
-                .disableUpDownActions()
+                }.disableUpDownActions()
                 .createPanel()
 
         center.add(decorator, BorderLayout.CENTER)
@@ -80,10 +81,11 @@ class FrontendActionEditorDialog(actionsJson: String) : DialogWrapper(true) {
         private val initial: FrontendActionCatalog.ActionConfig,
     ) : DialogWrapper(true) {
         private val labelField = JBTextField(initial.label)
-        private val instructionField = JBTextArea(initial.instruction, 6, 36).apply {
-            lineWrap = true
-            wrapStyleWord = true
-        }
+        private val instructionField =
+            JBTextArea(initial.instruction, 6, 36).apply {
+                lineWrap = true
+                wrapStyleWord = true
+            }
 
         init {
             title = "Action"
