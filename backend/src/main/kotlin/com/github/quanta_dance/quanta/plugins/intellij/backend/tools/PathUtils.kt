@@ -8,7 +8,6 @@ import com.intellij.openapi.roots.ProjectRootManager
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.platform.eel.provider.utils.EelPathUtils
 import java.nio.file.Path
 import java.nio.file.Paths
 
@@ -177,10 +176,5 @@ object PathUtils {
     }
 
     @JvmStatic
-    fun actualPath(path: Path): Path =
-        try {
-            EelPathUtils.getActualPath(path).toAbsolutePath().normalize()
-        } catch (_: Throwable) {
-            path.toAbsolutePath().normalize()
-        }
+    fun actualPath(path: Path): Path = path.toAbsolutePath().normalize()
 }
