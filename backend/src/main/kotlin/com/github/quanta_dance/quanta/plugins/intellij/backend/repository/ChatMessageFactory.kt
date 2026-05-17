@@ -5,9 +5,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.repository
 
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem
-
 import java.time.LocalDateTime
-
 
 /**
  * Factory class responsible for creating instances of `ChatMessage`.
@@ -19,7 +17,6 @@ class ChatMessageFactory(
     private val aiCompanionName: String,
     private val myUserName: String,
 ) {
-
     /**
      * Creates a new instance of `ChatMessage` representing an AI-generated message emitted
      * while AI is processing the request.
@@ -30,16 +27,15 @@ class ChatMessageFactory(
     fun createAIThinkingMessage(
         content: String,
         timestamp: LocalDateTime = LocalDateTime.now(),
-    ): ChatMessage {
-        return ChatMessage(
+    ): ChatMessage =
+        ChatMessage(
             id = AI_THINKING_MESSAGE_ID,
             content = content,
             author = aiCompanionName,
             timestamp = timestamp,
             isMyMessage = false,
-            type = ChatMessage.ChatMessageType.AI_THINKING
+            type = ChatMessage.ChatMessageType.AI_THINKING,
         )
-    }
 
     /**
      * Creates a new instance of `ChatMessage` representing an AI-generated message response.
@@ -53,8 +49,8 @@ class ChatMessageFactory(
         voiceSummary: String? = null,
         toolItems: List<ToolExecutionItem> = emptyList(),
         parentMessageId: String? = null,
-    ): ChatMessage {
-        return ChatMessage(
+    ): ChatMessage =
+        ChatMessage(
             content = content,
             author = aiCompanionName,
             timestamp = timestamp,
@@ -64,14 +60,13 @@ class ChatMessageFactory(
             toolItems = toolItems,
             parentMessageId = parentMessageId,
         )
-    }
 
     fun createAIToolMessage(
         toolItems: List<ToolExecutionItem>,
         timestamp: LocalDateTime = LocalDateTime.now(),
         parentMessageId: String? = null,
-    ): ChatMessage {
-        return ChatMessage(
+    ): ChatMessage =
+        ChatMessage(
             content = "",
             author = aiCompanionName,
             timestamp = timestamp,
@@ -80,7 +75,6 @@ class ChatMessageFactory(
             toolItems = toolItems,
             parentMessageId = parentMessageId,
         )
-    }
 
     /**
      * Creates a new instance of `ChatMessage` representing a user message.
@@ -88,15 +82,17 @@ class ChatMessageFactory(
      * @param content The content of the message.
      * @param timestamp The timestamp of the message. Defaults to the current time.
      */
-    fun createUserMessage(content: String, timestamp: LocalDateTime = LocalDateTime.now()): ChatMessage {
-        return ChatMessage(
+    fun createUserMessage(
+        content: String,
+        timestamp: LocalDateTime = LocalDateTime.now(),
+    ): ChatMessage =
+        ChatMessage(
             content = content,
             author = myUserName,
             timestamp = timestamp,
             isMyMessage = true,
-            type = ChatMessage.ChatMessageType.TEXT
+            type = ChatMessage.ChatMessageType.TEXT,
         )
-    }
 
     companion object {
         private const val AI_THINKING_MESSAGE_ID = "ai-thinking-message-id"

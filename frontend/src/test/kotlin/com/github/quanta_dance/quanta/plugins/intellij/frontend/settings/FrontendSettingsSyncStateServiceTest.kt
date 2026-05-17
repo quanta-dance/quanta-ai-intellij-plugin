@@ -46,48 +46,50 @@ class FrontendSettingsSyncStateServiceTest {
     }
 
     @Test
-    fun `syncOnStartup marks state ready after successful sync`() = runBlocking {
-        val service = FrontendSettingsSyncStateService(project)
-        val backendDto =
-            QuantaSettingsDto(
-                openAiUrl = "https://sync.test/v1/",
-                openAiToken = "token-123",
-                model = "gpt-5-mini",
-                aiChatModel = "gpt-5",
-                availableChatModels = listOf("gpt-5", "gpt-5-mini"),
-                voiceEnabled = false,
-                voiceByLocalTTS = true,
-                maxTokens = 4096,
-                dynamicModelEnabled = true,
-                agenticEnabled = false,
-                extraInstructions = "sync ok",
-                debugEnabled = true,
-                maxAutomaticTurns = 12,
-                followEnabled = true,
-                terminalToolEnabled = true,
-                terminalAllowedCommandsCsv = "git status",
-                actionConfigsJson = "[]",
-            )
+    fun `syncOnStartup marks state ready after successful sync`() =
+        runBlocking {
+            val service = FrontendSettingsSyncStateService(project)
+            val backendDto =
+                QuantaSettingsDto(
+                    openAiUrl = "https://sync.test/v1/",
+                    openAiToken = "token-123",
+                    model = "gpt-5-mini",
+                    aiChatModel = "gpt-5",
+                    availableChatModels = listOf("gpt-5", "gpt-5-mini"),
+                    voiceEnabled = false,
+                    voiceByLocalTTS = true,
+                    maxTokens = 4096,
+                    dynamicModelEnabled = true,
+                    agenticEnabled = false,
+                    extraInstructions = "sync ok",
+                    debugEnabled = true,
+                    maxAutomaticTurns = 12,
+                    followEnabled = true,
+                    terminalToolEnabled = true,
+                    terminalAllowedCommandsCsv = "git status",
+                    actionConfigsJson = "[]",
+                )
 
-        coEvery { rpc.updateSettings(any()) } returns Unit
-        coEvery { rpc.getSettings() } returns backendDto
+            coEvery { rpc.updateSettings(any()) } returns Unit
+            coEvery { rpc.getSettings() } returns backendDto
 
-        service.syncOnStartup()
+            service.syncOnStartup()
 
-        assertEquals(FrontendSettingsSyncStateService.Status.READY, service.stateFlow.value.status)
-        assertEquals(backendDto.openAiUrl, frontendState.state.openAiUrl)
-        assertEquals(backendDto.aiChatModel, frontendState.state.aiChatModel)
-    }
+            assertEquals(FrontendSettingsSyncStateService.Status.READY, service.stateFlow.value.status)
+            assertEquals(backendDto.openAiUrl, frontendState.state.openAiUrl)
+            assertEquals(backendDto.aiChatModel, frontendState.state.aiChatModel)
+        }
 
     @Test
-    fun `retryNow marks state failed after sync error`() = runBlocking {
-        val service = FrontendSettingsSyncStateService(project)
+    fun `retryNow marks state failed after sync error`() =
+        runBlocking {
+            val service = FrontendSettingsSyncStateService(project)
 
-        coEvery { rpc.updateSettings(any()) } throws IllegalStateException("rpc unavailable")
+            coEvery { rpc.updateSettings(any()) } throws IllegalStateException("rpc unavailable")
 
-        service.retryNow()
+            service.retryNow()
 
-        assertEquals(FrontendSettingsSyncStateService.Status.FAILED, service.stateFlow.value.status)
-        assertEquals("rpc unavailable", service.stateFlow.value.lastErrorMessage)
-    }
+            assertEquals(FrontendSettingsSyncStateService.Status.FAILED, service.stateFlow.value.status)
+            assertEquals("rpc unavailable", service.stateFlow.value.lastErrorMessage)
+        }
 }

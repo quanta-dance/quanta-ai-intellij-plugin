@@ -11,7 +11,9 @@ import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiManager
 import java.nio.file.Paths
 
-class CurrentFileContextProvider(private val project: Project) {
+class CurrentFileContextProvider(
+    private val project: Project,
+) {
     data class CurrentFileContext(
         val projectBase: String,
         val filePathRelative: String,
@@ -32,8 +34,18 @@ class CurrentFileContextProvider(private val project: Project) {
 
         val rel =
             try {
-                val filePath = Paths.get(vf.path).toAbsolutePath().normalize().toString()
-                Paths.get(basePath).toAbsolutePath().normalize().relativize(Paths.get(filePath)).toString()
+                val filePath =
+                    Paths
+                        .get(vf.path)
+                        .toAbsolutePath()
+                        .normalize()
+                        .toString()
+                Paths
+                    .get(basePath)
+                    .toAbsolutePath()
+                    .normalize()
+                    .relativize(Paths.get(filePath))
+                    .toString()
                 PathUtils.relativizeToProject(basePath, Paths.get(filePath))
             } catch (_: Throwable) {
                 return null

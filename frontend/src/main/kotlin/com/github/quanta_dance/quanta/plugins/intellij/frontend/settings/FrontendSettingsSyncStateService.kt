@@ -67,7 +67,7 @@ class FrontendSettingsSyncStateService(
             if (delayMs > 0) {
                 logger.info(
                     "Quanta AI frontend settings sync retry scheduled for project=${project.name}, " +
-                            "reason=$reason, attempt=${attemptIndex + 1}, delayMs=$delayMs",
+                        "reason=$reason, attempt=${attemptIndex + 1}, delayMs=$delayMs",
                 )
                 delay(delayMs)
             }
@@ -78,7 +78,9 @@ class FrontendSettingsSyncStateService(
                 )
                 val mcpServersJson = project.service<FrontendMcpConfigService>().readForSync()
                 if (mcpServersJson == null) {
-                    backendLog.warn("Skipping frontend settings sync because MCP config is empty or unreadable for project=${project.name}, reason=$reason")
+                    backendLog.warn(
+                        "Skipping frontend settings sync because MCP config is empty or unreadable for project=${project.name}, reason=$reason",
+                    )
                     return false
                 }
                 backendLog.info(

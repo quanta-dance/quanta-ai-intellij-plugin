@@ -25,10 +25,11 @@ class ActiveSessionPlanCoordinatorTest {
                     ),
                 summaryText = "I updated the plan.",
                 sessionPlanToolCalledThisTurn = false,
-                planAtEvaluation = SessionPlan(
-                    status = "ACTIVE",
-                    tasks = listOf(SessionPlanTask("Inspect current behavior"))
-                ),
+                planAtEvaluation =
+                    SessionPlan(
+                        status = "ACTIVE",
+                        tasks = listOf(SessionPlanTask("Inspect current behavior")),
+                    ),
                 planWasActiveAtTurnStart = true,
                 pendingToolOutputsEmpty = true,
                 maxContinuations = 5,

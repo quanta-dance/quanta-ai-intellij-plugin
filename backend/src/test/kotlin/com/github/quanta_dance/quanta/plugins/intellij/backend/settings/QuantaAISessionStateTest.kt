@@ -15,26 +15,30 @@ class QuantaAISessionStateTest {
             Json.encodeToString(
                 QuantaAISessionState.State(
                     agents = mutableListOf(QuantaAISessionState.AgentProfile(id = "a1", role = "developer")),
-                    conversations = mutableMapOf(
-                        "main" to mutableListOf(
-                            QuantaAISessionState.PersistedMessage(
-                                timestamp = 1L,
-                                role = "user",
-                                text = "hello",
-                            ),
+                    conversations =
+                        mutableMapOf(
+                            "main" to
+                                mutableListOf(
+                                    QuantaAISessionState.PersistedMessage(
+                                        timestamp = 1L,
+                                        role = "user",
+                                        text = "hello",
+                                    ),
+                                ),
                         ),
-                    ),
                     conversationSummaries = mutableMapOf("main" to "summary"),
-                    agentInboxes = mutableMapOf(
-                        "a1" to mutableListOf(
-                            QuantaAISessionState.AgentInboxMessage(
-                                timestamp = 2L,
-                                from = "manager",
-                                text = "ping",
-                                kind = "note",
-                            ),
+                    agentInboxes =
+                        mutableMapOf(
+                            "a1" to
+                                mutableListOf(
+                                    QuantaAISessionState.AgentInboxMessage(
+                                        timestamp = 2L,
+                                        from = "manager",
+                                        text = "ping",
+                                        kind = "note",
+                                    ),
+                                ),
                         ),
-                    ),
                     mainLastResponseId = "resp-1",
                 ),
             )

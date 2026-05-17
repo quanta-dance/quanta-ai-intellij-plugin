@@ -33,7 +33,8 @@ class OpenAIBackendChatResponder(
 
         try {
             val client =
-                OpenAIOkHttpClient.builder()
+                OpenAIOkHttpClient
+                    .builder()
                     .apiKey(apiKey)
                     .baseUrl(baseUrl)
                     .maxRetries(2)
@@ -55,52 +56,59 @@ class OpenAIBackendChatResponder(
 
     private fun mergedInstructions(): String {
         val base = Instructions.instructions
-        val extra = BackendRuntimeSettingsService.instance.settings.extraInstructions?.trim().orEmpty()
+        val extra =
+            BackendRuntimeSettingsService.instance.settings.extraInstructions
+                ?.trim()
+                .orEmpty()
         return if (extra.isNotEmpty()) base + "\n\n# User Custom Instructions\n" + extra else base
     }
 
     private fun buildRequest(
         messages: List<ChatTurn>,
         systemInstructions: String,
-        contextMessage: String?
+        contextMessage: String?,
     ): ResponseCreateParams {
-        val input = buildList<ResponseInputItem> {
-            add(
-                ResponseInputItem.ofEasyInputMessage(
-                    EasyInputMessage.builder()
-                        .role(EasyInputMessage.Role.SYSTEM)
-                        .content(systemInstructions)
-                        .build(),
-                ),
-            )
-            if (!contextMessage.isNullOrBlank()) {
+        val input =
+            buildList<ResponseInputItem> {
                 add(
                     ResponseInputItem.ofEasyInputMessage(
-                        EasyInputMessage.builder()
+                        EasyInputMessage
+                            .builder()
                             .role(EasyInputMessage.Role.SYSTEM)
-                            .content(contextMessage)
+                            .content(systemInstructions)
                             .build(),
                     ),
                 )
+                if (!contextMessage.isNullOrBlank()) {
+                    add(
+                        ResponseInputItem.ofEasyInputMessage(
+                            EasyInputMessage
+                                .builder()
+                                .role(EasyInputMessage.Role.SYSTEM)
+                                .content(contextMessage)
+                                .build(),
+                        ),
+                    )
+                }
+                messages.forEach { turn ->
+                    add(
+                        ResponseInputItem.ofEasyInputMessage(
+                            EasyInputMessage
+                                .builder()
+                                .role(
+                                    when (turn.role.lowercase()) {
+                                        "assistant" -> EasyInputMessage.Role.ASSISTANT
+                                        else -> EasyInputMessage.Role.USER
+                                    },
+                                ).content(turn.content)
+                                .build(),
+                        ),
+                    )
+                }
             }
-            messages.forEach { turn ->
-                add(
-                    ResponseInputItem.ofEasyInputMessage(
-                        EasyInputMessage.builder()
-                            .role(
-                                when (turn.role.lowercase()) {
-                                    "assistant" -> EasyInputMessage.Role.ASSISTANT
-                                    else -> EasyInputMessage.Role.USER
-                                },
-                            )
-                            .content(turn.content)
-                            .build(),
-                    ),
-                )
-            }
-        }
 
-        return ResponseCreateParams.builder()
+        return ResponseCreateParams
+            .builder()
             .model(ResponsesModel.ofChat(ChatModel.of(model)))
             .inputOfResponse(input)
             .build()

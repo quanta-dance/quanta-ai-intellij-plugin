@@ -3,7 +3,11 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.backend.contracts
 
-import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.*
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.WorkspaceFileReadRequest
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.WorkspaceFileReadResult
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.WorkspaceFileService
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.WorkspaceFileWriteRequest
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.WorkspaceFileWriteResult
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.vfs.LocalFileSystem
@@ -29,7 +33,7 @@ class BackendWorkspaceFileService : WorkspaceFileService {
                         false,
                         "",
                         e.message ?: "Invalid path",
-                        source = "backend"
+                        source = "backend",
                     )
                 }
 
@@ -56,8 +60,10 @@ class BackendWorkspaceFileService : WorkspaceFileService {
         val parent =
             resolved.parent ?: return WorkspaceFileWriteResult(false, "Parent directory not found", source = "backend")
         LocalFileSystem.getInstance().refreshAndFindFileByPath(parent.toString())
-        java.nio.file.Files.createDirectories(parent)
-        java.nio.file.Files.writeString(resolved, request.content, StandardCharsets.UTF_8)
+        java.nio.file.Files
+            .createDirectories(parent)
+        java.nio.file.Files
+            .writeString(resolved, request.content, StandardCharsets.UTF_8)
         LocalFileSystem.getInstance().refreshAndFindFileByPath(resolved.toString())
         return WorkspaceFileWriteResult(success = true, source = "backend")
     }

@@ -17,11 +17,12 @@ class AgentRemoveTool : ToolInterface<Map<String, Any>> {
 
     override fun execute(project: Project): Map<String, Any> {
         val svc = project.service<AgentManagerService>()
-        val resolvedId = svc.resolveAgentId(agentId)
-            ?: return mapOf(
-                "status" to "error",
-                "message" to "unknown or ambiguous agent id/role",
-            )
+        val resolvedId =
+            svc.resolveAgentId(agentId)
+                ?: return mapOf(
+                    "status" to "error",
+                    "message" to "unknown or ambiguous agent id/role",
+                )
 
         val ok = svc.removeAgent(resolvedId)
         return if (ok) {

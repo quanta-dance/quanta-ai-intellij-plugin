@@ -11,7 +11,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization) apply false
     alias(libs.plugins.compose.compiler) apply false
     alias(libs.plugins.rpc) apply false
-    id("com.diffplug.spotless") version "8.4.0"
+    id("com.diffplug.spotless") version "8.5.1"
 }
 
 subprojects {
@@ -28,6 +28,7 @@ subprojects {
         spotless {
             kotlin {
                 licenseHeaderFile(rootProject.file("config/license/HEADER"))
+                ktlint()
                 trimTrailingWhitespace()
                 endWithNewline()
             }
@@ -97,6 +98,25 @@ tasks {
     buildPlugin {
         dependsOn(sourcesJar)
         from(sourcesJar) { into("lib/src") }
+    }
+
+    signPlugin {
+        enabled = false
+    }
+
+    publishPlugin {
+        enabled = true
+        token = System.getenv("JETBRAINS_API_TOKEN")
+    }
+
+    test {
+        testLogging {
+            events("passed", "skipped", "failed")
+            exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+            showExceptions = true
+            showCauses = false
+            showStackTraces = false
+        }
     }
 }
 

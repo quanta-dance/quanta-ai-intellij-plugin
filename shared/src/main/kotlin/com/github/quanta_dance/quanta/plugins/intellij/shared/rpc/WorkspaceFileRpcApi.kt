@@ -17,10 +17,14 @@ import fleet.rpc.remoteApiDescriptor
 interface WorkspaceFileRpcApi : RemoteApi<Unit> {
     companion object {
         suspend fun getInstance(): WorkspaceFileRpcApi =
-            com.intellij.platform.rpc.RemoteApiProviderService.resolve(remoteApiDescriptor<WorkspaceFileRpcApi>())
+            com.intellij.platform.rpc.RemoteApiProviderService
+                .resolve(remoteApiDescriptor<WorkspaceFileRpcApi>())
     }
 
     suspend fun read(path: String): String
 
-    suspend fun write(path: String, content: String): Boolean
+    suspend fun write(
+        path: String,
+        content: String,
+    ): Boolean
 }

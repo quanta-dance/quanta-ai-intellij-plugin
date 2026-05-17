@@ -19,15 +19,16 @@ object ProjectVersionUtil {
 
         return projectBaseDir.children
             .filter { file ->
-                file.name in listOf(
-                    "build.gradle.kts",
-                    "build.gradle",
-                    "pom.xml",
-                    "build.sbt",
-                    "Cargo.toml",
-                    "go.mod",
-                    "package.json"
-                )
+                file.name in
+                    listOf(
+                        "build.gradle.kts",
+                        "build.gradle",
+                        "pom.xml",
+                        "build.sbt",
+                        "Cargo.toml",
+                        "go.mod",
+                        "package.json",
+                    )
             }.map { it.name }
     }
 
@@ -82,8 +83,16 @@ object ProjectVersionUtil {
         return buildString {
             if (!javaVersion.isNullOrBlank()) append("Java $javaVersion")
             if (!kotlinVersion.isNullOrBlank()) append(if (isEmpty()) "Kotlin $kotlinVersion" else ", Kotlin $kotlinVersion")
-            if (!kotlinJvmTarget.isNullOrBlank()) append(if (isEmpty()) "Kotlin JVM target $kotlinJvmTarget" else ", Kotlin JVM target $kotlinJvmTarget")
-            if (!kotlinLangVersion.isNullOrBlank()) append(if (isEmpty()) "Kotlin language $kotlinLangVersion" else ", Kotlin language $kotlinLangVersion")
+            if (!kotlinJvmTarget.isNullOrBlank()) {
+                append(
+                    if (isEmpty()) "Kotlin JVM target $kotlinJvmTarget" else ", Kotlin JVM target $kotlinJvmTarget",
+                )
+            }
+            if (!kotlinLangVersion.isNullOrBlank()) {
+                append(
+                    if (isEmpty()) "Kotlin language $kotlinLangVersion" else ", Kotlin language $kotlinLangVersion",
+                )
+            }
             if (!gradleVersion.isNullOrBlank()) append(if (isEmpty()) "Gradle $gradleVersion" else ", Gradle $gradleVersion")
             if (!mavenVersion.isNullOrBlank()) append(if (isEmpty()) "Maven $mavenVersion" else ", Maven $mavenVersion")
             if (!scalaVersion.isNullOrBlank()) append(if (isEmpty()) "Scala $scalaVersion" else ", Scala $scalaVersion")
@@ -95,12 +104,20 @@ object ProjectVersionUtil {
     }
 
     private fun getJavaVersion(project: Project): String? = null
+
     private fun getKotlinVersion(project: Project): String? = null
+
     private fun getKotlinTargetsFromBuild(project: Project): Pair<String?, String?> = null to null
+
     private fun getGradleVersion(project: Project): String? = null
+
     private fun getMavenVersion(project: Project): String? = null
+
     private fun getScalaVersion(project: Project): String? = null
+
     private fun getGoVersion(project: Project): String? = null
+
     private fun getNodeAndTsVersions(project: Project): Pair<String?, String?> = null to null
+
     private fun getRustVersion(project: Project): String? = null
 }

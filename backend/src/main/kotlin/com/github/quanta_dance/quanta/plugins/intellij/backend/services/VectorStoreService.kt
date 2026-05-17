@@ -6,14 +6,16 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.services
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
 
-@Service(Service.Level.PROJECT)
 /**
  * Project-scoped facade over the backing vector store.
  *
  * Keeps callers decoupled from the concrete SQLite implementation and exposes only the
  * minimal operations needed by the plugin services and tools.
  */
-class VectorStoreService(private val project: Project) {
+@Service(Service.Level.PROJECT)
+class VectorStoreService(
+    private val project: Project,
+) {
     private val store: SQLiteVectorStore = SQLiteVectorStore.getInstance(project)
 
     /** Inserts or updates a vector along with its metadata. */
@@ -40,9 +42,7 @@ class VectorStoreService(private val project: Project) {
         queryVector: FloatArray,
         topK: Int = 10,
         projectKey: String? = null,
-    ): List<SearchResult> {
-        return store.search(queryVector, topK, projectKey)
-    }
+    ): List<SearchResult> = store.search(queryVector, topK, projectKey)
 
     companion object {
         fun getInstance(project: Project): VectorStoreService = project.getService(VectorStoreService::class.java)

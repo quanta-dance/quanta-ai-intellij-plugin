@@ -10,16 +10,16 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterfac
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 
-@JsonClassDescription(
-    "Manage the cooperative session plan state for the current chat session. " +
-            "Use this tool to draft a plan, activate it after user approval, mark tasks completed, or read the current plan.",
-)
 /**
  * Backend tool for maintaining the session-level execution plan shared across turns.
  *
  * It is the main persistence layer for cooperative planning, allowing agents to draft, activate,
  * read, and complete work items through typed session state.
  */
+@JsonClassDescription(
+    "Manage the cooperative session plan state for the current chat session. " +
+        "Use this tool to draft a plan, activate it after user approval, mark tasks completed, or read the current plan.",
+)
 class SessionPlanTool : ToolInterface<String> {
     @field:JsonPropertyDescription("Action to perform: READ | DRAFT | ACTIVATE | COMPLETE | SET_DONE")
     var action: String? = null
@@ -44,11 +44,19 @@ class SessionPlanTool : ToolInterface<String> {
 
     override fun execute(project: Project): String {
         val svc = project.service<SessionPlanService>()
-        val act = action?.trim()?.uppercase().orEmpty().ifBlank { "READ" }
+        val act =
+            action
+                ?.trim()
+                ?.uppercase()
+                .orEmpty()
+                .ifBlank { "READ" }
         val limit = (maxChars ?: 8_000).coerceIn(200, 64_000)
 
         return when (act) {
-            "READ" -> svc.loadText(maxChars = limit)
+            "READ" -> {
+                svc.loadText(maxChars = limit)
+            }
+
             "DRAFT" -> {
                 val result =
                     svc.saveDraft(
@@ -86,7 +94,9 @@ class SessionPlanTool : ToolInterface<String> {
                 renderResult(result.issue, svc.loadText(maxChars = limit), result.plan.revision)
             }
 
-            else -> "Unknown action '$act'. Supported actions: READ, DRAFT, ACTIVATE, COMPLETE, SET_DONE"
+            else -> {
+                "Unknown action '$act'. Supported actions: READ, DRAFT, ACTIVATE, COMPLETE, SET_DONE"
+            }
         }
     }
 

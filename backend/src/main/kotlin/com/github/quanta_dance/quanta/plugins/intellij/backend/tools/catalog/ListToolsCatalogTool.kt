@@ -31,10 +31,10 @@ class ListToolsCatalogTool : ToolInterface<Map<String, Any>> {
         return mapOf(
             "builtIns" to builtInNames,
             "mcp" to
-                    mapOf(
-                        "servers" to servers,
-                        "toolsByServer" to toolsByServer,
-                    ),
+                mapOf(
+                    "servers" to servers,
+                    "toolsByServer" to toolsByServer,
+                ),
         )
     }
 }

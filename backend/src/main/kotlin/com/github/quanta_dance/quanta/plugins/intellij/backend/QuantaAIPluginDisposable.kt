@@ -9,15 +9,11 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
 
 @Service(Service.Level.APP, Service.Level.PROJECT)
-class QuantaAIPluginDisposable() : Disposable {
+class QuantaAIPluginDisposable : Disposable {
     companion object {
-        fun getInstance(): Disposable {
-            return ApplicationManager.getApplication().getService(QuantaAIPluginDisposable::class.java)
-        }
+        fun getInstance(): Disposable = ApplicationManager.getApplication().getService(QuantaAIPluginDisposable::class.java)
 
-        fun getInstance(project: Project): Disposable {
-            return project.getService(QuantaAIPluginDisposable::class.java)
-        }
+        fun getInstance(project: Project): Disposable = project.getService(QuantaAIPluginDisposable::class.java)
     }
 
     override fun dispose() {

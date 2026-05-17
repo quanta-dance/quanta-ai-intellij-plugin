@@ -13,7 +13,13 @@ import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.openapi.vfs.newvfs.BulkFileListener
 import com.intellij.openapi.vfs.newvfs.events.VFileEvent
 import com.intellij.util.messages.MessageBusConnection
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.io.File
 
 /**
@@ -50,23 +56,25 @@ class FrontendMcpConfigService(
             VirtualFileManager.VFS_CHANGES,
             object : BulkFileListener {
                 override fun after(events: MutableList<out VFileEvent>) {
-                    val changed = events.any { event ->
-                        val path = event.path
-                        path.isNotBlank() && FileUtilRt.toSystemIndependentName(path) == configPathSi
-                    }
+                    val changed =
+                        events.any { event ->
+                            val path = event.path
+                            path.isNotBlank() && FileUtilRt.toSystemIndependentName(path) == configPathSi
+                        }
                     if (!changed) return
 
                     log.info("Detected frontend MCP config change at $configPathSi, scheduling backend sync")
                     syncJob?.cancel()
-                    syncJob = scope.launch {
-                        delay(250)
-                        val text = readForSync()
-                        if (text == null) {
-                            log.warn("Skipping MCP sync because file content is empty or unreadable during save")
-                            return@launch
+                    syncJob =
+                        scope.launch {
+                            delay(250)
+                            val text = readForSync()
+                            if (text == null) {
+                                log.warn("Skipping MCP sync because file content is empty or unreadable during save")
+                                return@launch
+                            }
+                            project.service<FrontendSettingsSyncStateService>().retryNow()
                         }
-                        project.service<FrontendSettingsSyncStateService>().retryNow()
-                    }
                 }
             },
         )
@@ -81,15 +89,16 @@ class FrontendMcpConfigService(
             file.writeText(DEFAULT_MCP_JSON)
             log.info("Created default frontend MCP config at ${file.absolutePath}; watcher is active for path=$configPathSi")
             syncJob?.cancel()
-            syncJob = scope.launch {
-                project.service<FrontendSettingsSyncStateService>().retryNow()
-            }
+            syncJob =
+                scope.launch {
+                    project.service<FrontendSettingsSyncStateService>().retryNow()
+                }
         }
         return file
     }
 
-    fun readForSync(): String? {
-        return try {
+    fun readForSync(): String? =
+        try {
             val file = configFile
             if (!file.exists()) {
                 log.info("Frontend MCP config is absent at ${file.absolutePath}; returning empty JSON for sync")
@@ -108,7 +117,6 @@ class FrontendMcpConfigService(
             log.warn("Failed to read frontend MCP config for sync: ${t.message}")
             null
         }
-    }
 
     override fun close() {
         syncJob?.cancel()

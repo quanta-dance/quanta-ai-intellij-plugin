@@ -19,7 +19,7 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
-import java.util.*
+import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.LinkedBlockingQueue
 
@@ -30,7 +30,9 @@ import java.util.concurrent.LinkedBlockingQueue
  * The frontend uses the streaming helpers to play back audio in chunks.
  */
 @Service(Service.Level.PROJECT)
-class AIVoiceService(private val project: Project) {
+class AIVoiceService(
+    private val project: Project,
+) {
     companion object {
         private val logger = Logger.getInstance(AIVoiceService::class.java)
         private const val STREAM_CHUNK_SIZE = 16 * 1024
@@ -58,7 +60,8 @@ class AIVoiceService(private val project: Project) {
         QDLog.info(logger) { "AIVoiceService.say: synthesizing speech for ${text.take(80)}" }
 
         val params =
-            SpeechCreateParams.builder()
+            SpeechCreateParams
+                .builder()
                 .input(text)
                 .model(SpeechModel.GPT_4O_MINI_TTS)
                 .voice(SpeechCreateParams.Voice.UnionMember1.ASH)
@@ -77,7 +80,10 @@ class AIVoiceService(private val project: Project) {
      *
      * The generated PCM chunks are buffered in-memory for frontend polling.
      */
-    fun startSpeechStream(sessionId: String, message: String) {
+    fun startSpeechStream(
+        sessionId: String,
+        message: String,
+    ) {
         stopTalking()
         val text = message.trim()
         if (text.isEmpty()) {
@@ -88,107 +94,116 @@ class AIVoiceService(private val project: Project) {
         val state = SpeechStreamState()
         streams[sessionId] = state
 
-        currentStreamJob = executionContexts.voiceStreamingScope.launch {
-            try {
-                val settings = BackendRuntimeSettingsService.instance.settings
-                val baseUrl = settings.openAiUrl.trim().trimEnd('/')
-                val requestJson =
-                    objectMapper.writeValueAsString(
-                        mapOf(
-                            "model" to "gpt-4o-mini-tts",
-                            "input" to text,
-                            "voice" to "ash",
-                            "response_format" to "pcm",
-                        ),
-                    )
+        currentStreamJob =
+            executionContexts.voiceStreamingScope.launch {
+                try {
+                    val settings = BackendRuntimeSettingsService.instance.settings
+                    val baseUrl = settings.openAiUrl.trim().trimEnd('/')
+                    val requestJson =
+                        objectMapper.writeValueAsString(
+                            mapOf(
+                                "model" to "gpt-4o-mini-tts",
+                                "input" to text,
+                                "voice" to "ash",
+                                "response_format" to "pcm",
+                            ),
+                        )
 
-                val request =
-                    HttpRequest.newBuilder()
-                        .uri(URI.create("$baseUrl/audio/speech"))
-                        .header("Authorization", "Bearer ${settings.openAiToken}")
-                        .header("Content-Type", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString(requestJson))
-                        .build()
+                    val request =
+                        HttpRequest
+                            .newBuilder()
+                            .uri(URI.create("$baseUrl/audio/speech"))
+                            .header("Authorization", "Bearer ${settings.openAiToken}")
+                            .header("Content-Type", "application/json")
+                            .POST(HttpRequest.BodyPublishers.ofString(requestJson))
+                            .build()
 
-                val response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream())
-                response.body().use { input ->
-                    if (response.statusCode() !in 200..299) {
-                        error("${response.statusCode()}: ${input.readBytes().decodeToString()}")
-                    }
-                    val buffer = ByteArray(STREAM_CHUNK_SIZE)
-                    var sequence = 0
-                    var pendingOddByte: Byte? = null
-                    while (true) {
-                        val read = input.read(buffer)
-                        if (read <= 0) break
+                    val response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream())
+                    response.body().use { input ->
+                        if (response.statusCode() !in 200..299) {
+                            error("${response.statusCode()}: ${input.readBytes().decodeToString()}")
+                        }
+                        val buffer = ByteArray(STREAM_CHUNK_SIZE)
+                        var sequence = 0
+                        var pendingOddByte: Byte? = null
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read <= 0) break
 
-                        val rawChunk =
-                            if (pendingOddByte != null) {
-                                byteArrayOf(pendingOddByte!!) + buffer.copyOf(read)
-                            } else {
-                                buffer.copyOf(read)
+                            val rawChunk =
+                                if (pendingOddByte != null) {
+                                    byteArrayOf(pendingOddByte!!) + buffer.copyOf(read)
+                                } else {
+                                    buffer.copyOf(read)
+                                }
+                            pendingOddByte = null
+
+                            val evenLength = rawChunk.size - (rawChunk.size % 2)
+                            if (evenLength <= 0) {
+                                pendingOddByte = rawChunk.lastOrNull()
+                                continue
                             }
-                        pendingOddByte = null
+                            if (evenLength < rawChunk.size) {
+                                pendingOddByte = rawChunk.last()
+                            }
 
-                        val evenLength = rawChunk.size - (rawChunk.size % 2)
-                        if (evenLength <= 0) {
-                            pendingOddByte = rawChunk.lastOrNull()
-                            continue
+                            val pcmChunk = rawChunk.copyOf(evenLength)
+                            val currentSequence = sequence++
+                            QDLog.info(
+                                logger,
+                            ) { "AIVoiceService.stream enqueue sessionId=$sessionId sequence=$currentSequence bytes=${pcmChunk.size}" }
+                            state.chunks.put(
+                                SpeechChunkDto(
+                                    sessionId = sessionId,
+                                    chunkBase64 = Base64.getEncoder().encodeToString(pcmChunk),
+                                    sequence = currentSequence,
+                                    isLast = false,
+                                ),
+                            )
                         }
-                        if (evenLength < rawChunk.size) {
-                            pendingOddByte = rawChunk.last()
+                        if (pendingOddByte != null) {
+                            QDLog.info(logger) { "AIVoiceService.stream dropping dangling odd byte sessionId=$sessionId" }
                         }
-
-                        val pcmChunk = rawChunk.copyOf(evenLength)
-                        val currentSequence = sequence++
-                        QDLog.info(logger) { "AIVoiceService.stream enqueue sessionId=$sessionId sequence=$currentSequence bytes=${pcmChunk.size}" }
+                        QDLog.info(logger) { "AIVoiceService.stream enqueue-last sessionId=$sessionId sequence=$sequence" }
                         state.chunks.put(
                             SpeechChunkDto(
                                 sessionId = sessionId,
-                                chunkBase64 = Base64.getEncoder().encodeToString(pcmChunk),
-                                sequence = currentSequence,
-                                isLast = false,
+                                chunkBase64 = "",
+                                sequence = sequence,
+                                isLast = true,
                             ),
                         )
                     }
-                    if (pendingOddByte != null) {
-                        QDLog.info(logger) { "AIVoiceService.stream dropping dangling odd byte sessionId=$sessionId" }
-                    }
-                    QDLog.info(logger) { "AIVoiceService.stream enqueue-last sessionId=$sessionId sequence=$sequence" }
-                    state.chunks.put(
+                } catch (t: Throwable) {
+                    QDLog.warn(logger, { "AIVoiceService.startSpeechStream failed: ${t.message}" }, t)
+                    state.chunks.offer(
                         SpeechChunkDto(
                             sessionId = sessionId,
                             chunkBase64 = "",
-                            sequence = sequence,
+                            sequence = Int.MAX_VALUE,
                             isLast = true,
                         ),
                     )
+                } finally {
+                    state.finished = true
                 }
-            } catch (t: Throwable) {
-                QDLog.warn(logger, { "AIVoiceService.startSpeechStream failed: ${t.message}" }, t)
-                state.chunks.offer(
-                    SpeechChunkDto(
-                        sessionId = sessionId,
-                        chunkBase64 = "",
-                        sequence = Int.MAX_VALUE,
-                        isLast = true,
-                    ),
-                )
-            } finally {
-                state.finished = true
             }
-        }
     }
 
     /**
      * Poll the next available chunk for a session stream.
      */
-    fun pollSpeechChunk(sessionId: String, afterSequence: Int): SpeechChunkDto {
+    fun pollSpeechChunk(
+        sessionId: String,
+        afterSequence: Int,
+    ): SpeechChunkDto {
         val state =
             streams[sessionId] ?: return SpeechChunkDto(sessionId = sessionId, sequence = afterSequence, isLast = true)
         val next = state.chunks.poll()
         if (next != null) {
-            QDLog.info(logger) { "AIVoiceService.stream poll sessionId=$sessionId requestedAfter=$afterSequence returnedSequence=${next.sequence} isLast=${next.isLast} bytesBase64=${next.chunkBase64.length}" }
+            QDLog.info(logger) {
+                "AIVoiceService.stream poll sessionId=$sessionId requestedAfter=$afterSequence returnedSequence=${next.sequence} isLast=${next.isLast} bytesBase64=${next.chunkBase64.length}"
+            }
             if (next.isLast) {
                 streams.remove(sessionId)
             }

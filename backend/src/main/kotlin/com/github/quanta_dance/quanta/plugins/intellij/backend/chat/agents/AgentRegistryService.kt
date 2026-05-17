@@ -7,7 +7,8 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.Instruct
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.QuantaAISessionState
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
-import java.util.*
+import java.util.LinkedHashMap
+import java.util.UUID
 
 /**
  * Session-scoped registry of delegated agents available to the backend chat runtime.
@@ -47,11 +48,12 @@ class AgentRegistryService(
 
     init {
         QuantaAISessionState.instance.state.agents.forEach { profile ->
-            val session = AgentSession(
-                id = profile.id,
-                config = AgentConfig(profile.role, profile.model, profile.instructions),
-                previousId = profile.previousId,
-            )
+            val session =
+                AgentSession(
+                    id = profile.id,
+                    config = AgentConfig(profile.role, profile.model, profile.instructions),
+                    previousId = profile.previousId,
+                )
             agents[session.id] = session
         }
     }
@@ -63,14 +65,15 @@ class AgentRegistryService(
 
     fun createAgent(config: AgentConfig): String {
         val id = UUID.randomUUID().toString()
-        val baseInstr = buildString {
-            append("You are an assistant agent with the role '").append(config.role).append("'. ")
-            append("Follow the global development instructions. Communicate in plain text.\n\n")
-            append(Instructions.instructions)
-            if (!config.instructions.isNullOrBlank()) {
-                append("\n\n# Role-specific instructions\n").append(config.instructions)
+        val baseInstr =
+            buildString {
+                append("You are an assistant agent with the role '").append(config.role).append("'. ")
+                append("Follow the global development instructions. Communicate in plain text.\n\n")
+                append(Instructions.instructions)
+                if (!config.instructions.isNullOrBlank()) {
+                    append("\n\n# Role-specific instructions\n").append(config.instructions)
+                }
             }
-        }
         val session = AgentSession(id = id, config = config.copy(instructions = baseInstr))
         agents[id] = session
         QuantaAISessionState.instance.state.agents.add(

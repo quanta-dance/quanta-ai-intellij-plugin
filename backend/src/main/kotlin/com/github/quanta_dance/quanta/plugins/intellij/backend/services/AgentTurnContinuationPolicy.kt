@@ -31,17 +31,27 @@ class AgentTurnContinuationPolicy {
             append(message.nextStep?.uppercase().orEmpty())
             append('|').append(effectivePlanStatus.orEmpty())
             append('|').append(message.planNeedsUserConfirmation == true)
-            append('|').append(message.blockingReasonType?.trim()?.uppercase().orEmpty())
-            append('|').append(message.planCompletedTasks?.sorted()?.joinToString("||").orEmpty())
+            append('|').append(
+                message.blockingReasonType
+                    ?.trim()
+                    ?.uppercase()
+                    .orEmpty(),
+            )
+            append('|').append(
+                message.planCompletedTasks
+                    ?.sorted()
+                    ?.joinToString("||")
+                    .orEmpty(),
+            )
             append('|').append(normalizePlanLoopSummary(summaryText))
         }
 
     fun responseAttemptsPlanMutationWithoutTool(message: OpenAIResponse): Boolean =
         !message.planStatus.isNullOrBlank() ||
-                !message.planGoal.isNullOrBlank() ||
-                !message.planDefinitionOfDone.isNullOrBlank() ||
-                !message.planTasks.isNullOrEmpty() ||
-                !message.planCompletedTasks.isNullOrEmpty()
+            !message.planGoal.isNullOrBlank() ||
+            !message.planDefinitionOfDone.isNullOrBlank() ||
+            !message.planTasks.isNullOrEmpty() ||
+            !message.planCompletedTasks.isNullOrEmpty()
 
     fun isHardBlockedActivePlanResponse(message: OpenAIResponse): Boolean {
         val blockingQuestion = message.planBlockingQuestion?.trim().orEmpty()
@@ -51,31 +61,32 @@ class AgentTurnContinuationPolicy {
         return blockingQuestion.isNotBlank() && !isRoutineConfirmationQuestion(blockingQuestion)
     }
 
-    fun isApprovedBlockingReasonType(blockingReasonType: String?): Boolean =
-        normalizeBlockingReasonType(blockingReasonType) != null
+    fun isApprovedBlockingReasonType(blockingReasonType: String?): Boolean = normalizeBlockingReasonType(blockingReasonType) != null
 
     fun isRoutineConfirmationQuestion(question: String): Boolean {
         val q = question.trim().lowercase()
         if (q.isBlank()) return false
-        val leadingPatterns = listOf(
-            "should i",
-            "do you want",
-            "would you like",
-            "shall i",
-            "may i",
-            "can i continue",
-            "can i proceed",
-            "please confirm",
-            "confirm that i should",
-        )
+        val leadingPatterns =
+            listOf(
+                "should i",
+                "do you want",
+                "would you like",
+                "shall i",
+                "may i",
+                "can i continue",
+                "can i proceed",
+                "please confirm",
+                "confirm that i should",
+            )
         if (leadingPatterns.any { q.startsWith(it) }) return true
-        val contextualPatterns = listOf(
-            "before i continue",
-            "before proceeding",
-            "before i make changes",
-            "before applying",
-            "before running",
-        )
+        val contextualPatterns =
+            listOf(
+                "before i continue",
+                "before proceeding",
+                "before i make changes",
+                "before applying",
+                "before running",
+            )
         return contextualPatterns.any { q.contains(it) }
     }
 
@@ -85,7 +96,8 @@ class AgentTurnContinuationPolicy {
     }
 
     private fun normalizePlanLoopSummary(text: String): String =
-        text.lowercase()
+        text
+            .lowercase()
             .replace(Regex("\\s+"), " ")
             .replace(Regex("[^a-z0-9 _|:-]"), "")
             .trim()

@@ -6,7 +6,15 @@
 package com.github.quanta_dance.quanta.plugins.intellij.shared.rpc
 
 import com.github.quanta_dance.quanta.plugins.intellij.models.Suggestion
-import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.*
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ApplyRefactorSuggestionResultDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.FrontendLogDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.MicrophoneTranscriptionResultDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.SpeechChunkDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.SynthesizedSpeechDto
 import com.intellij.platform.project.ProjectId
 import com.intellij.platform.rpc.RemoteApiProviderService
 import fleet.rpc.RemoteApi
@@ -23,14 +31,15 @@ import kotlinx.coroutines.flow.Flow
 @Rpc
 interface QuantaBackendApi : RemoteApi<Unit> {
     companion object {
-        suspend fun getInstance(): QuantaBackendApi {
-            return RemoteApiProviderService.resolve(remoteApiDescriptor<QuantaBackendApi>())
-        }
+        suspend fun getInstance(): QuantaBackendApi = RemoteApiProviderService.resolve(remoteApiDescriptor<QuantaBackendApi>())
     }
 
     suspend fun ping(): String
 
-    suspend fun logFrontend(projectId: ProjectId, entry: FrontendLogDto)
+    suspend fun logFrontend(
+        projectId: ProjectId,
+        entry: FrontendLogDto,
+    )
 
     suspend fun getCurrentPlanStatus(projectId: ProjectId): ChatPlanStatusDto
 
@@ -50,25 +59,59 @@ interface QuantaBackendApi : RemoteApi<Unit> {
 
     suspend fun createDefaultAgentTeam(projectId: ProjectId): List<AgentInfoDto>
 
-    suspend fun synthesizeSpeech(projectId: ProjectId, text: String): SynthesizedSpeechDto
+    suspend fun synthesizeSpeech(
+        projectId: ProjectId,
+        text: String,
+    ): SynthesizedSpeechDto
 
-    suspend fun startSpeechStream(projectId: ProjectId, sessionId: String, text: String)
+    suspend fun startSpeechStream(
+        projectId: ProjectId,
+        sessionId: String,
+        text: String,
+    )
 
-    suspend fun pollSpeechChunk(projectId: ProjectId, sessionId: String, afterSequence: Int): SpeechChunkDto
+    suspend fun pollSpeechChunk(
+        projectId: ProjectId,
+        sessionId: String,
+        afterSequence: Int,
+    ): SpeechChunkDto
 
     suspend fun stopSpeech(projectId: ProjectId)
 
-    suspend fun startMicrophoneSession(projectId: ProjectId, sessionId: String)
+    suspend fun startMicrophoneSession(
+        projectId: ProjectId,
+        sessionId: String,
+    )
 
-    suspend fun appendMicrophoneAudioChunk(projectId: ProjectId, sessionId: String, chunkBase64: String)
+    suspend fun appendMicrophoneAudioChunk(
+        projectId: ProjectId,
+        sessionId: String,
+        chunkBase64: String,
+    )
 
-    suspend fun finishMicrophoneSession(projectId: ProjectId, sessionId: String): MicrophoneTranscriptionResultDto
+    suspend fun finishMicrophoneSession(
+        projectId: ProjectId,
+        sessionId: String,
+    ): MicrophoneTranscriptionResultDto
 
-    suspend fun cancelMicrophoneSession(projectId: ProjectId, sessionId: String)
+    suspend fun cancelMicrophoneSession(
+        projectId: ProjectId,
+        sessionId: String,
+    )
 
-    suspend fun openProjectFile(projectId: ProjectId, relativePath: String)
+    suspend fun openProjectFile(
+        projectId: ProjectId,
+        relativePath: String,
+    )
 
-    suspend fun openProjectFileAtLine(projectId: ProjectId, relativePath: String, line: Int)
+    suspend fun openProjectFileAtLine(
+        projectId: ProjectId,
+        relativePath: String,
+        line: Int,
+    )
 
-    suspend fun applyRefactorSuggestion(projectId: ProjectId, suggestion: Suggestion): ApplyRefactorSuggestionResultDto
+    suspend fun applyRefactorSuggestion(
+        projectId: ProjectId,
+        suggestion: Suggestion,
+    ): ApplyRefactorSuggestionResultDto
 }

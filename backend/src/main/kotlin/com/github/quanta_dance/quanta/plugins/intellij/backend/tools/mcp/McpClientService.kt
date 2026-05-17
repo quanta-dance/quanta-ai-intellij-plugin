@@ -13,13 +13,19 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
-import io.ktor.client.*
-import io.ktor.client.engine.java.*
-import io.ktor.client.plugins.*
-import io.ktor.client.plugins.sse.*
-import io.ktor.client.plugins.websocket.*
-import io.ktor.http.*
-import io.modelcontextprotocol.kotlin.sdk.client.*
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.java.Java
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.plugins.sse.SSE
+import io.ktor.client.plugins.websocket.WebSockets
+import io.ktor.http.HttpHeaders
+import io.modelcontextprotocol.kotlin.sdk.client.Client
+import io.modelcontextprotocol.kotlin.sdk.client.ClientOptions
+import io.modelcontextprotocol.kotlin.sdk.client.SseClientTransport
+import io.modelcontextprotocol.kotlin.sdk.client.StdioClientTransport
+import io.modelcontextprotocol.kotlin.sdk.client.StreamableHttpClientTransport
+import io.modelcontextprotocol.kotlin.sdk.client.WebSocketClientTransport
 import io.modelcontextprotocol.kotlin.sdk.shared.AbstractTransport
 import io.modelcontextprotocol.kotlin.sdk.types.Implementation
 import io.modelcontextprotocol.kotlin.sdk.types.ListToolsRequest
@@ -39,6 +45,7 @@ import java.net.URI
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.runCatching
 import kotlin.time.Duration.Companion.seconds
 
 @Service(Service.Level.PROJECT)
@@ -93,10 +100,11 @@ class McpClientService(
         val mcpConfigJson = BackendRuntimeSettingsService.instance.settings.mcpServersJson
         lastLoadedConfigHash = mcpConfigJson.hashCode()
         QDLog.info(log) { "McpClientService refresh: using synced frontend MCP config, chars=${mcpConfigJson.length}" }
-        val load = McpServersConfigLoader.loadJsonWithDiagnostics(
-            mcpConfigJson,
-            sourceName = "frontend-synced mcp-servers.json"
-        )
+        val load =
+            McpServersConfigLoader.loadJsonWithDiagnostics(
+                mcpConfigJson,
+                sourceName = "frontend-synced mcp-servers.json",
+            )
         if (load.parseError != null) {
             // Keep existing config running; inform the user with clickable link
             notifyRuntimeConfigIssue(
@@ -172,7 +180,7 @@ class McpClientService(
             QDLog.error(
                 log,
                 { "McpClientService $operation failed due to missing runtime dependency: $missingDependency. Cause chain: $details" },
-                error
+                error,
             )
         } else {
             QDLog.error(log, { "McpClientService $operation failed. Cause chain: $details" }, error)
@@ -208,7 +216,7 @@ class McpClientService(
 
         QDLog.info(log) {
             "Reconcile complete. added=${added.size}, removed=${removed.size}, " +
-                    "changed=${maybeChanged.count { oldServers[it] != newServers[it] }}"
+                "changed=${maybeChanged.count { oldServers[it] != newServers[it] }}"
         }
     }
 
@@ -346,7 +354,9 @@ class McpClientService(
                 StreamableHttpClientTransport(httpClient, url = url)
             }
 
-            else -> error("Unsupported URL transport label: $label")
+            else -> {
+                error("Unsupported URL transport label: $label")
+            }
         }
 
     private fun ensureClientUrl(
@@ -370,7 +380,8 @@ class McpClientService(
                     }
                     defaultRequest {
                         cfg.headers?.forEach { (k, v) -> headers.append(k, v) }
-                        cfg.headers?.get(HttpHeaders.Authorization)
+                        cfg.headers
+                            ?.get(HttpHeaders.Authorization)
                             ?.let { headers.append(HttpHeaders.Authorization, it) }
                     }
                 }
@@ -416,14 +427,15 @@ class McpClientService(
                     processes[server]?.let { ensureClient(server, it) }
                 }
             } ?: return emptyList()
-        val res = runBlocking(executionContexts.mcpDispatcher) {
-            withTimeout(30_000) {
-                client.listTools(
-                    ListToolsRequest(),
-                    null
-                )
+        val res =
+            runBlocking(executionContexts.mcpDispatcher) {
+                withTimeout(30_000) {
+                    client.listTools(
+                        ListToolsRequest(),
+                        null,
+                    )
+                }
             }
-        }
         val tools = res.tools
         toolCache[server] = tools
         QDLog.info(log) { "discoverTools[$server]: discovered ${tools.size} tool(s): ${tools.joinToString { it.name }}" }
@@ -450,9 +462,10 @@ class McpClientService(
         return m?.value?.let { it.toLongOrNull() ?: it.toDoubleOrNull() }
     }
 
-
     private fun refreshIfConfigChanged() {
-        val currentHash = BackendRuntimeSettingsService.instance.settings.mcpServersJson.hashCode()
+        val currentHash =
+            BackendRuntimeSettingsService.instance.settings.mcpServersJson
+                .hashCode()
         if (!initialized.get() || currentHash != lastLoadedConfigHash) {
             QDLog.info(log) { "McpClientService: synced MCP config changed or not initialized, refreshing before serving MCP data" }
             refresh()
@@ -547,11 +560,15 @@ class McpClientService(
         val client =
             clients[server] ?: run {
                 val cfg = serversConfig.mcpServers[server]
-                if (cfg?.url != null) ensureClientUrl(server, cfg) else processes[server]?.let {
-                    ensureClient(
-                        server,
-                        it
-                    )
+                if (cfg?.url != null) {
+                    ensureClientUrl(server, cfg)
+                } else {
+                    processes[server]?.let {
+                        ensureClient(
+                            server,
+                            it,
+                        )
+                    }
                 }
             } ?: return "MCP client for '$server' is not available"
 

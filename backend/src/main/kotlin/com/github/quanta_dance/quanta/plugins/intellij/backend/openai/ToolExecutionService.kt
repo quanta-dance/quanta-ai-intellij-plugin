@@ -34,11 +34,12 @@ class ToolExecutionService(
         val succeeded = !isErrorResult(functionResult)
         val detailText = buildDetailText(functionCall.name(), argsJson, safeResult, succeeded)
         val errorText = extractErrorText(functionResult)
-        val toolOutput = ResponseInputItem.FunctionCallOutput
-            .builder()
-            .callId(functionCall.callId())
-            .outputAsJson(safeResult)
-            .build()
+        val toolOutput =
+            ResponseInputItem.FunctionCallOutput
+                .builder()
+                .callId(functionCall.callId())
+                .outputAsJson(safeResult)
+                .build()
         return ToolExecutionResult(
             toolOutput = toolOutput,
             succeeded = succeeded,
@@ -68,12 +69,13 @@ class ToolExecutionService(
     ): String {
         val status = if (succeeded) "Succeeded" else "Failed"
         val map = safeResult as? Map<*, *>
-        val preferred = map
-            ?.let {
-                listOf("message", "text", "summary", "content", "path", "filePath")
-                    .mapNotNull { key -> it[key]?.toString()?.trim()?.takeIf { value -> value.isNotBlank() } }
-                    .firstOrNull()
-            }
+        val preferred =
+            map
+                ?.let {
+                    listOf("message", "text", "summary", "content", "path", "filePath")
+                        .mapNotNull { key -> it[key]?.toString()?.trim()?.takeIf { value -> value.isNotBlank() } }
+                        .firstOrNull()
+                }
 
         val argsSummary = buildArgsSummary(toolName, argsJson)
         val details =
@@ -110,9 +112,10 @@ class ToolExecutionService(
         argsJson: JsonNode?,
     ): String {
         if (argsJson == null) return ""
-        val filePath = argsJson.path("filePath").asText("").trim().ifBlank {
-            argsJson.path("path").asText("").trim()
-        }
+        val filePath =
+            argsJson.path("filePath").asText("").trim().ifBlank {
+                argsJson.path("path").asText("").trim()
+            }
         val fromLine = argsJson.path("fromLine").asInt(-1).takeIf { it > 0 }
         val toLine = argsJson.path("toLine").asInt(-1).takeIf { it > 0 }
         return when {
@@ -133,7 +136,9 @@ class ToolExecutionService(
                 }
             }
 
-            else -> ""
+            else -> {
+                ""
+            }
         }
     }
 }

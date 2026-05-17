@@ -4,11 +4,24 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.rpc
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
-import com.github.quanta_dance.quanta.plugins.intellij.backend.services.*
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AIVoiceService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentManagerService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentRosterService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SessionPlanService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SpeechToTextService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.OpenFileInEditorTool
 import com.github.quanta_dance.quanta.plugins.intellij.models.Suggestion
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaBackendApi
-import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.*
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ApplyRefactorSuggestionResultDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.FrontendLogDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.FrontendLogLevel
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.MicrophoneTranscriptionResultDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.SpeechChunkDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.SynthesizedSpeechDto
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.command.WriteCommandAction
@@ -21,7 +34,7 @@ import com.intellij.platform.project.ProjectId
 import com.intellij.platform.project.findProjectOrNull
 import com.intellij.psi.PsiDocumentManager
 import kotlinx.coroutines.flow.Flow
-import java.util.*
+import java.util.Base64
 
 /**
  * Backend implementation of the broad shared Quanta backend RPC surface.
@@ -36,7 +49,10 @@ class QuantaBackendRpcApi : QuantaBackendApi {
 
     override suspend fun ping(): String = "pong-from-backend"
 
-    override suspend fun logFrontend(projectId: ProjectId, entry: FrontendLogDto) {
+    override suspend fun logFrontend(
+        projectId: ProjectId,
+        entry: FrontendLogDto,
+    ) {
         val message = "[Frontend][${entry.level}] ${entry.message}"
         when (entry.level) {
             FrontendLogLevel.DEBUG -> QDLog.debug(logger) { message }
@@ -73,7 +89,9 @@ class QuantaBackendRpcApi : QuantaBackendApi {
 
     override suspend fun getCurrentDelegatedTasks(projectId: ProjectId): List<DelegatedTaskDto> {
         val backendProject = projectId.findProjectOrNull() ?: return emptyList()
-        return backendProject.service<com.github.quanta_dance.quanta.plugins.intellij.backend.chat.AgentChannelStateService>().tasksFlow.value
+        return backendProject
+            .service<com.github.quanta_dance.quanta.plugins.intellij.backend.chat.AgentChannelStateService>()
+            .tasksFlow.value
     }
 
     override suspend fun getDelegatedTasksFlow(projectId: ProjectId): Flow<List<DelegatedTaskDto>> {
@@ -83,7 +101,9 @@ class QuantaBackendRpcApi : QuantaBackendApi {
 
     override suspend fun getCurrentChannelEvents(projectId: ProjectId): List<AgentChannelEventDto> {
         val backendProject = projectId.findProjectOrNull() ?: return emptyList()
-        return backendProject.service<com.github.quanta_dance.quanta.plugins.intellij.backend.chat.AgentChannelStateService>().eventsFlow.value
+        return backendProject
+            .service<com.github.quanta_dance.quanta.plugins.intellij.backend.chat.AgentChannelStateService>()
+            .eventsFlow.value
     }
 
     override suspend fun getChannelEventsFlow(projectId: ProjectId): Flow<List<AgentChannelEventDto>> {
@@ -108,7 +128,11 @@ class QuantaBackendRpcApi : QuantaBackendApi {
         )
     }
 
-    override suspend fun startSpeechStream(projectId: ProjectId, sessionId: String, text: String) {
+    override suspend fun startSpeechStream(
+        projectId: ProjectId,
+        sessionId: String,
+        text: String,
+    ) {
         val backendProject = projectId.findProjectOrNull() ?: return
         backendProject.getService(AIVoiceService::class.java).startSpeechStream(sessionId, text)
     }
@@ -118,12 +142,13 @@ class QuantaBackendRpcApi : QuantaBackendApi {
         sessionId: String,
         afterSequence: Int,
     ): SpeechChunkDto {
-        val backendProject = projectId.findProjectOrNull() ?: return SpeechChunkDto(
-            sessionId = sessionId,
-            sequence = afterSequence,
-            isLast = true,
-            chunkBase64 = "",
-        )
+        val backendProject =
+            projectId.findProjectOrNull() ?: return SpeechChunkDto(
+                sessionId = sessionId,
+                sequence = afterSequence,
+                isLast = true,
+                chunkBase64 = "",
+            )
         return backendProject.getService(AIVoiceService::class.java).pollSpeechChunk(sessionId, afterSequence)
     }
 
@@ -132,12 +157,19 @@ class QuantaBackendRpcApi : QuantaBackendApi {
         backendProject.getService(AIVoiceService::class.java).stopTalking()
     }
 
-    override suspend fun startMicrophoneSession(projectId: ProjectId, sessionId: String) {
+    override suspend fun startMicrophoneSession(
+        projectId: ProjectId,
+        sessionId: String,
+    ) {
         val backendProject = projectId.findProjectOrNull() ?: return
         backendProject.service<SpeechToTextService>().startSession(sessionId)
     }
 
-    override suspend fun appendMicrophoneAudioChunk(projectId: ProjectId, sessionId: String, chunkBase64: String) {
+    override suspend fun appendMicrophoneAudioChunk(
+        projectId: ProjectId,
+        sessionId: String,
+        chunkBase64: String,
+    ) {
         val backendProject = projectId.findProjectOrNull() ?: return
         val chunkBytes = runCatching { Base64.getDecoder().decode(chunkBase64) }.getOrDefault(ByteArray(0))
         backendProject.service<SpeechToTextService>().appendAudioChunk(sessionId, chunkBytes)
@@ -145,7 +177,7 @@ class QuantaBackendRpcApi : QuantaBackendApi {
 
     override suspend fun finishMicrophoneSession(
         projectId: ProjectId,
-        sessionId: String
+        sessionId: String,
     ): MicrophoneTranscriptionResultDto {
         val backendProject =
             projectId.findProjectOrNull() ?: return MicrophoneTranscriptionResultDto(sessionId = sessionId)
@@ -155,17 +187,27 @@ class QuantaBackendRpcApi : QuantaBackendApi {
         )
     }
 
-    override suspend fun cancelMicrophoneSession(projectId: ProjectId, sessionId: String) {
+    override suspend fun cancelMicrophoneSession(
+        projectId: ProjectId,
+        sessionId: String,
+    ) {
         val backendProject = projectId.findProjectOrNull() ?: return
         backendProject.service<SpeechToTextService>().cancelSession(sessionId)
     }
 
-    override suspend fun openProjectFile(projectId: ProjectId, relativePath: String) {
+    override suspend fun openProjectFile(
+        projectId: ProjectId,
+        relativePath: String,
+    ) {
         val backendProject = projectId.findProjectOrNull() ?: return
         OpenFileInEditorTool(filePath = relativePath).execute(backendProject)
     }
 
-    override suspend fun openProjectFileAtLine(projectId: ProjectId, relativePath: String, line: Int) {
+    override suspend fun openProjectFileAtLine(
+        projectId: ProjectId,
+        relativePath: String,
+        line: Int,
+    ) {
         val backendProject = projectId.findProjectOrNull() ?: return
         OpenFileInEditorTool(filePath = relativePath, line = line).execute(backendProject)
     }
@@ -174,8 +216,9 @@ class QuantaBackendRpcApi : QuantaBackendApi {
         projectId: ProjectId,
         suggestion: Suggestion,
     ): ApplyRefactorSuggestionResultDto {
-        val backendProject = projectId.findProjectOrNull()
-            ?: return ApplyRefactorSuggestionResultDto(applied = false, errorMessage = "Project not found")
+        val backendProject =
+            projectId.findProjectOrNull()
+                ?: return ApplyRefactorSuggestionResultDto(applied = false, errorMessage = "Project not found")
         return applySuggestionDirectly(backendProject, suggestion)
     }
 
@@ -184,28 +227,32 @@ class QuantaBackendRpcApi : QuantaBackendApi {
         suggestion: Suggestion,
     ): ApplyRefactorSuggestionResultDto {
         val document =
-            ReadAction.compute<com.intellij.openapi.editor.Document?, RuntimeException> {
-                val basePath = project.basePath
-                    ?: return@compute null
-                val virtualFile = LocalFileSystem.getInstance().refreshAndFindFileByPath("$basePath/${suggestion.file}")
-                    ?: return@compute null
+            ReadAction.computeBlocking<com.intellij.openapi.editor.Document?, RuntimeException> {
+                val basePath =
+                    project.basePath
+                        ?: return@computeBlocking null
+                val virtualFile =
+                    LocalFileSystem.getInstance().refreshAndFindFileByPath("$basePath/${suggestion.file}")
+                        ?: return@computeBlocking null
                 FileDocumentManager.getInstance().getDocument(virtualFile)
             } ?: return ApplyRefactorSuggestionResultDto(
                 applied = false,
-                errorMessage = "Document not available: ${suggestion.file}"
+                errorMessage = "Document not available: ${suggestion.file}",
             )
 
         var result = ApplyRefactorSuggestionResultDto(applied = false, errorMessage = "Unknown apply error")
         ApplicationManager.getApplication().invokeAndWait {
             WriteCommandAction.runWriteCommandAction(project) {
-                val offsets = remapOffsets(project, suggestion, document)
-                    ?: run {
-                        result = ApplyRefactorSuggestionResultDto(
-                            applied = false,
-                            errorMessage = "Could not locate the original code segment to replace.",
-                        )
-                        return@runWriteCommandAction
-                    }
+                val offsets =
+                    remapOffsets(project, suggestion, document)
+                        ?: run {
+                            result =
+                                ApplyRefactorSuggestionResultDto(
+                                    applied = false,
+                                    errorMessage = "Could not locate the original code segment to replace.",
+                                )
+                            return@runWriteCommandAction
+                        }
                 val start = offsets.first
                 val end = offsets.second
                 document.replaceString(start, end, suggestion.suggested_code)
@@ -214,11 +261,12 @@ class QuantaBackendRpcApi : QuantaBackendApi {
                 val newStartLine = document.getLineNumber(start) + 1
                 val newEndOffset = (start + suggestion.suggested_code.length).coerceAtMost(document.textLength)
                 val newEndLine = document.getLineNumber(newEndOffset.coerceAtLeast(start)) + 1
-                result = ApplyRefactorSuggestionResultDto(
-                    applied = true,
-                    newStartLine = newStartLine,
-                    newEndLine = newEndLine,
-                )
+                result =
+                    ApplyRefactorSuggestionResultDto(
+                        applied = true,
+                        newStartLine = newStartLine,
+                        newEndLine = newEndLine,
+                    )
             }
         }
         return result

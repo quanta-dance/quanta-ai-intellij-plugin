@@ -10,7 +10,12 @@ import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.toDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.ChatRepositoryRpcApi
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaBackendApi
-import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.*
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.toChatMessage
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.Service.Level
 import com.intellij.openapi.components.service
@@ -42,8 +47,7 @@ class FrontendChatRepositoryModel(
     private val logger = thisLogger()
 
     companion object {
-        fun getInstance(project: Project): FrontendChatRepositoryModel =
-            project.getService(FrontendChatRepositoryModel::class.java)
+        fun getInstance(project: Project): FrontendChatRepositoryModel = project.getService(FrontendChatRepositoryModel::class.java)
     }
 
     private val _messagesFlow = MutableStateFlow<List<ChatMessage>>(emptyList())
@@ -75,16 +79,18 @@ class FrontendChatRepositoryModel(
     }
 
     private suspend fun refreshCurrentState() {
-        val chatApi = runCatching { ChatRepositoryRpcApi.getInstance() }
-            .getOrElse { error ->
-                logger.warn("Failed to resolve chat RPC API", error)
-                return
-            }
-        val backendApi = runCatching { QuantaBackendApi.getInstance() }
-            .getOrElse { error ->
-                logger.warn("Failed to resolve backend RPC API", error)
-                return
-            }
+        val chatApi =
+            runCatching { ChatRepositoryRpcApi.getInstance() }
+                .getOrElse { error ->
+                    logger.warn("Failed to resolve chat RPC API", error)
+                    return
+                }
+        val backendApi =
+            runCatching { QuantaBackendApi.getInstance() }
+                .getOrElse { error ->
+                    logger.warn("Failed to resolve backend RPC API", error)
+                    return
+                }
         val projectId = project.projectId()
 
         runCatching {

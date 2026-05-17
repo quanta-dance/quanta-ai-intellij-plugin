@@ -14,41 +14,37 @@ import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
 
-@JsonClassDescription("Open a project file in the editor. REQUIRED ARGUMENT: filePath. Use filePath, not path. Example: {\"filePath\": \"README.md\"}. Optionally move the caret to a line/column or select a range.")
 /**
  * Backend tool that opens a project file in the editor and optionally positions the caret or selection.
  *
  * It resolves files through project-aware path utilities first so remote and split-mode editor flows
  * can open the same logical file seen by the backend.
  */
+@JsonClassDescription(
+    "Open a project file in the editor. REQUIRED ARGUMENT: filePath. Use filePath, not path. Example: {\"filePath\": \"README.md\"}. Optionally move the caret to a line/column or select a range.",
+)
 data class OpenFileInEditorTool(
-    @field:JsonPropertyDescription("REQUIRED. Use this exact field name: filePath. Relative to the project root path to the file to open. Example: README.md")
+    @field:JsonPropertyDescription(
+        "REQUIRED. Use this exact field name: filePath. Relative to the project root path to the file to open. Example: README.md",
+    )
     val filePath: String,
-
     @field:JsonPropertyDescription("1-based line number to place the caret at. If null or <= 0, the file is opened without moving caret.")
     val line: Int? = null,
-
     @field:JsonPropertyDescription("0-based column to place the caret at. Ignored if 'line' is not provided or <= 0.")
     val column: Int? = null,
-
     @field:JsonPropertyDescription("If true, activates the editor after opening. Default: true")
     val focus: Boolean = true,
-
     @field:JsonPropertyDescription(
         "Optional selection start line (1-based). If provided with end, selection takes precedence over caret movement.",
     )
     val selectionStartLine: Int? = null,
-
     @field:JsonPropertyDescription("Optional selection start column (0-based)")
     val selectionStartColumn: Int? = null,
-
     @field:JsonPropertyDescription("Optional selection end line (1-based)")
     val selectionEndLine: Int? = null,
-
     @field:JsonPropertyDescription("Optional selection end column (0-based)")
     val selectionEndColumn: Int? = null,
 ) : ToolInterface<String> {
-
     override fun execute(project: Project): String {
         val basePath = PathUtils.projectRootPath(project) ?: return "Project base path not found."
 

@@ -18,8 +18,7 @@ object PathUtils {
      * In remote IDE sessions EelPathUtils maps client-side mirrored paths to backend paths.
      */
     @JvmStatic
-    fun projectRootPath(project: Project): String? =
-        projectRootNioPath(project)?.toString()
+    fun projectRootPath(project: Project): String? = projectRootNioPath(project)?.toString()
 
     @JvmStatic
     fun projectRootNioPath(project: Project): Path? {
@@ -48,7 +47,8 @@ object PathUtils {
         val basePath = project.basePath
         val roots =
             try {
-                ProjectRootManager.getInstance(project)
+                ProjectRootManager
+                    .getInstance(project)
                     .contentRootsFromAllModules
                     .filter { it.isValid }
             } catch (_: Throwable) {
@@ -56,7 +56,9 @@ object PathUtils {
             }
 
         val rootCandidates = mutableListOf<VirtualFile>()
-        basePath?.let { LocalFileSystem.getInstance().findFileByPath(it) }?.takeIf { it.isValid }
+        basePath
+            ?.let { LocalFileSystem.getInstance().findFileByPath(it) }
+            ?.takeIf { it.isValid }
             ?.let { rootCandidates += it }
         rootCandidates += roots
         if (rootCandidates.isEmpty()) return null

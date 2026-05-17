@@ -59,7 +59,13 @@ class ToolExecutionPresenter(
         val fileName = filePath?.substringAfterLast('/')?.substringAfterLast('\\')
         return when {
             toolName.contains("SessionPlan", ignoreCase = true) -> {
-                val action = argsJson?.path("action")?.asText("")?.trim()?.uppercase().orEmpty()
+                val action =
+                    argsJson
+                        ?.path("action")
+                        ?.asText("")
+                        ?.trim()
+                        ?.uppercase()
+                        .orEmpty()
                 when (action) {
                     "ACTIVATE" -> "Session Plan: Active"
                     "COMPLETE" -> "Session Plan: Update"
@@ -68,17 +74,36 @@ class ToolExecutionPresenter(
                 }
             }
 
-            toolName.contains("ReadFile", ignoreCase = true) && !fileName.isNullOrBlank() -> "Reading $fileName"
-            toolName.contains("OpenFile", ignoreCase = true) && !fileName.isNullOrBlank() -> "Opening $fileName"
-            toolName.contains("SearchInFiles", ignoreCase = true) -> "Searching files"
-            toolName.contains("ListFiles", ignoreCase = true) -> "Listing files"
-            toolName.contains("PatchFile", ignoreCase = true) && !fileName.isNullOrBlank() -> "Patching $fileName"
+            toolName.contains("ReadFile", ignoreCase = true) && !fileName.isNullOrBlank() -> {
+                "Reading $fileName"
+            }
+
+            toolName.contains("OpenFile", ignoreCase = true) && !fileName.isNullOrBlank() -> {
+                "Opening $fileName"
+            }
+
+            toolName.contains("SearchInFiles", ignoreCase = true) -> {
+                "Searching files"
+            }
+
+            toolName.contains("ListFiles", ignoreCase = true) -> {
+                "Listing files"
+            }
+
+            toolName.contains("PatchFile", ignoreCase = true) && !fileName.isNullOrBlank() -> {
+                "Patching $fileName"
+            }
+
             toolName.contains(
                 "CreateOrUpdateFile",
-                ignoreCase = true
-            ) && !fileName.isNullOrBlank() -> "Updating $fileName"
+                ignoreCase = true,
+            ) && !fileName.isNullOrBlank() -> {
+                "Updating $fileName"
+            }
 
-            else -> toolName.replace(Regex("([a-z])([A-Z])"), "$1 $2")
+            else -> {
+                toolName.replace(Regex("([a-z])([A-Z])"), "$1 $2")
+            }
         }
     }
 }

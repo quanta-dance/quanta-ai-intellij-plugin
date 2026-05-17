@@ -43,19 +43,25 @@ class BackendChatRepositoryRpcApi : ChatRepositoryRpcApi {
         BackendChatRepositoryModel.getInstance(backendProject).createNewSession()
     }
 
-    override suspend fun activateSession(projectId: ProjectId, sessionId: String) {
+    override suspend fun activateSession(
+        projectId: ProjectId,
+        sessionId: String,
+    ) {
         val backendProject = projectId.findProjectOrNull() ?: return
         BackendChatRepositoryModel.getInstance(backendProject).activateSession(sessionId)
     }
 
-    override suspend fun deleteSession(projectId: ProjectId, sessionId: String) {
+    override suspend fun deleteSession(
+        projectId: ProjectId,
+        sessionId: String,
+    ) {
         val backendProject = projectId.findProjectOrNull() ?: return
         BackendChatRepositoryModel.getInstance(backendProject).deleteSession(sessionId)
     }
 
     override suspend fun sendMessage(
         projectId: ProjectId,
-        messageContent: String
+        messageContent: String,
     ) {
         val backendProject = projectId.findProjectOrNull() ?: return
         return BackendChatRepositoryModel.getInstance(backendProject).sendMessage(messageContent)

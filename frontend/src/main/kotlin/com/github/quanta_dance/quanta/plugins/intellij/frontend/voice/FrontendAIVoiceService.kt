@@ -13,11 +13,20 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.platform.project.projectId
-import kotlinx.coroutines.*
-import java.util.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import java.util.Base64
+import java.util.UUID
 
 @Service(Service.Level.PROJECT)
-class FrontendAIVoiceService(private val project: Project) {
+class FrontendAIVoiceService(
+    private val project: Project,
+) {
     private var process: Process? = null
     private val voiceRpcScope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
     private val frontendLogScope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
@@ -49,7 +58,10 @@ class FrontendAIVoiceService(private val project: Project) {
         }
     }
 
-    private fun markPlayback(stage: String, details: String) {
+    private fun markPlayback(
+        stage: String,
+        details: String,
+    ) {
         logFrontend(FrontendLogLevel.INFO, "FrontendAIVoiceService[$stage]: $details")
     }
 
@@ -77,7 +89,7 @@ class FrontendAIVoiceService(private val project: Project) {
                     QDLog.warn(
                         logger,
                         { "FrontendAIVoiceService.stopTalking: backend stopSpeech failed: ${e.message}" },
-                        e
+                        e,
                     )
                 }
             }
@@ -93,7 +105,7 @@ class FrontendAIVoiceService(private val project: Project) {
 
         val useLocalMacTts =
             System.getProperty("os.name").contains("Mac", ignoreCase = true) &&
-                    FrontendQuantaSettingsState.instance.state.voiceByLocalTTS
+                FrontendQuantaSettingsState.instance.state.voiceByLocalTTS
         if (useLocalMacTts) {
             val th =
                 Thread {
@@ -139,8 +151,14 @@ class FrontendAIVoiceService(private val project: Project) {
                             continue
                         }
                         lastSequence = chunk.sequence
-                        val bytes = if (chunk.chunkBase64.isNotBlank()) Base64.getDecoder()
-                            .decode(chunk.chunkBase64) else ByteArray(0)
+                        val bytes =
+                            if (chunk.chunkBase64.isNotBlank()) {
+                                Base64
+                                    .getDecoder()
+                                    .decode(chunk.chunkBase64)
+                            } else {
+                                ByteArray(0)
+                            }
                         val msg =
                             "FrontendAIVoiceService.stream receive sessionId=$sessionId sequence=${chunk.sequence} isLast=${chunk.isLast} bytes=${bytes.size}"
                         logFrontend(FrontendLogLevel.INFO, msg)

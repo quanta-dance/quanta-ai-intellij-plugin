@@ -18,17 +18,26 @@ fun truncateToolOutput(
 
     val simplified: Any =
         when (value) {
-            is String -> if (value.length <= maxStringChars) value else value.take(maxStringChars) + "... (truncated)"
-            is Map<*, *> ->
+            is String -> {
+                if (value.length <= maxStringChars) value else value.take(maxStringChars) + "... (truncated)"
+            }
+
+            is Map<*, *> -> {
                 value.entries
                     .take(80)
                     .associate { (k, v) ->
                         val key = k?.toString() ?: "<null>"
                         key to truncateToolOutput(v, maxJsonChars, maxStringChars, depth + 1)
                     }
+            }
 
-            is List<*> -> value.take(80).map { truncateToolOutput(it, maxJsonChars, maxStringChars, depth + 1) }
-            else -> value
+            is List<*> -> {
+                value.take(80).map { truncateToolOutput(it, maxJsonChars, maxStringChars, depth + 1) }
+            }
+
+            else -> {
+                value
+            }
         }
 
     return try {

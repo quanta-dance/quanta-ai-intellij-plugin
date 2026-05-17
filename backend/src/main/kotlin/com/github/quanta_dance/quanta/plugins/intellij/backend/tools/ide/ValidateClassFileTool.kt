@@ -14,17 +14,21 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VfsUtil
-import com.intellij.psi.*
+import com.intellij.psi.PsiDocumentManager
+import com.intellij.psi.PsiErrorElement
+import com.intellij.psi.PsiFile
+import com.intellij.psi.PsiManager
+import com.intellij.psi.PsiRecursiveElementWalkingVisitor
 import java.io.File
 import java.nio.file.Paths
 
-@JsonClassDescription("Validate a class file and return any compilation errors.")
 /**
  * Backend tool that performs PSI-based validation of a single source file.
  *
  * It is intended for fast feedback on syntax and parse errors after localized edits, without running
  * a full project build.
  */
+@JsonClassDescription("Validate a class file and return any compilation errors.")
 class ValidateClassFileTool : ToolInterface<List<String>> {
     @field:JsonPropertyDescription("Relative to project root path to the file to validate.")
     var filePath: String? = null

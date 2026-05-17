@@ -3,8 +3,8 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel
 
-import kotlinx.coroutines.flow.StateFlow
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.ui.SearchState
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * Interface that handles the process of searching for chat messages.
@@ -12,7 +12,6 @@ import com.github.quanta_dance.quanta.plugins.intellij.frontend.ui.SearchState
  * as well as navigating between search results.
  */
 interface SearchChatMessagesHandler {
-
     /**
      * A [StateFlow] that represents the current state of the chat message search functionality.
      * It emits instances of [SearchState] to reflect the ongoing state of search operations.

@@ -35,11 +35,12 @@ class ReadCurrentFileAction : AnAction("Read Current File") {
         scope.launch {
             try {
                 val result = FrontendWorkspaceFileReadService.getInstance(project).readCurrentFile(filePath)
-                val message = if (result.success) {
-                    "backend: ${result.content}"
-                } else {
-                    "backend: ERROR: ${result.error ?: "Unknown error"}"
-                }
+                val message =
+                    if (result.success) {
+                        "backend: ${result.content}"
+                    } else {
+                        "backend: ERROR: ${result.error ?: "Unknown error"}"
+                    }
 
                 FrontendChatRepositoryModel.getInstance(project).sendMessage(message)
                 log.info("Read Current File posted content to chat for $filePath")

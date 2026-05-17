@@ -19,16 +19,16 @@ import com.intellij.psi.PsiManager
 import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.util.PsiTreeUtil
 
-@JsonClassDescription(
-    "Read the enclosing PSI block (function/method/class/field/object) " +
-            "at a position in a file and return structured metadata and text.",
-)
 /**
  * Backend tool for PSI-aware structural extraction around a file position.
  *
  * Compared with [ReadFile], this tool is intended for semantic block discovery—functions, classes,
  * fields, and objects—when agents need structure rather than raw text slices.
  */
+@JsonClassDescription(
+    "Read the enclosing PSI block (function/method/class/field/object) " +
+        "at a position in a file and return structured metadata and text.",
+)
 class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
     @field:JsonPropertyDescription("Relative to the project root path. If omitted, uses current editor file.")
     var filePath: String? = null
@@ -251,12 +251,12 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
 
             "field" -> {
                 (
-                        ktProperty?.let {
-                            parentOfType(
-                                it,
-                            )
-                        } ?: psiField?.let { parentOfType(it) }
-                        )?.let { it to "field" } ?: firstMatchAuto()
+                    ktProperty?.let {
+                        parentOfType(
+                            it,
+                        )
+                    } ?: psiField?.let { parentOfType(it) }
+                )?.let { it to "field" } ?: firstMatchAuto()
             }
 
             "object" -> {
@@ -273,7 +273,7 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
         try {
             @Suppress("UNCHECKED_CAST")
             Class.forName(name)
-                    as Class<out PsiElement>
+                as Class<out PsiElement>
         } catch (_: Throwable) {
             null
         }

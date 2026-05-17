@@ -3,4 +3,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.models
 
-data class UpsertEmbeddingResult(val id: String, val status: String)
+data class UpsertEmbeddingResult(
+    val id: String,
+    val status: String,
+)

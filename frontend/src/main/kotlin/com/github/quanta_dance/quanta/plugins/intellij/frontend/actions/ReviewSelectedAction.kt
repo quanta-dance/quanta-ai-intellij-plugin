@@ -23,9 +23,10 @@ class ReviewSelectedAction : AnAction("Review") {
     override fun actionPerformed(event: AnActionEvent) {
         val project = event.project ?: return
 
-        val response = runBlocking {
-            QuantaBackendApi.getInstance().ping()
-        }
+        val response =
+            runBlocking {
+                QuantaBackendApi.getInstance().ping()
+            }
 
         NotificationGroupManager
             .getInstance()
@@ -39,10 +40,11 @@ class ReviewSelectedAction : AnAction("Review") {
 
     override fun update(event: AnActionEvent) {
         templatePresentation.text =
-            FrontendActionCatalog.actionById(
-                FrontendQuantaSettingsState.instance.state.actionConfigsJson,
-                "review"
-            )?.label
+            FrontendActionCatalog
+                .actionById(
+                    FrontendQuantaSettingsState.instance.state.actionConfigsJson,
+                    "review",
+                )?.label
                 ?: "Review"
     }
 

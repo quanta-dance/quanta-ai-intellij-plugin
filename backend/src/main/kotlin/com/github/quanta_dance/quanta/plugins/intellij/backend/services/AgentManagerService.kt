@@ -22,7 +22,7 @@ import com.intellij.openapi.project.Project
 import com.openai.models.responses.ResponseInputItem
 import java.beans.PropertyChangeListener
 import java.beans.PropertyChangeSupport
-import java.util.*
+import java.util.UUID
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
@@ -120,7 +120,8 @@ class AgentManagerService(
 
     fun getPersistedAgentProfiles(): List<QuantaAISessionState.AgentProfile> {
         ensureAgentsLoadedFromSession()
-        return QuantaAISessionState.instance.state.agents.map { it.copy() }
+        return QuantaAISessionState.instance.state.agents
+            .map { it.copy() }
     }
 
     fun getAgentAllowedBuiltInNames(agentId: String): Set<String>? = agents[agentId]?.config?.allowedBuiltInNames
@@ -134,7 +135,11 @@ class AgentManagerService(
             return b.toString()
         }
         snaps.forEach { a ->
-            b.append("- id=").append(a.id).append(", role=").append(a.role)
+            b
+                .append("- id=")
+                .append(a.id)
+                .append(", role=")
+                .append(a.role)
             a.model?.let { m -> b.append(", model=").append(m) }
             b.append('\n')
         }
@@ -163,7 +168,7 @@ class AgentManagerService(
             try {
                 QDLog.debug(logger) {
                     "Inbox post: to=$toAgentId from=${from ?: "<null>"} kind=${kind ?: "<null>"} " +
-                            "len=${text.length} inboxSize=${list.size}"
+                        "len=${text.length} inboxSize=${list.size}"
                 }
             } catch (_: Throwable) {
             }
@@ -222,8 +227,8 @@ class AgentManagerService(
                     sendMessage(
                         agentId,
                         "(auto) You have new inbox messages. Process them. " +
-                                "If you need to respond to another agent, use AgentPostMessageTool. " +
-                                "If nothing is required, reply with DONE.",
+                            "If you need to respond to another agent, use AgentPostMessageTool. " +
+                            "If nothing is required, reply with DONE.",
                     )
                 QDLog.debug(logger) { "Wake turn finished: agent=$agentId replyLen=${reply.length}" }
             } catch (t: Throwable) {
@@ -346,7 +351,7 @@ class AgentManagerService(
     private fun isContextWindowError(t: Throwable): Boolean {
         val msg = t.message.orEmpty()
         return msg.contains("exceeds context window", ignoreCase = true) ||
-                msg.contains("context window", ignoreCase = true)
+            msg.contains("context window", ignoreCase = true)
     }
 
     private fun softResetAndRetryAgentTurnOnce(
@@ -617,48 +622,48 @@ class AgentManagerService(
 
         val developerTools =
             commonComms +
-                    setOf(
-                        "CodeRefactorSuggester",
-                        "CreateOrUpdateFile",
-                        "PatchFile",
-                        "ReadFileContent",
-                        "ReadPsiBlockAtPosition",
-                        "SearchInFiles",
-                        "SearchProjectEmbeddings",
-                        "UpsertProjectEmbedding",
-                        "GetProjectDetails",
-                        "ListFiles",
-                        "GetFileReferencesAndDependencies",
-                        "InspectDependencies",
-                        "OpenFileInEditorTool",
-                        "ValidateClassFileTool",
-                        "CopyFileOrDirectoryTool",
-                        "DeleteFileTool",
-                    )
+                setOf(
+                    "CodeRefactorSuggester",
+                    "CreateOrUpdateFile",
+                    "PatchFile",
+                    "ReadFileContent",
+                    "ReadPsiBlockAtPosition",
+                    "SearchInFiles",
+                    "SearchProjectEmbeddings",
+                    "UpsertProjectEmbedding",
+                    "GetProjectDetails",
+                    "ListFiles",
+                    "GetFileReferencesAndDependencies",
+                    "InspectDependencies",
+                    "OpenFileInEditorTool",
+                    "ValidateClassFileTool",
+                    "CopyFileOrDirectoryTool",
+                    "DeleteFileTool",
+                )
 
         val testTools =
             commonComms +
-                    setOf(
-                        "RunGradleTestsTool",
-                        "RunGradleBuildTool",
-                        "GetTestInfoTool",
-                        "GradleSyncTool",
-                        "ReadFileContent",
-                        "SearchInFiles",
-                        "GetProjectDetails",
-                    )
+                setOf(
+                    "RunGradleTestsTool",
+                    "RunGradleBuildTool",
+                    "GetTestInfoTool",
+                    "GradleSyncTool",
+                    "ReadFileContent",
+                    "SearchInFiles",
+                    "GetProjectDetails",
+                )
 
         val analystTools =
             commonComms +
-                    setOf(
-                        "GetProjectDetails",
-                        "SearchInFiles",
-                        "ReadFileContent",
-                        "SearchProjectEmbeddings",
-                        "GetFileReferencesAndDependencies",
-                        "InspectDependencies",
-                        "ListFiles",
-                    )
+                setOf(
+                    "GetProjectDetails",
+                    "SearchInFiles",
+                    "ReadFileContent",
+                    "SearchProjectEmbeddings",
+                    "GetFileReferencesAndDependencies",
+                    "InspectDependencies",
+                    "ListFiles",
+                )
 
         val ids = mutableListOf<String>()
         ids +=
@@ -700,47 +705,52 @@ class AgentManagerService(
     private fun chooseDefaultTeamModels(): Map<String, String> {
         val settings = BackendRuntimeSettingsService.instance.settings
         val availableModels = BackendSettingsRpcApi.AVAILABLE_CHAT_MODELS
-        val prompt = buildString {
-            append("Choose the best model for each default agent role from this allowed list only: ")
-            append(availableModels.joinToString(", "))
-            append(". Return exactly three lines in the format Role=model, one for Developer, Tester, and Analitic. ")
-            append("Use only allowed model names and prefer smaller models unless a role clearly needs more capability.")
-        }
+        val prompt =
+            buildString {
+                append("Choose the best model for each default agent role from this allowed list only: ")
+                append(availableModels.joinToString(", "))
+                append(". Return exactly three lines in the format Role=model, one for Developer, Tester, and Analitic. ")
+                append("Use only allowed model names and prefer smaller models unless a role clearly needs more capability.")
+            }
         return try {
             val openAI = project.service<OpenAIService>()
-            val (text, _) = openAI.agentTurn(
-                inputs = mutableListOf(
-                    ResponseInputItem.ofMessage(
-                        ResponseInputItem.Message.builder()
-                            .role(ResponseInputItem.Message.Role.SYSTEM)
-                            .addInputTextContent("You are the manager choosing models for a default team.")
-                            .build(),
-                    ),
-                    ResponseInputItem.ofMessage(
-                        ResponseInputItem.Message.builder()
-                            .role(ResponseInputItem.Message.Role.USER)
-                            .addInputTextContent(prompt)
-                            .build(),
-                    ),
-                ),
-                previousId = null,
-                overrideInstructions = null,
-                overrideModel = settings.aiChatModel,
-                allowedToolClassFilter = { false },
-                includeMcp = false,
-                agentLabel = "Manager",
-                allowedBuiltInNames = emptySet(),
-                allowedMcpNames = emptySet(),
-            )
-            text.lineSequence()
+            val (text, _) =
+                openAI.agentTurn(
+                    inputs =
+                        mutableListOf(
+                            ResponseInputItem.ofMessage(
+                                ResponseInputItem.Message
+                                    .builder()
+                                    .role(ResponseInputItem.Message.Role.SYSTEM)
+                                    .addInputTextContent("You are the manager choosing models for a default team.")
+                                    .build(),
+                            ),
+                            ResponseInputItem.ofMessage(
+                                ResponseInputItem.Message
+                                    .builder()
+                                    .role(ResponseInputItem.Message.Role.USER)
+                                    .addInputTextContent(prompt)
+                                    .build(),
+                            ),
+                        ),
+                    previousId = null,
+                    overrideInstructions = null,
+                    overrideModel = settings.aiChatModel,
+                    allowedToolClassFilter = { false },
+                    includeMcp = false,
+                    agentLabel = "Manager",
+                    allowedBuiltInNames = emptySet(),
+                    allowedMcpNames = emptySet(),
+                )
+            text
+                .lineSequence()
                 .mapNotNull { line ->
                     val parts = line.split("=", limit = 2)
                     if (parts.size != 2) return@mapNotNull null
                     val role = parts[0].trim()
                     val model = parts[1].trim()
                     if (role.isBlank() || model.isBlank()) null else role to model
-                }
-                .toMap()
+                }.toMap()
         } catch (_: Throwable) {
             emptyMap()
         }
@@ -752,9 +762,10 @@ class AgentManagerService(
         if (query.isBlank()) return null
         if (agents.containsKey(query)) return query
 
-        val roleMatches = agents.values
-            .filter { it.config.role.equals(query, ignoreCase = true) }
-            .map { it.id }
+        val roleMatches =
+            agents.values
+                .filter { it.config.role.equals(query, ignoreCase = true) }
+                .map { it.id }
 
         return if (roleMatches.size == 1) roleMatches.first() else null
     }
@@ -837,15 +848,17 @@ class AgentManagerService(
         existingTaskId: String? = null,
     ): CompletableFuture<AgentTaskResult> {
         val enabled = BackendRuntimeSettingsService.instance.settings.agenticEnabled ?: true
-        if (!enabled) return CompletableFuture.completedFuture(
-            AgentTaskResult(
-                "",
-                agentId,
-                false,
-                null,
-                "Agentic mode disabled"
+        if (!enabled) {
+            return CompletableFuture.completedFuture(
+                AgentTaskResult(
+                    "",
+                    agentId,
+                    false,
+                    null,
+                    "Agentic mode disabled",
+                ),
             )
-        )
+        }
         val session =
             agents[agentId]
                 ?: return CompletableFuture.completedFuture(
@@ -854,8 +867,8 @@ class AgentManagerService(
                         agentId,
                         false,
                         null,
-                        "Agent not found"
-                    )
+                        "Agent not found",
+                    ),
                 )
         val requestId = UUID.randomUUID().toString()
         val channelState = project.service<AgentChannelStateService>()
@@ -880,7 +893,7 @@ class AgentManagerService(
         pcs.firePropertyChange(
             "agent_task_started",
             null,
-            mapOf("requestId" to requestId, "agentId" to agentId, "taskId" to delegatedTask.id)
+            mapOf("requestId" to requestId, "agentId" to agentId, "taskId" to delegatedTask.id),
         )
 
         val fut = CompletableFuture<AgentTaskResult>()
@@ -1044,7 +1057,7 @@ class AgentManagerService(
                     delegatedTask.id,
                     DelegatedTaskStatusDto.DONE,
                     result = result.text,
-                    summary = "Completed"
+                    summary = "Completed",
                 )
                 channelState.appendEvent(
                     kind = AgentChannelEventKindDto.DELEGATION_COMPLETED,
@@ -1099,7 +1112,7 @@ class AgentManagerService(
                                 delegatedTask.id,
                                 DelegatedTaskStatusDto.DONE,
                                 result = result.text,
-                                summary = "Completed"
+                                summary = "Completed",
                             )
                             channelState.appendEvent(
                                 kind = AgentChannelEventKindDto.DELEGATION_COMPLETED,
@@ -1123,7 +1136,7 @@ class AgentManagerService(
                     delegatedTask.id,
                     DelegatedTaskStatusDto.FAILED,
                     result = err,
-                    summary = "Failed"
+                    summary = "Failed",
                 )
                 channelState.appendEvent(
                     kind = AgentChannelEventKindDto.DELEGATION_UPDATED,
@@ -1336,7 +1349,7 @@ class AgentManagerService(
                         pcs.firePropertyChange(
                             "agent_task_finished",
                             null,
-                            AgentTaskResult(requestId, agentId, true, out, null)
+                            AgentTaskResult(requestId, agentId, true, out, null),
                         )
                         return out
                     }

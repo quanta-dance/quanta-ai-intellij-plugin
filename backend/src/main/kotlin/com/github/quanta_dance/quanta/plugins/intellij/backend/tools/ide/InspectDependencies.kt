@@ -74,9 +74,11 @@ class InspectDependencies : ToolInterface<InspectDependencies.Result> {
                     }
                 val methodTokens =
                     if (!useRegexForMethodFilter && filterMethodsRaw != null) {
-                        filterMethodsRaw.split('|').map {
-                            it.trim().lowercase()
-                        }.filter { it.isNotEmpty() }
+                        filterMethodsRaw
+                            .split('|')
+                            .map {
+                                it.trim().lowercase()
+                            }.filter { it.isNotEmpty() }
                     } else {
                         emptyList()
                     }
@@ -152,7 +154,10 @@ private fun PsiMethod.renderSignature(): String {
             "$t $n"
         }
     val ret = returnType?.presentableText ?: "void"
-    val modifiers = this.modifierList.text.trim().replace("\n", " ")
+    val modifiers =
+        this.modifierList.text
+            .trim()
+            .replace("\n", " ")
     val cls = (containingClass?.qualifiedName ?: containingClass?.name ?: "")
     return listOf(modifiers, ret, "$cls.$name($params)").filter { it.isNotBlank() }.joinToString(" ")
 }

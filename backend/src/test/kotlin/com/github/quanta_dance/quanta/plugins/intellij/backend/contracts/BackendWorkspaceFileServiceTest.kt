@@ -12,7 +12,11 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkStatic
 import io.mockk.unmockkAll
-import kotlin.test.*
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 
 class BackendWorkspaceFileServiceTest {
     @BeforeTest
@@ -29,20 +33,22 @@ class BackendWorkspaceFileServiceTest {
     }
 
     @Test
-    fun `read rejects blank paths with friendly backend error`() = kotlinx.coroutines.runBlocking {
-        val result = BackendWorkspaceFileService().read(WorkspaceFileReadRequest("   "))
+    fun `read rejects blank paths with friendly backend error`() =
+        kotlinx.coroutines.runBlocking {
+            val result = BackendWorkspaceFileService().read(WorkspaceFileReadRequest("   "))
 
-        assertFalse(result.success)
-        assertEquals("Path is not specified.", result.error)
-        assertEquals("backend", result.source)
-    }
+            assertFalse(result.success)
+            assertEquals("Path is not specified.", result.error)
+            assertEquals("backend", result.source)
+        }
 
     @Test
-    fun `write rejects blank paths with friendly backend error`() = kotlinx.coroutines.runBlocking {
-        val result = BackendWorkspaceFileService().write(WorkspaceFileWriteRequest("   ", "hello"))
+    fun `write rejects blank paths with friendly backend error`() =
+        kotlinx.coroutines.runBlocking {
+            val result = BackendWorkspaceFileService().write(WorkspaceFileWriteRequest("   ", "hello"))
 
-        assertFalse(result.success)
-        assertEquals("Path is not specified.", result.error)
-        assertEquals("backend", result.source)
-    }
+            assertFalse(result.success)
+            assertEquals("Path is not specified.", result.error)
+            assertEquals("backend", result.source)
+        }
 }

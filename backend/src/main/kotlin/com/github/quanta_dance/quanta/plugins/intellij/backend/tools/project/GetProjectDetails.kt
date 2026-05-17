@@ -5,10 +5,10 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.project
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
-import com.github.quanta_dance.quanta.plugins.intellij.backend.project.ProjectVersionUtil
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
-import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
+import com.github.quanta_dance.quanta.plugins.intellij.backend.project.ProjectVersionUtil
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
@@ -20,13 +20,13 @@ import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.concurrent.ConcurrentHashMap
 
-@JsonClassDescription("Provide Project Details and a bounded, depth-first project structure with clear truncation indicators.")
 /**
  * Backend tool that summarizes project structure, environment, and an optionally truncated tree.
  *
  * It is intended as the safest first-step discovery tool for new sessions before agents start
  * reading or modifying individual files.
  */
+@JsonClassDescription("Provide Project Details and a bounded, depth-first project structure with clear truncation indicators.")
 class GetProjectDetails : ToolInterface<String> {
     // Defaults chosen to keep output readable while allowing full small projects
     @field:JsonPropertyDescription("Include a truncated project tree in the summary. Default: false")
@@ -42,8 +42,8 @@ class GetProjectDetails : ToolInterface<String> {
 
     @field:JsonPropertyDescription(
         "Maximum depth to traverse (root’s direct children are depth 1). Default: 12.\n" +
-                "Adaptive behavior: for JVM projects (Java/Kotlin/Scala with src/main/java|kotlin|scala), " +
-                "an effective depth of at least 32 is used to accommodate deep package structures.",
+            "Adaptive behavior: for JVM projects (Java/Kotlin/Scala with src/main/java|kotlin|scala), " +
+            "an effective depth of at least 32 is used to accommodate deep package structures.",
     )
     var maxDepth: Int = 12
 
@@ -89,8 +89,14 @@ class GetProjectDetails : ToolInterface<String> {
                     }
 
                 when (node.isIgnored(rel, vf.isDirectory)) {
-                    IgnoreNode.MatchResult.IGNORED -> ignored = true
-                    IgnoreNode.MatchResult.NOT_IGNORED -> ignored = false
+                    IgnoreNode.MatchResult.IGNORED -> {
+                        ignored = true
+                    }
+
+                    IgnoreNode.MatchResult.NOT_IGNORED -> {
+                        ignored = false
+                    }
+
                     IgnoreNode.MatchResult.CHECK_PARENT -> {
                         // no-op
                     }
@@ -163,12 +169,16 @@ class GetProjectDetails : ToolInterface<String> {
 
         val summaryHeader =
             StringBuilder()
-                .append("Available build files: ").append(buildFiles)
-                .append("\n").append(sdkVersion)
-                .append("\nFiles in the project: ").append(filesCount)
+                .append("Available build files: ")
+                .append(buildFiles)
+                .append("\n")
+                .append(sdkVersion)
+                .append("\nFiles in the project: ")
+                .append(filesCount)
 
         if (!includeTree || basePath == null) {
-            return summaryHeader.append("\n(Tree omitted; set includeTree=true to include a truncated listing)")
+            return summaryHeader
+                .append("\n(Tree omitted; set includeTree=true to include a truncated listing)")
                 .toString()
         }
 
@@ -210,10 +220,10 @@ class GetProjectDetails : ToolInterface<String> {
             try {
                 parent?.children?.firstOrNull {
                     it.isValid && it.isDirectory &&
-                            it.name.equals(
-                                name,
-                                ignoreCase = false,
-                            )
+                        it.name.equals(
+                            name,
+                            ignoreCase = false,
+                        )
                 }
             } catch (_: Throwable) {
                 null
@@ -226,11 +236,11 @@ class GetProjectDetails : ToolInterface<String> {
         fun hasJvmLangDir(base: VirtualFile?): Boolean {
             if (base == null) return false
             return (findChildDir(base, "java") != null) || (findChildDir(base, "kotlin") != null) || (
-                    findChildDir(
-                        base,
-                        "scala",
-                    ) != null
-                    )
+                findChildDir(
+                    base,
+                    "scala",
+                ) != null
+            )
         }
         return hasJvmLangDir(main) || hasJvmLangDir(test)
     }
@@ -312,15 +322,16 @@ class GetProjectDetails : ToolInterface<String> {
             }
         }
 
-        fun listChildren(dir: VirtualFile): List<VirtualFile> {
-            return try {
-                dir.children?.filter { it.isValid && !isIgnored(it) }?.sortedWith(
-                    compareBy<VirtualFile>({ !it.isDirectory }, { it.name.lowercase() }),
-                ).orEmpty()
+        fun listChildren(dir: VirtualFile): List<VirtualFile> =
+            try {
+                dir.children
+                    ?.filter { it.isValid && !isIgnored(it) }
+                    ?.sortedWith(
+                        compareBy<VirtualFile>({ !it.isDirectory }, { it.name.lowercase() }),
+                    ).orEmpty()
             } catch (_: Throwable) {
                 emptyList()
             }
-        }
 
         fun dfsDir(
             dir: VirtualFile,

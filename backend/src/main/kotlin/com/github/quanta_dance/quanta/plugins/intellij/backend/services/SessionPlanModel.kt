@@ -29,8 +29,7 @@ data class SessionPlan(
 
     fun completedTaskTexts(): List<String> = tasks.filter { it.completed }.map { it.text }
 
-    fun hasMeaningfulContent(): Boolean =
-        goal.isNotBlank() || definitionOfDone.isNotBlank() || tasks.isNotEmpty()
+    fun hasMeaningfulContent(): Boolean = goal.isNotBlank() || definitionOfDone.isNotBlank() || tasks.isNotEmpty()
 }
 
 object SessionPlanMarkdownCodec {
@@ -81,10 +80,11 @@ object SessionPlanMarkdownCodec {
 
                 "tasks" -> {
                     val match = Regex("^- \\[( |x|X)]\\s+(.*)$").find(trimmed) ?: continue
-                    tasks += SessionPlanTask(
-                        text = match.groupValues[2].trim(),
-                        completed = match.groupValues[1].equals("x", ignoreCase = true),
-                    )
+                    tasks +=
+                        SessionPlanTask(
+                            text = match.groupValues[2].trim(),
+                            completed = match.groupValues[1].equals("x", ignoreCase = true),
+                        )
                 }
             }
         }

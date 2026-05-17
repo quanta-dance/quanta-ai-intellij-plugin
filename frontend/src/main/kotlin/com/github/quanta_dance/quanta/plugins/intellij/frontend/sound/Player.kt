@@ -34,7 +34,10 @@ object Player {
     private var currentPcmQueue: LinkedBlockingQueue<ByteArray?>? = null
 
     @Synchronized
-    fun playMp3(audioData: InputStream, onFinished: (() -> Unit)? = null) {
+    fun playMp3(
+        audioData: InputStream,
+        onFinished: (() -> Unit)? = null,
+    ) {
         stop()
 
         val player = JLayerPlayer(audioData)
@@ -89,7 +92,7 @@ object Player {
                             logger.info("Player.pcm prebuffer chunkBytes=${chunk.size} bufferedBytes=$bufferedBytes")
                             onDebugLog?.invoke(
                                 FrontendLogLevel.DEBUG,
-                                "Player.pcm prebuffer chunkBytes=${chunk.size} bufferedBytes=$bufferedBytes"
+                                "Player.pcm prebuffer chunkBytes=${chunk.size} bufferedBytes=$bufferedBytes",
                             )
                             if (bufferedBytes >= PCM_PREBUFFER_BYTES) {
                                 line.start()
@@ -98,7 +101,7 @@ object Player {
                                 logger.info("Player.pcm start playback bufferedBytes=${buffered.size}")
                                 onDebugLog?.invoke(
                                     FrontendLogLevel.INFO,
-                                    "Player.pcm start playback bufferedBytes=${buffered.size}"
+                                    "Player.pcm start playback bufferedBytes=${buffered.size}",
                                 )
                                 if (buffered.isNotEmpty()) {
                                     line.write(buffered, 0, buffered.size)
@@ -119,7 +122,7 @@ object Player {
                         logger.info("Player.pcm start playback at end bufferedBytes=${buffered.size}")
                         onDebugLog?.invoke(
                             FrontendLogLevel.INFO,
-                            "Player.pcm start playback at end bufferedBytes=${buffered.size}"
+                            "Player.pcm start playback at end bufferedBytes=${buffered.size}",
                         )
                         if (buffered.isNotEmpty()) {
                             line.write(buffered, 0, buffered.size)

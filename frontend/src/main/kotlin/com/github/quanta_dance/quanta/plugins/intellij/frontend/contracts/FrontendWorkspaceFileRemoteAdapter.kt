@@ -3,7 +3,11 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.contracts
 
-import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.*
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.WorkspaceFileReadRequest
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.WorkspaceFileReadResult
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.WorkspaceFileService
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.WorkspaceFileWriteRequest
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.WorkspaceFileWriteResult
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.WorkspaceFileRpcApi
 import com.intellij.openapi.project.Project
 

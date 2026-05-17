@@ -80,7 +80,10 @@ class CodeReviewCollectorUnitTest {
         every { virtualFile.path } returns "/project/src/Main.kt"
 
         // Ensure containingClass is not considered standard library and has no superclass/interfaces mocked
-        every { com.intellij.psi.util.PsiTreeUtil.getParentOfType(element, PsiClass::class.java) } returns containingClass
+        every {
+            com.intellij.psi.util.PsiTreeUtil
+                .getParentOfType(element, PsiClass::class.java)
+        } returns containingClass
         every { containingClass.qualifiedName } returns "com.example.Main"
         every { containingClass.name } returns "Main"
         every { containingClass.superClass } returns null

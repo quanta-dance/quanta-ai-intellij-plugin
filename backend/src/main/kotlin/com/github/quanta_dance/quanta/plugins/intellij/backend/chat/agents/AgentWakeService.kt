@@ -44,10 +44,11 @@ class AgentWakeService(
         val flag = inFlight.computeIfAbsent(agentId) { AtomicBoolean(false) }
         if (!flag.compareAndSet(false, true)) return
         try {
-            val reply = sendTurn(
-                agentId,
-                "(auto) You have new inbox messages. Process them. If you need to respond to another agent, use AgentPostMessageTool. If nothing is required, reply with DONE.",
-            )
+            val reply =
+                sendTurn(
+                    agentId,
+                    "(auto) You have new inbox messages. Process them. If you need to respond to another agent, use AgentPostMessageTool. If nothing is required, reply with DONE.",
+                )
             QDLog.debug(logger) { "Wake turn finished: agent=$agentId replyLen=${reply.length}" }
         } catch (t: Throwable) {
             QDLog.warn(logger, { "Wake turn failed: agent=$agentId err=${t.message}" }, t)

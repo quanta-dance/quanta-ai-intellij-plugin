@@ -40,7 +40,11 @@ class MainConversationKeyResolver(
                         pb.directory(File(basePath))
                         pb.redirectErrorStream(true)
                         val proc = pb.start()
-                        val out = proc.inputStream.bufferedReader().readText().trim()
+                        val out =
+                            proc.inputStream
+                                .bufferedReader()
+                                .readText()
+                                .trim()
                         proc.waitFor()
                         if (out.isNotBlank()) out else "no-branch"
                     } else {

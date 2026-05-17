@@ -25,17 +25,17 @@ import com.intellij.psi.PsiManager
 import com.intellij.psi.codeStyle.CodeStyleManager
 import java.security.MessageDigest
 
-@JsonClassDescription(
-    "Apply one or more line-range patches to a specified file. Patches are applied in a single write action, " +
-            "from bottom to top (descending start line), so earlier replacements do not shift later ranges. " +
-            "Lines are 1-based inclusive; offsets are computed from the current Document. Supports optional guards.",
-)
 /**
  * Backend tool for guarded, line-oriented file patching.
  *
  * It is the lowest-level text editing primitive exposed to agents when they need atomic, expected-
  * text-checked document updates without replacing the whole file.
  */
+@JsonClassDescription(
+    "Apply one or more line-range patches to a specified file. Patches are applied in a single write action, " +
+        "from bottom to top (descending start line), so earlier replacements do not shift later ranges. " +
+        "Lines are 1-based inclusive; offsets are computed from the current Document. Supports optional guards.",
+)
 class PatchFile : ToolInterface<String> {
     data class Patch(
         @field:JsonPropertyDescription("1-based start line (inclusive)")
@@ -46,7 +46,7 @@ class PatchFile : ToolInterface<String> {
         var newContent: String = "",
         @field:JsonPropertyDescription(
             "Optional expected current text for the specified line range. " +
-                    "If provided and does not match, patch is skipped or triggers failure depending on stopOnMismatch.",
+                "If provided and does not match, patch is skipped or triggers failure depending on stopOnMismatch.",
         )
         var expectedText: String? = null,
     )
@@ -62,19 +62,19 @@ class PatchFile : ToolInterface<String> {
 
     @field:JsonPropertyDescription(
         "If true (default), aborts and applies nothing when any patch guard fails. " +
-                "If false, skips only mismatched patches and applies the rest.",
+            "If false, skips only mismatched patches and applies the rest.",
     )
     var stopOnMismatch: Boolean = true
 
     @field:JsonPropertyDescription(
         "Optional expected SHA-256 hash of normalized file content (\\r\\n/\\r -> \\n)." +
-                " If provided and matches current, patches can proceed.",
+            " If provided and matches current, patches can proceed.",
     )
     var expectedFileHashSha256: String? = null
 
     @field:JsonPropertyDescription(
         "If true, proceed when all patches' expectedText guards match even if content hash mismatches. " +
-                "Default: true",
+            "Default: true",
     )
     var allowProceedIfGuardsMatch: Boolean = true
 
@@ -91,7 +91,7 @@ class PatchFile : ToolInterface<String> {
 
     @field:JsonPropertyDescription(
         "Soft window radius in lines for expectedText matching. If expectedText does not match exactly at fromLine..toLine, " +
-                "the tool will search within +/- this many lines for a unique match and apply the patch there (if allowed). Default: 50.",
+            "the tool will search within +/- this many lines for a unique match and apply the patch there (if allowed). Default: 50.",
     )
     var softWindowRadiusLines: Int = 50
 
@@ -158,7 +158,7 @@ class PatchFile : ToolInterface<String> {
         return " firstDiff=line ${baseStartLine1 + firstDiffIndex}, char ${expectedChar + 1}, expectedLine='${
             preview(
                 expectedLine,
-                160
+                160,
             )
         }', actualLine='${preview(actualLine, 160)}'"
     }
@@ -254,12 +254,12 @@ class PatchFile : ToolInterface<String> {
 
         val relocationAllowed =
             (!requireMultilineExpectedTextForRelocation || expLineCount >= 2) &&
-                    (expChars >= minExpectedTextCharsForRelocation || expLineCount >= 2)
+                (expChars >= minExpectedTextCharsForRelocation || expLineCount >= 2)
 
         if (!relocationAllowed) {
             val reason =
                 "relocation disabled (expectedText not specific enough: lines=$expLineCount chars=$expChars; " +
-                        "requireMultiline=$requireMultilineExpectedTextForRelocation minChars=$minExpectedTextCharsForRelocation)"
+                    "requireMultiline=$requireMultilineExpectedTextForRelocation minChars=$minExpectedTextCharsForRelocation)"
             val actualExtra =
                 if (includeActualSliceOnMismatch) {
                     val raw = baseSlice
@@ -270,9 +270,9 @@ class PatchFile : ToolInterface<String> {
                 }
             mismatchesOut?.add(
                 "Patch $patchIndex1: expectedText mismatch at lines ${patch.fromLine}-${patch.toLine} ($reason). " +
-                        "expected='${preview(expectedRaw)}' actual='${preview(baseSlice)}'" +
-                        firstDifferenceSummary(expectedRaw, baseSlice, patch.fromLine) +
-                        actualExtra,
+                    "expected='${preview(expectedRaw)}' actual='${preview(baseSlice)}'" +
+                    firstDifferenceSummary(expectedRaw, baseSlice, patch.fromLine) +
+                    actualExtra,
             )
             return null
         }
@@ -327,9 +327,9 @@ class PatchFile : ToolInterface<String> {
             }
         mismatchesOut?.add(
             "Patch $patchIndex1: expectedText mismatch at lines ${patch.fromLine}-${patch.toLine} ($reason). " +
-                    "expected='${preview(expectedRaw)}' actual='${preview(baseSlice)}'" +
-                    firstDifferenceSummary(expectedRaw, baseSlice, patch.fromLine) +
-                    actualExtra,
+                "expected='${preview(expectedRaw)}' actual='${preview(baseSlice)}'" +
+                firstDifferenceSummary(expectedRaw, baseSlice, patch.fromLine) +
+                actualExtra,
         )
         return null
     }
@@ -391,7 +391,8 @@ class PatchFile : ToolInterface<String> {
                         }
 
                     val sorted =
-                        patchList.mapIndexed { idx, p -> Range(p.fromLine, p.toLine, idx) }
+                        patchList
+                            .mapIndexed { idx, p -> Range(p.fromLine, p.toLine, idx) }
                             .sortedWith(compareByDescending<Range> { it.from }.thenBy { it.to })
 
                     if (rejectOverlappingPatches) {

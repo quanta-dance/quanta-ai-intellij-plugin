@@ -21,7 +21,10 @@ import java.util.concurrent.Executors
  */
 @Service(Service.Level.PROJECT)
 class BackendExecutionContextsService : Disposable {
-    private fun namedFixedPool(size: Int, prefix: String): ExecutorService =
+    private fun namedFixedPool(
+        size: Int,
+        prefix: String,
+    ): ExecutorService =
         Executors.newFixedThreadPool(size) { runnable ->
             Thread(runnable, "$prefix-${System.nanoTime()}").apply { isDaemon = true }
         }

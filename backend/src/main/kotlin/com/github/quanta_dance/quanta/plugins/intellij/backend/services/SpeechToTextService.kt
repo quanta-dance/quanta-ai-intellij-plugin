@@ -17,7 +17,7 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
-import java.util.*
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import javax.sound.sampled.AudioFileFormat
 import javax.sound.sampled.AudioFormat
@@ -34,7 +34,9 @@ import javax.sound.sampled.AudioSystem
  * TODO: split raw PCM buffering from transcription transport if this service grows further.
  */
 @Service(Service.Level.PROJECT)
-class SpeechToTextService(private val project: Project) {
+class SpeechToTextService(
+    private val project: Project,
+) {
     companion object {
         private val logger = Logger.getInstance(SpeechToTextService::class.java)
         private const val MIN_PCM_BYTES = 4_096
@@ -57,11 +59,16 @@ class SpeechToTextService(private val project: Project) {
     /**
      * Append a PCM audio chunk to the active capture session.
      */
-    fun appendAudioChunk(sessionId: String, chunk: ByteArray) {
+    fun appendAudioChunk(
+        sessionId: String,
+        chunk: ByteArray,
+    ) {
         if (chunk.isEmpty()) return
         val buffer = sessions[sessionId]
         if (buffer == null) {
-            QDLog.info(logger) { "SpeechToTextService.appendAudioChunk: ignoring chunk for inactive sessionId=$sessionId bytes=${chunk.size}" }
+            QDLog.info(
+                logger,
+            ) { "SpeechToTextService.appendAudioChunk: ignoring chunk for inactive sessionId=$sessionId bytes=${chunk.size}" }
             return
         }
         synchronized(buffer) {
@@ -96,7 +103,9 @@ class SpeechToTextService(private val project: Project) {
 
         return try {
             val wavBytes = wrapPcmAsWav(pcmBytes)
-            QDLog.info(logger) { "SpeechToTextService.finishSession: starting transcription sessionId=$sessionId wavBytes=${wavBytes.size}" }
+            QDLog.info(
+                logger,
+            ) { "SpeechToTextService.finishSession: starting transcription sessionId=$sessionId wavBytes=${wavBytes.size}" }
             val transcript = transcribe(wavBytes).trim()
             QDLog.info(logger) { "SpeechToTextService.finishSession: transcript=${transcript.take(160)}" }
             if (transcript.isNotEmpty()) {
@@ -117,7 +126,8 @@ class SpeechToTextService(private val project: Project) {
         val boundary = "----QuantaSttBoundary${UUID.randomUUID()}"
         val body = buildMultipartBody(boundary, wavBytes)
         val request =
-            HttpRequest.newBuilder()
+            HttpRequest
+                .newBuilder()
                 .uri(URI.create("$baseUrl/audio/transcriptions"))
                 .header("Authorization", "Bearer ${settings.openAiToken}")
                 .header("Content-Type", "multipart/form-data; boundary=$boundary")
@@ -129,12 +139,20 @@ class SpeechToTextService(private val project: Project) {
             error("${response.statusCode()}: ${response.body()}")
         }
 
-        val text = objectMapper.readTree(response.body()).path("text").asText("").trim()
+        val text =
+            objectMapper
+                .readTree(response.body())
+                .path("text")
+                .asText("")
+                .trim()
         QDLog.info(logger) { "SpeechToTextService.transcribe: responseText=${text.take(160)}" }
         return text
     }
 
-    private fun buildMultipartBody(boundary: String, wavBytes: ByteArray): ByteArray {
+    private fun buildMultipartBody(
+        boundary: String,
+        wavBytes: ByteArray,
+    ): ByteArray {
         val newline = "\r\n"
         val output = ByteArrayOutputStream()
 

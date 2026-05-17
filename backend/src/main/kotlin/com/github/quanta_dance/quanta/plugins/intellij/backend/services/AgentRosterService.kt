@@ -39,8 +39,9 @@ class AgentRosterService(
             AgentInfoDto(
                 id = it.id,
                 role = it.role,
-                model = it.model?.takeIf { model -> model.isNotBlank() }
-                    ?: BackendRuntimeSettingsService.instance.settings.aiChatModel,
+                model =
+                    it.model?.takeIf { model -> model.isNotBlank() }
+                        ?: BackendRuntimeSettingsService.instance.settings.aiChatModel,
                 instructions = it.instructions,
             )
         }

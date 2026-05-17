@@ -16,11 +16,11 @@ import kotlinx.coroutines.CoroutineScope
  * @param projectWideCoroutineScope A [kotlinx.coroutines.CoroutineScope] defining the lifecycle of project-wide coroutines.
  */
 @Service(Level.PROJECT)
-internal class CoroutineScopeHolder(private val projectWideCoroutineScope: CoroutineScope) {
+internal class CoroutineScopeHolder(
+    private val projectWideCoroutineScope: CoroutineScope,
+) {
     companion object {
-        fun getInstance(project: Project): CoroutineScopeHolder {
-            return project.getService(CoroutineScopeHolder::class.java)
-        }
+        fun getInstance(project: Project): CoroutineScopeHolder = project.getService(CoroutineScopeHolder::class.java)
     }
 
     /**
