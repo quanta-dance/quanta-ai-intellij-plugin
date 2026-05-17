@@ -7,17 +7,18 @@ import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SessionPlanService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
+import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 
 @JsonClassDescription(
-    "Manage the cooperative session plan stored at .quantadance/session/plan.md. " +
+    "Manage the cooperative session plan state for the current chat session. " +
             "Use this tool to draft a plan, activate it after user approval, mark tasks completed, or read the current plan.",
 )
 /**
  * Backend tool for maintaining the session-level execution plan shared across turns.
  *
  * It is the main persistence layer for cooperative planning, allowing agents to draft, activate,
- * read, and complete work items in a controlled markdown format.
+ * read, and complete work items through typed session state.
  */
 class SessionPlanTool : ToolInterface<String> {
     @field:JsonPropertyDescription("Action to perform: READ | DRAFT | ACTIVATE | COMPLETE")
@@ -39,7 +40,7 @@ class SessionPlanTool : ToolInterface<String> {
     var maxChars: Int? = null
 
     override fun execute(project: Project): String {
-        val svc = SessionPlanService(project)
+        val svc = project.service<SessionPlanService>()
         val act = action?.trim()?.uppercase().orEmpty().ifBlank { "READ" }
         val limit = (maxChars ?: 8_000).coerceIn(200, 64_000)
 
@@ -71,9 +72,6 @@ class SessionPlanTool : ToolInterface<String> {
             "COMPLETE" -> {
                 val completed = (completedTasks ?: emptyList()).map { it.trim() }.filter { it.isNotBlank() }
                 svc.markTasksDone(completed)
-                if (completed.isNotEmpty() && svc.onlyPassiveTailTasksRemain()) {
-                    svc.markAllTasksDone()
-                }
                 svc.loadText(maxChars = limit)
             }
 

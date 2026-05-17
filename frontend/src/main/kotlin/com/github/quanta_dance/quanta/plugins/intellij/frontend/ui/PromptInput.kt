@@ -7,10 +7,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -21,15 +23,19 @@ import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.pointerMoveFilter
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.PopupProperties
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.ChatAppColors
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.ChatAppIcons
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel.MessageInputState
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel.isSending
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendSettingsSyncStateService
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
@@ -73,8 +79,41 @@ fun PromptInput(
     var skipInputChangeUpdate by remember { mutableStateOf(false) }
     var localVoiceEnabled by remember { mutableStateOf(voiceEnabled) }
     var planHovered by remember { mutableStateOf(false) }
-    var planHideJob by remember { mutableStateOf<Job?>(null) }
-    val displayedPlanStatus = currentPlanStatus.ifBlank { if (currentPlanText.isNotBlank()) "PLAN" else "NO PLAN" }
+    var planPopupHovered by remember { mutableStateOf(false) }
+    var planPinned by remember { mutableStateOf(false) }
+    var planHideJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    val displayedPlanStatus =
+        currentPlanStatus.ifBlank { if (currentPlanText.isNotBlank()) "PLAN" else "NO PLAN" }
+    val density = LocalDensity.current
+    val planPopupPositionProvider =
+        remember(density, currentPlanText) {
+            object : PopupPositionProvider {
+                override fun calculatePosition(
+                    anchorBounds: IntRect,
+                    windowSize: IntSize,
+                    layoutDirection: LayoutDirection,
+                    popupContentSize: IntSize,
+                ): IntOffset {
+                    val margin = with(density) { 12.dp.roundToPx() }
+                    val x =
+                        (anchorBounds.left + with(density) { 18.dp.roundToPx() })
+                            .coerceIn(
+                                margin,
+                                (windowSize.width - popupContentSize.width - margin).coerceAtLeast(margin),
+                            )
+
+                    val preferredAbove = anchorBounds.top - popupContentSize.height - margin
+                    val preferredBelow = anchorBounds.bottom + margin
+                    val y =
+                        when {
+                            preferredAbove >= margin -> preferredAbove
+                            preferredBelow + popupContentSize.height <= windowSize.height - margin -> preferredBelow
+                            else -> (windowSize.height - popupContentSize.height - margin).coerceAtLeast(margin)
+                        }
+                    return IntOffset(x, y)
+                }
+            }
+        }
     val planStatusIcon =
         when (displayedPlanStatus.uppercase()) {
             "DRAFT" -> ChatAppIcons.PlanStatus.draft
@@ -82,7 +121,6 @@ fun PromptInput(
             "DONE" -> ChatAppIcons.PlanStatus.done
             else -> ChatAppIcons.PlanStatus.noPlan
         }
-    val density = LocalDensity.current
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(voiceEnabled) {
@@ -149,24 +187,44 @@ fun PromptInput(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Box(modifier = Modifier.padding(end = 8.dp)) {
-                if (planHovered && currentPlanText.isNotBlank()) {
-                    val lineCount = currentPlanText.lineSequence().count().coerceAtLeast(1)
-                    val popupOffsetY = with(density) { -((lineCount.coerceAtMost(20) * 18) + 20).dp.roundToPx() }
-                    Popup(offset = IntOffset(0, popupOffsetY)) {
+                if ((planHovered || planPopupHovered || planPinned) && currentPlanText.isNotBlank()) {
+                    Popup(
+                        popupPositionProvider = planPopupPositionProvider,
+                        properties = PopupProperties(focusable = false, clippingEnabled = false),
+                    ) {
                         Box(
                             modifier = Modifier
-                                .widthIn(max = 520.dp)
+                                .widthIn(min = 360.dp, max = 860.dp)
+                                .heightIn(max = 720.dp)
+                                .pointerMoveFilter(
+                                    onEnter = {
+                                        planHideJob?.cancel()
+                                        planPopupHovered = true
+                                        false
+                                    },
+                                    onExit = {
+                                        planHideJob?.cancel()
+                                        planHideJob = scope.launch {
+                                            delay(160)
+                                            planPopupHovered = false
+                                            if (!planPinned) planHovered = false
+                                        }
+                                        false
+                                    },
+                                )
                                 .background(Color(0xFF2B2B2B), RoundedCornerShape(6.dp))
                                 .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(6.dp))
                                 .padding(horizontal = 8.dp, vertical = 6.dp),
                         ) {
-                            Text(
-                                text = currentPlanText,
-                                style = JewelTheme.defaultTextStyle.copy(
-                                    fontSize = 11.sp,
-                                    color = Color.White,
-                                ),
-                            )
+                            Box(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                                Text(
+                                    text = currentPlanText,
+                                    style = JewelTheme.defaultTextStyle.copy(
+                                        fontSize = 11.sp,
+                                        color = Color.White,
+                                    ),
+                                )
+                            }
                         }
                     }
                 }
@@ -177,6 +235,17 @@ fun PromptInput(
                     Row(
                         modifier = Modifier
                             .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
+                            .clickable {
+                                if (currentPlanText.isNotBlank()) {
+                                    planPinned = !planPinned
+                                    if (planPinned) {
+                                        planHovered = true
+                                    } else {
+                                        planPopupHovered = false
+                                        planHovered = false
+                                    }
+                                }
+                            }
                             .padding(horizontal = 8.dp, vertical = 5.dp)
                             .pointerMoveFilter(
                                 onEnter = {
@@ -187,8 +256,10 @@ fun PromptInput(
                                 onExit = {
                                     planHideJob?.cancel()
                                     planHideJob = scope.launch {
-                                        delay(120)
-                                        planHovered = false
+                                        delay(160)
+                                        if (!planPopupHovered && !planPinned) {
+                                            planHovered = false
+                                        }
                                     }
                                     false
                                 },
@@ -430,3 +501,4 @@ fun PromptInput(
         }
     }
 }
+

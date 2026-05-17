@@ -41,24 +41,24 @@ data class OpenAIResponse @JsonCreator constructor(
 
     @param:JsonProperty("planStatus")
     @field:JsonPropertyDescription(
-        "Optional plan workflow status. Use DRAFT when proposing a plan for user approval, ACTIVE when executing, DONE when finished."
+        "Optional reported plan workflow status. Use DRAFT when proposing a plan for user approval, ACTIVE when executing, DONE when finished. Persisted plan changes must be made explicitly via SessionPlanTool; this field alone does not mutate plan state."
     )
     val planStatus: String? = null,
 
     @param:JsonProperty("planGoal")
-    @field:JsonPropertyDescription("Optional plan goal text when creating/updating a plan.")
+    @field:JsonPropertyDescription("Optional reported plan goal text. When changing the persisted plan, call SessionPlanTool explicitly instead of relying on this field alone.")
     val planGoal: String? = null,
 
     @param:JsonProperty("planDefinitionOfDone")
-    @field:JsonPropertyDescription("Optional plan definition of done text when creating/updating a plan.")
+    @field:JsonPropertyDescription("Optional reported plan definition of done text. When changing the persisted plan, call SessionPlanTool explicitly instead of relying on this field alone.")
     val planDefinitionOfDone: String? = null,
 
     @param:JsonProperty("planTasks")
-    @field:JsonPropertyDescription("Optional full task list (without [ ] markers). Used when creating/updating a plan.")
+    @field:JsonPropertyDescription("Optional reported full task list (without [ ] markers). When changing the persisted plan, call SessionPlanTool explicitly instead of relying on this field alone.")
     val planTasks: List<String>? = null,
 
     @param:JsonProperty("planCompletedTasks")
-    @field:JsonPropertyDescription("Optional: tasks completed in this turn. These tasks will be marked as [x] in plan.md.")
+    @field:JsonPropertyDescription("Optional reported tasks completed in this turn. Persist them by calling SessionPlanTool explicitly; these fields alone do not update the stored session plan state.")
     val planCompletedTasks: List<String>? = null,
 
     @param:JsonProperty("planNeedsUserConfirmation")

@@ -9,4 +9,9 @@ import kotlinx.serialization.Serializable
 data class ChatPlanStatusDto(
     val status: String = "",
     val text: String = "",
+    val goal: String = "",
+    val definitionOfDone: String = "",
+    val tasks: List<String> = emptyList(),
+    val completedTasks: List<String> = emptyList(),
+    val uncheckedTasks: List<String> = emptyList(),
 )

@@ -48,15 +48,14 @@ class QuantaBackendRpcApi : QuantaBackendApi {
 
     override suspend fun getCurrentPlanStatus(projectId: ProjectId): ChatPlanStatusDto {
         val backendProject = projectId.findProjectOrNull() ?: return ChatPlanStatusDto()
-        return SessionPlanService(backendProject).getCurrentPlanStatus()
+        return backendProject.service<SessionPlanService>().getCurrentPlanStatus()
     }
 
     override suspend fun getPlanStatusFlow(projectId: ProjectId): Flow<ChatPlanStatusDto> {
         val backendProject = projectId.findProjectOrNull() ?: return kotlinx.coroutines.flow.emptyFlow()
-        val statusService = backendProject.service<SessionPlanStatusService>()
-        val planService = SessionPlanService(backendProject)
-        statusService.publish(planService.getCurrentPlanStatus())
-        return statusService.statusFlow
+        val planService = backendProject.service<SessionPlanService>()
+        planService.publishCurrentStatus()
+        return planService.statusFlow
     }
 
     override suspend fun getCurrentAgents(projectId: ProjectId): List<AgentInfoDto> {
