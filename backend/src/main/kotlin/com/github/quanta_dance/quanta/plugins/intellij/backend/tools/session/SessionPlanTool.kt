@@ -18,7 +18,9 @@ import com.intellij.openapi.project.Project
  */
 @JsonClassDescription(
     "Manage the cooperative session plan state for the current chat session. " +
-        "Use this tool to draft a plan, activate it after user approval, mark tasks completed, or read the current plan.",
+            "Use this tool only for substantial multi-step work that benefits from tracked execution. " +
+            "Do not create a plan for simple questions, tiny edits, or one-off lookups. " +
+            "Use this tool to draft a plan, activate it after user approval, mark tasks completed, or read the current plan.",
 )
 class SessionPlanTool : ToolInterface<String> {
     @field:JsonPropertyDescription("Action to perform: READ | DRAFT | ACTIVATE | COMPLETE | SET_DONE")

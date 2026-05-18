@@ -88,7 +88,6 @@ class AgentTurnOrchestrator(
             localPrevId = newId
             inputs.clear()
             val pendingToolOutputs = mutableListOf<ResponseInputItem>()
-            var sessionPlanToolCalledThisTurn = false
 
             structResponse.output().forEach { item ->
                 when {
@@ -112,9 +111,7 @@ class AgentTurnOrchestrator(
                         val functionCall: ResponseFunctionToolCall = item.asFunctionCall()
                         val callId = functionCall.callId()
                         if (!processedCallIds.add(callId)) return@forEach
-                        if (functionCall.name().contains("SessionPlan", ignoreCase = true)) {
-                            sessionPlanToolCalledThisTurn = true
-                        }
+
                         val startedItem =
                             toolExecutionPresenter.buildToolExecutionItem(
                                 functionCall,
@@ -156,12 +153,8 @@ class AgentTurnOrchestrator(
                                 val txt = message.summaryMessage
                                 QDLog.info(thisLogger()) {
                                     "OpenAIService.agentTurn outputText: nextStep=${message.nextStep} " +
-                                        "planStatus=${message.planStatus} planNeedsUserConfirmation=${message.planNeedsUserConfirmation} " +
-                                        "completedTasks=${message.planCompletedTasks?.size ?: 0} summary='${
-                                            txt.take(
-                                                160,
-                                            )
-                                        }'"
+                                            "planNeedsUserConfirmation=${message.planNeedsUserConfirmation} " +
+                                            "summary='${txt.take(160)}'"
                                 }
 
                                 aggregated.append(txt).append('\n')
@@ -170,7 +163,6 @@ class AgentTurnOrchestrator(
                                     activePlanCoordinator.evaluateAssistantMessage(
                                         message = message,
                                         summaryText = txt,
-                                        sessionPlanToolCalledThisTurn = sessionPlanToolCalledThisTurn,
                                         planAtEvaluation = planService.loadPlanSnapshot(),
                                         planWasActiveAtTurnStart = planIsActiveAtTurnStart,
                                         pendingToolOutputsEmpty = pendingToolOutputs.isEmpty(),

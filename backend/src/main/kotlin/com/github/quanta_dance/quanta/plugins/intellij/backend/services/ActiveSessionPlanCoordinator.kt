@@ -25,7 +25,6 @@ class ActiveSessionPlanCoordinator(
     fun evaluateAssistantMessage(
         message: OpenAIResponse,
         summaryText: String,
-        sessionPlanToolCalledThisTurn: Boolean,
         planAtEvaluation: SessionPlan,
         planWasActiveAtTurnStart: Boolean,
         pendingToolOutputsEmpty: Boolean,
@@ -33,20 +32,6 @@ class ActiveSessionPlanCoordinator(
         maxPlanToolEnforcementAttempts: Int,
         loopState: ActivePlanLoopState,
     ): ActivePlanEvaluation {
-        if (continuationPolicy.responseAttemptsPlanMutationWithoutTool(message) && !sessionPlanToolCalledThisTurn) {
-            return retry(
-                message =
-                    "Persist all session plan changes exclusively through SessionPlanTool. Do not rely on planStatus, " +
-                        "planGoal, planTasks, or planCompletedTasks response fields to change the plan. Call SessionPlanTool first, then respond.",
-                loopState = loopState,
-                countAsPlanToolEnforcement = true,
-                maxContinuations = maxContinuations,
-                maxPlanToolEnforcementAttempts = maxPlanToolEnforcementAttempts,
-                effectivePlanStatus = planAtEvaluation.normalizedStatus(),
-                activePlanStillHasWork = planAtEvaluation.isActive() && planAtEvaluation.hasUncheckedTasks(),
-            )
-        }
-
         val effectivePlanStatus = planAtEvaluation.normalizedStatus()
         val activePlanStillHasWork = planAtEvaluation.isActive() && planAtEvaluation.hasUncheckedTasks()
 
@@ -54,7 +39,7 @@ class ActiveSessionPlanCoordinator(
             return retry(
                 message =
                     "The session plan is ACTIVE. Do not finish the turn with nextStep=DONE until the persisted plan is actually DONE. " +
-                        "Either continue executing, or if work completed call SessionPlanTool to mark the plan complete first.",
+                            "Either continue executing, or if work completed call SessionPlanTool to mark the plan complete first.",
                 loopState = loopState,
                 countAsPlanToolEnforcement = true,
                 maxContinuations = maxContinuations,

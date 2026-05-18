@@ -5,42 +5,12 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.services
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.models.OpenAIResponse
 import kotlin.test.Test
-import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class ActiveSessionPlanCoordinatorTest {
     private val coordinator = ActiveSessionPlanCoordinator(AgentTurnContinuationPolicy())
-
-    @Test
-    fun `active plan forces explicit tool persistence for plan mutation fields`() {
-        val evaluation =
-            coordinator.evaluateAssistantMessage(
-                message =
-                    OpenAIResponse(
-                        summaryMessage = "I updated the plan.",
-                        ttsSummary = "Plan update",
-                        planCompletedTasks = listOf("Inspect current behavior"),
-                    ),
-                summaryText = "I updated the plan.",
-                sessionPlanToolCalledThisTurn = false,
-                planAtEvaluation =
-                    SessionPlan(
-                        status = "ACTIVE",
-                        tasks = listOf(SessionPlanTask("Inspect current behavior")),
-                    ),
-                planWasActiveAtTurnStart = true,
-                pendingToolOutputsEmpty = true,
-                maxContinuations = 5,
-                maxPlanToolEnforcementAttempts = 5,
-                loopState = ActivePlanLoopState(),
-            )
-
-        assertNotNull(evaluation.retryInstruction)
-        assertTrue(evaluation.retryInstruction!!.contains("SessionPlanTool"))
-        assertEquals(1, evaluation.loopState.forcePlanToolAttempts)
-    }
 
     @Test
     fun `routine confirmation is rejected during active plan`() {
@@ -55,7 +25,6 @@ class ActiveSessionPlanCoordinatorTest {
                         planBlockingQuestion = "Should I continue with the next planned step?",
                     ),
                 summaryText = "Should I continue?",
-                sessionPlanToolCalledThisTurn = false,
                 planAtEvaluation = SessionPlan(status = "ACTIVE", tasks = listOf(SessionPlanTask("Continue work"))),
                 planWasActiveAtTurnStart = true,
                 pendingToolOutputsEmpty = true,
@@ -82,7 +51,6 @@ class ActiveSessionPlanCoordinatorTest {
                         blockingReasonType = "MISSING_CREDENTIAL",
                     ),
                 summaryText = "Blocked on missing credential.",
-                sessionPlanToolCalledThisTurn = false,
                 planAtEvaluation = SessionPlan(status = "ACTIVE", tasks = listOf(SessionPlanTask("Use staging API"))),
                 planWasActiveAtTurnStart = true,
                 pendingToolOutputsEmpty = true,
@@ -91,23 +59,21 @@ class ActiveSessionPlanCoordinatorTest {
                 loopState = ActivePlanLoopState(),
             )
 
-        assertEquals(null, evaluation.retryInstruction)
-        assertTrue(evaluation.activePlanStillHasWork)
+        assertFalse(evaluation.retryInstruction != null)
     }
 
     @Test
-    fun `done is rejected while persisted plan is still active`() {
+    fun `next step done is rejected while active plan still has work`() {
         val evaluation =
             coordinator.evaluateAssistantMessage(
                 message =
                     OpenAIResponse(
-                        summaryMessage = "Done.",
+                        summaryMessage = "I am done.",
                         ttsSummary = "Done",
                         nextStep = "DONE",
                     ),
-                summaryText = "Done.",
-                sessionPlanToolCalledThisTurn = false,
-                planAtEvaluation = SessionPlan(status = "ACTIVE", tasks = listOf(SessionPlanTask("Still pending"))),
+                summaryText = "I am done.",
+                planAtEvaluation = SessionPlan(status = "ACTIVE", tasks = listOf(SessionPlanTask("Ship change"))),
                 planWasActiveAtTurnStart = true,
                 pendingToolOutputsEmpty = true,
                 maxContinuations = 5,
@@ -116,7 +82,6 @@ class ActiveSessionPlanCoordinatorTest {
             )
 
         assertNotNull(evaluation.retryInstruction)
-        assertTrue(evaluation.retryInstruction!!.contains("persisted plan is actually DONE"))
-        assertFalse(evaluation.effectivePlanStatus == "DONE")
+        assertTrue(evaluation.retryInstruction!!.contains("Do not finish the turn with nextStep=DONE"))
     }
 }

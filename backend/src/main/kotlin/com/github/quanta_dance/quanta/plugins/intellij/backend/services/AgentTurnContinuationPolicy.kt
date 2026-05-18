@@ -37,21 +37,8 @@ class AgentTurnContinuationPolicy {
                     ?.uppercase()
                     .orEmpty(),
             )
-            append('|').append(
-                message.planCompletedTasks
-                    ?.sorted()
-                    ?.joinToString("||")
-                    .orEmpty(),
-            )
             append('|').append(normalizePlanLoopSummary(summaryText))
         }
-
-    fun responseAttemptsPlanMutationWithoutTool(message: OpenAIResponse): Boolean =
-        !message.planStatus.isNullOrBlank() ||
-            !message.planGoal.isNullOrBlank() ||
-            !message.planDefinitionOfDone.isNullOrBlank() ||
-            !message.planTasks.isNullOrEmpty() ||
-            !message.planCompletedTasks.isNullOrEmpty()
 
     fun isHardBlockedActivePlanResponse(message: OpenAIResponse): Boolean {
         val blockingQuestion = message.planBlockingQuestion?.trim().orEmpty()
@@ -61,7 +48,8 @@ class AgentTurnContinuationPolicy {
         return blockingQuestion.isNotBlank() && !isRoutineConfirmationQuestion(blockingQuestion)
     }
 
-    fun isApprovedBlockingReasonType(blockingReasonType: String?): Boolean = normalizeBlockingReasonType(blockingReasonType) != null
+    fun isApprovedBlockingReasonType(blockingReasonType: String?): Boolean =
+        normalizeBlockingReasonType(blockingReasonType) != null
 
     fun isRoutineConfirmationQuestion(question: String): Boolean {
         val q = question.trim().lowercase()
@@ -83,9 +71,15 @@ class AgentTurnContinuationPolicy {
             listOf(
                 "before i continue",
                 "before proceeding",
-                "before i make changes",
-                "before applying",
-                "before running",
+                "before i proceed",
+                "if you'd like me to continue",
+                "if you want me to continue",
+                "let me know if i should continue",
+                "let me know whether to continue",
+                "should i move on",
+                "should i keep going",
+                "want me to continue",
+                "want me to proceed",
             )
         return contextualPatterns.any { q.contains(it) }
     }
@@ -95,11 +89,10 @@ class AgentTurnContinuationPolicy {
         return normalized.takeIf { APPROVED_BLOCKING_REASON_TYPES.contains(it) }
     }
 
-    private fun normalizePlanLoopSummary(text: String): String =
-        text
-            .lowercase()
-            .replace(Regex("\\s+"), " ")
-            .replace(Regex("[^a-z0-9 _|:-]"), "")
+    private fun normalizePlanLoopSummary(summaryText: String): String =
+        summaryText
             .trim()
+            .replace(Regex("\\s+"), " ")
+            .lowercase()
             .take(240)
 }

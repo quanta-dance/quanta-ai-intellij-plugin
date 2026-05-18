@@ -13,43 +13,17 @@ import com.openai.models.responses.StructuredResponseOutputMessage
 import io.mockk.every
 import io.mockk.mockk
 import java.util.Optional
+import kotlin.collections.ArrayDeque
+import kotlin.collections.List
+import kotlin.collections.any
+import kotlin.collections.listOf
+import kotlin.collections.mutableListOf
+import kotlin.collections.plusAssign
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class AgentTurnOrchestratorTest {
-    @Test
-    fun `retries when model reports plan mutation without SessionPlanTool`() {
-        val fixture =
-            orchestratorFixture(
-                plan = SessionPlan(),
-                responses =
-                    ArrayDeque(
-                        listOf(
-                            structuredResponse(
-                                OpenAIResponse(
-                                    summaryMessage = "I completed the first task.",
-                                    ttsSummary = "Task done",
-                                    planCompletedTasks = listOf("Inspect current behavior"),
-                                ),
-                            ),
-                            structuredResponse(
-                                OpenAIResponse(
-                                    summaryMessage = "I will continue using the persisted plan state.",
-                                    ttsSummary = "Continuing",
-                                    nextStep = "DONE",
-                                ),
-                            ),
-                        ),
-                    ),
-            )
-
-        fixture.orchestrator.run(mutableListOf(), null)
-
-        assertEquals(2, fixture.createResponseCallCount)
-        assertEquals(listOf("I will continue using the persisted plan state."), fixture.persistedMessages)
-        assertTrue(fixture.systemMessages.any { it.contains("SessionPlanTool") })
-    }
 
     @Test
     fun `active plan rejects routine confirmation and retries autonomously`() {

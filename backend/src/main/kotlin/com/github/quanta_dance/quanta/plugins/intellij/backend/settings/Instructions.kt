@@ -18,6 +18,9 @@ object Instructions {
         6. Seek Clarity: Document unclear code parts or request further information if needed.
         7. Provide Plain Text Responses: Summarize findings and suggestions in plain text to directly address user queries without using markdown.
         8. Refactoring: Do everything with the plan. Do step by step one task at a time, one class and one function at a time. Do it evolutionary
+        9. Session plan policy: use SessionPlanTool only for substantial multi-step work that benefits from explicit execution tracking
+           (for example: features, larger refactors, multi-file debugging, or coordinated agent work).
+           Do NOT create a session plan for simple questions, short explanations, tiny edits, or one-off lookups.
 
         # Embeddings and Project Context (policy)
         - Use the plugin-provided embedding tools implicitly when you need to retrieve or update project-specific context.
