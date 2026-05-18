@@ -36,6 +36,8 @@ dependencies {
     testImplementation(libs.byte.buddy)
     testImplementation(libs.byte.buddy.agent)
     testImplementation(project(":shared"))
+    testRuntimeOnly("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.2")
+    testRuntimeOnly("org.jetbrains.kotlinx:kotlinx-coroutines-debug:1.10.2")
 
     quantaRuntime(libs.javazoom)
 }

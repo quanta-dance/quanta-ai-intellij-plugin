@@ -3,6 +3,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.settings
 
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.logging.FrontendBackendLogBridge
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.rpc.FrontendSettingsRpcService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.QuantaSettingsDto
 import com.intellij.openapi.application.Application
@@ -24,6 +25,8 @@ class FrontendSettingsSyncStateServiceTest {
     private lateinit var frontendState: FrontendQuantaSettingsState
     private lateinit var project: Project
     private lateinit var rpc: FrontendSettingsRpcService
+    private lateinit var backendLog: FrontendBackendLogBridge
+    private lateinit var mcpConfigService: FrontendMcpConfigService
 
     @BeforeTest
     fun setUp() {
@@ -34,9 +37,15 @@ class FrontendSettingsSyncStateServiceTest {
         frontendState = FrontendQuantaSettingsState()
         project = mockk(relaxed = true)
         rpc = mockk(relaxed = true)
+        backendLog = mockk(relaxed = true)
+        mcpConfigService = mockk(relaxed = true)
 
         every { ApplicationManager.getApplication() } returns app
         every { app.getService(FrontendQuantaSettingsState::class.java) } returns frontendState
+        every { app.getService(FrontendBackendLogBridge::class.java) } returns backendLog
+        every { app.getService(FrontendMcpConfigService::class.java) } returns mcpConfigService
+        every { project.getService(FrontendBackendLogBridge::class.java) } returns backendLog
+        every { project.getService(FrontendMcpConfigService::class.java) } returns mcpConfigService
         every { FrontendSettingsRpcService.getInstance(project) } returns rpc
     }
 
@@ -72,6 +81,7 @@ class FrontendSettingsSyncStateServiceTest {
 
             coEvery { rpc.updateSettings(any()) } returns Unit
             coEvery { rpc.getSettings() } returns backendDto
+            every { mcpConfigService.readForSync() } returns "{}"
 
             service.syncOnStartup()
 

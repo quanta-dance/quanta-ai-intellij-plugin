@@ -48,6 +48,12 @@ dependencies {
     quantaRuntime("io.modelcontextprotocol:kotlin-sdk-client:0.12.0")
     quantaRuntime(libs.ktor.client.java)
 
+    testImplementation(libs.openai)
+    testImplementation("com.openai:openai-java-client-okhttp:4.31.0")
+    testImplementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.2")
+    testImplementation("org.eclipse.jgit:org.eclipse.jgit:6.10.0.202406032230-r")
+    testImplementation("io.modelcontextprotocol:kotlin-sdk-client:0.12.0")
+    testImplementation(libs.ktor.client.java)
     testImplementation(kotlin("test"))
     testImplementation(kotlin("stdlib"))
     testImplementation("io.mockk:mockk:1.13.12")
