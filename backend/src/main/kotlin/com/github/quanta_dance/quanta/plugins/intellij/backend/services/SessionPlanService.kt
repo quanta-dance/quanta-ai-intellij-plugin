@@ -3,6 +3,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.backend.services
 
+import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.ChatConversationStateService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.QuantaAISessionState
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
 import com.intellij.openapi.components.Service
@@ -31,7 +32,13 @@ class SessionPlanService(
 
     private val log = Logger.getInstance(SessionPlanService::class.java)
     private val _statusFlow = MutableStateFlow(ChatPlanStatusDto())
-    private val conversationKeyResolver = MainConversationKeyResolver(project)
+    private val keyResolver =
+        SessionPlanKeyResolver(
+            mainConversationKeyProvider = { MainConversationKeyResolver(project).conversationKeyForMain() },
+            activeSessionIdProvider = {
+                runCatching { project.service<ChatConversationStateService>().getActiveSessionId() }.getOrNull()
+            },
+        )
 
     val statusFlow: StateFlow<ChatPlanStatusDto> = _statusFlow.asStateFlow()
 
@@ -188,5 +195,5 @@ class SessionPlanService(
         }
     }
 
-    private fun conversationKey(): String = conversationKeyResolver.conversationKeyForMain()
+    private fun conversationKey(): String = keyResolver.currentKey()
 }

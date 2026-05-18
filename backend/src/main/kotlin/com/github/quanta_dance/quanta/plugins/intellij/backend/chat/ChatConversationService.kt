@@ -14,6 +14,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.repository.OpenAI
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentManagerService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.BackendExecutionContextsService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.OpenAIService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SessionPlanService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage.ChatMessageType.AI_THINKING
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatMessageDto
@@ -89,7 +90,8 @@ class ChatConversationService(
         }
     }
 
-    fun messagesFlow(): Flow<List<ChatMessageDto>> = _messages.map { messagesList -> messagesList.map { it.toChatMessageDto() } }
+    fun messagesFlow(): Flow<List<ChatMessageDto>> =
+        _messages.map { messagesList -> messagesList.map { it.toChatMessageDto() } }
 
     fun currentMessages(): List<ChatMessageDto> = _messages.value.map { it.toChatMessageDto() }
 
@@ -97,7 +99,8 @@ class ChatConversationService(
 
     fun currentSessions(): List<ChatSessionDto> = _sessions.value
 
-    private fun <T> onChatPublicationThread(action: () -> T): T = runBlocking(executionContexts.chatPublicationDispatcher) { action() }
+    private fun <T> onChatPublicationThread(action: () -> T): T =
+        runBlocking(executionContexts.chatPublicationDispatcher) { action() }
 
     fun createNewSession() {
         onChatPublicationThread {
@@ -106,6 +109,7 @@ class ChatConversationService(
             _messages.value = emptyList()
             _sessions.value = persistence.listSessions()
             openAIService.switchToSession(sessionId, null)
+            project.service<SessionPlanService>().publishCurrentStatus()
             agentManager.reloadAgentsFromSession()
         }
     }
@@ -123,6 +127,7 @@ class ChatConversationService(
             _messages.value = persistence.loadActiveMessages()
             _sessions.value = persistence.listSessions()
             openAIService.switchToSession(sessionId, persistence.getActiveLastResponseId())
+            project.service<SessionPlanService>().publishCurrentStatus()
             agentManager.reloadAgentsFromSession()
         }
     }
@@ -134,6 +139,7 @@ class ChatConversationService(
             _messages.value = persistence.loadActiveMessages()
             _sessions.value = persistence.listSessions()
             openAIService.switchToSession(nextSessionId, persistence.getActiveLastResponseId())
+            project.service<SessionPlanService>().publishCurrentStatus()
             agentManager.reloadAgentsFromSession()
         }
     }
@@ -395,11 +401,11 @@ class ChatConversationService(
                         .builder()
                         .addInputTextContent(
                             "Scheduled reminder context (internal only):\n" +
-                                reminderContext +
-                                "\n\nWrite a short, natural reminder to the user. " +
-                                "Do not say the reminder was acknowledged, delivered, fired, or triggered. " +
-                                "Do not repeat the reminder context verbatim. " +
-                                "Use first-person phrasing like 'I want to remind you ...'.",
+                                    reminderContext +
+                                    "\n\nWrite a short, natural reminder to the user. " +
+                                    "Do not say the reminder was acknowledged, delivered, fired, or triggered. " +
+                                    "Do not repeat the reminder context verbatim. " +
+                                    "Use first-person phrasing like 'I want to remind you ...'.",
                         ).role(ResponseInputItem.Message.Role.SYSTEM)
                         .build(),
                 ),
@@ -418,7 +424,7 @@ class ChatConversationService(
         val ctx = runCatching { CurrentFileContextProvider(project).getCurrent() }.getOrNull() ?: return null
         val header =
             "Current file open: ${ctx.filePathRelative}, file version: ${ctx.version} - " +
-                "you must always reread file if version changed"
+                    "you must always reread file if version changed"
 
         return buildString {
             append(header)
