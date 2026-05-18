@@ -51,7 +51,19 @@ class ToolExecutionService(
     private fun isErrorResult(result: Any?): Boolean {
         val map = result as? Map<*, *> ?: return false
         val status = map["status"]?.toString()?.trim()?.lowercase()
-        return status == "error" || map.containsKey("error") || map.containsKey("errorText")
+        if (status == "error" || map.containsKey("error") || map.containsKey("errorText")) return true
+
+        val text = map["text"]?.toString().orEmpty()
+        if (text.startsWith("Aborted:")) return true
+        if (
+            text.contains("Validation:") &&
+            !text.contains("Validation: No compilation errors found.") &&
+            !text.contains("Validation: completed, no errors reported.") &&
+            !text.contains("Validation: skipped")
+        ) {
+            return true
+        }
+        return false
     }
 
     private fun extractErrorText(result: Any?): String? {

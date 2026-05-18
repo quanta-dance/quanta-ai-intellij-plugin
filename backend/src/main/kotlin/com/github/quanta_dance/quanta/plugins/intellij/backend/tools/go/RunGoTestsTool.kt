@@ -5,6 +5,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.go
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
+import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.ToolFriendlyException
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.intellij.openapi.project.Project
@@ -12,7 +13,7 @@ import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.vfs.VfsUtil
 import java.io.File
 import java.nio.charset.StandardCharsets
-import java.util.LinkedList
+import java.util.*
 import java.util.concurrent.TimeUnit
 
 @JsonClassDescription("Run Go tests (go test) with optional -run filter and stream progress; auto-detects go module in project root")
@@ -36,7 +37,7 @@ class RunGoTestsTool : ToolInterface<RunGoTestsTool.Result> {
 
     @field:JsonPropertyDescription(
         "Working directory relative to the project root (default: project root). " +
-            "If autoDetectModule=true and go.mod exists in project root, it will be used.",
+                "If autoDetectModule=true and go.mod exists in project root, it will be used.",
     )
     var workingDir: String? = null
 
@@ -109,7 +110,23 @@ class RunGoTestsTool : ToolInterface<RunGoTestsTool.Result> {
             false
         }
 
-    override fun execute(project: Project): Result {
+    override fun execute(project: Project): Result =
+        try {
+            executeInternal(project)
+        } catch (e: Throwable) {
+            val rootCause = rootCauseOf(e)
+            if (rootCause is ToolFriendlyException) throw rootCause
+            if (rootCause is java.util.concurrent.CancellationException) {
+                throw ToolFriendlyException(
+                    "Go test execution was cancelled before completion.",
+                    code = "cancelled",
+                    retriable = true,
+                )
+            }
+            throw e
+        }
+
+    private fun executeInternal(project: Project): Result {
         val basePath =
             PathUtils.projectRootPath(project) ?: return Result(false, 0, 0, null, "Project base path not found")
         val pkg = (packages?.trim()?.takeIf { it.isNotEmpty() } ?: "./...")
@@ -253,6 +270,15 @@ class RunGoTestsTool : ToolInterface<RunGoTestsTool.Result> {
             tail(output, stdoutTailLines),
             if (success) "" else "go test failed with exit code $exitCode",
         )
+    }
+
+    private fun rootCauseOf(error: Throwable): Throwable {
+        var current: Throwable = error
+        val visited = HashSet<Throwable>()
+        while (current.cause != null && visited.add(current)) {
+            current = current.cause!!
+        }
+        return current
     }
 
     private fun tail(

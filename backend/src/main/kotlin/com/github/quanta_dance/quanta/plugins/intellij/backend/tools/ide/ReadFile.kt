@@ -40,21 +40,21 @@ data class ReadFile(
     var strategy: String = "window",
     @field:JsonPropertyDescription(
         "If true, and the file is the current editor file with caret/selection, " +
-            "return a window around caret/selection when truncating.",
+                "return a window around caret/selection when truncating.",
     )
     var preferWindowIfCurrentFile: Boolean = true,
     @field:JsonPropertyDescription("Window radius in lines (before and after caret or selection) when strategy=window. Default 300.")
     var windowRadiusLines: Int = 300,
     @field:JsonPropertyDescription(
         "Optional 1-based starting line (inclusive). If set, content is first sliced to start from this line. " +
-            "When provided together with toLine, returns that exact line range. " +
-            "Takes precedence over strategy/window behavior.",
+                "When provided together with toLine, returns that exact line range. " +
+                "Takes precedence over strategy/window behavior.",
     )
     var fromLine: Int? = null,
     @field:JsonPropertyDescription(
         "Optional 1-based ending line (inclusive). If set, content is first sliced to end at this line. " +
-            "If set without fromLine, fromLine defaults to 1. " +
-            "Takes precedence over strategy/window behavior.",
+                "If set without fromLine, fromLine defaults to 1. " +
+                "Takes precedence over strategy/window behavior.",
     )
     var toLine: Int? = null,
 ) : ToolInterface<ReadFileResult> {
@@ -75,8 +75,10 @@ data class ReadFile(
         end: Int,
         lineCount: Int,
     ): Pair<Int, Int> {
-        val s = start.coerceAtLeast(0)
-        val e = end.coerceAtMost(lineCount - 1).coerceAtLeast(s)
+        if (lineCount <= 0) return Pair(0, -1)
+        val maxIndex = lineCount - 1
+        val s = start.coerceIn(0, maxIndex)
+        val e = end.coerceIn(s, maxIndex)
         return Pair(s, e)
     }
 
@@ -86,7 +88,9 @@ data class ReadFile(
         toLine0: Int,
     ): String {
         val lines = raw.lines()
+        if (lines.isEmpty()) return ""
         val (s, e) = clampWindow(fromLine0, toLine0, lines.size)
+        if (e < s) return ""
         return lines.subList(s, e + 1).joinToString("\n")
     }
 
@@ -152,6 +156,36 @@ data class ReadFile(
         return null
     }
 
+    private fun validateRangeAgainstFile(
+        fromLine: Int?,
+        toLine: Int?,
+        lineCount: Int,
+    ): String? {
+        if (fromLine == null && toLine == null) return null
+        if (lineCount <= 0) return "File is empty; requested line range cannot be read."
+
+        val start1 = fromLine ?: 1
+        if (start1 > lineCount) {
+            return "Requested fromLine $start1 is out of range; file has only $lineCount lines."
+        }
+
+        return null
+    }
+
+    private fun buildRangeClampWarning(
+        fromLine: Int?,
+        toLine: Int?,
+        lineCount: Int,
+    ): String? {
+        if (fromLine == null && toLine == null) return null
+        if (lineCount <= 0) return null
+
+        val end1 = toLine ?: return null
+        if (end1 <= lineCount) return null
+
+        return "Requested toLine $end1 exceeds file length; returning through line $lineCount because the file has only $lineCount lines."
+    }
+
     override fun execute(project: Project): ReadFileResult {
         if (filePath.isBlank()) {
             return ReadFileResult("", "", "filePath is required")
@@ -176,137 +210,190 @@ data class ReadFile(
                 resolved.toString()
             }
 
-        return ApplicationManager.getApplication().runReadAction<ReadFileResult> {
-            val virtualFile =
-                PathUtils.resolveVirtualFileWithinProject(project, filePath)
-                    ?: return@runReadAction ReadFileResult(
-                        "",
-                        "",
-                        "File not found.",
-                    )
-            if (!virtualFile.isFile) return@runReadAction ReadFileResult("", "", "It is not a file")
+        return try {
+            ApplicationManager.getApplication().runReadAction<ReadFileResult> {
+                val virtualFile =
+                    PathUtils.resolveVirtualFileWithinProject(project, filePath)
+                        ?: return@runReadAction ReadFileResult(
+                            "",
+                            "",
+                            "File not found.",
+                        )
+                if (!virtualFile.isFile) return@runReadAction ReadFileResult("", "", "It is not a file")
 
-            val doc = FileDocumentManager.getInstance().getDocument(virtualFile)
-            val rawContent =
-                try {
-                    doc?.text ?: VfsUtilCore.loadText(virtualFile)
-                } catch (t: Throwable) {
-                    return@runReadAction ReadFileResult("", "", "Unable to read file: ${t.message}")
+                val doc = FileDocumentManager.getInstance().getDocument(virtualFile)
+                val rawContent =
+                    try {
+                        doc?.text ?: VfsUtilCore.loadText(virtualFile)
+                    } catch (t: Throwable) {
+                        return@runReadAction ReadFileResult("", "", "Unable to read file: ${t.message}")
+                    }
+
+                val rangeErr = validateRange(fromLine, toLine)
+                if (rangeErr != null) {
+                    return@runReadAction ReadFileResult("", "", rangeErr)
                 }
-
-            val rangeErr = validateRange(fromLine, toLine)
-            if (rangeErr != null) {
-                return@runReadAction ReadFileResult("", "", rangeErr)
-            }
-
-            val currentCtx =
-                try {
-                    CurrentFileContextProvider(project).getCurrent()
-                } catch (_: Throwable) {
-                    null
+                val fileLineCount = rawContent.lines().size
+                val fileRangeErr = validateRangeAgainstFile(fromLine, toLine, fileLineCount)
+                if (fileRangeErr != null) {
+                    return@runReadAction ReadFileResult("", "", fileRangeErr)
                 }
-            val isCurrentTarget = currentCtx?.filePathRelative?.equals(relToBase, ignoreCase = false) == true
+                val rangeClampWarning = buildRangeClampWarning(fromLine, toLine, fileLineCount).orEmpty()
 
-            // Step 1: explicit slice by line range, if requested (takes precedence)
-            var finalContent = rawContent
-            var firstLineNumber = 1
-            val explicitRangeRequested = (fromLine != null || toLine != null)
-            if (explicitRangeRequested) {
-                val start1 = fromLine ?: 1
-                val end1 = toLine
+                val currentCtx =
+                    try {
+                        CurrentFileContextProvider(project).getCurrent()
+                    } catch (_: Throwable) {
+                        null
+                    }
+                val isCurrentTarget = currentCtx?.filePathRelative?.equals(relToBase, ignoreCase = false) == true
 
                 val lines = rawContent.lines()
-                if (lines.isEmpty()) {
-                    finalContent = ""
-                    firstLineNumber = start1
-                } else {
-                    val start0 = (start1 - 1).coerceAtLeast(0)
-                    val end0 =
-                        (end1?.minus(1) ?: lines.lastIndex)
-                            .coerceAtMost(lines.lastIndex)
-                            .coerceAtLeast(start0)
-                    finalContent = lines.subList(start0, end0 + 1).joinToString("\n")
-                    firstLineNumber = start0 + 1
+                val totalFileLines = lines.size
+
+                // Step 1: explicit slice by line range, if requested (takes precedence)
+                var finalContent = rawContent
+                var firstLineNumber = 1
+                var requestedFromLineNormalized: Int? = null
+                var requestedToLineNormalized: Int? = null
+                var requestedEffectiveEndLine: Int? = null
+                val explicitRangeRequested = (fromLine != null || toLine != null)
+                if (explicitRangeRequested) {
+                    val start1 = fromLine ?: 1
+                    val end1 = toLine
+                    requestedFromLineNormalized = start1
+                    requestedToLineNormalized = end1
+                    requestedEffectiveEndLine = end1 ?: totalFileLines
+
+                    if (lines.isEmpty()) {
+                        finalContent = ""
+                        firstLineNumber = start1
+                    } else {
+                        val (start0, end0) =
+                            clampWindow(
+                                start = start1 - 1,
+                                end = end1?.minus(1) ?: lines.lastIndex,
+                                lineCount = lines.size,
+                            )
+                        finalContent = lines.subList(start0, end0 + 1).joinToString("\n")
+                        firstLineNumber = start0 + 1
+                    }
                 }
-            }
 
-            // Step 2: truncate if too large
-            var truncated = false
-            val isTooLarge = finalContent.length > maxChars
-            if (isTooLarge) {
-                val lc = finalContent.lines().size
-                when (strategy.lowercase()) {
-                    "head" -> {
-                        val (slice, start0) = headByLines(finalContent, maxChars)
-                        finalContent = slice
-                        truncated = true
-                        firstLineNumber += start0
-                    }
-
-                    "tail" -> {
-                        val (slice, start0) = tailByLines(finalContent, maxChars)
-                        finalContent = slice
-                        truncated = true
-                        firstLineNumber = (firstLineNumber + start0).coerceAtLeast(1)
-                    }
-
-                    else -> { // window
-                        // Windowing is only meaningful for the current file when no explicit range was requested.
-                        if (!explicitRangeRequested && preferWindowIfCurrentFile && isCurrentTarget) {
-                            val cStart = currentCtx.selectionStartLine
-                            val cEnd = currentCtx.selectionEndLine
-                            val caret = currentCtx.caretLine
-
-                            val startLine0: Int
-                            val endLine0: Int
-                            if (cStart != null && cEnd != null) {
-                                startLine0 = ((cStart - 1) - windowRadiusLines).coerceAtLeast(0)
-                                endLine0 = ((cEnd - 1) + windowRadiusLines).coerceAtMost(lc - 1)
-                            } else if (caret != null) {
-                                startLine0 = ((caret - 1) - windowRadiusLines).coerceAtLeast(0)
-                                endLine0 = ((caret - 1) + windowRadiusLines).coerceAtMost(lc - 1)
-                            } else {
-                                val (slice, start0) = headByLines(finalContent, maxChars)
-                                finalContent = slice
-                                truncated = true
-                                firstLineNumber += start0
-                                startLine0 = 0
-                                endLine0 = -1
-                            }
-
-                            if (startLine0 <= endLine0) {
-                                finalContent = sliceByLines(finalContent, startLine0, endLine0)
-                                truncated = true
-                                firstLineNumber += startLine0
-                            }
-                        } else {
+                // Step 2: truncate if too large
+                var truncated = false
+                val isTooLarge = finalContent.length > maxChars
+                if (isTooLarge) {
+                    val lc = finalContent.lines().size
+                    when (strategy.lowercase()) {
+                        "head" -> {
                             val (slice, start0) = headByLines(finalContent, maxChars)
                             finalContent = slice
                             truncated = true
                             firstLineNumber += start0
                         }
+
+                        "tail" -> {
+                            val (slice, start0) = tailByLines(finalContent, maxChars)
+                            finalContent = slice
+                            truncated = true
+                            firstLineNumber = (firstLineNumber + start0).coerceAtLeast(1)
+                        }
+
+                        else -> { // window
+                            // Windowing is only meaningful for the current file when no explicit range was requested.
+                            if (!explicitRangeRequested && preferWindowIfCurrentFile && isCurrentTarget) {
+                                val cStart = currentCtx.selectionStartLine
+                                val cEnd = currentCtx.selectionEndLine
+                                val caret = currentCtx.caretLine
+
+                                val startLine0: Int
+                                val endLine0: Int
+                                if (cStart != null && cEnd != null) {
+                                    startLine0 = ((cStart - 1) - windowRadiusLines).coerceAtLeast(0)
+                                    endLine0 = ((cEnd - 1) + windowRadiusLines).coerceAtMost(lc - 1)
+                                } else if (caret != null) {
+                                    startLine0 = ((caret - 1) - windowRadiusLines).coerceAtLeast(0)
+                                    endLine0 = ((caret - 1) + windowRadiusLines).coerceAtMost(lc - 1)
+                                } else {
+                                    val (slice, start0) = headByLines(finalContent, maxChars)
+                                    finalContent = slice
+                                    truncated = true
+                                    firstLineNumber += start0
+                                    startLine0 = 0
+                                    endLine0 = -1
+                                }
+
+                                if (startLine0 <= endLine0) {
+                                    finalContent = sliceByLines(finalContent, startLine0, endLine0)
+                                    truncated = true
+                                    firstLineNumber += startLine0
+                                }
+                            } else {
+                                val (slice, start0) = headByLines(finalContent, maxChars)
+                                finalContent = slice
+                                truncated = true
+                                firstLineNumber += start0
+                            }
+                        }
                     }
                 }
-            }
 
-            val (format, content) =
-                if (includeLineNumbers) {
-                    "00001 line_content" to
-                        withLineNumbers(
-                            finalContent,
-                            firstLineNumber,
-                        )
-                } else {
-                    "plain" to finalContent
+                val (format, content) =
+                    if (includeLineNumbers) {
+                        "00001 line_content" to
+                                withLineNumbers(
+                                    finalContent,
+                                    firstLineNumber,
+                                )
+                    } else {
+                        "plain" to finalContent
+                    }
+
+                val actualLineCount = if (finalContent.isEmpty()) 0 else finalContent.lines().size
+                val actualFromLine = if (actualLineCount > 0) firstLineNumber else null
+                val actualToLine = if (actualLineCount > 0) (firstLineNumber + actualLineCount - 1) else null
+                val hasMoreContent =
+                    when {
+                        actualToLine == null -> false
+                        explicitRangeRequested -> actualToLine < (requestedEffectiveEndLine ?: actualToLine)
+                        else -> actualToLine < totalFileLines
+                    }
+                val truncationWarning =
+                    if (truncated && actualFromLine != null && actualToLine != null) {
+                        "Returned lines $actualFromLine..$actualToLine only; additional content was omitted due to maxChars/strategy."
+                    } else {
+                        ""
+                    }
+                val combinedWarning =
+                    listOf(rangeClampWarning, truncationWarning).filter { it.isNotBlank() }.joinToString(" ")
+
+                val hash = sha256Normalized(rawContent)
+                QDLog.debug(logger) {
+                    "Read file content: $relToBase, lineNumbers=$includeLineNumbers, truncated=$truncated, " +
+                            "requestedFromLine=${requestedFromLineNormalized ?: ""} requestedToLine=${requestedToLineNormalized ?: ""} " +
+                            "actualFromLine=${actualFromLine ?: ""} actualToLine=${actualToLine ?: ""} totalFileLines=$totalFileLines"
                 }
 
-            val hash = sha256Normalized(rawContent)
-            QDLog.debug(logger) {
-                "Read file content: $relToBase, lineNumbers=$includeLineNumbers, truncated=$truncated, " +
-                    "startLine=$firstLineNumber fromLine=${fromLine ?: ""} toLine=${toLine ?: ""}"
+                ReadFileResult(
+                    format = format,
+                    content = content,
+                    error = "",
+                    warning = combinedWarning,
+                    requestedFromLine = requestedFromLineNormalized,
+                    requestedToLine = requestedToLineNormalized,
+                    actualFromLine = actualFromLine,
+                    actualToLine = actualToLine,
+                    totalFileLines = totalFileLines,
+                    truncated = truncated,
+                    hasMoreContent = hasMoreContent,
+                    fileHashSha256 = hash,
+                )
             }
-
-            ReadFileResult(format, content, "", hash)
+        } catch (e: Throwable) {
+            QDLog.warn(logger, { "Failed to read file $relToBase" }, e)
+            val message = e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
+            ReadFileResult(error = "Failed to read file $relToBase: $message", format = "", content = "")
         }
     }
 }

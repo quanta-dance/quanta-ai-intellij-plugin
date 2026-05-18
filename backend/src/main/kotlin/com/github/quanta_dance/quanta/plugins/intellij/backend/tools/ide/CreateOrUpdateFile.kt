@@ -34,7 +34,7 @@ import java.security.MessageDigest
  */
 @JsonClassDescription(
     "Create or Update specified file. Supports full replacement via 'content' or partial line-range updates via 'patches'. " +
-        "Before modifying methods in the file you may need to check for method references as they might need updates.",
+            "Before modifying methods in the file you may need to check for method references as they might need updates.",
 )
 class CreateOrUpdateFile : ToolInterface<String> {
     data class Patch(
@@ -53,7 +53,7 @@ class CreateOrUpdateFile : ToolInterface<String> {
 
     @field:JsonPropertyDescription(
         "New content for the file to be modified. If provided and 'patches' is empty, " +
-            "this fully replaces file content.",
+                "this fully replaces file content.",
     )
     var content: String? = null
 
@@ -62,13 +62,13 @@ class CreateOrUpdateFile : ToolInterface<String> {
 
     @field:JsonPropertyDescription(
         "Optional list of line-range patches to apply (1-based inclusive lines). If non-empty, " +
-            "patches are applied instead of full replace.",
+                "patches are applied instead of full replace.",
     )
     var patches: List<Patch>? = null
 
     @field:JsonPropertyDescription(
         "If true, force synchronous save/commit/refresh " +
-            "to surface PSI errors immediately (no Gradle run). Default: true",
+                "to surface PSI errors immediately (no Gradle run). Default: true",
     )
     var validateBuildAfterUpdate: Boolean = true
 
@@ -78,7 +78,7 @@ class CreateOrUpdateFile : ToolInterface<String> {
 
     @field:JsonPropertyDescription(
         "Optional expected SHA-256 hash of normalized file content (\\r\\n/\\r -> \\n)." +
-            " If provided and matches current, patches can proceed.",
+                " If provided and matches current, patches can proceed.",
     )
     var expectedFileHashSha256: String? = null
 
@@ -193,13 +193,13 @@ class CreateOrUpdateFile : ToolInterface<String> {
                                 .commitDocument(document)
                             FileDocumentManager.getInstance().saveDocument(document)
                         } catch (e: Throwable) {
-                            QDLog.debug(logger) { "Failed to set/commit/save document: ${e.message}" }
+                            throw wrapWriteFailure(relToBase, "set, commit, or save document", e)
                         }
                     } else {
                         try {
                             virtualFile.setBinaryContent((content ?: "").toByteArray(StandardCharsets.UTF_8))
                         } catch (e: Throwable) {
-                            QDLog.debug(logger) { "Failed to set binary content: ${e.message}" }
+                            throw wrapWriteFailure(relToBase, "write file bytes", e)
                         }
                     }
 
@@ -231,13 +231,17 @@ class CreateOrUpdateFile : ToolInterface<String> {
                     } catch (_: Throwable) {
                     }
                 } catch (e: Throwable) {
-                    if (e is ProcessCanceledException || e is java.util.concurrent.CancellationException) {
+                    val rootCause = rootCauseOf(e)
+                    if (rootCause is ToolFriendlyException) {
+                        throw rootCause
+                    }
+                    if (rootCause is ProcessCanceledException || rootCause is java.util.concurrent.CancellationException) {
                         val cancelMessage =
-                            "Environment cancelled the write while updating $relToBase before completion. Retry may succeed."
+                            "Write operation was cancelled while updating $relToBase before completion. Retry may succeed."
                         throw ToolFriendlyException(cancelMessage, code = "cancelled", retriable = true)
                     }
                     QDLog.warn(logger, { "Failed to update file $relToBase" }, e)
-                    throw e
+                    throw wrapWriteFailure(relToBase, "update file", rootCause)
                 }
             }
         }
@@ -277,6 +281,30 @@ class CreateOrUpdateFile : ToolInterface<String> {
             "Update file $relToBase: $result, fileHashSha256=${fileHashSha256 ?: ""}"
         }
         return result
+    }
+
+    private fun wrapWriteFailure(
+        relToBase: String,
+        action: String,
+        error: Throwable,
+    ): ToolFriendlyException {
+        val rootCause = rootCauseOf(error)
+        val message = rootCause.message?.trim().orEmpty()
+        val suffix = if (message.isNotBlank()) ": $message" else ""
+        return ToolFriendlyException(
+            message = "Failed to $action for $relToBase$suffix",
+            code = "write_failed",
+            retriable = false,
+        )
+    }
+
+    private fun rootCauseOf(error: Throwable): Throwable {
+        var current: Throwable = error
+        val visited = HashSet<Throwable>()
+        while (current.cause != null && visited.add(current)) {
+            current = current.cause!!
+        }
+        return current
     }
 
     private fun runPsiValidation(

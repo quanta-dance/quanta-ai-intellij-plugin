@@ -19,24 +19,72 @@ import kotlin.io.path.listDirectoryEntries
  * even in split-mode or remote environments.
  */
 @JsonClassDescription("Read list of files in the requested directory")
-class ListFiles : ToolInterface<List<String>> {
+class ListFiles : ToolInterface<ListFiles.Result> {
+    @JsonClassDescription("ListFiles operation result")
+    data class Result(
+        @field:JsonPropertyDescription("Requested directory path relative to project root. Blank means project root.")
+        val requestedPath: String,
+        @field:JsonPropertyDescription("Resolved directory path relative to project root when successful.")
+        val resolvedPath: String,
+        @field:JsonPropertyDescription("Directory entries relative to project root.")
+        val entries: List<String>,
+        @field:JsonPropertyDescription("Error message if listing failed.")
+        val error: String = "",
+    )
+
     @field:JsonPropertyDescription("Relative to the project root path to the file list.")
     var path: String? = null
 
-    override fun execute(project: Project): List<String> {
-        val projBase = PathUtils.projectRootPath(project) ?: return emptyList()
+    override fun execute(project: Project): Result {
+        val requested = path?.trim().orEmpty()
+        val projBase =
+            PathUtils.projectRootPath(project)
+                ?: return Result(
+                    requestedPath = requested,
+                    resolvedPath = "",
+                    entries = emptyList(),
+                    error = "Project base path not found."
+                )
+
         return try {
             val absPath = PathUtils.resolveWithinProject(projBase, path, allowBlankAsDot = true)
-            if (absPath.exists() && absPath.isDirectory()) {
-                return absPath.listDirectoryEntries().map { entry ->
-                    PathUtils.relativizeToProject(projBase, entry)
-                }
+            val resolved = PathUtils.relativizeToProject(projBase, absPath)
+            when {
+                !absPath.exists() -> Result(
+                    requestedPath = requested,
+                    resolvedPath = resolved,
+                    entries = emptyList(),
+                    error = "Directory not found: ${if (requested.isBlank()) "." else requested}",
+                )
+
+                !absPath.isDirectory() -> Result(
+                    requestedPath = requested,
+                    resolvedPath = resolved,
+                    entries = emptyList(),
+                    error = "Requested path is not a directory: ${if (requested.isBlank()) "." else requested}",
+                )
+
+                else -> Result(
+                    requestedPath = requested,
+                    resolvedPath = resolved,
+                    entries = absPath.listDirectoryEntries()
+                        .map { entry -> PathUtils.relativizeToProject(projBase, entry) },
+                )
             }
-            emptyList()
         } catch (e: IllegalArgumentException) {
-            emptyList()
+            Result(
+                requestedPath = requested,
+                resolvedPath = "",
+                entries = emptyList(),
+                error = e.message ?: "Invalid path",
+            )
         } catch (e: Throwable) {
-            emptyList()
+            Result(
+                requestedPath = requested,
+                resolvedPath = "",
+                entries = emptyList(),
+                error = e.message ?: "Failed to list directory entries",
+            )
         }
     }
 }

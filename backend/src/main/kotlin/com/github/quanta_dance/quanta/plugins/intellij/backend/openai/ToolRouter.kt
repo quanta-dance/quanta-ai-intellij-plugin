@@ -57,23 +57,28 @@ class ToolRouter(
                 else -> result
             }
         } catch (e: Throwable) {
-            if (e is ToolFriendlyException) {
-                val message = e.message?.takeIf { it.isNotBlank() } ?: "Tool failed"
-                QDLog.info(log) { "Tool call failed (friendly): name=${functionCall.name()} code=${e.code} err=$message" }
+            val toolFriendly = e.findCause<ToolFriendlyException>()
+            if (toolFriendly != null) {
+                val message = toolFriendly.message?.takeIf { it.isNotBlank() } ?: "Tool failed"
+                QDLog.info(log) {
+                    "Tool call failed (friendly): name=${functionCall.name()} code=${toolFriendly.code} err=$message"
+                }
                 return mapOf(
                     "status" to "error",
                     "tool" to functionCall.name(),
-                    "code" to e.code,
+                    "code" to toolFriendly.code,
                     "message" to message,
                     "errorText" to message,
                     "summary" to message,
-                    "retriable" to e.retriable,
+                    "retriable" to toolFriendly.retriable,
                 )
             }
-            if (e is ProcessCanceledException || e is java.util.concurrent.CancellationException) {
-                val cancelMessage =
-                    e.message?.takeIf { it.isNotBlank() }
-                        ?: "Execution of ${functionCall.name()} was cancelled before completion. Retry may succeed."
+
+            val cancelled =
+                e.findCause<ProcessCanceledException>()
+                    ?: e.findCause<java.util.concurrent.CancellationException>()
+            if (cancelled != null) {
+                val cancelMessage = normalizeCancellationMessage(functionCall.name(), cancelled)
                 QDLog.info(log) { "Tool call cancelled: name=${functionCall.name()} err=$cancelMessage" }
                 return mapOf(
                     "status" to "error",
@@ -98,6 +103,27 @@ class ToolRouter(
                 "errorText" to (e.message ?: "Unhandled exception"),
             )
         }
+    }
+
+    private fun normalizeCancellationMessage(
+        toolName: String,
+        cancelled: Throwable,
+    ): String {
+        val raw = cancelled.message?.trim().orEmpty()
+        if (raw.isBlank() || raw.equals("Cancelled by Message.Cancel", ignoreCase = true)) {
+            return "Execution of $toolName was cancelled before completion."
+        }
+        return raw
+    }
+
+    private inline fun <reified T : Throwable> Throwable.findCause(): T? {
+        var current: Throwable? = this
+        val visited = HashSet<Throwable>()
+        while (current != null && visited.add(current)) {
+            if (current is T) return current
+            current = current.cause
+        }
+        return null
     }
 
     private fun parseArgs(argsJson: String): Map<String, Any?> =

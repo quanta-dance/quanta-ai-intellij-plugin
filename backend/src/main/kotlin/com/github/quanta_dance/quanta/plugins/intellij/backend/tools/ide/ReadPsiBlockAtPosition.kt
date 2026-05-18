@@ -27,7 +27,7 @@ import com.intellij.psi.util.PsiTreeUtil
  */
 @JsonClassDescription(
     "Read the enclosing PSI block (function/method/class/field/object) " +
-        "at a position in a file and return structured metadata and text.",
+            "at a position in a file and return structured metadata and text.",
 )
 class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
     @field:JsonPropertyDescription("Relative to the project root path. If omitted, uses current editor file.")
@@ -134,7 +134,7 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
         } catch (e: Throwable) {
             if (e is com.intellij.openapi.progress.ProcessCanceledException || e is java.util.concurrent.CancellationException) {
                 val cancelMessage =
-                    "Environment cancelled PSI block reading for $rel before completion. Retry may succeed."
+                    "PSI block read was cancelled before completion for $rel."
                 throw ToolFriendlyException(cancelMessage, code = "cancelled", retriable = true)
             }
             throw e
@@ -251,12 +251,12 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
 
             "field" -> {
                 (
-                    ktProperty?.let {
-                        parentOfType(
-                            it,
-                        )
-                    } ?: psiField?.let { parentOfType(it) }
-                )?.let { it to "field" } ?: firstMatchAuto()
+                        ktProperty?.let {
+                            parentOfType(
+                                it,
+                            )
+                        } ?: psiField?.let { parentOfType(it) }
+                        )?.let { it to "field" } ?: firstMatchAuto()
             }
 
             "object" -> {
@@ -273,7 +273,7 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
         try {
             @Suppress("UNCHECKED_CAST")
             Class.forName(name)
-                as Class<out PsiElement>
+                    as Class<out PsiElement>
         } catch (_: Throwable) {
             null
         }

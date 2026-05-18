@@ -33,8 +33,8 @@ import java.security.MessageDigest
  */
 @JsonClassDescription(
     "Apply one or more line-range patches to a specified file. Patches are applied in a single write action, " +
-        "from bottom to top (descending start line), so earlier replacements do not shift later ranges. " +
-        "Lines are 1-based inclusive; offsets are computed from the current Document. Supports optional guards.",
+            "from bottom to top (descending start line), so earlier replacements do not shift later ranges. " +
+            "Lines are 1-based inclusive; offsets are computed from the current Document. Supports optional guards.",
 )
 class PatchFile : ToolInterface<String> {
     data class Patch(
@@ -46,7 +46,7 @@ class PatchFile : ToolInterface<String> {
         var newContent: String = "",
         @field:JsonPropertyDescription(
             "Optional expected current text for the specified line range. " +
-                "If provided and does not match, patch is skipped or triggers failure depending on stopOnMismatch.",
+                    "If provided and does not match, patch is skipped or triggers failure depending on stopOnMismatch.",
         )
         var expectedText: String? = null,
     )
@@ -62,19 +62,19 @@ class PatchFile : ToolInterface<String> {
 
     @field:JsonPropertyDescription(
         "If true (default), aborts and applies nothing when any patch guard fails. " +
-            "If false, skips only mismatched patches and applies the rest.",
+                "If false, skips only mismatched patches and applies the rest.",
     )
     var stopOnMismatch: Boolean = true
 
     @field:JsonPropertyDescription(
         "Optional expected SHA-256 hash of normalized file content (\\r\\n/\\r -> \\n)." +
-            " If provided and matches current, patches can proceed.",
+                " If provided and matches current, patches can proceed.",
     )
     var expectedFileHashSha256: String? = null
 
     @field:JsonPropertyDescription(
         "If true, proceed when all patches' expectedText guards match even if content hash mismatches. " +
-            "Default: true",
+                "Default: true",
     )
     var allowProceedIfGuardsMatch: Boolean = true
 
@@ -91,7 +91,7 @@ class PatchFile : ToolInterface<String> {
 
     @field:JsonPropertyDescription(
         "Soft window radius in lines for expectedText matching. If expectedText does not match exactly at fromLine..toLine, " +
-            "the tool will search within +/- this many lines for a unique match and apply the patch there (if allowed). Default: 50.",
+                "the tool will search within +/- this many lines for a unique match and apply the patch there (if allowed). Default: 50.",
     )
     var softWindowRadiusLines: Int = 50
 
@@ -254,12 +254,12 @@ class PatchFile : ToolInterface<String> {
 
         val relocationAllowed =
             (!requireMultilineExpectedTextForRelocation || expLineCount >= 2) &&
-                (expChars >= minExpectedTextCharsForRelocation || expLineCount >= 2)
+                    (expChars >= minExpectedTextCharsForRelocation || expLineCount >= 2)
 
         if (!relocationAllowed) {
             val reason =
                 "relocation disabled (expectedText not specific enough: lines=$expLineCount chars=$expChars; " +
-                    "requireMultiline=$requireMultilineExpectedTextForRelocation minChars=$minExpectedTextCharsForRelocation)"
+                        "requireMultiline=$requireMultilineExpectedTextForRelocation minChars=$minExpectedTextCharsForRelocation)"
             val actualExtra =
                 if (includeActualSliceOnMismatch) {
                     val raw = baseSlice
@@ -270,9 +270,9 @@ class PatchFile : ToolInterface<String> {
                 }
             mismatchesOut?.add(
                 "Patch $patchIndex1: expectedText mismatch at lines ${patch.fromLine}-${patch.toLine} ($reason). " +
-                    "expected='${preview(expectedRaw)}' actual='${preview(baseSlice)}'" +
-                    firstDifferenceSummary(expectedRaw, baseSlice, patch.fromLine) +
-                    actualExtra,
+                        "expected='${preview(expectedRaw)}' actual='${preview(baseSlice)}'" +
+                        firstDifferenceSummary(expectedRaw, baseSlice, patch.fromLine) +
+                        actualExtra,
             )
             return null
         }
@@ -327,9 +327,9 @@ class PatchFile : ToolInterface<String> {
             }
         mismatchesOut?.add(
             "Patch $patchIndex1: expectedText mismatch at lines ${patch.fromLine}-${patch.toLine} ($reason). " +
-                "expected='${preview(expectedRaw)}' actual='${preview(baseSlice)}'" +
-                firstDifferenceSummary(expectedRaw, baseSlice, patch.fromLine) +
-                actualExtra,
+                    "expected='${preview(expectedRaw)}' actual='${preview(baseSlice)}'" +
+                    firstDifferenceSummary(expectedRaw, baseSlice, patch.fromLine) +
+                    actualExtra,
         )
         return null
     }
@@ -484,7 +484,7 @@ class PatchFile : ToolInterface<String> {
                     } catch (_: Throwable) {
                     }
 
-                    lastModified = PsiManager.getInstance(project).findFile(vFile)?.modificationStamp ?: 0
+
 
                     if (mismatches.isEmpty()) {
                         result
@@ -512,11 +512,20 @@ class PatchFile : ToolInterface<String> {
                 }
             }
         } catch (e: Throwable) {
-            if (e is com.intellij.openapi.progress.ProcessCanceledException || e is java.util.concurrent.CancellationException) {
-                val cancelMessage = "Environment cancelled patching $relToBase before completion. Retry may succeed."
+            val rootCause = rootCauseOf(e)
+            if (rootCause is ToolFriendlyException) {
+                throw rootCause
+            }
+            if (rootCause is com.intellij.openapi.progress.ProcessCanceledException || rootCause is java.util.concurrent.CancellationException) {
+                val cancelMessage =
+                    "Patch operation was cancelled while updating $relToBase before completion. Retry may succeed."
                 throw ToolFriendlyException(cancelMessage, code = "cancelled", retriable = true)
             }
-            throw e
+            throw ToolFriendlyException(
+                "Failed to apply patch to $relToBase${formatCauseSuffix(rootCause)}",
+                code = "patch_failed",
+                retriable = false,
+            )
         }
 
         try {
@@ -532,27 +541,66 @@ class PatchFile : ToolInterface<String> {
         } catch (_: Throwable) {
         }
 
+        var fileHashSha256: String? = null
+        try {
+            val vFile = PathUtils.resolveVirtualFileWithinProject(project, relToBase)
+            if (vFile != null) {
+                val currentText =
+                    FileDocumentManager.getInstance().getDocument(vFile)?.text
+                        ?: vFile.inputStream.bufferedReader().use { it.readText() }
+                fileHashSha256 = sha256Normalized(currentText)
+            }
+        } catch (_: Throwable) {
+        }
+
         if (validateAfterUpdate) {
             try {
-                val validator = ValidateClassFileTool().apply { filePath = relToBase }
-                val errors =
-                    ApplicationManager.getApplication().runReadAction<List<String>> { validator.findErrors(project) }
-                val summary =
-                    if (errors.size == 1 && errors.first().equals("No compilation errors found.", true)) {
-                        "No compilation errors found."
-                    } else if (errors.isEmpty()) {
-                        "Validation completed, no errors reported."
-                    } else {
-                        errors.joinToString("\n").let { if (it.length > 2000) it.take(2000) + "\n..." else it }
-                    }
-                result.append("\nValidation: ").append(summary.lines().first())
+                if (shouldRunPsiValidation(relToBase)) {
+                    val validator = ValidateClassFileTool().apply { filePath = relToBase }
+                    val errors =
+                        ApplicationManager.getApplication()
+                            .runReadAction<List<String>> { validator.findErrors(project) }
+                    val summary =
+                        if (errors.size == 1 && errors.first().equals("No compilation errors found.", true)) {
+                            "No compilation errors found."
+                        } else if (errors.isEmpty()) {
+                            "Validation completed, no errors reported."
+                        } else {
+                            errors.joinToString("\n").let { if (it.length > 2000) it.take(2000) + "\n..." else it }
+                        }
+                    result.append("\nValidation: ").append(summary.lines().first())
+                } else {
+                    result.append("\nValidation: skipped (PSI validation not applicable for this file type)")
+                }
             } catch (e: Throwable) {
                 result.append("\nValidation: skipped (").append(e.message).append(")")
                 QDLog.warn(logger, { "Validation unavailable for $relToBase" }, e)
             }
         }
 
-        val summary = result.toString()
-        return "$summary. File version: $lastModified"
+        if (!fileHashSha256.isNullOrBlank()) {
+            result.append("\nfileHashSha256=").append(fileHashSha256)
+        }
+
+        return result.toString()
+    }
+
+    private fun rootCauseOf(error: Throwable): Throwable {
+        var current: Throwable = error
+        val visited = HashSet<Throwable>()
+        while (current.cause != null && visited.add(current)) {
+            current = current.cause!!
+        }
+        return current
+    }
+
+    private fun formatCauseSuffix(error: Throwable): String {
+        val message = error.message?.trim().orEmpty()
+        return if (message.isBlank()) "" else ": $message"
+    }
+
+    private fun shouldRunPsiValidation(relToBase: String): Boolean {
+        val ext = relToBase.substringAfterLast('.', "").lowercase()
+        return ext in setOf("kt", "kts", "java", "scala", "groovy")
     }
 }
