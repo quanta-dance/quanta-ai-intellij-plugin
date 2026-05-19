@@ -321,7 +321,7 @@ private fun toolExecutionRow(
             }
             val secondary =
                 when {
-                    item.status == ToolExecutionStatus.FAILED && !item.errorText.isNullOrBlank() -> item.errorText
+                    item.status == ToolExecutionStatus.FAILED && !item.errorText.isNullOrBlank() && detailText.isNullOrBlank() -> item.errorText
                     else -> null
                 }
             if (!secondary.isNullOrBlank()) {

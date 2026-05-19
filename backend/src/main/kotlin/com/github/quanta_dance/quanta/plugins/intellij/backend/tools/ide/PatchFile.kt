@@ -4,6 +4,8 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
+import com.fasterxml.jackson.annotation.JsonCreator
+import com.fasterxml.jackson.annotation.JsonProperty
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.ToolFriendlyException
@@ -37,13 +39,19 @@ import java.security.MessageDigest
             "Lines are 1-based inclusive; offsets are computed from the current Document. Supports optional guards.",
 )
 class PatchFile : ToolInterface<String> {
-    data class Patch(
+    data class Patch
+    @JsonCreator
+    constructor(
+        @param:JsonProperty("fromLine")
         @field:JsonPropertyDescription("1-based start line (inclusive)")
         var fromLine: Int = 1,
+        @param:JsonProperty("toLine")
         @field:JsonPropertyDescription("1-based end line (inclusive)")
         var toLine: Int = 1,
+        @param:JsonProperty("newContent")
         @field:JsonPropertyDescription("Replacement content for the specified line range")
         var newContent: String = "",
+        @param:JsonProperty("expectedText")
         @field:JsonPropertyDescription(
             "Optional expected current text for the specified line range. " +
                     "If provided and does not match, patch is skipped or triggers failure depending on stopOnMismatch.",
@@ -128,6 +136,12 @@ class PatchFile : ToolInterface<String> {
         return lf
             .split("\n")
             .joinToString("\n") { line -> line.replace(Regex("[\\t ]+$"), "") }
+    }
+
+    private fun normalizeSingleLineLeadingIndent(text: String): String {
+        val normalized = normalizeForCompare(text)
+        if (normalized.contains("\n")) return normalized
+        return normalized.replace(Regex("^[\\t ]+"), "")
     }
 
     private fun preview(
@@ -246,9 +260,27 @@ class PatchFile : ToolInterface<String> {
             )
         }
 
+        val expLineCount = expNorm.split("\n").size
+        val baseLineCount = baseNorm.split("\n").size
+        val indentationOnlySingleLineMismatch =
+            expLineCount == 1 &&
+                    baseLineCount == 1 &&
+                    normalizeSingleLineLeadingIndent(expectedRaw) == normalizeSingleLineLeadingIndent(baseSlice)
+        if (indentationOnlySingleLineMismatch) {
+            relocationNotesOut?.add(
+                "Patch $patchIndex1 accepted at ${patch.fromLine}-${patch.toLine} after indentation-only single-line guard normalization",
+            )
+            return ResolvedRange(
+                startLine0 = baseStartLine0,
+                endLine0 = baseEndLine0,
+                startOffset = baseRange.startOffset,
+                endOffset = baseRange.endOffset,
+                relocated = false,
+            )
+        }
+
         // Soft-window relocation: find a unique match of expectedText nearby.
         val expLines = expNorm.split("\n")
-        val expLineCount = expLines.size
         val expChars = expNorm.length
         val radius = softWindowRadiusLines.coerceAtLeast(0)
 
@@ -385,9 +417,14 @@ class PatchFile : ToolInterface<String> {
                     val docManager = FileDocumentManager.getInstance()
                     val document =
                         try {
-                            docManager.getDocument(vFile) ?: docManager.getDocument(vFile)!!
+                            docManager.getDocument(vFile)
+                                ?: throw ToolFriendlyException(
+                                    "Failed to obtain editable document for $relToBase.",
+                                    code = "patch_failed",
+                                    retriable = false,
+                                )
                         } catch (e: Throwable) {
-                            return@runWriteCommandAction
+                            throw wrapPatchWriteFailure(relToBase, "obtain editable document", e)
                         }
 
                     val sorted =
@@ -458,15 +495,24 @@ class PatchFile : ToolInterface<String> {
                             continue
                         }
 
-                        document.replaceString(rr.startOffset, rr.endOffset, effectiveNewContent)
-                        applied++
+                        try {
+                            document.replaceString(rr.startOffset, rr.endOffset, effectiveNewContent)
+                            applied++
+                        } catch (e: Throwable) {
+                            throw wrapPatchWriteFailure(relToBase, "apply patch text", e)
+                        }
                     }
 
                     try {
                         PsiDocumentManager.getInstance(project).commitDocument(document)
-                    } catch (_: Throwable) {
+                    } catch (e: Throwable) {
+                        throw wrapPatchWriteFailure(relToBase, "commit patched document", e)
                     }
-                    docManager.saveDocument(document)
+                    try {
+                        docManager.saveDocument(document)
+                    } catch (e: Throwable) {
+                        throw wrapPatchWriteFailure(relToBase, "save patched document", e)
+                    }
 
                     if (reformatAfterUpdate || optimizeImportsAfterUpdate) {
                         try {
@@ -517,8 +563,17 @@ class PatchFile : ToolInterface<String> {
                 throw rootCause
             }
             if (rootCause is com.intellij.openapi.progress.ProcessCanceledException || rootCause is java.util.concurrent.CancellationException) {
+                val cancelDetail = rootCause.message?.trim().orEmpty()
                 val cancelMessage =
-                    "Patch operation was cancelled while updating $relToBase before completion. Retry may succeed."
+                    if (cancelDetail.isBlank() || cancelDetail.equals(
+                            "Cancelled by Message.Cancel",
+                            ignoreCase = true
+                        )
+                    ) {
+                        "Patch execution for $relToBase was cancelled by the environment before completion."
+                    } else {
+                        "Patch execution for $relToBase was cancelled before completion: $cancelDetail"
+                    }
                 throw ToolFriendlyException(cancelMessage, code = "cancelled", retriable = true)
             }
             throw ToolFriendlyException(
@@ -570,7 +625,7 @@ class PatchFile : ToolInterface<String> {
                         }
                     result.append("\nValidation: ").append(summary.lines().first())
                 } else {
-                    result.append("\nValidation: skipped (PSI validation not applicable for this file type)")
+                    result.append("\nValidation: skipped (").append(validationSkipReason(relToBase)).append(")")
                 }
             } catch (e: Throwable) {
                 result.append("\nValidation: skipped (").append(e.message).append(")")
@@ -599,8 +654,44 @@ class PatchFile : ToolInterface<String> {
         return if (message.isBlank()) "" else ": $message"
     }
 
+    private fun wrapPatchWriteFailure(
+        relToBase: String,
+        action: String,
+        error: Throwable,
+    ): ToolFriendlyException {
+        val rootCause = rootCauseOf(error)
+        if (rootCause is ToolFriendlyException) return rootCause
+        val message = rootCause.message?.trim().orEmpty()
+        val suffix = if (message.isBlank()) "" else ": $message"
+        return ToolFriendlyException(
+            message = "Failed to $action for $relToBase$suffix",
+            code = "patch_failed",
+            retriable = false,
+        )
+    }
+
     private fun shouldRunPsiValidation(relToBase: String): Boolean {
         val ext = relToBase.substringAfterLast('.', "").lowercase()
-        return ext in setOf("kt", "kts", "java", "scala", "groovy")
+        return ext in setOf("kt", "kts", "java", "scala", "groovy") || (ext == "go" && isGoPluginInstalled())
     }
+
+    private fun validationSkipReason(relToBase: String): String {
+        val ext = relToBase.substringAfterLast('.', "").lowercase()
+        return when {
+            ext == "go" && !isGoPluginInstalled() -> "no validator available for Go files in this IDE (Go plugin not installed)"
+            else -> "PSI validation not applicable for this file type"
+        }
+    }
+
+    private fun isGoPluginInstalled(): Boolean =
+        try {
+            val pluginManagerCore = Class.forName("com.intellij.ide.plugins.PluginManagerCore")
+            val pluginIdClass = Class.forName("com.intellij.openapi.extensions.PluginId")
+            val getIdMethod = pluginIdClass.getMethod("getId", String::class.java)
+            val pluginId = getIdMethod.invoke(null, "org.jetbrains.plugins.go")
+            val isInstalledMethod = pluginManagerCore.getMethod("isPluginInstalled", pluginIdClass)
+            isInstalledMethod.invoke(null, pluginId) as? Boolean ?: false
+        } catch (_: Throwable) {
+            false
+        }
 }

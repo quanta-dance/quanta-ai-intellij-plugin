@@ -26,6 +26,8 @@ import com.intellij.openapi.project.Project
 import com.openai.models.responses.EasyInputMessage
 import com.openai.models.responses.ResponseInputItem
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
@@ -154,41 +156,43 @@ class ChatConversationService(
                 val inputs = buildRequestInputs()
                 thinkingMessageId = appendAiThinkingMessage()
                 val (responseText, _) =
-                    openAIService.agentTurn(
-                        inputs = inputs,
-                        previousId = null,
-                        agentLabel = "AI Manager",
-                        onAssistantMessage = { assistantMessage ->
-                            val visibleContent =
-                                if (assistantMessage.isReasoning) {
-                                    "Reasoning\n${assistantMessage.text}"
-                                } else {
-                                    assistantMessage.text
-                                }
-                            replaceMessage(
-                                thinkingMessageId,
-                                chatMessageFactory.createAIMessage(
-                                    content = visibleContent,
-                                    voiceSummary = assistantMessage.ttsSummary,
-                                ),
-                            )
-                            firstAssistantMessageShown = true
-                            thinkingMessageId = appendAiThinkingMessage()
-                        },
-                        onToolUpdate = { update ->
-                            val targetId =
-                                toolMessageId ?: appendAiToolMessage(
-                                    toolItems = emptyList(),
-                                    beforeMessageId = thinkingMessageId,
-                                ).also { toolMessageId = it }
-                            val existingItems = currentToolItems(targetId)
-                            val mergedItems = mergeToolItems(existingItems, update.item)
-                            replaceMessage(
-                                targetId,
-                                chatMessageFactory.createAIToolMessage(mergedItems),
-                            )
-                        },
-                    )
+                    awaitDetachedAgentTurn {
+                        openAIService.agentTurn(
+                            inputs = inputs,
+                            previousId = null,
+                            agentLabel = "AI Manager",
+                            onAssistantMessage = { assistantMessage ->
+                                val visibleContent =
+                                    if (assistantMessage.isReasoning) {
+                                        "Reasoning\n${assistantMessage.text}"
+                                    } else {
+                                        assistantMessage.text
+                                    }
+                                replaceMessage(
+                                    thinkingMessageId,
+                                    chatMessageFactory.createAIMessage(
+                                        content = visibleContent,
+                                        voiceSummary = assistantMessage.ttsSummary,
+                                    ),
+                                )
+                                firstAssistantMessageShown = true
+                                thinkingMessageId = appendAiThinkingMessage()
+                            },
+                            onToolUpdate = { update ->
+                                val targetId =
+                                    toolMessageId ?: appendAiToolMessage(
+                                        toolItems = emptyList(),
+                                        beforeMessageId = thinkingMessageId,
+                                    ).also { toolMessageId = it }
+                                val existingItems = currentToolItems(targetId)
+                                val mergedItems = mergeToolItems(existingItems, update.item)
+                                replaceMessage(
+                                    targetId,
+                                    chatMessageFactory.createAIToolMessage(mergedItems),
+                                )
+                            },
+                        )
+                    }
                 if (!firstAssistantMessageShown) {
                     replaceMessage(
                         thinkingMessageId,
@@ -364,11 +368,13 @@ class ChatConversationService(
             try {
                 val inputs = buildReminderRequestInputs(reminderContext)
                 val (responseText, _) =
-                    openAIService.agentTurn(
-                        inputs = inputs,
-                        previousId = null,
-                        agentLabel = "AI Manager",
-                    )
+                    awaitDetachedAgentTurn {
+                        openAIService.agentTurn(
+                            inputs = inputs,
+                            previousId = null,
+                            agentLabel = "AI Manager",
+                        )
+                    }
                 replaceMessage(
                     thinkingMessageId,
                     chatMessageFactory.createAIMessage(responseText),
@@ -411,6 +417,15 @@ class ChatConversationService(
                 ),
             )
         }
+
+    private suspend fun <T> awaitDetachedAgentTurn(block: () -> T): T {
+        val deferred = executionContexts.agentOrchestrationScope.async {
+            block()
+        }
+        return withContext(NonCancellable) {
+            deferred.await()
+        }
+    }
 
     private fun buildHistory(): List<ChatTurn> =
         _messages.value

@@ -3,9 +3,10 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.backend.openai
 
-import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.intellij.openapi.components.Service
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.openai.models.responses.ResponseFunctionToolCall
 import com.openai.models.responses.ResponseInputItem
@@ -14,9 +15,15 @@ import com.openai.models.responses.ResponseInputItem
 class ToolExecutionService(
     private val project: Project,
 ) {
+    companion object {
+        private val logger = Logger.getInstance(ToolExecutionService::class.java)
+        private const val MAX_DEBUG_RESULT_CHARS = 4_000
+    }
+
     data class ToolExecutionResult(
         val toolOutput: ResponseInputItem.FunctionCallOutput,
         val succeeded: Boolean,
+        val displaySummary: String? = null,
         val detailText: String? = null,
         val errorText: String? = null,
     )
@@ -32,8 +39,10 @@ class ToolExecutionService(
         val functionResult = toolRouter.route(functionCall)
         val safeResult = truncateToolOutput(functionResult) ?: emptyMap<String, Any>()
         val succeeded = !isErrorResult(functionResult)
-        val detailText = buildDetailText(functionCall.name(), argsJson, safeResult, succeeded)
+        val displaySummary = extractDisplaySummary(functionCall.name(), safeResult, succeeded)
+        val detailText = buildDetailText(functionCall.name(), safeResult, succeeded)
         val errorText = extractErrorText(functionResult)
+        logToolResult(functionCall, safeResult, succeeded, agentLabel)
         val toolOutput =
             ResponseInputItem.FunctionCallOutput
                 .builder()
@@ -43,6 +52,7 @@ class ToolExecutionService(
         return ToolExecutionResult(
             toolOutput = toolOutput,
             succeeded = succeeded,
+            displaySummary = displaySummary,
             detailText = detailText,
             errorText = errorText,
         )
@@ -73,40 +83,63 @@ class ToolExecutionService(
             ?: map["errorText"]?.toString()?.takeIf { it.isNotBlank() }
     }
 
+    private fun extractDisplaySummary(
+        toolName: String,
+        safeResult: Any?,
+        succeeded: Boolean,
+    ): String? {
+        val map = safeResult as? Map<*, *> ?: return null
+        if (!succeeded) {
+            return "$toolName: Failed"
+        }
+        val details =
+            map["displaySummary"]
+                ?.toString()
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?: return null
+        return buildString {
+            append(toolName).append(": Succeeded")
+            append("\n").append(details)
+        }.take(2_000)
+    }
+
+    private fun logToolResult(
+        functionCall: ResponseFunctionToolCall,
+        safeResult: Any?,
+        succeeded: Boolean,
+        agentLabel: String,
+    ) {
+        val preview =
+            runCatching { objectMapper.writeValueAsString(safeResult) }
+                .getOrElse { safeResult?.toString().orEmpty() }
+                .let { text -> if (text.length > MAX_DEBUG_RESULT_CHARS) text.take(MAX_DEBUG_RESULT_CHARS) + "... (truncated)" else text }
+        QDLog.debug(logger) {
+            "ToolExecutionService.executeToolCall: agent=$agentLabel tool=${functionCall.name()} callId=${functionCall.callId()} succeeded=$succeeded result=$preview"
+        }
+    }
+
     private fun buildDetailText(
         toolName: String,
-        argsJson: JsonNode?,
         safeResult: Any?,
         succeeded: Boolean,
     ): String {
         val status = if (succeeded) "Succeeded" else "Failed"
         val map = safeResult as? Map<*, *>
-        val preferred =
-            map
-                ?.let {
-                    listOf("message", "text", "summary", "content", "path", "filePath")
-                        .mapNotNull { key -> it[key]?.toString()?.trim()?.takeIf { value -> value.isNotBlank() } }
-                        .firstOrNull()
-                }
-
-        val argsSummary = buildArgsSummary(toolName, argsJson)
         val details =
             if (!succeeded && map != null) {
                 listOf("errorText", "message", "summary", "text", "content")
                     .mapNotNull { key -> map[key]?.toString()?.trim()?.takeIf { value -> value.isNotBlank() } }
                     .firstOrNull()
-                    ?: argsSummary.ifBlank {
-                        map.entries.joinToString("\n") { (key, value) -> "$key: $value" }.trim()
-                    }
-            } else if (argsSummary.isNotBlank()) {
-                argsSummary
-            } else if (preferred != null) {
-                preferred
+                    ?: map.entries.joinToString("\n") { (key, value) -> "$key: $value" }.trim()
             } else {
                 map
-                    ?.entries
-                    ?.joinToString("\n") { (key, value) -> "$key: $value" }
-                    ?.trim()
+                    ?.let {
+                        listOf("message", "text", "summary", "content", "path", "filePath")
+                            .mapNotNull { key -> it[key]?.toString()?.trim()?.takeIf { value -> value.isNotBlank() } }
+                            .firstOrNull()
+                            ?: it.entries.joinToString("\n") { (key, value) -> "$key: $value" }.trim()
+                    }
                     .orEmpty()
             }
 
@@ -117,40 +150,5 @@ class ToolExecutionService(
                 append(details)
             }
         }.take(2_000)
-    }
-
-    private fun buildArgsSummary(
-        toolName: String,
-        argsJson: JsonNode?,
-    ): String {
-        if (argsJson == null) return ""
-        val filePath =
-            argsJson.path("filePath").asText("").trim().ifBlank {
-                argsJson.path("path").asText("").trim()
-            }
-        val fromLine = argsJson.path("fromLine").asInt(-1).takeIf { it > 0 }
-        val toLine = argsJson.path("toLine").asInt(-1).takeIf { it > 0 }
-        return when {
-            toolName.contains("ReadFile", ignoreCase = true) && filePath.isNotBlank() -> {
-                val fileName = filePath.substringAfterLast('/').substringAfterLast('\\')
-                when {
-                    fromLine != null && toLine != null -> "Read $fileName from line $fromLine to $toLine"
-                    fromLine != null -> "Read $fileName from line $fromLine"
-                    else -> "Read $fileName"
-                }
-            }
-
-            toolName.contains("OpenFile", ignoreCase = true) && filePath.isNotBlank() -> {
-                val fileName = filePath.substringAfterLast('/').substringAfterLast('\\')
-                when {
-                    fromLine != null -> "Open $fileName at line $fromLine"
-                    else -> "Open $fileName"
-                }
-            }
-
-            else -> {
-                ""
-            }
-        }
     }
 }

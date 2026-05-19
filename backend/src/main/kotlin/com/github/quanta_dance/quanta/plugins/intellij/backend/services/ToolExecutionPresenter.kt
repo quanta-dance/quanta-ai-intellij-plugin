@@ -22,6 +22,7 @@ class ToolExecutionPresenter(
     fun buildToolExecutionItem(
         functionCall: ResponseFunctionToolCall,
         status: ToolExecutionStatus,
+        displaySummary: String? = null,
         errorText: String? = null,
         detailText: String? = null,
     ): ToolExecutionItem {
@@ -29,7 +30,7 @@ class ToolExecutionPresenter(
         val argsText = runCatching { functionCall.arguments() }.getOrDefault("")
         val argsJson = runCatching { mapper.readTree(argsText) }.getOrNull()
         val filePath = extractFilePath(argsJson)
-        val displayText = buildToolDisplayText(toolName, filePath, argsJson)
+        val displayText = displaySummary?.trim()?.ifBlank { null } ?: buildToolDisplayText(toolName, filePath, argsJson)
         return ToolExecutionItem(
             callId = functionCall.callId(),
             toolName = toolName,

@@ -311,6 +311,9 @@ class CreateOrUpdateFile : ToolInterface<String> {
         project: Project,
         relToBase: String,
     ): String {
+        if (!shouldRunPsiValidation(relToBase)) {
+            return "Validation: skipped (${validationSkipReason(relToBase)})"
+        }
         return try {
             val validator = ValidateClassFileTool().apply { filePath = relToBase }
             val errors =
@@ -334,4 +337,29 @@ class CreateOrUpdateFile : ToolInterface<String> {
             "Validation: skipped (${e.message})"
         }
     }
+
+    private fun shouldRunPsiValidation(relToBase: String): Boolean {
+        val ext = relToBase.substringAfterLast('.', "").lowercase()
+        return ext in setOf("kt", "kts", "java", "scala", "groovy") || (ext == "go" && isGoPluginInstalled())
+    }
+
+    private fun validationSkipReason(relToBase: String): String {
+        val ext = relToBase.substringAfterLast('.', "").lowercase()
+        return when {
+            ext == "go" && !isGoPluginInstalled() -> "no validator available for Go files in this IDE (Go plugin not installed)"
+            else -> "PSI validation not applicable for this file type"
+        }
+    }
+
+    private fun isGoPluginInstalled(): Boolean =
+        try {
+            val pluginManagerCore = Class.forName("com.intellij.ide.plugins.PluginManagerCore")
+            val pluginIdClass = Class.forName("com.intellij.openapi.extensions.PluginId")
+            val getIdMethod = pluginIdClass.getMethod("getId", String::class.java)
+            val pluginId = getIdMethod.invoke(null, "org.jetbrains.plugins.go")
+            val isInstalledMethod = pluginManagerCore.getMethod("isPluginInstalled", pluginIdClass)
+            isInstalledMethod.invoke(null, pluginId) as? Boolean ?: false
+        } catch (_: Throwable) {
+            false
+        }
 }

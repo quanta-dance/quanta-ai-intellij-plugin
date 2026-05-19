@@ -4,6 +4,8 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
+import com.fasterxml.jackson.annotation.JsonCreator
+import com.fasterxml.jackson.annotation.JsonProperty
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.project.CurrentFileContextProvider
@@ -27,30 +29,40 @@ import java.security.MessageDigest
 @JsonClassDescription(
     "Read the content of a file. REQUIRED ARGUMENT: filePath. Use filePath, not path. Example: {\"filePath\": \"README.md\"}. Supports optional truncation and windowed reading around caret/selection for the current file.",
 )
-data class ReadFile(
+data class ReadFile
+@JsonCreator
+constructor(
+    @param:JsonProperty("filePath")
     @field:JsonPropertyDescription(
         "REQUIRED. Use this exact field name: filePath. Relative to the project root path to the requested file. Example: README.md",
     )
     val filePath: String,
+    @param:JsonProperty("includeLineNumbers")
     @field:JsonPropertyDescription("If true, returns content with prefixed line numbers. Default false.")
     var includeLineNumbers: Boolean = false,
+    @param:JsonProperty("maxChars")
     @field:JsonPropertyDescription("Maximum characters to return; if exceeded, tool truncates per strategy. Default 6000.")
     var maxChars: Int = 6_000,
+    @param:JsonProperty("strategy")
     @field:JsonPropertyDescription("Preferred truncation strategy when file exceeds maxChars: head | tail | window. Default window.")
     var strategy: String = "window",
+    @param:JsonProperty("preferWindowIfCurrentFile")
     @field:JsonPropertyDescription(
         "If true, and the file is the current editor file with caret/selection, " +
                 "return a window around caret/selection when truncating.",
     )
     var preferWindowIfCurrentFile: Boolean = true,
+    @param:JsonProperty("windowRadiusLines")
     @field:JsonPropertyDescription("Window radius in lines (before and after caret or selection) when strategy=window. Default 300.")
     var windowRadiusLines: Int = 300,
+    @param:JsonProperty("fromLine")
     @field:JsonPropertyDescription(
         "Optional 1-based starting line (inclusive). If set, content is first sliced to start from this line. " +
                 "When provided together with toLine, returns that exact line range. " +
                 "Takes precedence over strategy/window behavior.",
     )
     var fromLine: Int? = null,
+    @param:JsonProperty("toLine")
     @field:JsonPropertyDescription(
         "Optional 1-based ending line (inclusive). If set, content is first sliced to end at this line. " +
                 "If set without fromLine, fromLine defaults to 1. " +

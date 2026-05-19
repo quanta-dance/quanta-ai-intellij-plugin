@@ -128,6 +128,7 @@ class AgentTurnOrchestrator(
                                 toolExecutionPresenter.buildToolExecutionItem(
                                     functionCall,
                                     if (toolResult.succeeded) ToolExecutionStatus.SUCCEEDED else ToolExecutionStatus.FAILED,
+                                    displaySummary = toolResult.displaySummary,
                                     errorText = toolResult.errorText,
                                     detailText = toolResult.detailText,
                                 )
