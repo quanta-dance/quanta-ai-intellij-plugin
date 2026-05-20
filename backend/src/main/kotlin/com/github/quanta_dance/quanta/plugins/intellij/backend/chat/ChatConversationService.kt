@@ -3,10 +3,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.backend.chat
 
-import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.agents.AgentInboxService
-import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.agents.AgentLifecycleService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.agents.AgentRegistryService
-import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.agents.AgentWakeService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.project.CurrentFileContextProvider
 import com.github.quanta_dance.quanta.plugins.intellij.backend.repository.ChatMessageFactory
 import com.github.quanta_dance.quanta.plugins.intellij.backend.repository.OpenAIBackendChatResponder
@@ -51,9 +48,6 @@ class ChatConversationService(
     private val openAIService: OpenAIService get() = project.service()
     private val agentManager: AgentManagerService get() = project.service()
     private val registry: AgentRegistryService get() = project.service()
-    private val inbox: AgentInboxService get() = project.service()
-    private val lifecycle: AgentLifecycleService get() = project.service()
-    private val wake: AgentWakeService get() = project.service()
     private val persistence: ChatConversationStateService get() = project.service()
     private val executionContexts: BackendExecutionContextsService get() = project.service()
 
