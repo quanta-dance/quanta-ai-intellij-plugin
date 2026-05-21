@@ -4,6 +4,7 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.chat
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.agents.AgentRegistryService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.project.CurrentFileContextProvider
 import com.github.quanta_dance.quanta.plugins.intellij.backend.repository.ChatMessageFactory
 import com.github.quanta_dance.quanta.plugins.intellij.backend.repository.OpenAIBackendChatResponder
@@ -146,6 +147,9 @@ class ChatConversationService(
             var toolMessageId: String? = null
             var firstAssistantMessageShown = false
             try {
+                QDLog.info(com.intellij.openapi.diagnostic.Logger.getInstance(ChatConversationService::class.java)) {
+                    "ChatConversationService.sendUserMessage: user='${messageContent.replace("\n", "\\n").take(2_000)}'"
+                }
                 appendUserMessage(messageContent)
                 val inputs = buildRequestInputs()
                 thinkingMessageId = appendAiThinkingMessage()
