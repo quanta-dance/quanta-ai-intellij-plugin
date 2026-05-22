@@ -4,13 +4,9 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.rpc
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
-import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.McpClientService
-import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.McpServersConfigLoader
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaSettingsApi
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.QuantaSettingsDto
-import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
-import com.intellij.openapi.project.ProjectManager
 import com.openai.models.ChatModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -52,8 +48,10 @@ class BackendSettingsRpcApi : QuantaSettingsApi {
                 model = runtimeSettings.model,
                 aiChatModel = runtimeSettings.aiChatModel,
                 availableChatModels = AVAILABLE_CHAT_MODELS,
+                availableTtsVoices = availableTtsVoices(),
                 voiceEnabled = runtimeSettings.voiceEnabled,
                 voiceByLocalTTS = runtimeSettings.voiceByLocalTTS,
+                preferredOpenAiTtsVoice = runtimeSettings.preferredOpenAiTtsVoice,
                 maxTokens = runtimeSettings.maxTokens,
                 dynamicModelEnabled = runtimeSettings.dynamicModelEnabled,
                 agenticEnabled = runtimeSettings.agenticEnabled,
@@ -70,7 +68,7 @@ class BackendSettingsRpcApi : QuantaSettingsApi {
 
     override suspend fun updateSettings(settings: QuantaSettingsDto) {
         BackendRuntimeSettingsService.instance.updateFrom(settings)
-     /*   withContext(Dispatchers.IO) {
+        /*   withContext(Dispatchers.IO) {
             val runtimeSettings = BackendRuntimeSettingsService.instance
             val previousJson = runtimeSettings.settings.mcpServersJson
             runtimeSettings.updateFrom(settings)
@@ -116,5 +114,29 @@ class BackendSettingsRpcApi : QuantaSettingsApi {
                 }
             }
         }*/
+    }
+
+    private fun availableTtsVoices(): List<String> {
+        val reflected =
+            runCatching {
+                val enumClass = Class.forName("com.openai.models.audio.speech.SpeechCreateParams\$Voice\$UnionMember1")
+                (enumClass.enumConstants ?: emptyArray<Any>())
+                    .mapNotNull { (it as? Enum<*>)?.name?.lowercase() }
+                    .distinct()
+                    .sorted()
+            }.getOrDefault(emptyList())
+        return if (reflected.isNotEmpty()) reflected else listOf(
+            "alloy",
+            "ash",
+            "ballad",
+            "coral",
+            "echo",
+            "fable",
+            "nova",
+            "onyx",
+            "sage",
+            "shimmer",
+            "verse",
+        )
     }
 }

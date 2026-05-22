@@ -24,6 +24,7 @@ import com.intellij.util.ui.FormBuilder
 import kotlinx.coroutines.runBlocking
 import java.awt.Color
 import java.awt.Cursor
+import java.awt.FlowLayout
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import javax.swing.JButton
@@ -48,18 +49,19 @@ class FrontendQuantaPluginConfigurable : Configurable {
         val settings = FrontendQuantaSettingsState.instance.state
         return settingsComponent.run {
             hostValue != settings.openAiUrl ||
-                tokenValue != settings.openAiToken ||
-                voiceEnabled != settings.voiceEnabled ||
-                voiceByLocalTTS != settings.voiceByLocalTTS ||
-                maxTokensValue != settings.maxTokens ||
-                aiChatModelValue != settings.aiChatModel ||
-                dynamicModelEnabled != (settings.dynamicModelEnabled ?: false) ||
-                debugEnabled != settings.debugEnabled ||
-                maxAutomaticTurns != settings.maxAutomaticTurns ||
-                terminalToolEnabled != (settings.terminalToolEnabled ?: false) ||
-                terminalAllowedCommandsCsv != settings.terminalAllowedCommandsCsv ||
-                extraInstructionsValue != (settings.extraInstructions ?: "") ||
-                actionConfigsValue != settings.actionConfigsJson
+                    tokenValue != settings.openAiToken ||
+                    voiceEnabled != settings.voiceEnabled ||
+                    voiceByLocalTTS != settings.voiceByLocalTTS ||
+                    preferredOpenAiTtsVoice != settings.preferredOpenAiTtsVoice ||
+                    maxTokensValue != settings.maxTokens ||
+                    aiChatModelValue != settings.aiChatModel ||
+                    dynamicModelEnabled != (settings.dynamicModelEnabled ?: false) ||
+                    debugEnabled != settings.debugEnabled ||
+                    maxAutomaticTurns != settings.maxAutomaticTurns ||
+                    terminalToolEnabled != (settings.terminalToolEnabled ?: false) ||
+                    terminalAllowedCommandsCsv != settings.terminalAllowedCommandsCsv ||
+                    extraInstructionsValue != (settings.extraInstructions ?: "") ||
+                    actionConfigsValue != settings.actionConfigsJson
         }
     }
 
@@ -70,6 +72,7 @@ class FrontendQuantaPluginConfigurable : Configurable {
             settings.openAiToken = tokenValue
             settings.voiceEnabled = voiceEnabled
             settings.voiceByLocalTTS = voiceByLocalTTS
+            settings.preferredOpenAiTtsVoice = preferredOpenAiTtsVoice
             settings.maxTokens = maxTokensValue
             settings.aiChatModel = aiChatModelValue
             settings.dynamicModelEnabled = dynamicModelEnabled
@@ -92,6 +95,8 @@ class FrontendQuantaPluginConfigurable : Configurable {
             tokenValue = settings.openAiToken
             voiceEnabled = settings.voiceEnabled
             voiceByLocalTTS = settings.voiceByLocalTTS
+            setAvailableTtsVoices(settings.availableTtsVoices)
+            preferredOpenAiTtsVoice = settings.preferredOpenAiTtsVoice
             maxTokensValue = settings.maxTokens
             setAvailableModels(settings.availableChatModels)
             aiChatModelValue = settings.aiChatModel
@@ -135,8 +140,22 @@ private class FrontendQuantaSettingsComponent {
             columns = 30
             toolTipText = "JWT token for authentication"
         }
-    private val voiceEnabledField = JBCheckBox("Voice enabled")
-    private val voiceByLocalTTSField = JBCheckBox("Use Local TTS")
+    private val voiceEnabledField =
+        JBCheckBox("Voice enabled").apply {
+            addActionListener { updateVoiceControlsEnabledState() }
+        }
+    private val voiceByLocalTTSField =
+        JBCheckBox("Use Local TTS").apply {
+            addActionListener { updateVoiceControlsEnabledState() }
+        }
+    private val preferredOpenAiTtsVoiceField = ComboBox<String>()
+    private val voiceSettingsRow =
+        JPanel(FlowLayout(FlowLayout.LEFT, 8, 0)).apply {
+            add(voiceEnabledField)
+            add(voiceByLocalTTSField)
+            add(JBLabel("OpenAI voice:"))
+            add(preferredOpenAiTtsVoiceField)
+        }
     private val maxOutputTokensField = JBTextField()
     private val modelField = ComboBox<String>()
     private val dynamicModelEnabledField = JBCheckBox("Enable dynamic model switching")
@@ -232,8 +251,7 @@ private class FrontendQuantaSettingsComponent {
             .addLabeledComponent(JBLabel("Host: "), hostField, 1, false)
             .addLabeledComponent(JBLabel("Token: "), tokenField, 1, false)
             .addSeparator()
-            .addComponent(voiceEnabledField)
-            .addComponent(voiceByLocalTTSField)
+            .addComponent(voiceSettingsRow)
             .addSeparator()
             .addLabeledComponent(JBLabel("Max output tokens: "), maxOutputTokensField, 1, false)
             .addSeparator()
@@ -267,13 +285,43 @@ private class FrontendQuantaSettingsComponent {
         get() = voiceEnabledField.isSelected
         set(value) {
             voiceEnabledField.isSelected = value
+            updateVoiceControlsEnabledState()
         }
 
     var voiceByLocalTTS: Boolean
         get() = voiceByLocalTTSField.isSelected
         set(value) {
             voiceByLocalTTSField.isSelected = value
+            updateVoiceControlsEnabledState()
         }
+
+    fun setAvailableTtsVoices(voices: List<String>) {
+        val selectedBefore = preferredOpenAiTtsVoiceField.selectedItem as? String
+        preferredOpenAiTtsVoiceField.removeAllItems()
+        val values = if (voices.isNotEmpty()) voices else listOf("ash")
+        values.forEach(preferredOpenAiTtsVoiceField::addItem)
+        preferredOpenAiTtsVoiceField.selectedItem =
+            when {
+                selectedBefore != null && values.contains(selectedBefore) -> selectedBefore
+                values.isNotEmpty() -> values.first()
+                else -> null
+            }
+        updateVoiceControlsEnabledState()
+    }
+
+    var preferredOpenAiTtsVoice: String
+        get() = (preferredOpenAiTtsVoiceField.selectedItem as? String).orEmpty().ifBlank { "ash" }
+        set(value) {
+            if ((0 until preferredOpenAiTtsVoiceField.itemCount).none { preferredOpenAiTtsVoiceField.getItemAt(it) == value }) {
+                preferredOpenAiTtsVoiceField.addItem(value)
+            }
+            preferredOpenAiTtsVoiceField.selectedItem = value
+            updateVoiceControlsEnabledState()
+        }
+
+    private fun updateVoiceControlsEnabledState() {
+        preferredOpenAiTtsVoiceField.isEnabled = voiceEnabledField.isSelected && !voiceByLocalTTSField.isSelected
+    }
 
     fun setAvailableModels(models: List<String>) {
         val selectedBefore = modelField.selectedItem as? String

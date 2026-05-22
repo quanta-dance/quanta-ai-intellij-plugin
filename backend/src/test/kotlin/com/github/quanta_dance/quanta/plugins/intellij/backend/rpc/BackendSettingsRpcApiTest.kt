@@ -16,6 +16,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class BackendSettingsRpcApiTest {
     private lateinit var runtimeSettingsService: BackendRuntimeSettingsService
@@ -46,8 +47,10 @@ class BackendSettingsRpcApiTest {
                     model = "gpt-5-mini",
                     aiChatModel = "gpt-5",
                     availableChatModels = emptyList(),
+                    availableTtsVoices = emptyList(),
                     voiceEnabled = false,
                     voiceByLocalTTS = true,
+                    preferredOpenAiTtsVoice = "alloy",
                     maxTokens = 8192,
                     dynamicModelEnabled = true,
                     agenticEnabled = false,
@@ -83,8 +86,10 @@ class BackendSettingsRpcApiTest {
                     model = "gpt-5-nano",
                     aiChatModel = "gpt-5-mini",
                     availableChatModels = emptyList(),
+                    availableTtsVoices = emptyList(),
                     voiceEnabled = true,
                     voiceByLocalTTS = false,
+                    preferredOpenAiTtsVoice = "ash",
                     maxTokens = 1024,
                     dynamicModelEnabled = false,
                     agenticEnabled = true,
@@ -107,5 +112,7 @@ class BackendSettingsRpcApiTest {
             assertEquals(9, dto.maxAutomaticTurns)
             assertEquals("git status", dto.terminalAllowedCommandsCsv)
             assertEquals(BackendSettingsRpcApi.AVAILABLE_CHAT_MODELS, dto.availableChatModels)
+            assertTrue(dto.availableTtsVoices.isNotEmpty())
+            assertEquals("ash", dto.preferredOpenAiTtsVoice)
         }
 }

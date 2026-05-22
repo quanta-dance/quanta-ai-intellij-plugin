@@ -7,12 +7,14 @@
     <h2>Quanta — AI coding assistant for IntelliJ</h2>
     <p>Quanta AI integrates a context-aware AI assistant directly into your IntelliJ-based IDE.</p>
     ]]></description>
-<!--
+
     <depends>com.intellij.modules.platform</depends>
-    <depends optional="true" config-file="java.xml">com.intellij.java</depends>
-    <depends optional="true" config-file="gradle.xml">com.intellij.gradle</depends>
-    <resource-bundle>messages.QuantaAIBundle</resource-bundle>
--->
+
+    <!--
+        <depends optional="true" config-file="java.xml">com.intellij.java</depends>
+        <depends optional="true" config-file="gradle.xml">com.intellij.gradle</depends>
+        <resource-bundle>messages.QuantaAIBundle</resource-bundle>
+    -->
     <content>
         <module name="intellij-quanta-ai-plugin.shared" loading="required"/>
         <module name="intellij-quanta-ai-plugin.backend" required-if-available="intellij.platform.backend"/>

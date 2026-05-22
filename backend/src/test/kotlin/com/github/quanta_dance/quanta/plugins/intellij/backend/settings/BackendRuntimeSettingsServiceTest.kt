@@ -31,8 +31,10 @@ class BackendRuntimeSettingsServiceTest {
                 model = "gpt-5-mini",
                 aiChatModel = "gpt-5",
                 availableChatModels = listOf("gpt-5", "gpt-5-mini"),
+                availableTtsVoices = listOf("alloy", "ash"),
                 voiceEnabled = false,
                 voiceByLocalTTS = true,
+                preferredOpenAiTtsVoice = "alloy",
                 maxTokens = 4096,
                 dynamicModelEnabled = true,
                 agenticEnabled = false,
@@ -54,6 +56,7 @@ class BackendRuntimeSettingsServiceTest {
             assertEquals(dto.aiChatModel, aiChatModel)
             assertEquals(dto.voiceEnabled, voiceEnabled)
             assertEquals(dto.voiceByLocalTTS, voiceByLocalTTS)
+            assertEquals(dto.preferredOpenAiTtsVoice, preferredOpenAiTtsVoice)
             assertEquals(dto.maxTokens, maxTokens)
             assertEquals(dto.dynamicModelEnabled, dynamicModelEnabled)
             assertEquals(dto.agenticEnabled, agenticEnabled)

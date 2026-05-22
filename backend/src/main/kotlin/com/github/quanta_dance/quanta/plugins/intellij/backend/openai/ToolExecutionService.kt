@@ -37,7 +37,7 @@ class ToolExecutionService(
     ): ToolExecutionResult {
         val argsJson = runCatching { objectMapper.readTree(functionCall.arguments()) }.getOrNull()
         val functionResult = toolRouter.route(functionCall)
-        val safeResult = truncateToolOutput(functionResult) ?: emptyMap<String, Any>()
+        val safeResult = sanitizeToolResultForModel(functionCall.name(), functionResult) ?: emptyMap<String, Any>()
         val succeeded = !isErrorResult(functionResult)
         val displaySummary = extractDisplaySummary(functionCall.name(), safeResult, succeeded)
         val detailText = buildDetailText(functionCall.name(), safeResult, succeeded)
@@ -82,6 +82,16 @@ class ToolExecutionService(
             ?: map["error"]?.toString()?.takeIf { it.isNotBlank() }
             ?: map["errorText"]?.toString()?.takeIf { it.isNotBlank() }
     }
+
+    private fun sanitizeToolResultForModel(
+        toolName: String,
+        result: Any?,
+    ): Any? =
+        if (toolName.equals("TerminalCommandTool", ignoreCase = true)) {
+            truncateToolOutput(result)
+        } else {
+            result
+        }
 
     private fun extractDisplaySummary(
         toolName: String,

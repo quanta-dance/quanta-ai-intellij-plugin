@@ -25,6 +25,7 @@ class BackendRuntimeSettingsService {
         var aiChatModel: String = "gpt-5-nano",
         var voiceEnabled: Boolean = true,
         var voiceByLocalTTS: Boolean = false,
+        var preferredOpenAiTtsVoice: String = "ash",
         var maxTokens: Long? = 2048,
         var dynamicModelEnabled: Boolean? = false,
         var agenticEnabled: Boolean? = true,
@@ -62,7 +63,7 @@ class BackendRuntimeSettingsService {
     fun requireFrontendSync(operationName: String) {
         check(hasFrontendSync) {
             "Quanta settings have not been synchronized from the frontend yet. " +
-                "$operationName must wait for frontend startup sync before using backend runtime settings."
+                    "$operationName must wait for frontend startup sync before using backend runtime settings."
         }
     }
 
@@ -75,6 +76,7 @@ class BackendRuntimeSettingsService {
                 aiChatModel = settings.aiChatModel,
                 voiceEnabled = settings.voiceEnabled,
                 voiceByLocalTTS = settings.voiceByLocalTTS,
+                preferredOpenAiTtsVoice = settings.preferredOpenAiTtsVoice,
                 maxTokens = settings.maxTokens,
                 dynamicModelEnabled = settings.dynamicModelEnabled,
                 agenticEnabled = settings.agenticEnabled,

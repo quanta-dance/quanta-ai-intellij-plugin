@@ -5,21 +5,18 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.services
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
-import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.OpenAIClientProvider
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.SpeechChunkDto
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
-import com.openai.models.audio.speech.SpeechCreateParams
-import com.openai.models.audio.speech.SpeechModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
-import java.util.Base64
+import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.LinkedBlockingQueue
 
@@ -59,20 +56,34 @@ class AIVoiceService(
         if (text.isEmpty()) return ByteArray(0)
         QDLog.info(logger) { "AIVoiceService.say: synthesizing speech for ${text.take(80)}" }
 
-        val params =
-            SpeechCreateParams
-                .builder()
-                .input(text)
-                .model(SpeechModel.GPT_4O_MINI_TTS)
-                .voice(SpeechCreateParams.Voice.UnionMember1.ASH)
-                .responseFormat(SpeechCreateParams.ResponseFormat.MP3)
+        val settings = BackendRuntimeSettingsService.instance.settings
+        val baseUrl = settings.openAiUrl.trim().trimEnd('/')
+        val requestJson =
+            objectMapper.writeValueAsString(
+                mapOf(
+                    "model" to "gpt-4o-mini-tts",
+                    "input" to text,
+                    "voice" to selectedOpenAiVoice(),
+                    "response_format" to "mp3",
+                ),
+            )
+
+        val request =
+            HttpRequest
+                .newBuilder()
+                .uri(URI.create("$baseUrl/audio/speech"))
+                .header("Authorization", "Bearer ${settings.openAiToken}")
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(requestJson))
                 .build()
 
-        OpenAIClientProvider.get(project).audio().speech().create(params).use { response ->
-            val bytes = response.body().readBytes()
-            QDLog.info(logger) { "AIVoiceService.say: synthesized ${bytes.size} bytes" }
-            return bytes
+        val response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray())
+        if (response.statusCode() !in 200..299) {
+            error("${response.statusCode()}: ${response.body().decodeToString()}")
         }
+        val bytes = response.body()
+        QDLog.info(logger) { "AIVoiceService.say: synthesized ${bytes.size} bytes" }
+        return bytes
     }
 
     /**
@@ -104,7 +115,7 @@ class AIVoiceService(
                             mapOf(
                                 "model" to "gpt-4o-mini-tts",
                                 "input" to text,
-                                "voice" to "ash",
+                                "voice" to selectedOpenAiVoice(),
                                 "response_format" to "pcm",
                             ),
                         )
@@ -216,6 +227,11 @@ class AIVoiceService(
         }
         return SpeechChunkDto(sessionId = sessionId, sequence = afterSequence, isLast = false)
     }
+
+    private fun selectedOpenAiVoice(): String =
+        BackendRuntimeSettingsService.instance.settings.preferredOpenAiTtsVoice
+            .trim()
+            .ifBlank { "ash" }
 
     /**
      * Stop any active speech streams and clear buffered chunks.
