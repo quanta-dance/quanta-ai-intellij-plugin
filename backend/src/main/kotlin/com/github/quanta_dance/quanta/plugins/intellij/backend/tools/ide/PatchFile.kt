@@ -17,8 +17,6 @@ import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.fileEditor.FileDocumentManager
-import com.intellij.openapi.fileEditor.FileEditorManager
-import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.VfsUtil
@@ -525,12 +523,6 @@ class PatchFile : ToolInterface<String> {
                         }
                     }
 
-                    try {
-                        FileEditorManager.getInstance(project).openTextEditor(OpenFileDescriptor(project, vFile), true)
-                    } catch (_: Throwable) {
-                    }
-
-
 
                     if (mismatches.isEmpty()) {
                         result
@@ -601,8 +593,10 @@ class PatchFile : ToolInterface<String> {
             val vFile = PathUtils.resolveVirtualFileWithinProject(project, relToBase)
             if (vFile != null) {
                 val currentText =
-                    FileDocumentManager.getInstance().getDocument(vFile)?.text
-                        ?: vFile.inputStream.bufferedReader().use { it.readText() }
+                    ApplicationManager.getApplication().runReadAction<String> {
+                        FileDocumentManager.getInstance().getDocument(vFile)?.text
+                            ?: vFile.inputStream.bufferedReader().use { it.readText() }
+                    }
                 fileHashSha256 = sha256Normalized(currentText)
             }
         } catch (_: Throwable) {

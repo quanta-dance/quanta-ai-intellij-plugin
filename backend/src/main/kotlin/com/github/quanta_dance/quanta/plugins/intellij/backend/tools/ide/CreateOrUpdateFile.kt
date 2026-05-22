@@ -14,8 +14,6 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileEditor.FileDocumentManager
-import com.intellij.openapi.fileEditor.FileEditorManager
-import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VfsUtil
@@ -217,16 +215,11 @@ class CreateOrUpdateFile : ToolInterface<String> {
                     }
 
                     try {
-                        FileEditorManager
-                            .getInstance(project)
-                            .openTextEditor(OpenFileDescriptor(project, virtualFile), true)
-                    } catch (_: Throwable) {
-                    }
-
-                    try {
                         val currentText =
-                            FileDocumentManager.getInstance().getDocument(virtualFile)?.text
-                                ?: virtualFile.inputStream.use { it.readBytes().toString(StandardCharsets.UTF_8) }
+                            ApplicationManager.getApplication().runReadAction<String> {
+                                FileDocumentManager.getInstance().getDocument(virtualFile)?.text
+                                    ?: virtualFile.inputStream.use { it.readBytes().toString(StandardCharsets.UTF_8) }
+                            }
                         fileHashSha256 = sha256Normalized(currentText)
                     } catch (_: Throwable) {
                     }
