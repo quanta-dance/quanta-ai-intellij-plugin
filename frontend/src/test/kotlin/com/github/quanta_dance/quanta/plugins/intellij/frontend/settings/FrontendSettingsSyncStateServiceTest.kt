@@ -15,6 +15,7 @@ import io.mockk.mockk
 import io.mockk.mockkObject
 import io.mockk.mockkStatic
 import io.mockk.unmockkAll
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -101,5 +102,33 @@ class FrontendSettingsSyncStateServiceTest {
 
             assertEquals(FrontendSettingsSyncStateService.Status.FAILED, service.stateFlow.value.status)
             assertEquals("rpc unavailable", service.stateFlow.value.lastErrorMessage)
+        }
+
+    @Test
+    fun `syncOnStartup does not stay syncing when mcp config is unreadable`() =
+        runBlocking {
+            val service = FrontendSettingsSyncStateService(project)
+            every { mcpConfigService.readForSync() } returns null
+
+            service.syncOnStartup()
+
+            assertEquals(FrontendSettingsSyncStateService.Status.FAILED, service.stateFlow.value.status)
+            assertEquals("MCP config is empty or unreadable", service.stateFlow.value.lastErrorMessage)
+        }
+
+    @Test
+    fun `syncOnStartup times out instead of staying syncing forever`() =
+        runBlocking {
+            val service = FrontendSettingsSyncStateService(project)
+            every { mcpConfigService.readForSync() } returns "{}"
+            coEvery { rpc.updateSettings(any()) } coAnswers {
+                delay(20_000)
+                Unit
+            }
+
+            service.syncOnStartup()
+
+            assertEquals(FrontendSettingsSyncStateService.Status.FAILED, service.stateFlow.value.status)
+            assertEquals("settings sync timed out after 15000ms", service.stateFlow.value.lastErrorMessage)
         }
 }

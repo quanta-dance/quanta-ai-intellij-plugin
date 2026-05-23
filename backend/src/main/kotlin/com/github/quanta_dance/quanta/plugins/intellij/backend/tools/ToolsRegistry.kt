@@ -91,7 +91,7 @@ object ToolsRegistry {
     private fun baseEntries(project: Project?): List<ToolEntry> {
         val runtimeSettings = BackendRuntimeSettingsService.instance.settings
         val agentic = runtimeSettings.agenticEnabled ?: true
-        val terminalEnabled = false // runtimeSettings.terminalToolEnabled == true
+        val terminalEnabled = runtimeSettings.terminalToolEnabled == true
         val list =
             mutableListOf(
                 ToolEntry(ListToolsCatalogTool::class.java, Group.GENERIC),
@@ -191,7 +191,7 @@ object ToolsRegistry {
                 append("gradle=").append(gradle).append(';')
                 append("go=").append(go).append(';')
                 append("javaPsi=").append(javaPsi).append(';')
-                // append("terminal=").append(settings.terminalToolEnabled == true).append(';')
+                append("terminal=").append(runtimeSettings.terminalToolEnabled == true).append(';')
                 append("base=").append(basePath ?: "<none>")
             }
         cache[project]?.takeIf { it.signature == signature }?.let { return it.tools }
@@ -244,7 +244,7 @@ object ToolsRegistry {
 
     private fun detectGradle(root: File): Boolean =
         File(root, "gradlew").exists() || File(root, "gradlew.bat").exists() ||
-            File(root, "build.gradle").exists() || File(root, "build.gradle.kts").exists()
+                File(root, "build.gradle").exists() || File(root, "build.gradle.kts").exists()
 
     private fun detectGo(root: File): Boolean {
         if (File(root, "go.mod").exists()) return true

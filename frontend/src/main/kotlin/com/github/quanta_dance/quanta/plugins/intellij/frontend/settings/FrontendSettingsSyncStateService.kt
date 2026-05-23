@@ -9,10 +9,12 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withTimeout
 
 /**
  * Tracks frontend-to-backend settings synchronization readiness for UI consumers.
@@ -24,6 +26,10 @@ import kotlinx.coroutines.flow.asStateFlow
 class FrontendSettingsSyncStateService(
     private val project: Project,
 ) {
+    companion object {
+        private const val SYNC_ATTEMPT_TIMEOUT_MS = 15_000L
+    }
+
     enum class Status {
         SYNCING,
         READY,
@@ -80,16 +86,24 @@ class FrontendSettingsSyncStateService(
                 )
                 val mcpServersJson = project.service<FrontendMcpConfigService>().readForSync()
                 if (mcpServersJson == null) {
+                    val error = IllegalStateException("MCP config is empty or unreadable")
+                    lastError = error
                     backendLogBridge()?.warn(
-                        "Skipping frontend settings sync because MCP config is empty or unreadable for project=${project.name}, reason=$reason",
+                        "Frontend settings sync attempt ${attemptIndex + 1} cannot continue because MCP config is empty or unreadable for project=${project.name}, reason=$reason",
                     )
-                    return false
+                    logger.warn(
+                        "Quanta AI frontend settings sync attempt ${attemptIndex + 1} cannot continue because MCP config is empty or unreadable for project=${project.name}, reason=$reason",
+                    )
+                    continue
                 }
                 backendLogBridge()?.info(
                     "Frontend settings sync sending MCP config to backend for project=${project.name}, reason=$reason, chars=${mcpServersJson.length}",
                 )
-                rpc.updateSettings(currentState.toDto(project, mcpServersJson))
-                val backendSettings = rpc.getSettings()
+                val backendSettings =
+                    withTimeout(SYNC_ATTEMPT_TIMEOUT_MS) {
+                        rpc.updateSettings(currentState.toDto(project, mcpServersJson))
+                        rpc.getSettings()
+                    }
                 FrontendQuantaSettingsState.instance.loadState(backendSettings.toFrontendState())
                 _stateFlow.value = State(status = Status.READY)
                 logger.info(
@@ -97,13 +111,18 @@ class FrontendSettingsSyncStateService(
                 )
                 return true
             } catch (error: Throwable) {
-                lastError = error
+                lastError =
+                    if (error is TimeoutCancellationException) {
+                        IllegalStateException("settings sync timed out after ${SYNC_ATTEMPT_TIMEOUT_MS}ms", error)
+                    } else {
+                        error
+                    }
                 logger.warn(
                     "Quanta AI frontend settings sync attempt ${attemptIndex + 1} failed for project=${project.name}, reason=$reason",
-                    error,
+                    lastError,
                 )
                 logger.warn(
-                    "Quanta AI frontend settings sync failure type=${error::class.qualifiedName}, message=${error.message}",
+                    "Quanta AI frontend settings sync failure type=${lastError::class.qualifiedName}, message=${lastError.message}",
                 )
             }
         }
