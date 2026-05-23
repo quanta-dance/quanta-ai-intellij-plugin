@@ -1,6 +1,20 @@
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.tasks.aware.SplitModeAware
 
+fun latestChangeNotesFromChangelog(): String {
+    val changelog = file("CHANGELOG.md").takeIf { it.exists() }?.readText().orEmpty()
+    if (changelog.isBlank()) return ""
+
+    val lines = changelog.lines()
+    val startIndex = lines.indexOfFirst { it.startsWith("## [") }
+    if (startIndex < 0) return ""
+    val endIndex = lines.drop(startIndex + 1).indexOfFirst { it.startsWith("## [") }
+        .let { if (it < 0) lines.size else startIndex + 1 + it }
+    return lines.subList(startIndex + 1, endIndex)
+        .joinToString("\n")
+        .trim()
+}
+
 group = "com.github.quanta_dance"
 
 plugins {
@@ -97,6 +111,13 @@ tasks {
     buildPlugin {
         dependsOn(sourcesJar)
         from(sourcesJar) { into("lib/src") }
+    }
+
+    patchPluginXml {
+        version = project.version.toString()
+        sinceBuild.set("252")
+        untilBuild.set("271.*")
+        changeNotes.set(latestChangeNotesFromChangelog())
     }
 
     signPlugin {

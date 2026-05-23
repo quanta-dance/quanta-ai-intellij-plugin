@@ -78,7 +78,7 @@ fun promptInput(
     modifier: Modifier = Modifier,
     promptInputState: MessageInputState = MessageInputState.Disabled,
     textFieldState: TextFieldState = rememberTextFieldState(),
-    hint: String = "Whats on your mind...",
+    hint: String = "Describe your task, question, or code change...",
     voiceEnabled: Boolean = true,
     micEnabled: Boolean = false,
     micActive: Boolean = false,
