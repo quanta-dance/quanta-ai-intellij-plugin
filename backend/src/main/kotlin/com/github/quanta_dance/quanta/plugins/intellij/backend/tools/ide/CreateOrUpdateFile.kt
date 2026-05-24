@@ -8,7 +8,10 @@ import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.ToolFriendlyException
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolExecutionPresentation
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolPresentationProvider
 import com.intellij.codeInsight.actions.OptimizeImportsProcessor
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.command.WriteCommandAction
@@ -36,7 +39,17 @@ import java.security.MessageDigest
         "When patching existing code, keep edits narrow and include expectedText/hash guards when possible. " +
         "Before modifying methods in a file, check references because callers may need updates.",
 )
-class CreateOrUpdateFile : ToolInterface<String> {
+class CreateOrUpdateFile :
+    ToolInterface<String>,
+    ToolPresentationProvider {
+    override fun presentation(status: ToolExecutionStatus): ToolExecutionPresentation =
+        ToolExecutionPresentation(
+            title =
+                filePath?.trim()?.takeIf { it.isNotBlank() }?.let { path ->
+                    "Updating ${path.substringAfterLast('/').substringAfterLast('\\')}"
+                } ?: "Updating file",
+        )
+
     data class Patch(
         @field:JsonPropertyDescription("1-based start line (inclusive)")
         var fromLine: Int = 1,

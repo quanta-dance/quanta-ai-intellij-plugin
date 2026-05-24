@@ -10,7 +10,10 @@ import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.ToolFriendlyException
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolExecutionPresentation
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolPresentationProvider
 import com.intellij.codeInsight.actions.OptimizeImportsProcessor
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.command.WriteCommandAction
@@ -36,7 +39,9 @@ import java.security.MessageDigest
         "from bottom to top (descending start line), so earlier replacements do not shift later ranges. " +
         "Lines are 1-based inclusive; offsets are computed from the current Document. Supports optional guards.",
 )
-class PatchFile : ToolInterface<String> {
+class PatchFile :
+    ToolInterface<String>,
+    ToolPresentationProvider {
     data class Patch
         @JsonCreator
         constructor(
@@ -55,6 +60,14 @@ class PatchFile : ToolInterface<String> {
                     "If provided and does not match, patch is skipped or triggers failure depending on stopOnMismatch.",
             )
             var expectedText: String? = null,
+        )
+
+    override fun presentation(status: ToolExecutionStatus): ToolExecutionPresentation =
+        ToolExecutionPresentation(
+            title =
+                filePath?.trim()?.takeIf { it.isNotBlank() }?.let { path ->
+                    "Patching ${path.substringAfterLast('/').substringAfterLast('\\')}"
+                } ?: "Patching file",
         )
 
     @field:JsonPropertyDescription("Relative to the project root path to the requested file.")

@@ -45,8 +45,8 @@ class ToolExecutionService(
         val functionResult = toolRouter.route(functionCall)
         val safeResult = sanitizeToolResultForModel(functionCall.name(), functionResult) ?: emptyMap<String, Any>()
         val succeeded = !isErrorResult(functionResult)
-        val displaySummary = extractDisplaySummary(functionCall.name(), safeResult, succeeded)
-        val detailText = buildDetailText(functionCall.name(), safeResult, succeeded)
+        val displaySummary = extractDisplaySummary(safeResult)
+        val detailText = buildDetailText(safeResult, succeeded)
         val errorText = extractErrorText(functionResult)
         logToolResult(functionCall, safeResult, succeeded, agentLabel)
         val toolOutput =
@@ -110,25 +110,13 @@ class ToolExecutionService(
             result
         }
 
-    private fun extractDisplaySummary(
-        toolName: String,
-        safeResult: Any?,
-        succeeded: Boolean,
-    ): String? {
+    private fun extractDisplaySummary(safeResult: Any?): String? {
         val map = safeResult as? Map<*, *> ?: return null
-        if (!succeeded) {
-            return "$toolName: Failed"
-        }
-        val details =
-            map["displaySummary"]
-                ?.toString()
-                ?.trim()
-                ?.takeIf { it.isNotBlank() }
-                ?: return null
-        return buildString {
-            append(toolName).append(": Succeeded")
-            append("\n").append(details)
-        }.take(2_000)
+        return map["displaySummary"]
+            ?.toString()
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?.take(2_000)
     }
 
     private fun classifyOutcome(
@@ -178,11 +166,9 @@ class ToolExecutionService(
     }
 
     private fun buildDetailText(
-        toolName: String,
         safeResult: Any?,
         succeeded: Boolean,
     ): String {
-        val status = if (succeeded) "Succeeded" else "Failed"
         val map = safeResult as? Map<*, *>
         val details =
             if (!succeeded && map != null) {
@@ -193,19 +179,13 @@ class ToolExecutionService(
             } else {
                 map
                     ?.let {
-                        listOf("message", "text", "summary", "content", "path", "filePath")
+                        listOf("message", "text", "summary", "content")
                             .mapNotNull { key -> it[key]?.toString()?.trim()?.takeIf { value -> value.isNotBlank() } }
                             .firstOrNull()
-                            ?: it.entries.joinToString("\n") { (key, value) -> "$key: $value" }.trim()
+                            ?: ""
                     }.orEmpty()
             }
 
-        return buildString {
-            append(toolName).append(": ").append(status)
-            if (details.isNotBlank()) {
-                append("\n")
-                append(details)
-            }
-        }.take(2_000)
+        return details.take(2_000)
     }
 }

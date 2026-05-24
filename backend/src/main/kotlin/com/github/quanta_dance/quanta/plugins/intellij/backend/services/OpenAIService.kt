@@ -41,7 +41,7 @@ class OpenAIService(
     private val mapper = ObjectMapper()
     private val responseBuilder = ResponseBuilder(project)
     private val contextInjector = AgentContextInjector(project, ::systemMessage)
-    private val toolExecutionPresenter = ToolExecutionPresenter(mapper)
+    private val toolExecutionPresenter = ToolExecutionPresenter(project, mapper)
     private val usageTracker =
         OpenAIUsageTracker(thisLogger()) { snapshot ->
             pcs.firePropertyChange("usage", null, snapshot)

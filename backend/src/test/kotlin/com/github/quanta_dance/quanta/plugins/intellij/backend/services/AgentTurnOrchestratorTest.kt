@@ -194,7 +194,7 @@ class AgentTurnOrchestratorTest {
             AgentTurnOrchestrator(
                 project = project,
                 contextInjector = mockk(relaxed = true),
-                toolExecutionPresenter = ToolExecutionPresenter(ObjectMapper()),
+                toolExecutionPresenter = ToolExecutionPresenter(null, ObjectMapper()),
                 continuationPolicy = AgentTurnContinuationPolicy(),
                 createResponse = { _, _, _, _, _, _, _, _ ->
                     createResponseCallCount += 1

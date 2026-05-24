@@ -6,7 +6,10 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolExecutionPresentation
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolPresentationProvider
 import com.intellij.openapi.project.Project
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
@@ -19,8 +22,15 @@ import kotlin.io.path.listDirectoryEntries
  * even in split-mode or remote environments.
  */
 @JsonClassDescription("Read list of files in the requested directory")
-class ListFiles : ToolInterface<ListFiles.Result> {
+class ListFiles :
+    ToolInterface<ListFiles.Result>,
+    ToolPresentationProvider {
     override val canBeParallel: Boolean = true
+
+    override fun presentation(status: ToolExecutionStatus): ToolExecutionPresentation =
+        ToolExecutionPresentation(
+            title = path?.trim()?.takeIf { it.isNotBlank() }?.let { "Listing files in $it" } ?: "Listing files",
+        )
 
     @JsonClassDescription("ListFiles operation result")
     data class Result(

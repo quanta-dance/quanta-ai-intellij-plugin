@@ -5,18 +5,23 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.services
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ToolsRegistry
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolPresentationProvider
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.project.Project
 import com.openai.models.responses.ResponseFunctionToolCall
 
 /**
  * Builds chat-facing tool execution items from raw OpenAI function-call payloads.
  *
- * This keeps display formatting and argument-shape heuristics out of [OpenAIService] so the service
- * can focus on orchestration rather than presentation details.
+ * Tool-specific presentation should come from the tool itself via [ToolPresentationProvider]. This
+ * presenter keeps only generic fallback behavior plus optional debug suffixes.
  */
 class ToolExecutionPresenter(
+    private val project: Project?,
     private val mapper: ObjectMapper,
 ) {
     fun buildToolExecutionItem(
@@ -30,7 +35,17 @@ class ToolExecutionPresenter(
         val argsText = runCatching { functionCall.arguments() }.getOrDefault("")
         val argsJson = runCatching { mapper.readTree(argsText) }.getOrNull()
         val filePath = extractFilePath(argsJson)
-        val displayText = displaySummary?.trim()?.ifBlank { null } ?: buildToolDisplayText(toolName, filePath, argsJson)
+        val toolPresentation = resolveToolPresentation(functionCall, status)
+        val displayText =
+            toolPresentation
+                ?.title
+                ?.trim()
+                .orEmpty()
+                .ifBlank { displaySummary?.trim().orEmpty() }
+                .ifBlank { buildFallbackDisplayText(toolName, filePath) }
+        val effectiveDetailText =
+            detailText?.trim()?.ifBlank { null }
+                ?: toolPresentation?.detail?.trim()?.ifBlank { null }
         return ToolExecutionItem(
             callId = functionCall.callId(),
             toolName = toolName,
@@ -38,8 +53,26 @@ class ToolExecutionPresenter(
             status = status,
             filePath = filePath,
             errorText = errorText,
-            detailText = detailText,
+            detailText = effectiveDetailText,
         )
+    }
+
+    private fun resolveToolPresentation(
+        functionCall: ResponseFunctionToolCall,
+        status: ToolExecutionStatus,
+    ) = instantiateTool(functionCall)
+        ?.let { tool -> (tool as? ToolPresentationProvider)?.presentation(status) }
+
+    private fun instantiateTool(functionCall: ResponseFunctionToolCall): ToolInterface<*>? {
+        val availableProject = project ?: return null
+        val toolClass =
+            ToolsRegistry
+                .toolsFor(availableProject)
+                .firstOrNull { it.simpleName == functionCall.name() || it.name.endsWith(".${functionCall.name()}") }
+                ?: return null
+        return runCatching {
+            mapper.readValue(functionCall.arguments(), toolClass)
+        }.getOrNull() as? ToolInterface<*>
     }
 
     private fun sanitizeCandidatePath(path: String?): String? {
@@ -56,170 +89,38 @@ class ToolExecutionPresenter(
             .firstNotNullOfOrNull { key -> sanitizeCandidatePath(argsJson.path(key).asText("")) }
     }
 
-    private fun buildToolDisplayText(
+    private fun buildFallbackDisplayText(
         toolName: String,
         filePath: String?,
-        argsJson: JsonNode?,
     ): String {
-        val fileName = filePath?.substringAfterLast('/')?.substringAfterLast('\\')
-        val baseText =
-            when {
-                toolName.contains("SessionPlan", ignoreCase = true) -> {
-                    val action =
-                        argsJson
-                            ?.path("action")
-                            ?.asText("")
-                            ?.trim()
-                            ?.uppercase()
-                            .orEmpty()
-                    when (action) {
-                        "ACTIVATE" -> "Session Plan: Active"
-                        "COMPLETE" -> "Session Plan: Update"
-                        "DRAFT" -> "Session Plan: Draft"
-                        else -> "Session Plan"
-                    }
-                }
-
-                toolName.contains("ReadFile", ignoreCase = true) && !fileName.isNullOrBlank() -> {
-                    "Reading $fileName"
-                }
-
-                toolName.contains("OpenFile", ignoreCase = true) && !fileName.isNullOrBlank() -> {
-                    "Opening $fileName"
-                }
-
-                toolName.contains("SearchInFiles", ignoreCase = true) -> {
-                    "Searching files"
-                }
-
-                toolName.contains("ListFiles", ignoreCase = true) -> {
-                    "Listing files"
-                }
-
-                toolName.contains("PatchFile", ignoreCase = true) && !fileName.isNullOrBlank() -> {
-                    "Patching $fileName"
-                }
-
-                toolName.contains(
-                    "CreateOrUpdateFile",
-                    ignoreCase = true,
-                ) && !fileName.isNullOrBlank() -> {
-                    "Updating $fileName"
-                }
-
-                toolName.contains("RunGoTests", ignoreCase = true) -> {
-                    "Running Go tests"
-                }
-
-                else -> {
-                    humanizeToolName(toolName)
-                }
-            }
-
+        val baseText = humanizeToolName(toolName)
         if (!isDebugMode()) return baseText
-        val debugSuffix = buildDebugSuffix(toolName, filePath, argsJson)
+        val debugSuffix = buildDebugSuffix(toolName, filePath)
         return if (debugSuffix.isBlank()) baseText else "$baseText $debugSuffix"
     }
 
     private fun buildDebugSuffix(
         toolName: String,
         filePath: String?,
-        argsJson: JsonNode?,
     ): String {
         val parts = mutableListOf<String>()
-        if (!filePath.isNullOrBlank() &&
-            !toolName.contains(
-                "ReadFile",
-                ignoreCase = true,
-            ) && !toolName.contains("OpenFile", ignoreCase = true)
-        ) {
-            parts += "path=$filePath"
-        }
-
-        if (toolName.contains("ReadFile", ignoreCase = true)) {
-            val from = argsJson?.path("fromLine")?.asInt()
-            val toNode = argsJson?.path("toLine")
-            val to = if (toNode != null && !toNode.isMissingNode && !toNode.isNull) toNode.asInt() else null
-            val maxCharsNode = argsJson?.path("maxChars")
-            val maxChars =
-                if (maxCharsNode != null && !maxCharsNode.isMissingNode && !maxCharsNode.isNull) maxCharsNode.asInt() else null
-            val strategy =
-                argsJson
-                    ?.path("strategy")
-                    ?.asText("")
-                    ?.trim()
-                    .orEmpty()
-            if (!filePath.isNullOrBlank()) parts += "path=$filePath"
-            if (from != null || to != null) {
-                parts += "range=${from ?: 1}..${to?.toString() ?: "EOF"}"
-            }
-            if (maxChars != null && maxChars > 0) parts += "maxChars=$maxChars"
-            if (strategy.isNotBlank()) parts += "strategy=$strategy"
-        }
-
-        if (toolName.contains("ListFiles", ignoreCase = true)) {
-            val path =
-                argsJson
-                    ?.path("path")
-                    ?.asText("")
-                    ?.trim()
-                    .orEmpty()
-                    .ifBlank { "." }
-            parts += "path=$path"
-        }
-
-        if (toolName.contains("PatchFile", ignoreCase = true)) {
-            val patchCount = argsJson?.path("patches")?.takeIf { it.isArray }?.size() ?: 0
-            if (patchCount > 0) parts += "patches=$patchCount"
-        }
-
-        if (toolName.contains("CreateOrUpdateFile", ignoreCase = true)) {
-            val patchCount = argsJson?.path("patches")?.takeIf { it.isArray }?.size() ?: 0
-            if (patchCount > 0) {
-                parts += "patches=$patchCount"
-            } else {
-                val contentNode = argsJson?.path("content")
-                if (contentNode != null && !contentNode.isMissingNode && !contentNode.isNull) {
-                    parts += "replace=full"
-                }
-            }
-        }
-
-        if (toolName.contains("RunGoTests", ignoreCase = true)) {
-            val pkg =
-                argsJson
-                    ?.path("packages")
-                    ?.asText("")
-                    ?.trim()
-                    .orEmpty()
-                    .ifBlank { "./..." }
-            parts += "packages=$pkg"
-            val runRegex =
-                argsJson
-                    ?.path("runRegex")
-                    ?.asText("")
-                    ?.trim()
-                    .orEmpty()
-            if (runRegex.isNotBlank()) parts += "run=$runRegex"
-        }
-
+        if (!filePath.isNullOrBlank()) parts += "path=$filePath"
         return parts
             .joinToString(prefix = "[", postfix = "]", separator = ", ")
             .takeIf { it != "[]" }
             .orEmpty()
     }
 
-    private fun isDebugMode(): Boolean =
-        try {
-            val app = ApplicationManager.getApplication()
-            app != null && app.isInternal
-        } catch (_: Throwable) {
-            false
-        }
-
     private fun humanizeToolName(toolName: String): String =
         toolName
             .replace(Regex("([a-z])([A-Z])"), "$1 $2")
             .replace('_', ' ')
             .trim()
+            .replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+
+    private fun isDebugMode(): Boolean =
+        runCatching {
+            ApplicationManager.getApplication()?.isUnitTestMode == true ||
+                java.lang.Boolean.getBoolean("quanta.toolWindow.debugLinks")
+        }.getOrDefault(false)
 }

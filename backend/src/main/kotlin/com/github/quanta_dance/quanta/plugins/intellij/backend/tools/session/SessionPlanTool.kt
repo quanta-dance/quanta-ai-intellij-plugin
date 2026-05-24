@@ -6,7 +6,10 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.session
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SessionPlanService
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolExecutionPresentation
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolPresentationProvider
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 
@@ -22,7 +25,26 @@ import com.intellij.openapi.project.Project
         "Do not create a plan for simple questions, tiny edits, or one-off lookups. " +
         "Use this tool to draft a plan, activate it after user approval, mark tasks completed, or read the current plan.",
 )
-class SessionPlanTool : ToolInterface<String> {
+class SessionPlanTool :
+    ToolInterface<String>,
+    ToolPresentationProvider {
+    override fun presentation(status: ToolExecutionStatus): ToolExecutionPresentation {
+        val normalizedAction =
+            action
+                ?.trim()
+                ?.uppercase()
+                .orEmpty()
+                .ifBlank { "READ" }
+        val title =
+            when (normalizedAction) {
+                "ACTIVATE" -> "Session plan: active"
+                "COMPLETE" -> "Session plan: update"
+                "DRAFT" -> "Session plan: draft"
+                else -> "Session plan"
+            }
+        return ToolExecutionPresentation(title = title)
+    }
+
     @field:JsonPropertyDescription("Action to perform: READ | DRAFT | ACTIVATE | COMPLETE | SET_DONE")
     var action: String? = null
 

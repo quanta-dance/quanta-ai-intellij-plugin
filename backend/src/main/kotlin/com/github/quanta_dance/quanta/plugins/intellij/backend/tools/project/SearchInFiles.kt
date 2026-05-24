@@ -7,10 +7,13 @@ import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.models.SearchInFilesResult
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolProgressEvent
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolProgressKind
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolProgressService
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolExecutionPresentation
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolPresentationProvider
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.ProjectFileIndex
@@ -30,8 +33,12 @@ import java.util.concurrent.atomic.AtomicInteger
     "Search for a text query across project files using IDE Find-in-Files (regex supported). " +
         "Returns concise matches and a modelSummary for AI context.",
 )
-class SearchInFiles : ToolInterface<SearchInFilesResult> {
+class SearchInFiles :
+    ToolInterface<SearchInFilesResult>,
+    ToolPresentationProvider {
     override val canBeParallel: Boolean = true
+
+    override fun presentation(status: ToolExecutionStatus): ToolExecutionPresentation = ToolExecutionPresentation(title = "Searching files")
 
     @field:JsonPropertyDescription("Text to search for in project files (regex supported). Use a|b|c for OR.")
     var query: String? = null

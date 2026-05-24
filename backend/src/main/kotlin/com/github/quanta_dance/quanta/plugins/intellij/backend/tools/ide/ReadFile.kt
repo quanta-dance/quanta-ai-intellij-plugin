@@ -11,7 +11,10 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.project.CurrentFileContextProvider
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.models.ReadFileResult
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolExecutionPresentation
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolPresentationProvider
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileEditor.FileDocumentManager
@@ -78,8 +81,12 @@ data class ReadFile
                 "Takes precedence over strategy/window behavior.",
         )
         var toLine: Int? = null,
-    ) : ToolInterface<ReadFileResult> {
+    ) : ToolInterface<ReadFileResult>,
+        ToolPresentationProvider {
         override val canBeParallel: Boolean = true
+
+        override fun presentation(status: ToolExecutionStatus): ToolExecutionPresentation =
+            ToolExecutionPresentation(title = "Reading ${filePath.substringAfterLast('/').substringAfterLast('\\')}")
 
         companion object {
             private val logger = Logger.getInstance(ReadFile::class.java)

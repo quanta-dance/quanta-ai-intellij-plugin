@@ -6,7 +6,10 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolExecutionPresentation
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolPresentationProvider
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.editor.LogicalPosition
 import com.intellij.openapi.fileEditor.FileEditorManager
@@ -44,7 +47,11 @@ data class OpenFileInEditorTool(
     val selectionEndLine: Int? = null,
     @field:JsonPropertyDescription("Optional selection end column (0-based)")
     val selectionEndColumn: Int? = null,
-) : ToolInterface<String> {
+) : ToolInterface<String>,
+    ToolPresentationProvider {
+    override fun presentation(status: ToolExecutionStatus): ToolExecutionPresentation =
+        ToolExecutionPresentation(title = "Opening ${filePath.substringAfterLast('/').substringAfterLast('\\')}")
+
     override fun execute(project: Project): String {
         val basePath = PathUtils.projectRootPath(project) ?: return "Project base path not found."
 

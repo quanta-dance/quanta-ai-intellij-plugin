@@ -3,11 +3,21 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.shared.tools
 
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus
 import com.intellij.openapi.project.Project
 
 /**
  * Base interface for tools accessible by OpenAI and backend invokers.
  */
+data class ToolExecutionPresentation(
+    val title: String,
+    val detail: String? = null,
+)
+
+interface ToolPresentationProvider {
+    fun presentation(status: ToolExecutionStatus): ToolExecutionPresentation? = null
+}
+
 interface ToolInterface<I> {
     /**
      * Whether calls to this tool are safe to run concurrently with other tool calls from the same
