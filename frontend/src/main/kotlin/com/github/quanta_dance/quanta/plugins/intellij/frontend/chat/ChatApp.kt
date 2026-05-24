@@ -49,7 +49,8 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.input.pointer.pointerMoveFilter
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -386,7 +387,6 @@ private fun taskStatusColor(status: DelegatedTaskStatusDto): Color =
         DelegatedTaskStatusDto.FAILED -> Color(0xFFBF616A)
     }
 
-@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun agentsPanel(
     modifier: Modifier = Modifier,
@@ -631,7 +631,6 @@ private fun sessionTabs(
 }
 
 @OptIn(ExperimentalComposeUiApi::class)
-@Suppress("DEPRECATION")
 @Composable
 private fun visiblePlanStatus(
     status: String,
@@ -662,16 +661,11 @@ private fun visiblePlanStatus(
                 Modifier
                     .background(ChatAppColors.MessageBubble.othersBackground, RoundedCornerShape(8.dp))
                     .padding(horizontal = 10.dp, vertical = 6.dp)
-                    .pointerMoveFilter(
-                        onEnter = {
-                            hovered = true
-                            false
-                        },
-                        onExit = {
-                            hovered = false
-                            false
-                        },
-                    ),
+                    .onPointerEvent(PointerEventType.Enter) {
+                        hovered = true
+                    }.onPointerEvent(PointerEventType.Exit) {
+                        hovered = false
+                    },
             style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, fontWeight = FontWeight.SemiBold),
         )
     }

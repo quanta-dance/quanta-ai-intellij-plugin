@@ -31,8 +31,9 @@ import java.security.MessageDigest
  * small targeted patches while keeping validation, formatting, and import optimization in one place.
  */
 @JsonClassDescription(
-    "Create or Update specified file. Supports full replacement via 'content' or partial line-range updates via 'patches'. " +
-            "Before modifying methods in the file you may need to check for method references as they might need updates.",
+    "Create or update a file. Prefer patches for existing files; use full replacement only for brand-new files or an explicitly intended wholesale rewrite. " +
+            "When patching existing code, keep edits narrow and include expectedText/hash guards when possible. " +
+            "Before modifying methods in a file, check references because callers may need updates.",
 )
 class CreateOrUpdateFile : ToolInterface<String> {
     data class Patch(
@@ -50,12 +51,15 @@ class CreateOrUpdateFile : ToolInterface<String> {
     var filePath: String? = null
 
     @field:JsonPropertyDescription(
-        "New content for the file to be modified. If provided and 'patches' is empty, " +
-                "this fully replaces file content.",
+        "New content for the file to be modified. If provided and 'patches' is empty, this fully replaces file content. " +
+                "Use this mainly for brand-new files or deliberate full-file rewrites; prefer patches for existing files.",
     )
     var content: String? = null
 
-    @field:JsonPropertyDescription("If true, validates the updated file after write and reports compilation errors.")
+    @field:JsonPropertyDescription(
+        "If true, validates the updated file after write and reports compilation errors. " +
+                "This helps catch broken intermediate edits before the agent continues.",
+    )
     var validateAfterUpdate: Boolean = true
 
     @field:JsonPropertyDescription(
@@ -66,12 +70,16 @@ class CreateOrUpdateFile : ToolInterface<String> {
 
     @field:JsonPropertyDescription(
         "If true, force synchronous save/commit/refresh " +
-                "to surface PSI errors immediately (no Gradle run). Default: true",
+                "to surface PSI errors immediately (no Gradle run). Default: true. " +
+                "Use this for quick sanity checks after edits, but still re-read the file if the content looks wrong.",
     )
     var validateBuildAfterUpdate: Boolean = true
 
     // Pass-through guards for patch mode
-    @field:JsonPropertyDescription("If true (default), aborts and applies nothing when any patch guard fails.")
+    @field:JsonPropertyDescription(
+        "If true (default), aborts and applies nothing when any patch guard fails. " +
+                "Keep this true for multi-edit or high-risk changes so the tool does not silently drift.",
+    )
     var stopOnMismatch: Boolean = true
 
     @field:JsonPropertyDescription(

@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
 
-@file:Suppress("UnstableApiUsage")
-
 package com.github.quanta_dance.quanta.plugins.intellij.shared.rpc
 
 import com.github.quanta_dance.quanta.plugins.intellij.models.Suggestion
@@ -20,7 +18,6 @@ import com.intellij.platform.rpc.RemoteApiProviderService
 import fleet.rpc.RemoteApi
 import fleet.rpc.Rpc
 import fleet.rpc.remoteApiDescriptor
-import kotlinx.coroutines.flow.Flow
 
 /**
  * Shared frontend-to-backend RPC surface for non-chat Quanta capabilities.
@@ -31,7 +28,8 @@ import kotlinx.coroutines.flow.Flow
 @Rpc
 interface QuantaBackendApi : RemoteApi<Unit> {
     companion object {
-        suspend fun getInstance(): QuantaBackendApi = RemoteApiProviderService.resolve(remoteApiDescriptor<QuantaBackendApi>())
+        suspend fun getInstance(): QuantaBackendApi =
+            RemoteApiProviderService.resolve(remoteApiDescriptor<QuantaBackendApi>())
     }
 
     suspend fun ping(): String
@@ -43,19 +41,11 @@ interface QuantaBackendApi : RemoteApi<Unit> {
 
     suspend fun getCurrentPlanStatus(projectId: ProjectId): ChatPlanStatusDto
 
-    suspend fun getPlanStatusFlow(projectId: ProjectId): Flow<ChatPlanStatusDto>
-
     suspend fun getCurrentAgents(projectId: ProjectId): List<AgentInfoDto>
-
-    suspend fun getAgentsFlow(projectId: ProjectId): Flow<List<AgentInfoDto>>
 
     suspend fun getCurrentDelegatedTasks(projectId: ProjectId): List<DelegatedTaskDto>
 
-    suspend fun getDelegatedTasksFlow(projectId: ProjectId): Flow<List<DelegatedTaskDto>>
-
     suspend fun getCurrentChannelEvents(projectId: ProjectId): List<AgentChannelEventDto>
-
-    suspend fun getChannelEventsFlow(projectId: ProjectId): Flow<List<AgentChannelEventDto>>
 
     suspend fun createDefaultAgentTeam(projectId: ProjectId): List<AgentInfoDto>
 

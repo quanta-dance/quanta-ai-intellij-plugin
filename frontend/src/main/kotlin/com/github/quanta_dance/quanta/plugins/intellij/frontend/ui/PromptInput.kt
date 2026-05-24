@@ -42,7 +42,8 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.input.pointer.pointerMoveFilter
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
@@ -72,7 +73,6 @@ import org.jetbrains.jewel.ui.component.TextArea
 import org.jetbrains.jewel.ui.theme.iconButtonStyle
 
 @OptIn(ExperimentalComposeUiApi::class)
-@Suppress("DEPRECATION")
 @Composable
 fun promptInput(
     modifier: Modifier = Modifier,
@@ -235,23 +235,18 @@ fun promptInput(
                                 Modifier
                                     .widthIn(min = 360.dp, max = 860.dp)
                                     .heightIn(max = 720.dp)
-                                    .pointerMoveFilter(
-                                        onEnter = {
-                                            planHideJob?.cancel()
-                                            planPopupHovered = true
-                                            false
-                                        },
-                                        onExit = {
-                                            planHideJob?.cancel()
-                                            planHideJob =
-                                                scope.launch {
-                                                    delay(160)
-                                                    planPopupHovered = false
-                                                    if (!planPinned) planHovered = false
-                                                }
-                                            false
-                                        },
-                                    ).background(Color(0xFF2B2B2B), RoundedCornerShape(6.dp))
+                                    .onPointerEvent(PointerEventType.Enter) {
+                                        planHideJob?.cancel()
+                                        planPopupHovered = true
+                                    }.onPointerEvent(PointerEventType.Exit) {
+                                        planHideJob?.cancel()
+                                        planHideJob =
+                                            scope.launch {
+                                                delay(160)
+                                                planPopupHovered = false
+                                                if (!planPinned) planHovered = false
+                                            }
+                                    }.background(Color(0xFF2B2B2B), RoundedCornerShape(6.dp))
                                     .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(6.dp))
                                     .padding(horizontal = 8.dp, vertical = 6.dp),
                         ) {
@@ -287,24 +282,19 @@ fun promptInput(
                                         }
                                     }
                                 }.padding(horizontal = 8.dp, vertical = 5.dp)
-                                .pointerMoveFilter(
-                                    onEnter = {
-                                        planHideJob?.cancel()
-                                        planHovered = true
-                                        false
-                                    },
-                                    onExit = {
-                                        planHideJob?.cancel()
-                                        planHideJob =
-                                            scope.launch {
-                                                delay(160)
-                                                if (!planPopupHovered && !planPinned) {
-                                                    planHovered = false
-                                                }
+                                .onPointerEvent(PointerEventType.Enter) {
+                                    planHideJob?.cancel()
+                                    planHovered = true
+                                }.onPointerEvent(PointerEventType.Exit) {
+                                    planHideJob?.cancel()
+                                    planHideJob =
+                                        scope.launch {
+                                            delay(160)
+                                            if (!planPopupHovered && !planPinned) {
+                                                planHovered = false
                                             }
-                                        false
-                                    },
-                                ),
+                                        }
+                                },
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
@@ -413,15 +403,15 @@ fun promptInput(
                 }
 
                 promptInputState == MessageInputState.Disabled ||
-                    promptInputState is MessageInputState.Enabled ||
-                    promptInputState is MessageInputState.SendFailed ||
-                    promptInputState is MessageInputState.Sent -> {
+                        promptInputState is MessageInputState.Enabled ||
+                        promptInputState is MessageInputState.SendFailed ||
+                        promptInputState is MessageInputState.Sent -> {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (availableModels.isNotEmpty()) {
                             key(currentModel) {
                                 ComboBox(
                                     labelText =
-                                    currentModel,
+                                        currentModel,
                                     modifier =
                                         Modifier
                                             .widthIn(min = 120.dp)

@@ -11,33 +11,24 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolProg
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolProgressKind
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolProgressService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
-import com.intellij.find.FindModel
-import com.intellij.find.impl.FindInProjectUtil
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.module.Module
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.roots.ProjectFileIndex
+import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiManager
-import com.intellij.psi.search.GlobalSearchScope
-import com.intellij.psi.search.SearchScope
-import com.intellij.usageView.UsageInfo
-import com.intellij.usages.UsageViewPresentation
-import com.intellij.util.Processor
 import java.nio.file.Paths
-import java.util.Collections
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Backend search tool that wraps IntelliJ Find-in-Files and returns AI-friendly summaries.
+ * Backend search tool that wraps IntelliJ project file scanning and returns AI-friendly summaries.
  *
  * It is one of the primary exploration tools for agents because it can search broadly while still
  * capping result volume and producing a concise model summary.
  */
 @JsonClassDescription(
     "Search for a text query across project files using IDE Find-in-Files (regex supported). " +
-        "Returns concise matches and a modelSummary for AI context.",
+            "Returns concise matches and a modelSummary for AI context.",
 )
 class SearchInFiles : ToolInterface<SearchInFilesResult> {
     @field:JsonPropertyDescription("Text to search for in project files (regex supported). Use a|b|c for OR.")
@@ -48,7 +39,7 @@ class SearchInFiles : ToolInterface<SearchInFilesResult> {
 
     @field:JsonPropertyDescription(
         "Optional list of file extensions to include (e.g., ['kt','java','txt']). " +
-            "To search across all extensions, omit this field or pass ['*'].",
+                "To search across all extensions, omit this field or pass ['*'].",
     )
     var includeExtensions: List<String>? = null
 
@@ -61,6 +52,13 @@ class SearchInFiles : ToolInterface<SearchInFilesResult> {
     private val hardResultLimit = 50
     private val maxSnippetLength = 240
     private val maxTotalChars = 20_000
+    private val maxFileCharsToScan = 1_000_000
+
+    private data class FileMatch(
+        val file: VirtualFile,
+        val offsets: List<Int>,
+        val text: String,
+    )
 
     override fun execute(project: Project): SearchInFilesResult {
         val q = query?.trim() ?: ""
@@ -73,31 +71,22 @@ class SearchInFiles : ToolInterface<SearchInFilesResult> {
         } catch (_: Throwable) {
         }
 
-        // Decide whether to run as regex or literal in a single Find-in-Project invocation.
-        // Strategy:
-        // 1) If q is an invalid regex, return a friendly message and no results.
-        // 2) If q contains no regex meta-characters, treat as literal (users often expect this).
-        // 3) Otherwise treat as regex.
-        val treatAsRegex =
+        val searchRegex =
             try {
-                // quick heuristic for meta-characters commonly used in regexes
                 val meta = setOf('.', '^', '$', '*', '+', '?', '{', '}', '[', ']', '(', ')', '|', '\\')
                 val hasMeta = q.any { meta.contains(it) }
                 if (!hasMeta) {
-                    false
+                    null
                 } else {
-                    // validate regex
                     try {
-                        Regex(q)
-                        true
+                        Regex(q, setOf(RegexOption.IGNORE_CASE))
                     } catch (e: Throwable) {
-                        // Return a friendly summary indicating the regex is invalid (test expects this)
                         val msg = e.message ?: "Invalid regular expression"
                         return SearchInFilesResult(emptyList(), modelSummary = "Invalid regular expression: $msg")
                     }
                 }
-            } catch (e: Throwable) {
-                false
+            } catch (_: Throwable) {
+                null
             }
 
         val softLimit = maxResults.coerceAtLeast(1)
@@ -112,201 +101,135 @@ class SearchInFiles : ToolInterface<SearchInFilesResult> {
             }
         val excludeSegments = excludePathSegments ?: listOf(".git", "build", "out", "node_modules")
 
-        // Obtain baseScope safely: projectScope may access project user data which fails on lightweight mocks.
-        val baseScope: GlobalSearchScope =
-            try {
-                GlobalSearchScope.projectScope(project)
-            } catch (e: Throwable) {
-                // Fallback permissive scope for tests and unusual environments — filtering below will still apply
-                object : GlobalSearchScope(project) {
-                    override fun contains(file: VirtualFile): Boolean = true
-
-                    override fun isSearchInModuleContent(aModule: Module) = true
-
-                    override fun isSearchInLibraries() = false
-                }
-            }
-
-        val filteredScope =
-            object : GlobalSearchScope(project) {
-                override fun contains(file: VirtualFile): Boolean {
-                    if (!baseScope.contains(file)) return false
-                    val segs = file.path.lowercase().split('/', '\\')
-                    if (excludeSegments.any { seg -> segs.contains(seg.lowercase()) }) return false
-                    if (includeExts != null) {
-                        val ext = file.extension?.lowercase()
-                        if (ext == null || !includeExts.contains(ext)) return false
-                    }
-                    return true
-                }
-
-                override fun isSearchInModuleContent(aModule: Module) = true
-
-                override fun isSearchInLibraries() = false
-            }
-
-        // Use a concurrent map to avoid ConcurrentModificationException when find API updates entries on other threads
-        val fileOffsets = ConcurrentHashMap<VirtualFile, MutableList<Int>>()
+        val fileMatches = mutableListOf<FileMatch>()
         val totalChars = AtomicInteger(0)
 
-        // Build FindModel outside read action
-        val model =
-            FindModel().apply {
-                stringToFind = q
-                isRegularExpressions = treatAsRegex
-                isCaseSensitive = false
-                isWholeWordsOnly = false
-                customScope = (filteredScope as SearchScope)
-                customScopeName = if (treatAsRegex) "Project Files (regex)" else "Project Files (literal)"
-                if (includeExts != null) {
-                    fileFilter = includeExts.joinToString(";") { "*.$it" }
-                }
-            }
-
-        val usagePresentation = UsageViewPresentation()
-        val presentation = FindInProjectUtil.setupProcessPresentation(true, usagePresentation)
-
-        val processor =
-            Processor<UsageInfo> { usage ->
-                val vFile = usage.virtualFile ?: return@Processor true
-                if (!filteredScope.contains(vFile)) return@Processor true
-                val off = usage.navigationOffset
-                if (off < 0) return@Processor true
-                // guard offset by file length if possible
-                val fileLen =
-                    try {
-                        vFile.length.toInt()
-                    } catch (_: Throwable) {
-                        Int.MAX_VALUE
-                    }
-                if (off > fileLen) return@Processor true
-                val list = fileOffsets.computeIfAbsent(vFile) { Collections.synchronizedList(mutableListOf()) }
-                list.add(off)
-                // approximate contribution to totalChars by adding a snippet length cap
-                val approxAdd = maxSnippetLength.coerceAtMost(100)
-                val newTotal = totalChars.addAndGet(approxAdd)
-                newTotal < maxTotalChars && fileOffsets.values.sumOf { it.size } < resultLimit
-            }
-
-        // Protection around IDE find - capture exceptions and return user-friendly result
         try {
-            // Must NOT be inside read action
-            FindInProjectUtil.findUsages(model, project, processor, presentation)
+            val fileIndex = ProjectFileIndex.getInstance(project)
+            fileIndex.iterateContent { file ->
+                if (fileMatches.sumOf { it.offsets.size } >= resultLimit || totalChars.get() >= maxTotalChars) {
+                    return@iterateContent false
+                }
+                val text = readSearchableText(project, file, includeExts, excludeSegments) ?: return@iterateContent true
+                val offsets = findMatchOffsets(text, q, searchRegex, resultLimit)
+                if (offsets.isNotEmpty()) {
+                    fileMatches += FileMatch(file, offsets, text)
+                    totalChars.addAndGet(offsets.size * maxSnippetLength.coerceAtMost(100))
+                }
+                true
+            }
         } catch (e: Throwable) {
             return SearchInFilesResult(emptyList(), modelSummary = "Search failed: ${e.message}")
         }
 
+        val ranked = fileMatches.sortedByDescending { it.offsets.size }
+        val basePathPath = PathUtils.projectRootPath(project)?.let { Paths.get(it) }
         val flatResults = mutableListOf<SearchInFilesResult.Match>()
         val modelSummary = StringBuilder()
-        val basePathPath = PathUtils.projectRootPath(project)?.let { Paths.get(it) }
-        ApplicationManager.getApplication().runReadAction {
-            val psiManager = PsiManager.getInstance(project)
-            val docManager = PsiDocumentManager.getInstance(project)
 
-            // snapshot entries to avoid concurrent modification while iterating
-            val ranked = fileOffsets.entries.toList().sortedByDescending { it.value.size }
-
-            for ((vf, offsets) in ranked) {
-                val psiFile = psiManager.findFile(vf)
-                val text = psiFile?.text ?: ""
-                val doc = psiFile?.let { docManager.getDocument(it) }
-                val rel =
-                    basePathPath?.let { bp ->
-                        try {
-                            bp.relativize(Paths.get(vf.path)).toString()
-                        } catch (_: Throwable) {
-                            vf.path
-                        }
-                    } ?: vf.path
-                for (off in offsets) {
-                    if (flatResults.size >= resultLimit || totalChars.get() >= maxTotalChars) break
-                    val safeOff = off.coerceIn(0, text.length)
-                    val lineNumber =
-                        try {
-                            doc?.getLineNumber(safeOff)?.plus(1) ?: (
-                                text
-                                    .substring(0, safeOff)
-                                    .count { it == '\n' } + 1
-                            )
-                        } catch (e: Throwable) {
-                            try {
-                                text.substring(0, safeOff).count { it == '\n' } + 1
-                            } catch (_: Throwable) {
-                                1
-                            }
-                        }
-                    val start = (text.lastIndexOf('\n', safeOff).takeIf { it >= 0 } ?: (safeOff - 40)).coerceAtLeast(0)
-                    val end =
-                        (text.indexOf('\n', safeOff).takeIf { it >= 0 } ?: (safeOff + maxSnippetLength)).coerceAtMost(
-                            text.length,
-                        )
-                    var snippet =
-                        try {
-                            text
-                                .substring(
-                                    start.coerceAtLeast(0).coerceAtMost(text.length),
-                                    end.coerceAtLeast(0).coerceAtMost(text.length),
-                                ).replace('\n', ' ')
-                        } catch (_: Throwable) {
-                            ""
-                        }
-                    if (snippet.length > maxSnippetLength) snippet = snippet.take(maxSnippetLength) + "..."
-                    flatResults.add(SearchInFilesResult.Match(rel, lineNumber, snippet))
-                    totalChars.addAndGet(snippet.length)
-                }
+        for (entry in ranked) {
+            val rel = relativize(basePathPath, entry.file)
+            for (off in entry.offsets) {
                 if (flatResults.size >= resultLimit || totalChars.get() >= maxTotalChars) break
+                val lineNumber = lineNumberAt(entry.text, off)
+                val snippet = snippetAt(entry.text, off)
+                flatResults += SearchInFilesResult.Match(rel, lineNumber, snippet)
+                totalChars.addAndGet(snippet.length)
             }
-
-            val topN = topForModel.coerceAtLeast(1).coerceAtMost(10)
-            modelSummary.append("Project context for query '$q' (top $topN files):\n")
-            ranked.take(topN).forEach { (vf, offs) ->
-                val psiFile = psiManager.findFile(vf)
-                val text = psiFile?.text ?: return@forEach
-                val firstOff = offs.first()
-                val safeOff = firstOff.coerceIn(0, text.length)
-                val lineNumber = text.substring(0, safeOff).count { it == '\n' } + 1
-                val start = (text.lastIndexOf('\n', safeOff).takeIf { it >= 0 } ?: (safeOff - 40)).coerceAtLeast(0)
-                val end =
-                    (text.indexOf('\n', safeOff).takeIf { it >= 0 } ?: (safeOff + maxSnippetLength)).coerceAtMost(
-                        text.length,
-                    )
-                var snippet =
-                    try {
-                        text
-                            .substring(
-                                start.coerceAtLeast(0).coerceAtMost(text.length),
-                                end.coerceAtLeast(0).coerceAtMost(text.length),
-                            ).replace('\n', ' ')
-                    } catch (_: Throwable) {
-                        ""
-                    }
-                if (snippet.length > maxSnippetLength) snippet = snippet.take(maxSnippetLength) + "..."
-                val relPath =
-                    basePathPath?.let { bp ->
-                        try {
-                            bp.relativize(Paths.get(vf.path)).toString()
-                        } catch (_: Throwable) {
-                            vf.path
-                        }
-                    }
-                val rel = relPath ?: vf.path
-                modelSummary.append("- $rel (matches=${offs.size}) line $lineNumber: $snippet\n")
-            }
+            if (flatResults.size >= resultLimit || totalChars.get() >= maxTotalChars) break
         }
 
-        try {
-            val display = StringBuilder()
-            display.append("Searched project: query='$q' files=${fileOffsets.size} results=${flatResults.size} (cap=$resultLimit)\n")
-            val grouped = flatResults.groupBy { it.path }
-            val preview = grouped.entries.take(5)
-            preview.forEach { (path, matches) ->
-                val first = matches.first()
-                display.append("$path : line ${first.line} : ${first.snippet} (matches=${matches.size})\n")
-            }
-            if (grouped.size > 5) display.append("...+${grouped.size - 5} more files\n")
-        } catch (e: Throwable) {
+        val topN = topForModel.coerceAtLeast(1).coerceAtMost(10)
+        modelSummary.append("Project context for query '$q' (top $topN files):\n")
+        ranked.take(topN).forEach { entry ->
+            val rel = relativize(basePathPath, entry.file)
+            val firstOff = entry.offsets.firstOrNull() ?: return@forEach
+            val lineNumber = lineNumberAt(entry.text, firstOff)
+            val snippet = snippetAt(entry.text, firstOff)
+            modelSummary.append("- $rel (matches=${entry.offsets.size}) line $lineNumber: $snippet\n")
         }
 
         return SearchInFilesResult(flatResults.take(resultLimit), modelSummary.toString())
+    }
+
+    private fun readSearchableText(
+        project: Project,
+        file: VirtualFile,
+        includeExts: Set<String>?,
+        excludeSegments: List<String>,
+    ): String? =
+        ApplicationManager.getApplication().runReadAction<String?> {
+            if (!file.isValid || file.isDirectory) return@runReadAction null
+            if (file.fileType.isBinary) return@runReadAction null
+            if (file.length > maxFileCharsToScan) return@runReadAction null
+
+            val segs = file.path.lowercase().split('/', '\\')
+            if (excludeSegments.any { seg -> segs.contains(seg.lowercase()) }) return@runReadAction null
+
+            if (includeExts != null) {
+                val ext = file.extension?.lowercase() ?: return@runReadAction null
+                if (!includeExts.contains(ext)) return@runReadAction null
+            }
+
+            val psiText = runCatching { PsiManager.getInstance(project).findFile(file)?.text }.getOrNull()
+            if (!psiText.isNullOrEmpty()) return@runReadAction psiText
+
+            runCatching { VfsUtilCore.loadText(file) }.getOrNull()
+        }
+
+    private fun findMatchOffsets(
+        text: String,
+        query: String,
+        searchRegex: Regex?,
+        resultLimit: Int,
+    ): List<Int> {
+        if (text.isEmpty()) return emptyList()
+        return if (searchRegex != null) {
+            searchRegex
+                .findAll(text)
+                .map { it.range.first }
+                .take(resultLimit)
+                .toList()
+        } else {
+            buildList {
+                var startIndex = 0
+                while (size < resultLimit) {
+                    val matchIndex = text.indexOf(query, startIndex = startIndex, ignoreCase = true)
+                    if (matchIndex < 0) break
+                    add(matchIndex)
+                    startIndex = (matchIndex + 1).coerceAtMost(text.length)
+                }
+            }
+        }
+    }
+
+    private fun relativize(basePathPath: java.nio.file.Path?, file: VirtualFile): String =
+        basePathPath?.let { bp ->
+            try {
+                bp.relativize(Paths.get(file.path)).toString()
+            } catch (_: Throwable) {
+                file.path
+            }
+        } ?: file.path
+
+    private fun lineNumberAt(text: String, offset: Int): Int {
+        val safeOff = offset.coerceIn(0, text.length)
+        return text.substring(0, safeOff).count { it == '\n' } + 1
+    }
+
+    private fun snippetAt(text: String, offset: Int): String {
+        val safeOff = offset.coerceIn(0, text.length)
+        val start = (text.lastIndexOf('\n', safeOff).takeIf { it >= 0 } ?: (safeOff - 40)).coerceAtLeast(0)
+        val end =
+            (text.indexOf('\n', safeOff).takeIf { it >= 0 } ?: (safeOff + maxSnippetLength)).coerceAtMost(text.length)
+        val snippet =
+            runCatching {
+                text
+                    .substring(
+                        start.coerceAtLeast(0).coerceAtMost(text.length),
+                        end.coerceAtLeast(0).coerceAtMost(text.length),
+                    ).replace('\n', ' ')
+            }.getOrDefault("")
+        return if (snippet.length > maxSnippetLength) snippet.take(maxSnippetLength) + "..." else snippet
     }
 }

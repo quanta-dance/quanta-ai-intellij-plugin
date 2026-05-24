@@ -10,7 +10,6 @@ import com.intellij.platform.rpc.RemoteApiProviderService
 import fleet.rpc.RemoteApi
 import fleet.rpc.Rpc
 import fleet.rpc.remoteApiDescriptor
-import kotlinx.coroutines.flow.Flow
 
 /**
  * Shared RPC contract for chat messages and sessions.
@@ -21,18 +20,11 @@ import kotlinx.coroutines.flow.Flow
 @Rpc
 interface ChatRepositoryRpcApi : RemoteApi<Unit> {
     companion object {
-        suspend fun getInstance(): ChatRepositoryRpcApi = RemoteApiProviderService.resolve(remoteApiDescriptor<ChatRepositoryRpcApi>())
+        suspend fun getInstance(): ChatRepositoryRpcApi =
+            RemoteApiProviderService.resolve(remoteApiDescriptor<ChatRepositoryRpcApi>())
     }
 
-    /**
-     * Flow that emits a list of chat messages.
-     * Updates with new messages as they are received or edited.
-     */
-    suspend fun getMessagesFlow(projectId: ProjectId): Flow<List<ChatMessageDto>>
-
     suspend fun getCurrentMessages(projectId: ProjectId): List<ChatMessageDto>
-
-    suspend fun getSessionsFlow(projectId: ProjectId): Flow<List<ChatSessionDto>>
 
     suspend fun getCurrentSessions(projectId: ProjectId): List<ChatSessionDto>
 

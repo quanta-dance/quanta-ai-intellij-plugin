@@ -114,18 +114,42 @@ class ToolExecutionService(
         }.take(2_000)
     }
 
+    private fun classifyOutcome(
+        safeResult: Any?,
+        succeeded: Boolean,
+    ): String {
+        if (!succeeded) return "FAILED"
+        val map = safeResult as? Map<*, *> ?: return "SUCCEEDED"
+        val status = map["status"]?.toString()?.trim()?.uppercase().orEmpty()
+        if (status == "NOOP") return "NOOP"
+        val text = map["text"]?.toString().orEmpty()
+        return when {
+            text.contains("Relocations:") -> "RELOCATED"
+            text.contains("mismatch", ignoreCase = true) -> "MISMATCH"
+            else -> "SUCCEEDED"
+        }
+    }
+
     private fun logToolResult(
         functionCall: ResponseFunctionToolCall,
         safeResult: Any?,
         succeeded: Boolean,
         agentLabel: String,
     ) {
+        val map = safeResult as? Map<*, *>
+        val outcome = classifyOutcome(safeResult, succeeded)
+        val filePath = listOf("filePath", "path").firstNotNullOfOrNull { key ->
+            map?.get(key)?.toString()?.takeIf(String::isNotBlank)
+        }
+        val hash = listOf("fileHashSha256", "expectedFileHashSha256").firstNotNullOfOrNull { key ->
+            map?.get(key)?.toString()?.takeIf(String::isNotBlank)
+        }
         val preview =
             runCatching { objectMapper.writeValueAsString(safeResult) }
                 .getOrElse { safeResult?.toString().orEmpty() }
                 .let { text -> if (text.length > MAX_DEBUG_RESULT_CHARS) text.take(MAX_DEBUG_RESULT_CHARS) + "... (truncated)" else text }
         QDLog.debug(logger) {
-            "ToolExecutionService.executeToolCall: agent=$agentLabel tool=${functionCall.name()} callId=${functionCall.callId()} succeeded=$succeeded result=$preview"
+            "ToolExecutionService.executeToolCall: agent=$agentLabel tool=${functionCall.name()} callId=${functionCall.callId()} outcome=$outcome file=${filePath ?: "<none>"} hash=${hash ?: "<none>"} result=$preview"
         }
     }
 

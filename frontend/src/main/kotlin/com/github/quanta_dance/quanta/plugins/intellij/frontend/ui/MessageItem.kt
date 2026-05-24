@@ -20,19 +20,18 @@ import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.input.pointer.PointerIcon
-import androidx.compose.ui.input.pointer.pointerHoverIcon
-import androidx.compose.ui.input.pointer.pointerMoveFilter
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -54,7 +53,6 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.Fronten
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.platform.project.projectId
-import fleet.rpc.client.durable
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -148,7 +146,6 @@ private fun toolExecutionGroup(
 }
 
 @OptIn(ExperimentalComposeUiApi::class)
-@Suppress("DEPRECATION")
 @Composable
 private fun toolExecutionRow(
     project: Project,
@@ -157,7 +154,6 @@ private fun toolExecutionRow(
     var hovered by remember(item.callId) { mutableStateOf(false) }
     var statusHovered by remember(item.callId) { mutableStateOf(false) }
     var detailsExpanded by remember(item.callId) { mutableStateOf(false) }
-    val handPointer = remember { PointerIcon(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)) }
     val scope = rememberCoroutineScope()
     val statusIcon =
         when (item.status) {
@@ -228,16 +224,11 @@ private fun toolExecutionRow(
                 Box(
                     modifier =
                         Modifier
-                            .pointerMoveFilter(
-                                onEnter = {
-                                    statusHovered = true
-                                    false
-                                },
-                                onExit = {
-                                    statusHovered = false
-                                    false
-                                },
-                            ),
+                            .onPointerEvent(PointerEventType.Enter) {
+                                statusHovered = true
+                            }.onPointerEvent(PointerEventType.Exit) {
+                                statusHovered = false
+                            },
                 ) {
                     Icon(
                         key = statusIcon,
@@ -258,17 +249,11 @@ private fun toolExecutionRow(
                         Box(
                             modifier =
                                 Modifier
-                                    .pointerHoverIcon(handPointer)
-                                    .pointerMoveFilter(
-                                        onEnter = {
-                                            hovered = true
-                                            false
-                                        },
-                                        onExit = {
-                                            hovered = false
-                                            false
-                                        },
-                                    ).clickable {
+                                    .onPointerEvent(PointerEventType.Enter) {
+                                        hovered = true
+                                    }.onPointerEvent(PointerEventType.Exit) {
+                                        hovered = false
+                                    }.clickable {
                                         frontendLinkLog(
                                             project,
                                             FrontendLogLevel.INFO,
@@ -276,11 +261,9 @@ private fun toolExecutionRow(
                                         )
                                         scope.launch {
                                             runCatching {
-                                                durable {
-                                                    QuantaBackendApi
-                                                        .getInstance()
-                                                        .openProjectFile(project.projectId(), filePath!!)
-                                                }
+                                                QuantaBackendApi
+                                                    .getInstance()
+                                                    .openProjectFile(project.projectId(), filePath!!)
                                             }.onFailure { error ->
                                                 frontendLinkLog(
                                                     project,

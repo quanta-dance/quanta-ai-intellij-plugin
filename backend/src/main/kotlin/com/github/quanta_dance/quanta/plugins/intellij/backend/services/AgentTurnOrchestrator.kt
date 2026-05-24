@@ -3,6 +3,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.backend.services
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.ToolExecutionService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.models.OpenAIResponse
@@ -39,6 +40,95 @@ class AgentTurnOrchestrator(
     private val systemMessage: (String) -> ResponseInputItem,
     private val persistAndShow: (role: String, agentLabel: String, text: String) -> Unit,
 ) {
+    private val objectMapper = ObjectMapper()
+
+    private data class GuardrailDecision(
+        val allowExecution: Boolean,
+        val reason: String? = null,
+    )
+
+    private data class TurnGuardrailState(
+        var guardrailSkips: Int = 0,
+        val touchedFiles: MutableSet<String> = linkedSetOf(),
+        val toolNames: MutableList<String> = mutableListOf(),
+    ) {
+        fun recordExecution(toolName: String, filePath: String?, isWrite: Boolean, isRead: Boolean) {
+            toolNames += toolName
+            filePath?.let { touchedFiles += it }
+        }
+    }
+
+
+    private fun sanitizeCandidatePath(path: String?): String? {
+        val trimmed = path?.trim().orEmpty()
+        if (trimmed.isBlank()) return null
+        if (trimmed == "?" || trimmed == "??") return null
+        if (trimmed.contains('?')) return null
+        return trimmed
+    }
+
+    private fun extractFilePath(functionCall: ResponseFunctionToolCall): String? {
+        val args = runCatching { objectMapper.readTree(functionCall.arguments()) }.getOrNull() ?: return null
+        return listOf("filePath", "path", "sourcePath")
+            .firstNotNullOfOrNull { key -> sanitizeCandidatePath(args.path(key).asText("")) }
+    }
+
+    private fun isReadTool(toolName: String): Boolean =
+        toolName.equals("ReadFile", ignoreCase = true) ||
+                toolName.equals("ReadFileContent", ignoreCase = true) ||
+                toolName.equals("ReadPsiBlockAtPosition", ignoreCase = true)
+
+    private fun isWriteTool(toolName: String): Boolean =
+        toolName.equals("PatchFile", ignoreCase = true) ||
+                toolName.equals("CreateOrUpdateFile", ignoreCase = true) ||
+                toolName.equals("DeleteFileTool", ignoreCase = true) ||
+                toolName.equals("CopyFileOrDirectoryTool", ignoreCase = true)
+
+    private fun evaluateGuardrails(
+        state: TurnGuardrailState,
+        functionCall: ResponseFunctionToolCall,
+    ): GuardrailDecision = GuardrailDecision(true)
+
+    private fun guardrailToolResult(
+        functionCall: ResponseFunctionToolCall,
+        reason: String,
+    ): ToolExecutionService.ToolExecutionResult {
+        val toolName = functionCall.name()
+        val message = "Skipped by orchestrator guardrail: $reason"
+        val result = mapOf(
+            "status" to "noop",
+            "tool" to toolName,
+            "code" to reason,
+            "message" to message,
+            "summary" to message,
+        )
+        val toolOutput =
+            ResponseInputItem.FunctionCallOutput
+                .builder()
+                .callId(functionCall.callId())
+                .outputAsJson(result)
+                .build()
+        return ToolExecutionService.ToolExecutionResult(
+            toolOutput = toolOutput,
+            succeeded = true,
+            displaySummary = "$toolName: Skipped\n$message",
+            detailText = "$toolName: Skipped\n$message",
+            errorText = null,
+        )
+    }
+
+    private fun logTurnSummary(
+        state: TurnGuardrailState,
+        agentLabel: String,
+        responseId: String?,
+    ) {
+        QDLog.info(thisLogger()) {
+            "OpenAIService.agentTurn summary: agent=$agentLabel responseId=${responseId ?: "<none>"} " +
+                    "toolCalls=${state.toolNames.size} skipped=${state.guardrailSkips} " +
+                    "files=${state.touchedFiles.size} tools=${state.toolNames.distinct().joinToString(",") { it }}"
+        }
+    }
+
     fun run(
         inputs: MutableList<ResponseInputItem>,
         previousId: String?,
@@ -56,6 +146,7 @@ class AgentTurnOrchestrator(
         contextInjector.injectBaseContextForAgentTurn(inputs, localPrevId)
         val aggregated = StringBuilder()
         val processedCallIds = mutableSetOf<String>()
+        val guardrailState = TurnGuardrailState()
         val planService = project.service<SessionPlanService>()
         val activePlanCoordinator = ActiveSessionPlanCoordinator(continuationPolicy)
         var reprocess = true
@@ -119,10 +210,29 @@ class AgentTurnOrchestrator(
                             )
                         onToolUpdate?.invoke(OpenAIService.ToolTurnUpdate(startedItem))
                         try {
+                            val filePath = extractFilePath(functionCall)
+                            val isRead = isReadTool(functionCall.name())
+                            val isWrite = isWriteTool(functionCall.name())
+                            val decision = evaluateGuardrails(guardrailState, functionCall)
                             val toolResult =
-                                project.service<ToolExecutionService>().executeToolCall(functionCall, agentLabel)
+                                if (decision.allowExecution) {
+                                    project.service<ToolExecutionService>().executeToolCall(functionCall, agentLabel)
+                                } else {
+                                    QDLog.warn(thisLogger()) {
+                                        "OpenAIService.agentTurn: stability intervention tool=${functionCall.name()} callId=$callId reason=${decision.reason}"
+                                    }
+                                    guardrailToolResult(functionCall, decision.reason ?: "guardrail_blocked")
+                                }
+                            if (decision.allowExecution) {
+                                guardrailState.recordExecution(
+                                    functionCall.name(),
+                                    filePath,
+                                    isWrite = isWrite,
+                                    isRead = isRead
+                                )
+                            }
                             QDLog.info(thisLogger()) {
-                                "OpenAIService.agentTurn: executed tool call name=${functionCall.name()} callId=$callId"
+                                "OpenAIService.agentTurn: executed tool call name=${functionCall.name()} callId=$callId file=${filePath ?: "<none>"} guardrail=${decision.reason ?: "none"}"
                             }
                             val completedItem =
                                 toolExecutionPresenter.buildToolExecutionItem(
@@ -153,9 +263,11 @@ class AgentTurnOrchestrator(
                                 val message = content.asOutputText()
                                 val txt = message.summaryMessage
                                 QDLog.info(thisLogger()) {
+                                    val trimmed = txt.trim()
+                                    val summary = trimmed.take(160)
                                     "OpenAIService.agentTurn outputText: nextStep=${message.nextStep} " +
                                             "planNeedsUserConfirmation=${message.planNeedsUserConfirmation} " +
-                                            "summary='${txt.take(160)}'"
+                                            "summaryChars=${trimmed.length} summary='${summary}'"
                                 }
 
                                 aggregated.append(txt).append('\n')
@@ -207,6 +319,7 @@ class AgentTurnOrchestrator(
             if (hasPending) inputs.addAll(pendingToolOutputs)
             if (hasPending) reprocess = true
         }
+        logTurnSummary(guardrailState, agentLabel, localPrevId)
         return aggregated.toString().trim() to localPrevId
     }
 }

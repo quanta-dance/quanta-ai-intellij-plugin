@@ -42,15 +42,18 @@ class ToolExecutionPresenter(
         )
     }
 
+    private fun sanitizeCandidatePath(path: String?): String? {
+        val trimmed = path?.trim().orEmpty()
+        if (trimmed.isBlank()) return null
+        if (trimmed == "?" || trimmed == "??") return null
+        if (trimmed.contains('?')) return null
+        return trimmed
+    }
+
     private fun extractFilePath(argsJson: JsonNode?): String? {
         if (argsJson == null) return null
-        val direct = argsJson.path("filePath").asText("").trim()
-        if (direct.isNotBlank()) return direct
-        val path = argsJson.path("path").asText("").trim()
-        if (path.isNotBlank()) return path
-        val source = argsJson.path("sourcePath").asText("").trim()
-        if (source.isNotBlank()) return source
-        return null
+        return listOf("filePath", "path", "sourcePath")
+            .firstNotNullOfOrNull { key -> sanitizeCandidatePath(argsJson.path(key).asText("")) }
     }
 
     private fun buildToolDisplayText(

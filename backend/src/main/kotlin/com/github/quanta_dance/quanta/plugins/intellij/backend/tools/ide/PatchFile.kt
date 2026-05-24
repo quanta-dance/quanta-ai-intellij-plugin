@@ -63,12 +63,15 @@ class PatchFile : ToolInterface<String> {
     @field:JsonPropertyDescription("List of line-range patches to apply. Each patch uses 1-based lines inclusive.")
     var patches: List<Patch>? = null
 
-    @field:JsonPropertyDescription("If true, validates the updated file after write and reports compilation errors.")
+    @field:JsonPropertyDescription(
+        "If true, validates the updated file after write and reports compilation errors. " +
+                "Enable this after each meaningful batch of edits to catch broken intermediate states early.",
+    )
     var validateAfterUpdate: Boolean = false
 
     @field:JsonPropertyDescription(
         "If true (default), aborts and applies nothing when any patch guard fails. " +
-                "If false, skips only mismatched patches and applies the rest.",
+                "If false, skips only mismatched patches and applies the rest. For iterative coding changes, keep this true unless you explicitly want partial application.",
     )
     var stopOnMismatch: Boolean = true
 
@@ -97,7 +100,8 @@ class PatchFile : ToolInterface<String> {
 
     @field:JsonPropertyDescription(
         "Soft window radius in lines for expectedText matching. If expectedText does not match exactly at fromLine..toLine, " +
-                "the tool will search within +/- this many lines for a unique match and apply the patch there (if allowed). Default: 50.",
+                "the tool will search within +/- this many lines for a unique match and apply the patch there (if allowed). " +
+                "Keep this small to avoid accidental relocation to the wrong code block. Default: 50.",
     )
     var softWindowRadiusLines: Int = 50
 
@@ -115,7 +119,8 @@ class PatchFile : ToolInterface<String> {
     var minExpectedTextCharsForRelocation: Int = 80
 
     @field:JsonPropertyDescription(
-        "If true (default), require expectedText to span at least 2 lines to allow relocation. Helps prevent wrong matches.",
+        "If true (default), require expectedText to span at least 2 lines to allow relocation. Helps prevent wrong matches. " +
+                "This guards against one-line matches that are too ambiguous.",
     )
     var requireMultilineExpectedTextForRelocation: Boolean = true
 

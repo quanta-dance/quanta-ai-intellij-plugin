@@ -134,8 +134,7 @@ class OpenAIService(
     }
 
     init {
-        thisLogger().warn("AI Service initialized.")
-        QDLog.info(thisLogger()) { "AI Service initialized." }
+        QDLog.info(thisLogger()) { "AI Service initialized (project service ready)." }
         // Backend runtime settings are synchronized from the frontend.
         // The frontend owns persistence, UI refresh, and display concerns.
         clientKey = BackendRuntimeSettingsService.instance.settings.let { it.openAiUrl to it.openAiToken }
@@ -212,8 +211,9 @@ class OpenAIService(
         usageTag: String = "main",
         reportUsageToUi: Boolean = true,
     ): Pair<StructuredResponse<OpenAIResponse>, String?> {
-        QDLog.info(thisLogger()) {
-            "OpenAIService.createResponse: inputs=${inputs.size}, previousId=${previousId ?: "<none>"}, includeMcp=$includeMcp, allowedBuiltInNames=${allowedBuiltInNames?.size ?: "all"}, allowedMcpNames=${allowedMcpNames?.size ?: "all"}"
+        QDLog.debug(thisLogger()) {
+            "OpenAIService.createResponse: inputs=${inputs.size}, previousId=${previousId ?: "<none>"}, includeMcp=$includeMcp, " +
+                    "allowedBuiltInNames=${allowedBuiltInNames?.size ?: "all"}, allowedMcpNames=${allowedMcpNames?.size ?: "all"}"
         }
         val createParams =
             responseBuilder.buildStructuredResponseParams(
@@ -227,14 +227,15 @@ class OpenAIService(
                 allowedMcpNames = allowedMcpNames,
             )
         val client = requireClientReady()
-        QDLog.info(thisLogger()) { "OpenAIService.createResponse: request built, sending to OpenAI" }
+        QDLog.debug(thisLogger()) { "OpenAIService.createResponse: request built, sending to OpenAI" }
         val structResponse = client.responses().create(createParams)
         QDLog.info(thisLogger()) {
-            "OpenAIService.createResponse: response received id=${runCatching { structResponse.id() }.getOrNull()} outputSize=${
-                runCatching { structResponse.output().size }.getOrDefault(
-                    -1,
-                )
-            }"
+            val responseId = runCatching { structResponse.id() }.getOrNull()
+            val outputSize = runCatching { structResponse.output().size }.getOrDefault(-1)
+            val usage = runCatching { structResponse.usage().orElse(null) }.getOrNull()
+            val usageSummary =
+                usage?.let { " input=${it.inputTokens()} output=${it.outputTokens()} total=${it.totalTokens()}" } ?: ""
+            "OpenAIService.createResponse: response received id=$responseId outputSize=$outputSize$usageSummary"
         }
 
         try {

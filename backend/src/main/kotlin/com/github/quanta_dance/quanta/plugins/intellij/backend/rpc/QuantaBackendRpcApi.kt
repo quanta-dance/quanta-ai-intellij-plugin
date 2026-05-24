@@ -33,7 +33,6 @@ import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.platform.project.ProjectId
 import com.intellij.platform.project.findProjectOrNull
 import com.intellij.psi.PsiDocumentManager
-import kotlinx.coroutines.flow.Flow
 import java.util.Base64
 
 /**
@@ -67,24 +66,12 @@ class QuantaBackendRpcApi : QuantaBackendApi {
         return backendProject.service<SessionPlanService>().getCurrentPlanStatus()
     }
 
-    override suspend fun getPlanStatusFlow(projectId: ProjectId): Flow<ChatPlanStatusDto> {
-        val backendProject = projectId.findProjectOrNull() ?: return kotlinx.coroutines.flow.emptyFlow()
-        val planService = backendProject.service<SessionPlanService>()
-        planService.publishCurrentStatus()
-        return planService.statusFlow
-    }
-
     override suspend fun getCurrentAgents(projectId: ProjectId): List<AgentInfoDto> {
         val backendProject = projectId.findProjectOrNull() ?: return emptyList()
         return backendProject.service<AgentRosterService>().agentsFlow.value.ifEmpty {
             backendProject.service<AgentManagerService>().ensureAgentsLoadedFromSession()
             backendProject.service<AgentRosterService>().agentsFlow.value
         }
-    }
-
-    override suspend fun getAgentsFlow(projectId: ProjectId): Flow<List<AgentInfoDto>> {
-        val backendProject = projectId.findProjectOrNull() ?: return kotlinx.coroutines.flow.emptyFlow()
-        return backendProject.service<AgentRosterService>().agentsFlow
     }
 
     override suspend fun getCurrentDelegatedTasks(projectId: ProjectId): List<DelegatedTaskDto> {
@@ -94,21 +81,11 @@ class QuantaBackendRpcApi : QuantaBackendApi {
             .tasksFlow.value
     }
 
-    override suspend fun getDelegatedTasksFlow(projectId: ProjectId): Flow<List<DelegatedTaskDto>> {
-        val backendProject = projectId.findProjectOrNull() ?: return kotlinx.coroutines.flow.emptyFlow()
-        return backendProject.service<com.github.quanta_dance.quanta.plugins.intellij.backend.chat.AgentChannelStateService>().tasksFlow
-    }
-
     override suspend fun getCurrentChannelEvents(projectId: ProjectId): List<AgentChannelEventDto> {
         val backendProject = projectId.findProjectOrNull() ?: return emptyList()
         return backendProject
             .service<com.github.quanta_dance.quanta.plugins.intellij.backend.chat.AgentChannelStateService>()
             .eventsFlow.value
-    }
-
-    override suspend fun getChannelEventsFlow(projectId: ProjectId): Flow<List<AgentChannelEventDto>> {
-        val backendProject = projectId.findProjectOrNull() ?: return kotlinx.coroutines.flow.emptyFlow()
-        return backendProject.service<com.github.quanta_dance.quanta.plugins.intellij.backend.chat.AgentChannelStateService>().eventsFlow
     }
 
     override suspend fun createDefaultAgentTeam(projectId: ProjectId): List<AgentInfoDto> {

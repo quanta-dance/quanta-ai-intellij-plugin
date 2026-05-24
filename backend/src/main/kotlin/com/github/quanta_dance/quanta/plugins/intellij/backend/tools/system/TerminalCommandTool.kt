@@ -12,7 +12,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.intellij.execution.configurations.GeneralCommandLine
-import com.intellij.execution.impl.ConsoleViewImpl
+import com.intellij.execution.filters.TextConsoleBuilderFactory
 import com.intellij.execution.process.ProcessEvent
 import com.intellij.execution.process.ProcessHandler
 import com.intellij.execution.process.ProcessHandlerFactory
@@ -118,7 +118,12 @@ class TerminalCommandTool : ToolInterface<String> {
 
             if (existingContent == null) {
                 val contentFactory = ContentFactory.getInstance()
-                consoleView = ConsoleViewImpl(project, true)
+                consoleView =
+                    TextConsoleBuilderFactory
+                        .getInstance()
+                        .createBuilder(project)
+                        .apply { setViewer(true) }
+                        .console
                 val content = contentFactory.createContent(consoleView?.component, "Quanta AI", false)
                 contentManager?.addContent(content)
                 contentManager?.setSelectedContent(content)

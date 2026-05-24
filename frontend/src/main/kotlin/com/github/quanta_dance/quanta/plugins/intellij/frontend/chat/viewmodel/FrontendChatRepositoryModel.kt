@@ -22,22 +22,18 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
 import com.intellij.platform.project.projectId
-import fleet.rpc.client.durable
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /**
- * Frontend-side durable view model adapter over the split-mode RPC layer.
+ * Frontend-side view model adapter over the split-mode RPC layer.
  *
- * It converts backend chat, plan, agent, and channel flows into frontend-consumable state flows so
- * the UI can remain reactive without owning backend execution logic.
- *
- * Besides long-lived flow subscriptions, this model also refreshes current backend snapshots after
- * mutating calls. That keeps the UI usable even when streamed RPC updates are delayed or dropped in
- * split-mode runIde sessions.
+ * It keeps frontend state flows refreshed from backend snapshot RPC calls so the UI can stay
+ * reactive without depending on Fleet RPC stream descriptors that fail plugin verification.
  */
 @Service(Level.PROJECT)
 class FrontendChatRepositoryModel(
@@ -47,7 +43,8 @@ class FrontendChatRepositoryModel(
     private val logger = thisLogger()
 
     companion object {
-        fun getInstance(project: Project): FrontendChatRepositoryModel = project.getService(FrontendChatRepositoryModel::class.java)
+        fun getInstance(project: Project): FrontendChatRepositoryModel =
+            project.getService(FrontendChatRepositoryModel::class.java)
     }
 
     private val _messagesFlow = MutableStateFlow<List<ChatMessage>>(emptyList())
@@ -69,13 +66,7 @@ class FrontendChatRepositoryModel(
     override val channelEventsFlow: StateFlow<List<AgentChannelEventDto>> = _channelEventsFlow.asStateFlow()
 
     init {
-        coroutineScope.launch { refreshCurrentState() }
-        coroutineScope.launch { collectMessages() }
-        coroutineScope.launch { collectSessions() }
-        coroutineScope.launch { collectPlanStatus() }
-        coroutineScope.launch { collectAgents() }
-        coroutineScope.launch { collectDelegatedTasks() }
-        coroutineScope.launch { collectChannelEvents() }
+        coroutineScope.launch { pollCurrentState() }
     }
 
     private suspend fun refreshCurrentState() {
@@ -125,83 +116,10 @@ class FrontendChatRepositoryModel(
         }
     }
 
-    private suspend fun collectMessages() {
-        runCatching {
-            durable {
-                ChatRepositoryRpcApi
-                    .getInstance()
-                    .getMessagesFlow(project.projectId())
-                    .collect { valueFromBackend ->
-                        _messagesFlow.value = valueFromBackend.map { messageDto -> messageDto.toChatMessage() }
-                    }
-            }
-        }.onFailure { error ->
-            logger.warn("Messages flow from backend terminated", error)
-        }
-    }
-
-    private suspend fun collectSessions() {
-        runCatching {
-            durable {
-                ChatRepositoryRpcApi
-                    .getInstance()
-                    .getSessionsFlow(project.projectId())
-                    .collect { _sessionsFlow.value = it }
-            }
-        }.onFailure { error ->
-            logger.warn("Sessions flow from backend terminated", error)
-        }
-    }
-
-    private suspend fun collectPlanStatus() {
-        runCatching {
-            durable {
-                QuantaBackendApi
-                    .getInstance()
-                    .getPlanStatusFlow(project.projectId())
-                    .collect { _planStatusFlow.value = it }
-            }
-        }.onFailure { error ->
-            logger.warn("Plan status flow from backend terminated", error)
-        }
-    }
-
-    private suspend fun collectAgents() {
-        runCatching {
-            durable {
-                QuantaBackendApi
-                    .getInstance()
-                    .getAgentsFlow(project.projectId())
-                    .collect { _agentsFlow.value = it }
-            }
-        }.onFailure { error ->
-            logger.warn("Agents flow from backend terminated", error)
-        }
-    }
-
-    private suspend fun collectDelegatedTasks() {
-        runCatching {
-            durable {
-                QuantaBackendApi
-                    .getInstance()
-                    .getDelegatedTasksFlow(project.projectId())
-                    .collect { _delegatedTasksFlow.value = it }
-            }
-        }.onFailure { error ->
-            logger.warn("Delegated tasks flow from backend terminated", error)
-        }
-    }
-
-    private suspend fun collectChannelEvents() {
-        runCatching {
-            durable {
-                QuantaBackendApi
-                    .getInstance()
-                    .getChannelEventsFlow(project.projectId())
-                    .collect { _channelEventsFlow.value = it }
-            }
-        }.onFailure { error ->
-            logger.warn("Channel events flow from backend terminated", error)
+    private suspend fun pollCurrentState() {
+        while (true) {
+            refreshCurrentState()
+            delay(1_500)
         }
     }
 

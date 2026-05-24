@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [2026.05.23]
+## [2026.05.24]
 
 ### Added
 - Configurable OpenAI TTS voice selection when local TTS is disabled.
@@ -19,6 +19,9 @@ All notable changes to this project will be documented in this file.
 - OpenAI TTS settings are synchronized through frontend, shared DTOs, backend runtime settings, RPC, and backend voice service.
 - Tool output truncation is now limited to terminal command output instead of all tools.
 - Patch application is more tolerant of harmless indentation-only single-line guard mismatches without allowing semantic drift.
+- Agent turn orchestration no longer enforces per-turn tool-call, write-count, same-file-write, or repeated-read guardrails.
+- Frontend chat state refresh now uses backend snapshot polling instead of RPC Flow subscriptions that trigger verifyPlugin internal API failures.
+- Compose hover handling now opts in explicitly where required by newer experimental pointer APIs.
 
 ### Fixed
 - Repeated ReadFile regressions caused by generic tool-output truncation corrupting structured tool payloads.
@@ -30,6 +33,8 @@ All notable changes to this project will be documented in this file.
 - Settings sync now times out cleanly instead of waiting forever for unavailable backend RPC services.
 - Oversized Quanta AI tool window stripe icon.
 - Incorrect numeric file version reporting in patch/update tool output by using file hashes consistently.
+- Unresolved orchestrator summary references left behind after guardrail removal.
+- verifyPlugin internal Flow-signature violations for chat/backend RPC descriptors by removing Flow-returning RPC methods.
 
 ### Removed
 - Duplicated, unused agent chat services and wrappers that were superseded by AgentManagerService.

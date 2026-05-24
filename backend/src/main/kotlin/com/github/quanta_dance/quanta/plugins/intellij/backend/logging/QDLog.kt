@@ -52,8 +52,8 @@ object QDLog {
     ) {
         val text = msg()
         logger.info(text)
-        if (isDevMode()) {
-            // Echo INFO to console during runIde/internal mode for easier dev debugging
+        // Keep console echo for developer mode, but avoid duplicating high-volume operational logs.
+        if (isDevMode() && !text.startsWith("OpenAIService.createResponse:") && !text.startsWith("OpenAIService.agentTurn outputText:")) {
             println(text)
         }
     }
@@ -99,6 +99,8 @@ object QDLog {
         } else {
             logger.error(text)
         }
-        t?.printStackTrace(PrintStream(System.err))
+        if (isDevMode()) {
+            t?.printStackTrace(PrintStream(System.err))
+        }
     }
 }

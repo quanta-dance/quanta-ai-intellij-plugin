@@ -29,7 +29,6 @@ internal class CoroutineScopeHolder(
      * @param name The name for the newly created coroutine scope.
      * @return a scope with a [kotlinx.coroutines.Job] which parent is the [kotlinx.coroutines.Job] of [projectWideCoroutineScope] scope.
      */
-    @Suppress("UnstableApiUsage")
     fun createScope(name: String): CoroutineScope = projectWideCoroutineScope.childScope(name)
 
     fun getPluginScope(): CoroutineScope = projectWideCoroutineScope

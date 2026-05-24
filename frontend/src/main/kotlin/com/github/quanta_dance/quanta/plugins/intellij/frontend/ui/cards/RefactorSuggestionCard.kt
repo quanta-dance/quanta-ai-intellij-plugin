@@ -19,12 +19,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.SwingPanel
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.PointerIcon
-import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -58,7 +55,6 @@ import java.awt.Dimension
 import java.awt.EventQueue
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
-import kotlin.getValue
 
 private val refactorCardScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 private val logger = Logger.getInstance("RefactorSuggestionCard")
@@ -92,7 +88,6 @@ private fun contentPreferredHeight(
     lineHeight: Int,
 ): Int = (lineCount.coerceAtLeast(1) * lineHeight).coerceAtMost(MAX_CODE_BLOCK_HEIGHT)
 
-@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun refactorSuggestionCard(
     project: Project,
@@ -119,10 +114,6 @@ fun refactorSuggestionCard(
             ""
         }
 
-    val handPointer =
-        remember {
-            PointerIcon(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR))
-        }
     val fileLabel = item.filePath?.substringAfterLast('/') ?: item.displayText
     val originalRange = extractLineRange(item.displayText)
     val suggestedRange =
@@ -180,7 +171,7 @@ fun refactorSuggestionCard(
             Text(
                 text =
                     "$fileLabel:${originalRange.first}-${originalRange.second}" +
-                        " → ${displayedSuggestedRange.first}-${displayedSuggestedRange.second}",
+                            " → ${displayedSuggestedRange.first}-${displayedSuggestedRange.second}",
                 style =
                     JewelTheme.defaultTextStyle.copy(
                         color = foreground.copy(alpha = 0.75f),
@@ -253,7 +244,6 @@ fun refactorSuggestionCard(
             actionButton(
                 text = "Open",
                 accent = actionAccent,
-                handPointer = handPointer,
                 onClick = {
                     item.filePath?.let { path ->
                         frontendLog(project, "RefactorSuggestionCard.open: $path:${originalRange.first}")
@@ -276,7 +266,6 @@ fun refactorSuggestionCard(
                 actionButton(
                     text = if (isApplying) "Applying..." else "Apply",
                     accent = suggestedAccent,
-                    handPointer = handPointer,
                     enabled = !isApplying,
                     onClick = {
                         if (suggestion == null || isApplying) return@actionButton
@@ -319,7 +308,6 @@ fun refactorSuggestionCard(
                 actionButton(
                     text = "Decline",
                     accent = originalAccent,
-                    handPointer = handPointer,
                     enabled = !isApplying,
                     onClick = {
                         if (isApplying) return@actionButton
@@ -532,7 +520,6 @@ private fun copyToClipboard(text: String) {
 private fun actionButton(
     text: String,
     accent: Color,
-    handPointer: PointerIcon,
     enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
@@ -552,7 +539,6 @@ private fun actionButton(
             Modifier
                 .background(background, RoundedCornerShape(8.dp))
                 .border(1.dp, border, RoundedCornerShape(8.dp))
-                .pointerHoverIcon(handPointer)
                 .clickable(enabled = enabled) { onClick() }
                 .padding(horizontal = 10.dp, vertical = 6.dp),
     )

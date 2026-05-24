@@ -25,8 +25,9 @@ class DefaultToolInvoker : ToolInvoker {
                 ?: error("Unknown tool '${functionCall.name()}'")
 
         val argsJson = functionCall.arguments()
-        QDLog.info(log) {
-            "DefaultToolInvoker.invoke: tool=${functionCall.name()} args=$argsJson"
+        val argsPreview = if (argsJson.length > 800) argsJson.take(800) + "... (truncated)" else argsJson
+        QDLog.debug(log) {
+            "DefaultToolInvoker.invoke: tool=${functionCall.name()} argsChars=${argsJson.length} args=$argsPreview"
         }
 
         val tool =
