@@ -15,6 +15,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolPresenta
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.vfs.LocalFileSystem
 import java.io.BufferedInputStream
 import java.io.OutputStream
 import java.net.URI
@@ -73,7 +74,10 @@ class GenerateImage :
         val title = imageTitle ?: "Generated image"
 
         try {
-            val outputPath = filePath?.trim().takeUnless { it.isNullOrBlank() } ?: defaultOutputPath(title)
+            val outputPath =
+                filePath?.trim().takeUnless { it.isNullOrBlank() }
+                    ?: sourceImagePath?.trim().takeUnless { it.isNullOrBlank() }
+                    ?: defaultOutputPath(title)
             val requestedExtension = outputPath.substringAfterLast('.', missingDelimiterValue = "").trim().lowercase()
             val openAIImageService = project.service<OpenAIImageService>()
             val imageData =
@@ -95,6 +99,7 @@ class GenerateImage :
             val ioFile = resolved.toFile()
             ioFile.parentFile?.let { parent -> if (!parent.exists()) parent.mkdirs() }
             writeImage(ioFile.outputStream().buffered(), imageData)
+            runCatching { LocalFileSystem.getInstance().refreshAndFindFileByNioFile(resolved) }
 
             val savedPath =
                 runCatching { PathUtils.relativizeToProject(project, resolved) }
