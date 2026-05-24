@@ -27,7 +27,7 @@ import com.intellij.psi.util.PsiTreeUtil
  */
 @JsonClassDescription(
     "Read the enclosing PSI block (function/method/class/field/object) " +
-            "at a position in a file and return structured metadata and text.",
+        "at a position in a file and return structured metadata and text.",
 )
 class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
     override val canBeParallel: Boolean = true
@@ -253,12 +253,12 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
 
             "field" -> {
                 (
-                        ktProperty?.let {
-                            parentOfType(
-                                it,
-                            )
-                        } ?: psiField?.let { parentOfType(it) }
-                        )?.let { it to "field" } ?: firstMatchAuto()
+                    ktProperty?.let {
+                        parentOfType(
+                            it,
+                        )
+                    } ?: psiField?.let { parentOfType(it) }
+                )?.let { it to "field" } ?: firstMatchAuto()
             }
 
             "object" -> {
@@ -275,7 +275,7 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
         try {
             @Suppress("UNCHECKED_CAST")
             Class.forName(name)
-                    as Class<out PsiElement>
+                as Class<out PsiElement>
         } catch (_: Throwable) {
             null
         }

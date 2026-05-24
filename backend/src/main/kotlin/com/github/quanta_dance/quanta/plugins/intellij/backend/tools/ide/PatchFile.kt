@@ -33,29 +33,29 @@ import java.security.MessageDigest
  */
 @JsonClassDescription(
     "Apply one or more line-range patches to a specified file. Patches are applied in a single write action, " +
-            "from bottom to top (descending start line), so earlier replacements do not shift later ranges. " +
-            "Lines are 1-based inclusive; offsets are computed from the current Document. Supports optional guards.",
+        "from bottom to top (descending start line), so earlier replacements do not shift later ranges. " +
+        "Lines are 1-based inclusive; offsets are computed from the current Document. Supports optional guards.",
 )
 class PatchFile : ToolInterface<String> {
     data class Patch
-    @JsonCreator
-    constructor(
-        @param:JsonProperty("fromLine")
-        @field:JsonPropertyDescription("1-based start line (inclusive)")
-        var fromLine: Int = 1,
-        @param:JsonProperty("toLine")
-        @field:JsonPropertyDescription("1-based end line (inclusive)")
-        var toLine: Int = 1,
-        @param:JsonProperty("newContent")
-        @field:JsonPropertyDescription("Replacement content for the specified line range")
-        var newContent: String = "",
-        @param:JsonProperty("expectedText")
-        @field:JsonPropertyDescription(
-            "Optional expected current text for the specified line range. " +
+        @JsonCreator
+        constructor(
+            @param:JsonProperty("fromLine")
+            @field:JsonPropertyDescription("1-based start line (inclusive)")
+            var fromLine: Int = 1,
+            @param:JsonProperty("toLine")
+            @field:JsonPropertyDescription("1-based end line (inclusive)")
+            var toLine: Int = 1,
+            @param:JsonProperty("newContent")
+            @field:JsonPropertyDescription("Replacement content for the specified line range")
+            var newContent: String = "",
+            @param:JsonProperty("expectedText")
+            @field:JsonPropertyDescription(
+                "Optional expected current text for the specified line range. " +
                     "If provided and does not match, patch is skipped or triggers failure depending on stopOnMismatch.",
+            )
+            var expectedText: String? = null,
         )
-        var expectedText: String? = null,
-    )
 
     @field:JsonPropertyDescription("Relative to the project root path to the requested file.")
     var filePath: String? = null
@@ -65,25 +65,25 @@ class PatchFile : ToolInterface<String> {
 
     @field:JsonPropertyDescription(
         "If true, validates the updated file after write and reports compilation errors. " +
-                "Enable this after each meaningful batch of edits to catch broken intermediate states early.",
+            "Enable this after each meaningful batch of edits to catch broken intermediate states early.",
     )
     var validateAfterUpdate: Boolean = false
 
     @field:JsonPropertyDescription(
         "If true (default), aborts and applies nothing when any patch guard fails. " +
-                "If false, skips only mismatched patches and applies the rest. For iterative coding changes, keep this true unless you explicitly want partial application.",
+            "If false, skips only mismatched patches and applies the rest. For iterative coding changes, keep this true unless you explicitly want partial application.",
     )
     var stopOnMismatch: Boolean = true
 
     @field:JsonPropertyDescription(
         "Optional expected SHA-256 hash of normalized file content (\\r\\n/\\r -> \\n)." +
-                " If provided and matches current, patches can proceed.",
+            " If provided and matches current, patches can proceed.",
     )
     var expectedFileHashSha256: String? = null
 
     @field:JsonPropertyDescription(
         "If true, proceed when all patches' expectedText guards match even if content hash mismatches. " +
-                "Default: true",
+            "Default: true",
     )
     var allowProceedIfGuardsMatch: Boolean = true
 
@@ -100,8 +100,8 @@ class PatchFile : ToolInterface<String> {
 
     @field:JsonPropertyDescription(
         "Soft window radius in lines for expectedText matching. If expectedText does not match exactly at fromLine..toLine, " +
-                "the tool will search within +/- this many lines for a unique match and apply the patch there (if allowed). " +
-                "Keep this small to avoid accidental relocation to the wrong code block. Default: 50.",
+            "the tool will search within +/- this many lines for a unique match and apply the patch there (if allowed). " +
+            "Keep this small to avoid accidental relocation to the wrong code block. Default: 50.",
     )
     var softWindowRadiusLines: Int = 50
 
@@ -120,7 +120,7 @@ class PatchFile : ToolInterface<String> {
 
     @field:JsonPropertyDescription(
         "If true (default), require expectedText to span at least 2 lines to allow relocation. Helps prevent wrong matches. " +
-                "This guards against one-line matches that are too ambiguous.",
+            "This guards against one-line matches that are too ambiguous.",
     )
     var requireMultilineExpectedTextForRelocation: Boolean = true
 
@@ -267,8 +267,8 @@ class PatchFile : ToolInterface<String> {
         val baseLineCount = baseNorm.split("\n").size
         val indentationOnlySingleLineMismatch =
             expLineCount == 1 &&
-                    baseLineCount == 1 &&
-                    normalizeSingleLineLeadingIndent(expectedRaw) == normalizeSingleLineLeadingIndent(baseSlice)
+                baseLineCount == 1 &&
+                normalizeSingleLineLeadingIndent(expectedRaw) == normalizeSingleLineLeadingIndent(baseSlice)
         if (indentationOnlySingleLineMismatch) {
             relocationNotesOut?.add(
                 "Patch $patchIndex1 accepted at ${patch.fromLine}-${patch.toLine} after indentation-only single-line guard normalization",
@@ -289,12 +289,12 @@ class PatchFile : ToolInterface<String> {
 
         val relocationAllowed =
             (!requireMultilineExpectedTextForRelocation || expLineCount >= 2) &&
-                    (expChars >= minExpectedTextCharsForRelocation || expLineCount >= 2)
+                (expChars >= minExpectedTextCharsForRelocation || expLineCount >= 2)
 
         if (!relocationAllowed) {
             val reason =
                 "relocation disabled (expectedText not specific enough: lines=$expLineCount chars=$expChars; " +
-                        "requireMultiline=$requireMultilineExpectedTextForRelocation minChars=$minExpectedTextCharsForRelocation)"
+                    "requireMultiline=$requireMultilineExpectedTextForRelocation minChars=$minExpectedTextCharsForRelocation)"
             val actualExtra =
                 if (includeActualSliceOnMismatch) {
                     val raw = baseSlice
@@ -305,9 +305,9 @@ class PatchFile : ToolInterface<String> {
                 }
             mismatchesOut?.add(
                 "Patch $patchIndex1: expectedText mismatch at lines ${patch.fromLine}-${patch.toLine} ($reason). " +
-                        "expected='${preview(expectedRaw)}' actual='${preview(baseSlice)}'" +
-                        firstDifferenceSummary(expectedRaw, baseSlice, patch.fromLine) +
-                        actualExtra,
+                    "expected='${preview(expectedRaw)}' actual='${preview(baseSlice)}'" +
+                    firstDifferenceSummary(expectedRaw, baseSlice, patch.fromLine) +
+                    actualExtra,
             )
             return null
         }
@@ -362,9 +362,9 @@ class PatchFile : ToolInterface<String> {
             }
         mismatchesOut?.add(
             "Patch $patchIndex1: expectedText mismatch at lines ${patch.fromLine}-${patch.toLine} ($reason). " +
-                    "expected='${preview(expectedRaw)}' actual='${preview(baseSlice)}'" +
-                    firstDifferenceSummary(expectedRaw, baseSlice, patch.fromLine) +
-                    actualExtra,
+                "expected='${preview(expectedRaw)}' actual='${preview(baseSlice)}'" +
+                firstDifferenceSummary(expectedRaw, baseSlice, patch.fromLine) +
+                actualExtra,
         )
         return null
     }
@@ -528,7 +528,6 @@ class PatchFile : ToolInterface<String> {
                         }
                     }
 
-
                     if (mismatches.isEmpty()) {
                         result
                             .append("Patched ")
@@ -559,12 +558,15 @@ class PatchFile : ToolInterface<String> {
             if (rootCause is ToolFriendlyException) {
                 throw rootCause
             }
-            if (rootCause is com.intellij.openapi.progress.ProcessCanceledException || rootCause is java.util.concurrent.CancellationException) {
+            if (rootCause is com.intellij.openapi.progress.ProcessCanceledException ||
+                rootCause is java.util.concurrent.CancellationException
+            ) {
                 val cancelDetail = rootCause.message?.trim().orEmpty()
                 val cancelMessage =
-                    if (cancelDetail.isBlank() || cancelDetail.equals(
+                    if (cancelDetail.isBlank() ||
+                        cancelDetail.equals(
                             "Cancelled by Message.Cancel",
-                            ignoreCase = true
+                            ignoreCase = true,
                         )
                     ) {
                         "Patch execution for $relToBase was cancelled by the environment before completion."
@@ -612,7 +614,8 @@ class PatchFile : ToolInterface<String> {
                 if (shouldRunPsiValidation(relToBase)) {
                     val validator = ValidateClassFileTool().apply { filePath = relToBase }
                     val errors =
-                        ApplicationManager.getApplication()
+                        ApplicationManager
+                            .getApplication()
                             .runReadAction<List<String>> { validator.findErrors(project) }
                     val summary =
                         if (errors.size == 1 && errors.first().equals("No compilation errors found.", true)) {

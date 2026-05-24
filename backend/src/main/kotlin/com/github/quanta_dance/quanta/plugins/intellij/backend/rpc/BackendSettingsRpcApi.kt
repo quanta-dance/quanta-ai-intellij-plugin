@@ -125,18 +125,22 @@ class BackendSettingsRpcApi : QuantaSettingsApi {
                     .distinct()
                     .sorted()
             }.getOrDefault(emptyList())
-        return if (reflected.isNotEmpty()) reflected else listOf(
-            "alloy",
-            "ash",
-            "ballad",
-            "coral",
-            "echo",
-            "fable",
-            "nova",
-            "onyx",
-            "sage",
-            "shimmer",
-            "verse",
-        )
+        return if (reflected.isNotEmpty()) {
+            reflected
+        } else {
+            listOf(
+                "alloy",
+                "ash",
+                "ballad",
+                "coral",
+                "echo",
+                "fable",
+                "nova",
+                "onyx",
+                "sage",
+                "shimmer",
+                "verse",
+            )
+        }
     }
 }

@@ -213,7 +213,7 @@ class OpenAIService(
     ): Pair<StructuredResponse<OpenAIResponse>, String?> {
         QDLog.debug(thisLogger()) {
             "OpenAIService.createResponse: inputs=${inputs.size}, previousId=${previousId ?: "<none>"}, includeMcp=$includeMcp, " +
-                    "allowedBuiltInNames=${allowedBuiltInNames?.size ?: "all"}, allowedMcpNames=${allowedMcpNames?.size ?: "all"}"
+                "allowedBuiltInNames=${allowedBuiltInNames?.size ?: "all"}, allowedMcpNames=${allowedMcpNames?.size ?: "all"}"
         }
         val createParams =
             responseBuilder.buildStructuredResponseParams(

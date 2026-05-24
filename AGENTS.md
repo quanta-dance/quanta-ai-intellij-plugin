@@ -64,8 +64,10 @@ Conventions and safety rules (must follow)
 - Spotless formatting is a hard build gate in this repo. Keep Kotlin formatting Spotless-compliant (indentation,
   wrapping, and avoid introducing extra blank lines).
     - Prefer minimal formatting changes in the touched area; do not apply massive repo-wide reformat unless requested.
-    - If Spotless fails, fix formatting via small patches (or run ./gradlew spotlessApply only with maintainer approval
-      because it can touch many files).
+    - Before finishing a change, run `spotlessCheck` (via RunGradleBuildTool or `./gradlew spotlessCheck`) whenever Kotlin
+      files were touched, so formatting failures are caught explicitly instead of being discovered later in a broader build.
+    - If `spotlessCheck` fails, fix formatting via small patches first; use `spotlessApply` only when needed and keep the
+      resulting diff reviewed and minimal because it can touch additional files.
 - Respect existing code style. Use reformatAfterUpdate when applying patches that change formatting.
 - If uncertain about intent of the maintainers, ask clarifying questions instead of guessing.
 - If you find a package where responsibilities overlap, keep the existing split, add a TODO in code or docs, and
@@ -101,7 +103,10 @@ Development & testing workflow for agents
       only with clear justification.
 
 4) Validate
+    - Run `spotlessCheck` after Kotlin edits and before finalizing the task.
     - Run RunGradleBuildTool (or ./gradlew build) to catch compile/test failures and Spotless violations.
+    - If `spotlessCheck` fails, prefer small targeted formatting fixes; use `spotlessApply` when necessary, then re-run
+      `spotlessCheck` to confirm the tree is clean.
     - If issues are found, run RunGradleTestsTool and inspect stack traces.
     - Use ValidateClassFileTool for single-file compile validation.
 

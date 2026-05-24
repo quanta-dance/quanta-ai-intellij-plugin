@@ -62,5 +62,4 @@ class SearchInFilesTest {
         assertTrue(res.modelSummary?.contains("Search failed: boom") == true)
         assertEquals(0, res.matches.size)
     }
-
 }

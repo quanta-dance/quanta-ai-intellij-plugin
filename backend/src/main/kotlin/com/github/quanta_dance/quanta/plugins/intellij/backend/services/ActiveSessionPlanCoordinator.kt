@@ -39,7 +39,7 @@ class ActiveSessionPlanCoordinator(
             return retry(
                 message =
                     "The session plan is ACTIVE. Do not finish the turn with nextStep=DONE until the persisted plan is actually DONE. " +
-                            "Either continue executing, or if work completed call SessionPlanTool to mark the plan complete first.",
+                        "Either continue executing, or if work completed call SessionPlanTool to mark the plan complete first.",
                 loopState = loopState,
                 countAsPlanToolEnforcement = true,
                 maxContinuations = maxContinuations,

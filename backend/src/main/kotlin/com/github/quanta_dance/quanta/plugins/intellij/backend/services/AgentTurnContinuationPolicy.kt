@@ -48,8 +48,7 @@ class AgentTurnContinuationPolicy {
         return blockingQuestion.isNotBlank() && !isRoutineConfirmationQuestion(blockingQuestion)
     }
 
-    fun isApprovedBlockingReasonType(blockingReasonType: String?): Boolean =
-        normalizeBlockingReasonType(blockingReasonType) != null
+    fun isApprovedBlockingReasonType(blockingReasonType: String?): Boolean = normalizeBlockingReasonType(blockingReasonType) != null
 
     fun isRoutineConfirmationQuestion(question: String): Boolean {
         val q = question.trim().lowercase()

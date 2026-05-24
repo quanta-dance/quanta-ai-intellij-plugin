@@ -244,7 +244,7 @@ object ToolsRegistry {
 
     private fun detectGradle(root: File): Boolean =
         File(root, "gradlew").exists() || File(root, "gradlew.bat").exists() ||
-                File(root, "build.gradle").exists() || File(root, "build.gradle.kts").exists()
+            File(root, "build.gradle").exists() || File(root, "build.gradle.kts").exists()
 
     private fun detectGo(root: File): Boolean {
         if (File(root, "go.mod").exists()) return true

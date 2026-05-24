@@ -111,7 +111,9 @@ class ToolExecutionPresenter(
                     "Running Go tests"
                 }
 
-                else -> humanizeToolName(toolName)
+                else -> {
+                    humanizeToolName(toolName)
+                }
             }
 
         if (!isDebugMode()) return baseText
@@ -125,9 +127,10 @@ class ToolExecutionPresenter(
         argsJson: JsonNode?,
     ): String {
         val parts = mutableListOf<String>()
-        if (!filePath.isNullOrBlank() && !toolName.contains(
+        if (!filePath.isNullOrBlank() &&
+            !toolName.contains(
                 "ReadFile",
-                ignoreCase = true
+                ignoreCase = true,
             ) && !toolName.contains("OpenFile", ignoreCase = true)
         ) {
             parts += "path=$filePath"
@@ -140,7 +143,12 @@ class ToolExecutionPresenter(
             val maxCharsNode = argsJson?.path("maxChars")
             val maxChars =
                 if (maxCharsNode != null && !maxCharsNode.isMissingNode && !maxCharsNode.isNull) maxCharsNode.asInt() else null
-            val strategy = argsJson?.path("strategy")?.asText("")?.trim().orEmpty()
+            val strategy =
+                argsJson
+                    ?.path("strategy")
+                    ?.asText("")
+                    ?.trim()
+                    .orEmpty()
             if (!filePath.isNullOrBlank()) parts += "path=$filePath"
             if (from != null || to != null) {
                 parts += "range=${from ?: 1}..${to?.toString() ?: "EOF"}"
@@ -150,7 +158,13 @@ class ToolExecutionPresenter(
         }
 
         if (toolName.contains("ListFiles", ignoreCase = true)) {
-            val path = argsJson?.path("path")?.asText("")?.trim().orEmpty().ifBlank { "." }
+            val path =
+                argsJson
+                    ?.path("path")
+                    ?.asText("")
+                    ?.trim()
+                    .orEmpty()
+                    .ifBlank { "." }
             parts += "path=$path"
         }
 
@@ -172,13 +186,25 @@ class ToolExecutionPresenter(
         }
 
         if (toolName.contains("RunGoTests", ignoreCase = true)) {
-            val pkg = argsJson?.path("packages")?.asText("")?.trim().orEmpty().ifBlank { "./..." }
+            val pkg =
+                argsJson
+                    ?.path("packages")
+                    ?.asText("")
+                    ?.trim()
+                    .orEmpty()
+                    .ifBlank { "./..." }
             parts += "packages=$pkg"
-            val runRegex = argsJson?.path("runRegex")?.asText("")?.trim().orEmpty()
+            val runRegex =
+                argsJson
+                    ?.path("runRegex")
+                    ?.asText("")
+                    ?.trim()
+                    .orEmpty()
             if (runRegex.isNotBlank()) parts += "run=$runRegex"
         }
 
-        return parts.joinToString(prefix = "[", postfix = "]", separator = ", ")
+        return parts
+            .joinToString(prefix = "[", postfix = "]", separator = ", ")
             .takeIf { it != "[]" }
             .orEmpty()
     }

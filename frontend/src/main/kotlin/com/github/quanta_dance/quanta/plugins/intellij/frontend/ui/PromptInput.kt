@@ -403,15 +403,15 @@ fun promptInput(
                 }
 
                 promptInputState == MessageInputState.Disabled ||
-                        promptInputState is MessageInputState.Enabled ||
-                        promptInputState is MessageInputState.SendFailed ||
-                        promptInputState is MessageInputState.Sent -> {
+                    promptInputState is MessageInputState.Enabled ||
+                    promptInputState is MessageInputState.SendFailed ||
+                    promptInputState is MessageInputState.Sent -> {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (availableModels.isNotEmpty()) {
                             key(currentModel) {
                                 ComboBox(
                                     labelText =
-                                        currentModel,
+                                    currentModel,
                                     modifier =
                                         Modifier
                                             .widthIn(min = 120.dp)

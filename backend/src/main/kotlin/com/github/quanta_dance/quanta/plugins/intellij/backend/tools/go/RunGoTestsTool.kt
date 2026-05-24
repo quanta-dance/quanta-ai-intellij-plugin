@@ -13,7 +13,7 @@ import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.vfs.VfsUtil
 import java.io.File
 import java.nio.charset.StandardCharsets
-import java.util.*
+import java.util.LinkedList
 import java.util.concurrent.TimeUnit
 
 @JsonClassDescription("Run Go tests (go test) with optional -run filter and stream progress; auto-detects go module in project root")
@@ -37,7 +37,7 @@ class RunGoTestsTool : ToolInterface<RunGoTestsTool.Result> {
 
     @field:JsonPropertyDescription(
         "Working directory relative to the project root (default: project root). " +
-                "If autoDetectModule=true and go.mod exists in project root, it will be used.",
+            "If autoDetectModule=true and go.mod exists in project root, it will be used.",
     )
     var workingDir: String? = null
 

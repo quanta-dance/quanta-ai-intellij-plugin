@@ -43,8 +43,7 @@ class FrontendChatRepositoryModel(
     private val logger = thisLogger()
 
     companion object {
-        fun getInstance(project: Project): FrontendChatRepositoryModel =
-            project.getService(FrontendChatRepositoryModel::class.java)
+        fun getInstance(project: Project): FrontendChatRepositoryModel = project.getService(FrontendChatRepositoryModel::class.java)
     }
 
     private val _messagesFlow = MutableStateFlow<List<ChatMessage>>(emptyList())

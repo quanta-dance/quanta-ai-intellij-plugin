@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 @JsonClassDescription(
     "Search for a text query across project files using IDE Find-in-Files (regex supported). " +
-            "Returns concise matches and a modelSummary for AI context.",
+        "Returns concise matches and a modelSummary for AI context.",
 )
 class SearchInFiles : ToolInterface<SearchInFilesResult> {
     override val canBeParallel: Boolean = true
@@ -41,7 +41,7 @@ class SearchInFiles : ToolInterface<SearchInFilesResult> {
 
     @field:JsonPropertyDescription(
         "Optional list of file extensions to include (e.g., ['kt','java','txt']). " +
-                "To search across all extensions, omit this field or pass ['*'].",
+            "To search across all extensions, omit this field or pass ['*'].",
     )
     var includeExtensions: List<String>? = null
 
@@ -205,7 +205,10 @@ class SearchInFiles : ToolInterface<SearchInFilesResult> {
         }
     }
 
-    private fun relativize(basePathPath: java.nio.file.Path?, file: VirtualFile): String =
+    private fun relativize(
+        basePathPath: java.nio.file.Path?,
+        file: VirtualFile,
+    ): String =
         basePathPath?.let { bp ->
             try {
                 bp.relativize(Paths.get(file.path)).toString()
@@ -214,12 +217,18 @@ class SearchInFiles : ToolInterface<SearchInFilesResult> {
             }
         } ?: file.path
 
-    private fun lineNumberAt(text: String, offset: Int): Int {
+    private fun lineNumberAt(
+        text: String,
+        offset: Int,
+    ): Int {
         val safeOff = offset.coerceIn(0, text.length)
         return text.substring(0, safeOff).count { it == '\n' } + 1
     }
 
-    private fun snippetAt(text: String, offset: Int): String {
+    private fun snippetAt(
+        text: String,
+        offset: Int,
+    ): String {
         val safeOff = offset.coerceIn(0, text.length)
         val start = (text.lastIndexOf('\n', safeOff).takeIf { it >= 0 } ?: (safeOff - 40)).coerceAtLeast(0)
         val end =

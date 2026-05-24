@@ -45,33 +45,41 @@ class ListFiles : ToolInterface<ListFiles.Result> {
                     requestedPath = requested,
                     resolvedPath = "",
                     entries = emptyList(),
-                    error = "Project base path not found."
+                    error = "Project base path not found.",
                 )
 
         return try {
             val absPath = PathUtils.resolveWithinProject(projBase, path, allowBlankAsDot = true)
             val resolved = PathUtils.relativizeToProject(projBase, absPath)
             when {
-                !absPath.exists() -> Result(
-                    requestedPath = requested,
-                    resolvedPath = resolved,
-                    entries = emptyList(),
-                    error = "Directory not found: ${if (requested.isBlank()) "." else requested}",
-                )
+                !absPath.exists() -> {
+                    Result(
+                        requestedPath = requested,
+                        resolvedPath = resolved,
+                        entries = emptyList(),
+                        error = "Directory not found: ${if (requested.isBlank()) "." else requested}",
+                    )
+                }
 
-                !absPath.isDirectory() -> Result(
-                    requestedPath = requested,
-                    resolvedPath = resolved,
-                    entries = emptyList(),
-                    error = "Requested path is not a directory: ${if (requested.isBlank()) "." else requested}",
-                )
+                !absPath.isDirectory() -> {
+                    Result(
+                        requestedPath = requested,
+                        resolvedPath = resolved,
+                        entries = emptyList(),
+                        error = "Requested path is not a directory: ${if (requested.isBlank()) "." else requested}",
+                    )
+                }
 
-                else -> Result(
-                    requestedPath = requested,
-                    resolvedPath = resolved,
-                    entries = absPath.listDirectoryEntries()
-                        .map { entry -> PathUtils.relativizeToProject(projBase, entry) },
-                )
+                else -> {
+                    Result(
+                        requestedPath = requested,
+                        resolvedPath = resolved,
+                        entries =
+                            absPath
+                                .listDirectoryEntries()
+                                .map { entry -> PathUtils.relativizeToProject(projBase, entry) },
+                    )
+                }
             }
         } catch (e: IllegalArgumentException) {
             Result(

@@ -87,8 +87,7 @@ class ChatConversationService(
         }
     }
 
-    fun messagesFlow(): Flow<List<ChatMessageDto>> =
-        _messages.map { messagesList -> messagesList.map { it.toChatMessageDto() } }
+    fun messagesFlow(): Flow<List<ChatMessageDto>> = _messages.map { messagesList -> messagesList.map { it.toChatMessageDto() } }
 
     fun currentMessages(): List<ChatMessageDto> = _messages.value.map { it.toChatMessageDto() }
 
@@ -96,8 +95,7 @@ class ChatConversationService(
 
     fun currentSessions(): List<ChatSessionDto> = _sessions.value
 
-    private fun <T> onChatPublicationThread(action: () -> T): T =
-        runBlocking(executionContexts.chatPublicationDispatcher) { action() }
+    private fun <T> onChatPublicationThread(action: () -> T): T = runBlocking(executionContexts.chatPublicationDispatcher) { action() }
 
     fun createNewSession() {
         onChatPublicationThread {
@@ -147,7 +145,10 @@ class ChatConversationService(
             var toolMessageId: String? = null
             var firstAssistantMessageShown = false
             try {
-                QDLog.info(com.intellij.openapi.diagnostic.Logger.getInstance(ChatConversationService::class.java)) {
+                QDLog.info(
+                    com.intellij.openapi.diagnostic.Logger
+                        .getInstance(ChatConversationService::class.java),
+                ) {
                     "ChatConversationService.sendUserMessage: user='${messageContent.replace("\n", "\\n").take(2_000)}'"
                 }
                 appendUserMessage(messageContent)
@@ -406,11 +407,11 @@ class ChatConversationService(
                         .builder()
                         .addInputTextContent(
                             "Scheduled reminder context (internal only):\n" +
-                                    reminderContext +
-                                    "\n\nWrite a short, natural reminder to the user. " +
-                                    "Do not say the reminder was acknowledged, delivered, fired, or triggered. " +
-                                    "Do not repeat the reminder context verbatim. " +
-                                    "Use first-person phrasing like 'I want to remind you ...'.",
+                                reminderContext +
+                                "\n\nWrite a short, natural reminder to the user. " +
+                                "Do not say the reminder was acknowledged, delivered, fired, or triggered. " +
+                                "Do not repeat the reminder context verbatim. " +
+                                "Use first-person phrasing like 'I want to remind you ...'.",
                         ).role(ResponseInputItem.Message.Role.SYSTEM)
                         .build(),
                 ),
@@ -418,9 +419,10 @@ class ChatConversationService(
         }
 
     private suspend fun <T> awaitDetachedAgentTurn(block: () -> T): T {
-        val deferred = executionContexts.agentOrchestrationScope.async {
-            block()
-        }
+        val deferred =
+            executionContexts.agentOrchestrationScope.async {
+                block()
+            }
         return withContext(NonCancellable) {
             deferred.await()
         }
@@ -438,7 +440,7 @@ class ChatConversationService(
         val ctx = runCatching { CurrentFileContextProvider(project).getCurrent() }.getOrNull() ?: return null
         val header =
             "Current file open: ${ctx.filePathRelative}, file version: ${ctx.version} - " +
-                    "you must always reread file if version changed"
+                "you must always reread file if version changed"
 
         return buildString {
             append(header)

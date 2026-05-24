@@ -24,7 +24,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class AgentTurnOrchestratorTest {
-
     @Test
     fun `active plan rejects routine confirmation and retries autonomously`() {
         val activePlan = SessionPlan(status = "ACTIVE", tasks = listOf(SessionPlanTask("Continue work")))

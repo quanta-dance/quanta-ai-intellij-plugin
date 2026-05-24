@@ -171,7 +171,7 @@ fun refactorSuggestionCard(
             Text(
                 text =
                     "$fileLabel:${originalRange.first}-${originalRange.second}" +
-                            " → ${displayedSuggestedRange.first}-${displayedSuggestedRange.second}",
+                        " → ${displayedSuggestedRange.first}-${displayedSuggestedRange.second}",
                 style =
                     JewelTheme.defaultTextStyle.copy(
                         color = foreground.copy(alpha = 0.75f),

@@ -49,19 +49,19 @@ class FrontendQuantaPluginConfigurable : Configurable {
         val settings = FrontendQuantaSettingsState.instance.state
         return settingsComponent.run {
             hostValue != settings.openAiUrl ||
-                    tokenValue != settings.openAiToken ||
-                    voiceEnabled != settings.voiceEnabled ||
-                    voiceByLocalTTS != settings.voiceByLocalTTS ||
-                    preferredOpenAiTtsVoice != settings.preferredOpenAiTtsVoice ||
-                    maxTokensValue != settings.maxTokens ||
-                    aiChatModelValue != settings.aiChatModel ||
-                    dynamicModelEnabled != (settings.dynamicModelEnabled ?: false) ||
-                    debugEnabled != settings.debugEnabled ||
-                    maxAutomaticTurns != settings.maxAutomaticTurns ||
-                    terminalToolEnabled != (settings.terminalToolEnabled ?: false) ||
-                    terminalAllowedCommandsCsv != settings.terminalAllowedCommandsCsv ||
-                    extraInstructionsValue != (settings.extraInstructions ?: "") ||
-                    actionConfigsValue != settings.actionConfigsJson
+                tokenValue != settings.openAiToken ||
+                voiceEnabled != settings.voiceEnabled ||
+                voiceByLocalTTS != settings.voiceByLocalTTS ||
+                preferredOpenAiTtsVoice != settings.preferredOpenAiTtsVoice ||
+                maxTokensValue != settings.maxTokens ||
+                aiChatModelValue != settings.aiChatModel ||
+                dynamicModelEnabled != (settings.dynamicModelEnabled ?: false) ||
+                debugEnabled != settings.debugEnabled ||
+                maxAutomaticTurns != settings.maxAutomaticTurns ||
+                terminalToolEnabled != (settings.terminalToolEnabled ?: false) ||
+                terminalAllowedCommandsCsv != settings.terminalAllowedCommandsCsv ||
+                extraInstructionsValue != (settings.extraInstructions ?: "") ||
+                actionConfigsValue != settings.actionConfigsJson
         }
     }
 

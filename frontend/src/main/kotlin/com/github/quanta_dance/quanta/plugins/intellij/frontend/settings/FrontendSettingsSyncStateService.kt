@@ -43,8 +43,7 @@ class FrontendSettingsSyncStateService(
 
     private val logger = thisLogger()
 
-    private fun backendLogBridge(): FrontendBackendLogBridge? =
-        runCatching { project.service<FrontendBackendLogBridge>() }.getOrNull()
+    private fun backendLogBridge(): FrontendBackendLogBridge? = runCatching { project.service<FrontendBackendLogBridge>() }.getOrNull()
 
     private val _stateFlow = MutableStateFlow(State())
     val stateFlow: StateFlow<State> = _stateFlow.asStateFlow()
@@ -75,7 +74,7 @@ class FrontendSettingsSyncStateService(
             if (delayMs > 0) {
                 logger.info(
                     "Quanta AI frontend settings sync retry scheduled for project=${project.name}, " +
-                            "reason=$reason, attempt=${attemptIndex + 1}, delayMs=$delayMs",
+                        "reason=$reason, attempt=${attemptIndex + 1}, delayMs=$delayMs",
                 )
                 delay(delayMs)
             }

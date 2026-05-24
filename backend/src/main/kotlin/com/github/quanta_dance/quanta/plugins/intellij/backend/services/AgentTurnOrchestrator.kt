@@ -56,12 +56,16 @@ class AgentTurnOrchestrator(
         val touchedFiles: MutableSet<String> = linkedSetOf(),
         val toolNames: MutableList<String> = mutableListOf(),
     ) {
-        fun recordExecution(toolName: String, filePath: String?, isWrite: Boolean, isRead: Boolean) {
+        fun recordExecution(
+            toolName: String,
+            filePath: String?,
+            isWrite: Boolean,
+            isRead: Boolean,
+        ) {
             toolNames += toolName
             filePath?.let { touchedFiles += it }
         }
     }
-
 
     private fun sanitizeCandidatePath(path: String?): String? {
         val trimmed = path?.trim().orEmpty()
@@ -79,14 +83,14 @@ class AgentTurnOrchestrator(
 
     private fun isReadTool(toolName: String): Boolean =
         toolName.equals("ReadFile", ignoreCase = true) ||
-                toolName.equals("ReadFileContent", ignoreCase = true) ||
-                toolName.equals("ReadPsiBlockAtPosition", ignoreCase = true)
+            toolName.equals("ReadFileContent", ignoreCase = true) ||
+            toolName.equals("ReadPsiBlockAtPosition", ignoreCase = true)
 
     private fun isWriteTool(toolName: String): Boolean =
         toolName.equals("PatchFile", ignoreCase = true) ||
-                toolName.equals("CreateOrUpdateFile", ignoreCase = true) ||
-                toolName.equals("DeleteFileTool", ignoreCase = true) ||
-                toolName.equals("CopyFileOrDirectoryTool", ignoreCase = true)
+            toolName.equals("CreateOrUpdateFile", ignoreCase = true) ||
+            toolName.equals("DeleteFileTool", ignoreCase = true) ||
+            toolName.equals("CopyFileOrDirectoryTool", ignoreCase = true)
 
     private fun evaluateGuardrails(
         state: TurnGuardrailState,
@@ -99,13 +103,14 @@ class AgentTurnOrchestrator(
     ): ToolExecutionService.ToolExecutionResult {
         val toolName = functionCall.name()
         val message = "Skipped by orchestrator guardrail: $reason"
-        val result = mapOf(
-            "status" to "noop",
-            "tool" to toolName,
-            "code" to reason,
-            "message" to message,
-            "summary" to message,
-        )
+        val result =
+            mapOf(
+                "status" to "noop",
+                "tool" to toolName,
+                "code" to reason,
+                "message" to message,
+                "summary" to message,
+            )
         val toolOutput =
             ResponseInputItem.FunctionCallOutput
                 .builder()
@@ -260,12 +265,13 @@ class AgentTurnOrchestrator(
             val plan = plans[index]
             if (!plan.canRunInParallel) {
                 applyToolExecutionOutcome(
-                    outcome = executePlannedTool(
-                        plan = plan,
-                        agentLabel = agentLabel,
-                        toolExecutionService = toolExecutionService,
-                        executionMode = "sequential",
-                    ),
+                    outcome =
+                        executePlannedTool(
+                            plan = plan,
+                            agentLabel = agentLabel,
+                            toolExecutionService = toolExecutionService,
+                            executionMode = "sequential",
+                        ),
                     guardrailState = guardrailState,
                     pendingToolOutputs = pendingToolOutputs,
                     onToolUpdate = onToolUpdate,
@@ -291,17 +297,18 @@ class AgentTurnOrchestrator(
                     )
                 } else {
                     runBlocking {
-                        parallelPlans.map { batchPlan ->
-                            async(Dispatchers.IO) {
-                                executePlannedTool(
-                                    plan = batchPlan,
-                                    agentLabel = agentLabel,
-                                    toolExecutionService = toolExecutionService,
-                                    executionMode = "parallel",
-                                    parallelBatchSize = parallelPlans.size,
-                                )
-                            }
-                        }.awaitAll()
+                        parallelPlans
+                            .map { batchPlan ->
+                                async(Dispatchers.IO) {
+                                    executePlannedTool(
+                                        plan = batchPlan,
+                                        agentLabel = agentLabel,
+                                        toolExecutionService = toolExecutionService,
+                                        executionMode = "parallel",
+                                        parallelBatchSize = parallelPlans.size,
+                                    )
+                                }
+                            }.awaitAll()
                     }
                 }
             outcomes.forEach { outcome ->
@@ -323,8 +330,8 @@ class AgentTurnOrchestrator(
     ) {
         QDLog.info(thisLogger()) {
             "OpenAIService.agentTurn summary: agent=$agentLabel responseId=${responseId ?: "<none>"} " +
-                    "toolCalls=${state.toolNames.size} skipped=${state.guardrailSkips} " +
-                    "files=${state.touchedFiles.size} tools=${state.toolNames.distinct().joinToString(",") { it }}"
+                "toolCalls=${state.toolNames.size} skipped=${state.guardrailSkips} " +
+                "files=${state.touchedFiles.size} tools=${state.toolNames.distinct().joinToString(",") { it }}"
         }
     }
 
@@ -434,8 +441,8 @@ class AgentTurnOrchestrator(
                                     val trimmed = txt.trim()
                                     val summary = trimmed.take(160)
                                     "OpenAIService.agentTurn outputText: nextStep=${message.nextStep} " +
-                                            "planNeedsUserConfirmation=${message.planNeedsUserConfirmation} " +
-                                            "summaryChars=${trimmed.length} summary='${summary}'"
+                                        "planNeedsUserConfirmation=${message.planNeedsUserConfirmation} " +
+                                        "summaryChars=${trimmed.length} summary='$summary'"
                                 }
 
                                 aggregated.append(txt).append('\n')

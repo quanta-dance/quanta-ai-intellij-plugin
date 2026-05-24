@@ -20,8 +20,7 @@ import fleet.rpc.remoteApiDescriptor
 @Rpc
 interface ChatRepositoryRpcApi : RemoteApi<Unit> {
     companion object {
-        suspend fun getInstance(): ChatRepositoryRpcApi =
-            RemoteApiProviderService.resolve(remoteApiDescriptor<ChatRepositoryRpcApi>())
+        suspend fun getInstance(): ChatRepositoryRpcApi = RemoteApiProviderService.resolve(remoteApiDescriptor<ChatRepositoryRpcApi>())
     }
 
     suspend fun getCurrentMessages(projectId: ProjectId): List<ChatMessageDto>

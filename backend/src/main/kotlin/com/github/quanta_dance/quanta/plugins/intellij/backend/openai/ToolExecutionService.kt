@@ -35,8 +35,7 @@ class ToolExecutionService(
     private val toolMetadataMapper = jacksonObjectMapper()
     private val toolRouter = ToolRouter(project, DefaultToolInvoker(), objectMapper)
 
-    fun canExecuteInParallel(functionCall: ResponseFunctionToolCall): Boolean =
-        instantiateTool(functionCall)?.canBeParallel == true
+    fun canExecuteInParallel(functionCall: ResponseFunctionToolCall): Boolean = instantiateTool(functionCall)?.canBeParallel == true
 
     fun executeToolCall(
         functionCall: ResponseFunctionToolCall,
@@ -138,7 +137,12 @@ class ToolExecutionService(
     ): String {
         if (!succeeded) return "FAILED"
         val map = safeResult as? Map<*, *> ?: return "SUCCEEDED"
-        val status = map["status"]?.toString()?.trim()?.uppercase().orEmpty()
+        val status =
+            map["status"]
+                ?.toString()
+                ?.trim()
+                ?.uppercase()
+                .orEmpty()
         if (status == "NOOP") return "NOOP"
         val text = map["text"]?.toString().orEmpty()
         return when {
@@ -156,12 +160,14 @@ class ToolExecutionService(
     ) {
         val map = safeResult as? Map<*, *>
         val outcome = classifyOutcome(safeResult, succeeded)
-        val filePath = listOf("filePath", "path").firstNotNullOfOrNull { key ->
-            map?.get(key)?.toString()?.takeIf(String::isNotBlank)
-        }
-        val hash = listOf("fileHashSha256", "expectedFileHashSha256").firstNotNullOfOrNull { key ->
-            map?.get(key)?.toString()?.takeIf(String::isNotBlank)
-        }
+        val filePath =
+            listOf("filePath", "path").firstNotNullOfOrNull { key ->
+                map?.get(key)?.toString()?.takeIf(String::isNotBlank)
+            }
+        val hash =
+            listOf("fileHashSha256", "expectedFileHashSha256").firstNotNullOfOrNull { key ->
+                map?.get(key)?.toString()?.takeIf(String::isNotBlank)
+            }
         val preview =
             runCatching { objectMapper.writeValueAsString(safeResult) }
                 .getOrElse { safeResult?.toString().orEmpty() }
@@ -191,8 +197,7 @@ class ToolExecutionService(
                             .mapNotNull { key -> it[key]?.toString()?.trim()?.takeIf { value -> value.isNotBlank() } }
                             .firstOrNull()
                             ?: it.entries.joinToString("\n") { (key, value) -> "$key: $value" }.trim()
-                    }
-                    .orEmpty()
+                    }.orEmpty()
             }
 
         return buildString {
