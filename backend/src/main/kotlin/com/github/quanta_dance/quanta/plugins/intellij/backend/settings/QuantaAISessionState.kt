@@ -3,6 +3,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.backend.settings
 
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SessionMemoryFacts
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SessionPlan
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.PersistentStateComponent
@@ -21,6 +22,8 @@ import kotlinx.serialization.Serializable
  * - chat conversation history
  * - per-agent inbox messages
  * - conversation summaries and last response pointers
+ * - per-session plan state
+ * - per-session structured memory facts
  *
  * The persisted state key intentionally remains `QuantaAISettingsState` for compatibility with
  * existing `quanta-ai.xml` data. Keep migration-sensitive naming changes separate from routine
@@ -36,11 +39,6 @@ import kotlinx.serialization.Serializable
 )
 @Serializable
 class QuantaAISessionState : PersistentStateComponent<QuantaAISessionState.State> {
-    /**
-     * Persisted agent identity/configuration for a session.
-     *
-     * This belongs here only while agent roster persistence remains coupled to session history.
-     */
     @Serializable
     data class AgentProfile(
         var id: String = "",
@@ -50,9 +48,6 @@ class QuantaAISessionState : PersistentStateComponent<QuantaAISessionState.State
         var previousId: String? = null,
     )
 
-    /**
-     * A single persisted chat message associated with a conversation.
-     */
     @Serializable
     data class PersistedMessage(
         var timestamp: Long = 0L,
@@ -61,9 +56,6 @@ class QuantaAISessionState : PersistentStateComponent<QuantaAISessionState.State
         var responseId: String? = null,
     )
 
-    /**
-     * A message stored in an agent's inbox for later delivery/processing.
-     */
     @Serializable
     data class AgentInboxMessage(
         var timestamp: Long = 0L,
@@ -72,12 +64,6 @@ class QuantaAISessionState : PersistentStateComponent<QuantaAISessionState.State
         var kind: String? = null,
     )
 
-    /**
-     * Complete persisted session snapshot.
-     *
-     * Keep this limited to durable conversation/agent-session data. User-editable runtime settings
-     * belong in frontend persistence plus backend runtime sync, not here.
-     */
     @Serializable
     data class State(
         var agents: MutableList<AgentProfile> = mutableListOf(),
@@ -85,6 +71,7 @@ class QuantaAISessionState : PersistentStateComponent<QuantaAISessionState.State
         var conversationSummaries: MutableMap<String, String> = mutableMapOf(),
         var agentInboxes: MutableMap<String, MutableList<AgentInboxMessage>> = mutableMapOf(),
         var sessionPlans: MutableMap<String, SessionPlan> = mutableMapOf(),
+        var sessionMemories: MutableMap<String, SessionMemoryFacts> = mutableMapOf(),
         var mainLastResponseId: String? = null,
     )
 

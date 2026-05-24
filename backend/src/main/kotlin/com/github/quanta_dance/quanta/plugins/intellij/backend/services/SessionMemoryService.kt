@@ -6,73 +6,41 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.services
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.QuantaAISessionState
-import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
-import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.vfs.LocalFileSystem
-import java.io.File
 
 @Service(Service.Level.PROJECT)
 class SessionMemoryService(
     private val project: Project,
 ) {
-    data class SessionFacts(
-        var goal: String = "",
-        var root_causes: MutableList<String> = mutableListOf(),
-        var decisions: MutableList<String> = mutableListOf(),
-        var verified_facts: MutableList<String> = mutableListOf(),
-        var open_questions: MutableList<String> = mutableListOf(),
-        var next_steps: MutableList<String> = mutableListOf(),
-        var changed_files: MutableList<String> = mutableListOf(),
-        var important_commands: MutableList<String> = mutableListOf(),
-        var important_logs: MutableList<String> = mutableListOf(),
-        var superseded_facts: MutableList<String> = mutableListOf(),
-        var current_state: MutableList<String> = mutableListOf(),
-        var rejected_hypotheses: MutableList<String> = mutableListOf(),
-        var environment_details: MutableList<String> = mutableListOf(),
-        var service_endpoints: MutableList<String> = mutableListOf(),
-        var files_changed_notes: MutableList<String> = mutableListOf(),
-    )
-
     companion object {
-        private const val DIR = ".quantadance/session"
-        private const val SESSION_FILE = "session.md"
-        private const val BRIEF_FILE = "session-brief.md"
-        private const val FACTS_FILE = "facts.json"
         private const val MAX_BRIEF_CHARS = 2_500
         private const val MAX_SECTION_ITEMS = 12
         private const val MAX_LOG_ITEMS = 20
+        private const val COMPACTION_TAIL_MESSAGES = 6
     }
 
     private val log = Logger.getInstance(SessionMemoryService::class.java)
     private val mapper = ObjectMapper()
     private val lock = Any()
+    private val keyResolver = MainConversationKeyResolver(project)
 
     fun ensureInitialized() {
         synchronized(lock) {
-            val dir = sessionDirIo() ?: return
-            if (!dir.exists()) dir.mkdirs()
-            val facts = loadFactsUnsafe(dir)
-            writeFactsUnsafe(dir, facts)
-            writeTextIfMissing(File(dir, SESSION_FILE), renderSessionMarkdown(facts))
-            writeTextIfMissing(File(dir, BRIEF_FILE), renderBriefMarkdown(facts))
-            refreshVfs(dir)
+            persistFacts(loadFactsUnsafe())
         }
     }
 
     fun loadBrief(maxChars: Int = 8_000): String {
         ensureInitialized()
-        val file = sessionFileIo(BRIEF_FILE) ?: return ""
-        return readTextLimited(file, maxChars)
+        return renderBriefMarkdown(loadFactsUnsafe()).truncate(maxChars)
     }
 
     fun loadDetailed(maxChars: Int = 16_000): String {
         ensureInitialized()
-        val file = sessionFileIo(SESSION_FILE) ?: return ""
-        return readTextLimited(file, maxChars)
+        return renderSessionMarkdown(loadFactsUnsafe()).truncate(maxChars)
     }
 
     fun refreshFromCurrentState(
@@ -83,11 +51,9 @@ class SessionMemoryService(
         force: Boolean = false,
     ) {
         synchronized(lock) {
-            val dir = sessionDirIo() ?: return
-            if (!dir.exists()) dir.mkdirs()
-            val facts = loadFactsUnsafe(dir)
+            val facts = loadFactsUnsafe()
             mergeCurrentState(facts, reason, explicitNote, userText, assistantText, force)
-            writeAllUnsafe(dir, facts)
+            persistFacts(facts)
         }
     }
 
@@ -98,13 +64,11 @@ class SessionMemoryService(
         val clean = fact.trim()
         if (clean.isBlank()) return
         synchronized(lock) {
-            val dir = sessionDirIo() ?: return
-            if (!dir.exists()) dir.mkdirs()
-            val facts = loadFactsUnsafe(dir)
+            val facts = loadFactsUnsafe()
             supersedeFactUnsafe(facts, supersedes)
             addUniqueFront(facts.verified_facts, clean)
             addUniqueFront(facts.current_state, "Pinned fact: $clean")
-            writeAllUnsafe(dir, facts)
+            persistFacts(facts)
         }
     }
 
@@ -115,13 +79,11 @@ class SessionMemoryService(
         val clean = fact.trim()
         if (clean.isBlank()) return
         synchronized(lock) {
-            val dir = sessionDirIo() ?: return
-            if (!dir.exists()) dir.mkdirs()
-            val facts = loadFactsUnsafe(dir)
+            val facts = loadFactsUnsafe()
             supersedeFactUnsafe(facts, supersedes)
             addUniqueFront(facts.root_causes, clean)
             addUniqueFront(facts.current_state, "Root cause confirmed: $clean")
-            writeAllUnsafe(dir, facts)
+            persistFacts(facts)
         }
     }
 
@@ -131,9 +93,7 @@ class SessionMemoryService(
         result: Any?,
     ) {
         synchronized(lock) {
-            val dir = sessionDirIo() ?: return
-            if (!dir.exists()) dir.mkdirs()
-            val facts = loadFactsUnsafe(dir)
+            val facts = loadFactsUnsafe()
             val args = parseArgs(argsJson)
             val resultText = summarizeResult(result)
             when (toolName) {
@@ -154,7 +114,7 @@ class SessionMemoryService(
                     addUniqueFront(facts.decisions, "Session plan updated (${args["action"] ?: "READ"}).")
                 }
             }
-            writeAllUnsafe(dir, facts)
+            persistFacts(facts)
         }
     }
 
@@ -164,15 +124,21 @@ class SessionMemoryService(
         val brief = loadBrief(maxChars = MAX_BRIEF_CHARS)
         if (brief.isBlank()) return ""
         try {
+            val existingMessages =
+                QuantaAISessionState.instance.state.conversations[key]
+                    .orEmpty()
+            val tail = existingMessages.takeLast(COMPACTION_TAIL_MESSAGES)
             QuantaAISessionState.instance.state.conversations[key] =
                 mutableListOf(
                     QuantaAISessionState.PersistedMessage(
                         System.currentTimeMillis(),
                         "system",
-                        "Session memory brief (restored from disk):\n$brief",
+                        "Session memory brief (restored from structured session facts):\n$brief",
                         null,
                     ),
-                )
+                ).apply {
+                    addAll(tail)
+                }
             QuantaAISessionState.instance.state.conversationSummaries[key] = brief
         } catch (t: Throwable) {
             QDLog.warn(log, { "Failed to compact conversation with session memory: ${t.message}" }, t)
@@ -181,7 +147,7 @@ class SessionMemoryService(
     }
 
     private fun mergeCurrentState(
-        facts: SessionFacts,
+        facts: SessionMemoryFacts,
         reason: String,
         explicitNote: String?,
         userText: String?,
@@ -199,7 +165,7 @@ class SessionMemoryService(
         trimFacts(facts)
     }
 
-    private fun mergePlanState(facts: SessionFacts) {
+    private fun mergePlanState(facts: SessionMemoryFacts) {
         val plan =
             try {
                 project.service<SessionPlanService>().loadPlanSnapshot()
@@ -217,7 +183,7 @@ class SessionMemoryService(
     }
 
     private fun mergeConversationState(
-        facts: SessionFacts,
+        facts: SessionMemoryFacts,
         userText: String?,
         assistantText: String?,
     ) {
@@ -249,27 +215,10 @@ class SessionMemoryService(
         assistantText
             ?.trim()
             ?.takeIf { it.isNotBlank() }
-            ?.let { addUniqueFront(facts.current_state, "Assistant update: ${singleLine(it, 220)}") }
-
-        recentUsers.firstOrNull()?.let {
-            if (facts.goal.isBlank()) facts.goal = singleLine(it, 220)
-        }
-        recentUsers.take(2).forEach {
-            addUniqueFront(facts.current_state, "Recent user focus: ${singleLine(it, 220)}")
-        }
-        if (recentAssistant.isNotBlank()) {
-            addUniqueFront(facts.current_state, "Latest assistant response: ${singleLine(recentAssistant, 220)}")
-        }
-
-        val rollingSummary =
-            try {
-                QuantaAISessionState.instance.state.conversationSummaries[key]
-                    .orEmpty()
-            } catch (_: Throwable) {
-                ""
-            }
-        if (rollingSummary.isNotBlank()) {
-            addUniqueFront(facts.current_state, "Rolling summary: ${singleLine(rollingSummary, 220)}")
+            ?.let { addUniqueFront(facts.current_state, "Latest assistant answer: ${singleLine(it, 240)}") }
+        recentUsers.forEach { addUniqueFront(facts.current_state, "Recent user input: ${singleLine(it, 220)}") }
+        recentAssistant.takeIf { it.isNotBlank() }?.let {
+            addUniqueFront(facts.current_state, "Recent assistant output: ${singleLine(it, 240)}")
         }
     }
 
@@ -291,24 +240,18 @@ class SessionMemoryService(
             .orEmpty()
     }
 
-    private fun writeAllUnsafe(
-        dir: File,
-        facts: SessionFacts,
-    ) {
+    private fun persistFacts(facts: SessionMemoryFacts) {
         trimFacts(facts)
-        val sessionText = renderSessionMarkdown(facts)
-        val briefText = renderBriefMarkdown(facts)
-        writeFactsUnsafe(dir, facts)
-        writeText(File(dir, SESSION_FILE), sessionText)
-        writeText(File(dir, BRIEF_FILE), briefText)
+        val key = conversationKeyForMain()
         try {
-            QuantaAISessionState.instance.state.conversationSummaries[conversationKeyForMain()] = briefText
-        } catch (_: Throwable) {
+            QuantaAISessionState.instance.state.sessionMemories[key] = facts.deepCopy()
+            QuantaAISessionState.instance.state.conversationSummaries[key] = renderBriefMarkdown(facts)
+        } catch (t: Throwable) {
+            QDLog.warn(log, { "Failed to persist session memory facts: ${t.message}" }, t)
         }
-        refreshVfs(dir)
     }
 
-    private fun renderSessionMarkdown(facts: SessionFacts): String =
+    private fun renderSessionMarkdown(facts: SessionMemoryFacts): String =
         buildString {
             appendLine("# Session Memory")
             appendSection("Goal", facts.goal.takeIf { it.isNotBlank() }?.let(::listOf) ?: emptyList())
@@ -329,7 +272,7 @@ class SessionMemoryService(
             appendSection("Superseded facts", facts.superseded_facts)
         }.trim() + "\n"
 
-    private fun renderBriefMarkdown(facts: SessionFacts): String {
+    private fun renderBriefMarkdown(facts: SessionMemoryFacts): String {
         val out =
             buildString {
                 appendLine("# Session Brief")
@@ -346,7 +289,7 @@ class SessionMemoryService(
                 appendSection("Open questions", facts.open_questions.take(4))
                 appendSection("Next steps", facts.next_steps.take(5))
             }.trim() + "\n"
-        return if (out.length <= MAX_BRIEF_CHARS) out else out.take(MAX_BRIEF_CHARS) + "\n... (truncated)"
+        return out.truncate(MAX_BRIEF_CHARS)
     }
 
     private fun StringBuilder.appendSection(
@@ -362,7 +305,7 @@ class SessionMemoryService(
         appendLine()
     }
 
-    private fun trimFacts(facts: SessionFacts) {
+    private fun trimFacts(facts: SessionMemoryFacts) {
         facts.root_causes = facts.root_causes.distinctTrimmed(MAX_SECTION_ITEMS)
         facts.decisions = facts.decisions.distinctTrimmed(MAX_SECTION_ITEMS)
         facts.verified_facts = facts.verified_facts.distinctTrimmed(MAX_SECTION_ITEMS)
@@ -394,25 +337,18 @@ class SessionMemoryService(
     ) {
         val clean = value.trim()
         if (clean.isBlank()) return
-        list.removeAll { it.equals(clean, ignoreCase = true) }
+        list.removeAll { it.trim() == clean }
         list.add(0, clean)
     }
 
     private fun supersedeFactUnsafe(
-        facts: SessionFacts,
+        facts: SessionMemoryFacts,
         supersedes: String?,
     ) {
-        val clean = supersedes?.trim().orEmpty()
-        if (clean.isBlank()) return
-        addUniqueFront(facts.superseded_facts, clean)
-        listOf(
-            facts.verified_facts,
-            facts.root_causes,
-            facts.decisions,
-            facts.open_questions,
-            facts.next_steps,
-            facts.current_state,
-        ).forEach { it.removeAll { item -> item.equals(clean, ignoreCase = true) } }
+        supersedes
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?.let { addUniqueFront(facts.superseded_facts, it) }
     }
 
     private fun parseArgs(argsJson: String?): Map<String, Any?> =
@@ -498,129 +434,36 @@ class SessionMemoryService(
             .trim()
             .take(maxChars)
 
-    private fun collectSectionValue(
-        lines: List<String>,
-        header: String,
-    ): String? {
-        val idx = lines.indexOfFirst { it.equals(header, ignoreCase = true) }
-        if (idx < 0) return null
-        return lines
-            .drop(idx + 1)
-            .firstOrNull { it.isNotBlank() }
-            ?.removePrefix("- ")
-            ?.trim()
-    }
-
-    private fun writeFactsUnsafe(
-        dir: File,
-        facts: SessionFacts,
-    ) {
+    private fun loadFactsUnsafe(): SessionMemoryFacts =
         try {
-            mapper.writerWithDefaultPrettyPrinter().writeValue(File(dir, FACTS_FILE), facts)
+            QuantaAISessionState.instance.state.sessionMemories[conversationKeyForMain()]
+                ?.deepCopy()
+                ?: SessionMemoryFacts()
         } catch (t: Throwable) {
-            QDLog.warn(log, { "Failed to write facts.json: ${t.message}" }, t)
-        }
-    }
-
-    private fun loadFactsUnsafe(dir: File): SessionFacts {
-        val file = File(dir, FACTS_FILE)
-        return try {
-            if (file.exists()) mapper.readValue(file, SessionFacts::class.java) else SessionFacts()
-        } catch (t: Throwable) {
-            QDLog.warn(log, { "Failed to read facts.json: ${t.message}" }, t)
-            SessionFacts()
-        }
-    }
-
-    private fun writeText(
-        file: File,
-        text: String,
-    ) {
-        try {
-            file.parentFile?.mkdirs()
-            file.writeText(text)
-        } catch (t: Throwable) {
-            QDLog.warn(log, { "Failed to write ${file.name}: ${t.message}" }, t)
-        }
-    }
-
-    private fun writeTextIfMissing(
-        file: File,
-        text: String,
-    ) {
-        if (!file.exists()) writeText(file, text)
-    }
-
-    private fun refreshVfs(dir: File) {
-        ApplicationManager.getApplication().invokeLater {
-            try {
-                LocalFileSystem.getInstance().refreshAndFindFileByIoFile(dir)?.refresh(false, true)
-            } catch (_: Throwable) {
-            }
-        }
-    }
-
-    private fun readTextLimited(
-        file: File,
-        maxChars: Int,
-    ): String =
-        try {
-            if (!file.exists()) {
-                ""
-            } else {
-                val text = file.readText()
-                if (text.length <= maxChars) text else text.take(maxChars) + "\n... (truncated)"
-            }
-        } catch (_: Throwable) {
-            ""
+            QDLog.warn(log, { "Failed to load session memory facts: ${t.message}" }, t)
+            SessionMemoryFacts()
         }
 
-    private fun sessionDirIo(): File? {
-        val base = PathUtils.projectRootPath(project)
-        if (base.isNullOrBlank()) return null
-        return File(base, DIR)
-    }
+    private fun SessionMemoryFacts.deepCopy(): SessionMemoryFacts =
+        SessionMemoryFacts(
+            goal = goal,
+            root_causes = root_causes.toMutableList(),
+            decisions = decisions.toMutableList(),
+            verified_facts = verified_facts.toMutableList(),
+            open_questions = open_questions.toMutableList(),
+            next_steps = next_steps.toMutableList(),
+            changed_files = changed_files.toMutableList(),
+            important_commands = important_commands.toMutableList(),
+            important_logs = important_logs.toMutableList(),
+            superseded_facts = superseded_facts.toMutableList(),
+            current_state = current_state.toMutableList(),
+            rejected_hypotheses = rejected_hypotheses.toMutableList(),
+            environment_details = environment_details.toMutableList(),
+            service_endpoints = service_endpoints.toMutableList(),
+            files_changed_notes = files_changed_notes.toMutableList(),
+        )
 
-    private fun sessionFileIo(name: String): File? = sessionDirIo()?.let { File(it, name) }
+    private fun String.truncate(maxChars: Int): String = if (length <= maxChars) this else take(maxChars) + "\n... (truncated)"
 
-    private fun conversationKeyForMain(): String {
-        val base = "main"
-        val branch =
-            try {
-                val gitClass = Class.forName("git4idea.repo.GitRepositoryManager")
-                val method = gitClass.getMethod("getInstance", Project::class.java)
-                val mgr = method.invoke(null, project)
-                val reposMethod = gitClass.getMethod("getRepositories")
-                val repos = reposMethod.invoke(mgr) as java.util.List<*>
-                if (repos.isNotEmpty()) {
-                    val repo = repos[0]
-                    val branchMethod = repo.javaClass.getMethod("getCurrentBranchName")
-                    branchMethod.invoke(repo) as String? ?: "no-branch"
-                } else {
-                    "no-branch"
-                }
-            } catch (_: Throwable) {
-                try {
-                    val basePath = PathUtils.projectRootPath(project)
-                    if (basePath != null) {
-                        val pb = ProcessBuilder("git", "rev-parse", "--abbrev-ref", "HEAD")
-                        pb.directory(File(basePath))
-                        pb.redirectErrorStream(true)
-                        val proc = pb.start()
-                        val out =
-                            proc.inputStream
-                                .bufferedReader()
-                                .readText()
-                                .trim()
-                        proc.waitFor()
-                        if (out.isNotBlank()) out else "no-branch"
-                    } else {
-                        "no-branch"
-                    }
-                } catch (_: Throwable) {
-                    "no-branch"
-                }
-            }
-        return "$base@${branch.replace(' ', '_')}"
-    }
+    private fun conversationKeyForMain(): String = keyResolver.conversationKeyForMain()
 }

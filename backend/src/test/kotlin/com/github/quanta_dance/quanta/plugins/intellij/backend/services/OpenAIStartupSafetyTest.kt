@@ -3,7 +3,6 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.backend.services
 
-import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.EmbeddingService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.QuantaAISessionState
 import com.intellij.openapi.application.Application
@@ -43,12 +42,5 @@ class OpenAIStartupSafetyTest {
         val project = mockk<Project>(relaxed = true)
 
         OpenAIService(project)
-    }
-
-    @Test
-    fun `embedding service can be created before frontend sync completes`() {
-        val project = mockk<Project>(relaxed = true)
-
-        EmbeddingService(project)
     }
 }

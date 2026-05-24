@@ -19,8 +19,6 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.McpList
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.McpListServersTool
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.project.GetProjectDetails
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.project.SearchInFiles
-import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.project.SearchProjectEmbeddings
-import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.project.UpsertProjectEmbedding
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.refactor.CodeRefactorSuggester
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.session.ScheduleTaskTool
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.session.SessionPlanTool
@@ -97,8 +95,6 @@ object ToolsRegistry {
                 ToolEntry(ListToolsCatalogTool::class.java, Group.GENERIC),
                 ToolEntry(GetProjectDetails::class.java, Group.GENERIC),
                 ToolEntry(SearchInFiles::class.java, Group.GENERIC),
-                ToolEntry(SearchProjectEmbeddings::class.java, Group.GENERIC),
-                ToolEntry(UpsertProjectEmbedding::class.java, Group.GENERIC),
                 ToolEntry(CodeRefactorSuggester::class.java, Group.GENERIC),
                 ToolEntry(CreateOrUpdateFile::class.java, Group.GENERIC),
                 ToolEntry(ReadFile::class.java, Group.GENERIC),
@@ -206,12 +202,6 @@ object ToolsRegistry {
             )
             entries.add(
                 ToolEntry(
-                    com.github.quanta_dance.quanta.plugins.intellij.backend.tools.builder.GetTestInfoTool::class.java,
-                    Group.GRADLE,
-                ),
-            )
-            entries.add(
-                ToolEntry(
                     com.github.quanta_dance.quanta.plugins.intellij.backend.tools.builder.RunGradleBuildTool::class.java,
                     Group.GRADLE,
                 ),
@@ -222,56 +212,27 @@ object ToolsRegistry {
                     Group.GRADLE,
                 ),
             )
+            entries.add(
+                ToolEntry(
+                    com.github.quanta_dance.quanta.plugins.intellij.backend.tools.builder.GetTestInfoTool::class.java,
+                    Group.GRADLE,
+                ),
+            )
         }
-
-        val tools =
-            if (basePath == null) {
-                entries.map { it.clazz }
-            } else {
-                entries
-                    .filter { e ->
-                        when (e.group) {
-                            Group.GENERIC -> true
-                            Group.GRADLE -> gradle
-                            Group.GO -> go
-                        }
-                    }.map { it.clazz }
-            }
-
-        cache[project] = CacheEntry(signature, tools)
-        return tools
+        if (!go) {
+            entries.removeIf { it.group == Group.GO }
+        }
+        val result = entries.map { it.clazz }
+        cache[project] = CacheEntry(signature, result)
+        return result
     }
 
-    private fun detectGradle(root: File): Boolean =
-        File(root, "gradlew").exists() || File(root, "gradlew.bat").exists() ||
-            File(root, "build.gradle").exists() || File(root, "build.gradle.kts").exists()
+    private fun detectGradle(dir: File): Boolean =
+        listOf("build.gradle.kts", "settings.gradle.kts", "build.gradle", "settings.gradle")
+            .any { File(dir, it).exists() }
 
-    private fun detectGo(root: File): Boolean {
-        if (File(root, "go.mod").exists()) return true
-        val maxDirs = 5000
-        val dq: ArrayDeque<File> = ArrayDeque()
-        dq.add(root)
-        var visited = 0
-        while (dq.isNotEmpty() && visited < maxDirs) {
-            val dir = dq.removeFirst()
-            visited++
-            if (!dir.isDirectory) continue
-            val mod = File(dir, "go.mod")
-            if (mod.exists()) return true
-            val children = dir.listFiles() ?: continue
-            for (c in children) {
-                if (c.isDirectory) {
-                    val name = c.name.lowercase()
-                    if (name == ".git" || name == ".idea" || name == "build" || name == "out" || name == "node_modules") continue
-                    dq.addLast(c)
-                }
-            }
-        }
-        val dirs = listOf(root, File(root, "cmd"), File(root, "pkg"), File(root, "internal"))
-        return dirs.any { dir ->
-            dir.exists() && dir.isDirectory && dir
-                .listFiles()
-                ?.any { it.isFile && it.extension.equals("go", true) } == true
-        }
+    private fun detectGo(dir: File): Boolean {
+        if (File(dir, "go.mod").exists()) return true
+        return dir.walkTopDown().maxDepth(4).any { it.isDirectory && it.name == "pkg" }
     }
 }
