@@ -75,10 +75,19 @@ class ToolExecutionService(
         }.getOrNull() as? ToolInterface<*>
     }
 
+    private fun asResultMap(result: Any?): Map<*, *>? =
+        when (result) {
+            null -> null
+            is Map<*, *> -> result
+            else -> runCatching { objectMapper.convertValue(result, Map::class.java) as? Map<*, *> }.getOrNull()
+        }
+
     private fun isErrorResult(result: Any?): Boolean {
-        val map = result as? Map<*, *> ?: return false
+        val map = asResultMap(result) ?: return false
         val status = map["status"]?.toString()?.trim()?.lowercase()
-        if (status == "error" || map.containsKey("error") || map.containsKey("errorText")) return true
+        val error = map["error"]?.toString()?.trim().orEmpty()
+        val errorText = map["errorText"]?.toString()?.trim().orEmpty()
+        if (status == "error" || error.isNotBlank() || errorText.isNotBlank()) return true
 
         val text = map["text"]?.toString().orEmpty()
         if (text.startsWith("Aborted:")) return true
@@ -94,7 +103,7 @@ class ToolExecutionService(
     }
 
     private fun extractErrorText(result: Any?): String? {
-        val map = result as? Map<*, *> ?: return null
+        val map = asResultMap(result) ?: return null
         return map["message"]?.toString()?.takeIf { it.isNotBlank() }
             ?: map["error"]?.toString()?.takeIf { it.isNotBlank() }
             ?: map["errorText"]?.toString()?.takeIf { it.isNotBlank() }
@@ -111,7 +120,7 @@ class ToolExecutionService(
         }
 
     private fun extractDisplaySummary(safeResult: Any?): String? {
-        val map = safeResult as? Map<*, *> ?: return null
+        val map = asResultMap(safeResult) ?: return null
         return map["displaySummary"]
             ?.toString()
             ?.trim()
@@ -124,7 +133,7 @@ class ToolExecutionService(
         succeeded: Boolean,
     ): String {
         if (!succeeded) return "FAILED"
-        val map = safeResult as? Map<*, *> ?: return "SUCCEEDED"
+        val map = asResultMap(safeResult) ?: return "SUCCEEDED"
         val status =
             map["status"]
                 ?.toString()
@@ -146,7 +155,7 @@ class ToolExecutionService(
         succeeded: Boolean,
         agentLabel: String,
     ) {
-        val map = safeResult as? Map<*, *>
+        val map = asResultMap(safeResult)
         val outcome = classifyOutcome(safeResult, succeeded)
         val filePath =
             listOf("filePath", "path").firstNotNullOfOrNull { key ->
@@ -169,7 +178,7 @@ class ToolExecutionService(
         safeResult: Any?,
         succeeded: Boolean,
     ): String {
-        val map = safeResult as? Map<*, *>
+        val map = asResultMap(safeResult)
         val details =
             if (!succeeded && map != null) {
                 listOf("errorText", "message", "summary", "text", "content")

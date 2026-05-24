@@ -7,24 +7,37 @@ import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.ToolFriendlyException
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolExecutionPresentation
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolPresentationProvider
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.vfs.VfsUtil
 import java.io.File
 import java.nio.charset.StandardCharsets
+import java.util.HashSet
 import java.util.LinkedList
 import java.util.concurrent.TimeUnit
 
 @JsonClassDescription("Run Go tests (go test) with optional -run filter and stream progress; auto-detects go module in project root")
-class RunGoTestsTool : ToolInterface<RunGoTestsTool.Result> {
+class RunGoTestsTool :
+    ToolInterface<RunGoTestsTool.Result>,
+    ToolPresentationProvider {
     data class Result(
         val success: Boolean,
         val totalPackages: Int,
         val failedPackages: Int,
         val stdoutTail: String?,
         val error: String?,
+        val displaySummary: String? = null,
+        val content: String? = null,
     )
+
+    override fun presentation(status: ToolExecutionStatus): ToolExecutionPresentation {
+        val target = workingDir?.trim()?.takeIf { it.isNotBlank() } ?: "."
+        return ToolExecutionPresentation(title = "Running go tests in $target")
+    }
 
     @field:JsonPropertyDescription("Go package pattern to test (default: './...')")
     var packages: String? = null
@@ -143,6 +156,10 @@ class RunGoTestsTool : ToolInterface<RunGoTestsTool.Result> {
                 }
             }
 
+        val run = runRegex?.trim()
+        val displayWorkDir =
+            runCatching { PathUtils.relativizeToProject(basePath, workDir.toPath()) }
+                .getOrDefault(workDir.name.ifBlank { "." })
         val goPath = resolveGoBinary()
         if (goPath == null) {
             val hint =
@@ -150,14 +167,30 @@ class RunGoTestsTool : ToolInterface<RunGoTestsTool.Result> {
                     append("Go binary not found. Set goBinary explicitly or ensure PATH includes 'go'.\n")
                     append("Tried GOROOT/bin/go and common locations. On macOS with Homebrew: /opt/homebrew/bin/go\n")
                 }
-            return Result(false, 0, 0, null, hint.trim())
+            return Result(
+                false,
+                0,
+                0,
+                null,
+                hint.trim(),
+                content =
+                    buildResultDetail(
+                        workingDirectory = displayWorkDir,
+                        packages = pkg,
+                        runRegex = run,
+                        success = false,
+                        totalPackages = 0,
+                        failedPackages = 0,
+                        stdoutTail = null,
+                        error = hint.trim(),
+                    ),
+            )
         }
 
         val args = mutableListOf<String>()
         args += goPath
         args += listOf("test", pkg)
         if (verbose) args += "-v"
-        val run = runRegex?.trim()
         if (!run.isNullOrEmpty()) {
             args += listOf("-run", run)
         }
@@ -171,7 +204,25 @@ class RunGoTestsTool : ToolInterface<RunGoTestsTool.Result> {
                     .redirectErrorStream(true)
                     .start()
             } catch (e: Exception) {
-                return Result(false, 0, 0, null, "Failed to start go test: ${e.message}")
+                val message = "Failed to start go test: ${e.message}"
+                return Result(
+                    false,
+                    0,
+                    0,
+                    null,
+                    message,
+                    content =
+                        buildResultDetail(
+                            workingDirectory = displayWorkDir,
+                            packages = pkg,
+                            runRegex = run,
+                            success = false,
+                            totalPackages = 0,
+                            failedPackages = 0,
+                            stdoutTail = null,
+                            error = message,
+                        ),
+                )
             }
 
         // Streaming progress (bounded recent buffer)
@@ -243,12 +294,25 @@ class RunGoTestsTool : ToolInterface<RunGoTestsTool.Result> {
         val finished = process.waitFor(timeoutMinutes, TimeUnit.MINUTES)
         if (!finished) {
             process.destroyForcibly()
+            val outputTail = tail(output, stdoutTailLines)
             return Result(
                 false,
                 totalPkgs,
                 failedPkgs,
-                tail(output, stdoutTailLines),
+                outputTail,
                 "go test timed out",
+                displaySummary = "Timed out after ${timeoutMinutes}m",
+                content =
+                    buildResultDetail(
+                        workingDirectory = displayWorkDir,
+                        packages = pkg,
+                        runRegex = run,
+                        success = false,
+                        totalPackages = totalPkgs,
+                        failedPackages = failedPkgs,
+                        stdoutTail = outputTail,
+                        error = "go test timed out",
+                    ),
             )
         }
         val exitCode = process.exitValue()
@@ -257,18 +321,32 @@ class RunGoTestsTool : ToolInterface<RunGoTestsTool.Result> {
         VfsUtil.markDirtyAndRefresh(true, true, true, workDir)
 
         val success = exitCode == 0
-        val finalBody =
-            buildString {
-                append(taskLine)
-                append("\nPackages: ").append(totalPkgs).append(", Failed: ").append(failedPkgs)
-            }
+        val outputTail = tail(output, stdoutTailLines)
+        val errorMessage = if (success) "" else "go test failed with exit code $exitCode"
 
         return Result(
             success,
             totalPkgs,
             failedPkgs,
-            tail(output, stdoutTailLines),
-            if (success) "" else "go test failed with exit code $exitCode",
+            outputTail,
+            errorMessage,
+            displaySummary =
+                if (success) {
+                    "Passed: $totalPkgs package(s)"
+                } else {
+                    "Failed: $failedPkgs of $totalPkgs package(s)"
+                },
+            content =
+                buildResultDetail(
+                    workingDirectory = displayWorkDir,
+                    packages = pkg,
+                    runRegex = run,
+                    success = success,
+                    totalPackages = totalPkgs,
+                    failedPackages = failedPkgs,
+                    stdoutTail = outputTail,
+                    error = errorMessage.ifBlank { null },
+                ),
         )
     }
 
@@ -280,6 +358,33 @@ class RunGoTestsTool : ToolInterface<RunGoTestsTool.Result> {
         }
         return current
     }
+
+    private fun buildResultDetail(
+        workingDirectory: String,
+        packages: String,
+        runRegex: String?,
+        success: Boolean,
+        totalPackages: Int,
+        failedPackages: Int,
+        stdoutTail: String?,
+        error: String?,
+    ): String =
+        buildString {
+            append("Working directory: ").append(workingDirectory)
+            append("\nPackages: ").append(packages)
+            if (!runRegex.isNullOrBlank()) {
+                append("\nRun filter: ").append(runRegex)
+            }
+            append("\nResult: ").append(if (success) "success" else "failure")
+            append("\nPackages processed: ").append(totalPackages)
+            append("\nFailed packages: ").append(failedPackages)
+            error?.takeIf { it.isNotBlank() }?.let {
+                append("\nError: ").append(it)
+            }
+            stdoutTail?.takeIf { it.isNotBlank() }?.let {
+                append("\n\nOutput tail:\n").append(it)
+            }
+        }
 
     private fun tail(
         sb: StringBuilder,
