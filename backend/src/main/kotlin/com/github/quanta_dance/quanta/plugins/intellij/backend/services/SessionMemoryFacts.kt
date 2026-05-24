@@ -5,6 +5,12 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.services
 
 import kotlinx.serialization.Serializable
 
+/**
+ * Structured per-session memory captured from the active chat, tool activity, and plan state.
+ *
+ * This is backend-owned durable session context. Markdown summaries are rendered from this model on
+ * demand rather than persisted as separate files.
+ */
 @Serializable
 data class SessionMemoryFacts(
     var goal: String = "",

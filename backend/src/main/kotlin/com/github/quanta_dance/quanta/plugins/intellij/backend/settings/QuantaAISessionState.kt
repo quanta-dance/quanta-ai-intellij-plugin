@@ -71,6 +71,7 @@ class QuantaAISessionState : PersistentStateComponent<QuantaAISessionState.State
         var conversationSummaries: MutableMap<String, String> = mutableMapOf(),
         var agentInboxes: MutableMap<String, MutableList<AgentInboxMessage>> = mutableMapOf(),
         var sessionPlans: MutableMap<String, SessionPlan> = mutableMapOf(),
+        /** Structured per-session memory keyed the same way as the main conversation history. */
         var sessionMemories: MutableMap<String, SessionMemoryFacts> = mutableMapOf(),
         var mainLastResponseId: String? = null,
     )

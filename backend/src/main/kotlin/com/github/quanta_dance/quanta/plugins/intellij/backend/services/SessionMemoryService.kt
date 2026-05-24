@@ -11,6 +11,13 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 
+/**
+ * Maintains backend-owned structured memory for the main chat session.
+ *
+ * The canonical state is [SessionMemoryFacts] stored in [QuantaAISessionState]. Human-readable
+ * brief/detailed markdown is rendered on demand, and conversation compaction restores a structured
+ * summary plus a small tail of recent raw messages.
+ */
 @Service(Service.Level.PROJECT)
 class SessionMemoryService(
     private val project: Project,
@@ -27,22 +34,30 @@ class SessionMemoryService(
     private val lock = Any()
     private val keyResolver = MainConversationKeyResolver(project)
 
+    /** Ensures a session memory entry exists for the current main conversation key. */
     fun ensureInitialized() {
         synchronized(lock) {
             persistFacts(loadFactsUnsafe())
         }
     }
 
+    /** Renders a compact markdown summary from structured session facts. */
     fun loadBrief(maxChars: Int = 8_000): String {
         ensureInitialized()
         return renderBriefMarkdown(loadFactsUnsafe()).truncate(maxChars)
     }
 
+    /** Renders a fuller markdown view from structured session facts. */
     fun loadDetailed(maxChars: Int = 16_000): String {
         ensureInitialized()
         return renderSessionMarkdown(loadFactsUnsafe()).truncate(maxChars)
     }
 
+    /**
+     * Refreshes structured session memory from the latest chat and plan state.
+     *
+     * This updates durable facts first; compaction can later render summaries from that data.
+     */
     fun refreshFromCurrentState(
         reason: String,
         explicitNote: String? = null,
@@ -118,6 +133,10 @@ class SessionMemoryService(
         }
     }
 
+    /**
+     * Compacts the current main conversation by injecting a structured summary and preserving a small
+     * tail of recent raw messages for local continuity.
+     */
     fun compactConversationHistory(): String {
         refreshFromCurrentState(reason = "compact_with_memory", force = true)
         val key = conversationKeyForMain()
