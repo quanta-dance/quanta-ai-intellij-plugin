@@ -17,25 +17,6 @@ class ChatMessageFactory(
     private val aiCompanionName: String,
     private val myUserName: String,
 ) {
-    /**
-     * Creates a new instance of `ChatMessage` representing an AI-generated message emitted
-     * while AI is processing the request.
-     *
-     * @param content The content of the message.
-     * @param timestamp The timestamp of the message. Defaults to the current time.
-     */
-    fun createAIThinkingMessage(
-        content: String,
-        timestamp: LocalDateTime = LocalDateTime.now(),
-    ): ChatMessage =
-        ChatMessage(
-            id = AI_THINKING_MESSAGE_ID,
-            content = content,
-            author = aiCompanionName,
-            timestamp = timestamp,
-            isMyMessage = false,
-            type = ChatMessage.ChatMessageType.AI_THINKING,
-        )
 
     /**
      * Creates a new instance of `ChatMessage` representing an AI-generated message response.
@@ -96,7 +77,4 @@ class ChatMessageFactory(
             sanitizedForAiContent = sanitizedForAiContent,
         )
 
-    companion object {
-        private const val AI_THINKING_MESSAGE_ID = "ai-thinking-message-id"
-    }
 }

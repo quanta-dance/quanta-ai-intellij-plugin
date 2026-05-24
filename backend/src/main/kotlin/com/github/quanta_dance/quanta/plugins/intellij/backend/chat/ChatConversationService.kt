@@ -7,8 +7,6 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.agents.Agent
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.project.CurrentFileContextProvider
 import com.github.quanta_dance.quanta.plugins.intellij.backend.repository.ChatMessageFactory
-import com.github.quanta_dance.quanta.plugins.intellij.backend.repository.OpenAIBackendChatResponder
-import com.github.quanta_dance.quanta.plugins.intellij.backend.repository.OpenAIBackendChatResponder.ChatTurn
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentManagerService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AiInputSanitizer
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.BackendExecutionContextsService
@@ -48,7 +46,6 @@ class ChatConversationService(
 
     @Suppress("ktlint:standard:backing-property-naming")
     private val chatMessageFactory = ChatMessageFactory("Quanta AI", "Me")
-    private val openAIBackendChatResponder = OpenAIBackendChatResponder()
     private val openAIService: OpenAIService get() = project.service()
     private val agentManager: AgentManagerService get() = project.service()
     private val registry: AgentRegistryService get() = project.service()
@@ -90,7 +87,8 @@ class ChatConversationService(
         }
     }
 
-    fun messagesFlow(): Flow<List<ChatMessageDto>> = _messages.map { messagesList -> messagesList.map { it.toChatMessageDto() } }
+    fun messagesFlow(): Flow<List<ChatMessageDto>> =
+        _messages.map { messagesList -> messagesList.map { it.toChatMessageDto() } }
 
     fun currentMessages(): List<ChatMessageDto> = _messages.value.map { it.toChatMessageDto() }
 
@@ -98,7 +96,8 @@ class ChatConversationService(
 
     fun currentSessions(): List<ChatSessionDto> = _sessions.value
 
-    private fun <T> onChatPublicationThread(action: () -> T): T = runBlocking(executionContexts.chatPublicationDispatcher) { action() }
+    private fun <T> onChatPublicationThread(action: () -> T): T =
+        runBlocking(executionContexts.chatPublicationDispatcher) { action() }
 
     fun createNewSession() {
         onChatPublicationThread {
@@ -421,11 +420,11 @@ class ChatConversationService(
                         .builder()
                         .addInputTextContent(
                             "Scheduled reminder context (internal only):\n" +
-                                reminderContext +
-                                "\n\nWrite a short, natural reminder to the user. " +
-                                "Do not say the reminder was acknowledged, delivered, fired, or triggered. " +
-                                "Do not repeat the reminder context verbatim. " +
-                                "Use first-person phrasing like 'I want to remind you ...'.",
+                                    reminderContext +
+                                    "\n\nWrite a short, natural reminder to the user. " +
+                                    "Do not say the reminder was acknowledged, delivered, fired, or triggered. " +
+                                    "Do not repeat the reminder context verbatim. " +
+                                    "Use first-person phrasing like 'I want to remind you ...'.",
                         ).role(ResponseInputItem.Message.Role.SYSTEM)
                         .build(),
                 ),
@@ -458,7 +457,7 @@ class ChatConversationService(
         val ctx = runCatching { CurrentFileContextProvider(project).getCurrent() }.getOrNull() ?: return null
         val header =
             "Current file open: ${ctx.filePathRelative}, file version: ${ctx.version} - " +
-                "you must always reread file if version changed"
+                    "you must always reread file if version changed"
 
         return buildString {
             append(header)
@@ -477,6 +476,12 @@ class ChatConversationService(
             }
         }
     }
+
+    private data class ChatTurn(
+        val role: String,
+        val content: String,
+        val sanitizedForAiContent: String? = null,
+    )
 
     fun clearConversation() {
         _messages.value = emptyList()
