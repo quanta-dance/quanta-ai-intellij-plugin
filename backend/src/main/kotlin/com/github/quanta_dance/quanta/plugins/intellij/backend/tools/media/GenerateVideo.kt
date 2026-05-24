@@ -93,7 +93,11 @@ class GenerateVideo :
         val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
         val baseName = sanitizeFileName(title).ifBlank { "generated-video" }
         val tempDir =
-            java.nio.file.Files.createDirectories(java.nio.file.Paths.get("/var/tmp/quantadance-generated-videos"))
+            java.nio.file.Files
+                .createDirectories(
+                    java.nio.file.Paths
+                        .get("/var/tmp/quantadance-generated-videos"),
+                )
         return tempDir.resolve("${baseName.take(40)}-$timestamp.mp4").toString()
     }
 

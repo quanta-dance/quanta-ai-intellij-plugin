@@ -48,7 +48,7 @@ class OpenAIVideoService(
                 require(requestedSeconds in SUPPORTED_VIDEO_SECONDS) {
                     "Unsupported video duration '$requestedSeconds'. Supported values are: ${
                         SUPPORTED_VIDEO_SECONDS.joinToString(
-                            ", "
+                            ", ",
                         )
                     }."
                 }
