@@ -30,6 +30,8 @@ import com.intellij.psi.util.PsiTreeUtil
             "at a position in a file and return structured metadata and text.",
 )
 class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
+    override val canBeParallel: Boolean = true
+
     @field:JsonPropertyDescription("Relative to the project root path. If omitted, uses current editor file.")
     var filePath: String? = null
 

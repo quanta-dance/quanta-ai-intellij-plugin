@@ -31,6 +31,8 @@ import java.util.concurrent.atomic.AtomicInteger
             "Returns concise matches and a modelSummary for AI context.",
 )
 class SearchInFiles : ToolInterface<SearchInFilesResult> {
+    override val canBeParallel: Boolean = true
+
     @field:JsonPropertyDescription("Text to search for in project files (regex supported). Use a|b|c for OR.")
     var query: String? = null
 

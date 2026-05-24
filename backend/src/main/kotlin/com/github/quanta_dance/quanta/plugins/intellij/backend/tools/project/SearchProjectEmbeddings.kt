@@ -13,6 +13,8 @@ import com.intellij.openapi.project.Project
 
 @JsonClassDescription("Search project embeddings for a query text. Returns topK results with id, score and metadata.")
 class SearchProjectEmbeddings : ToolInterface<SearchProjectEmbeddingsResult> {
+    override val canBeParallel: Boolean = true
+
     @field:JsonPropertyDescription("The query text to search for.")
     var queryText: String? = null
 

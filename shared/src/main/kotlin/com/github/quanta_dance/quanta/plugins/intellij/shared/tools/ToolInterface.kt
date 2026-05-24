@@ -9,5 +9,15 @@ import com.intellij.openapi.project.Project
  * Base interface for tools accessible by OpenAI and backend invokers.
  */
 interface ToolInterface<I> {
+    /**
+     * Whether calls to this tool are safe to run concurrently with other tool calls from the same
+     * model response batch.
+     *
+     * Keep the default conservative: tools must opt in only when they are effectively read-only and
+     * do not mutate shared IDE, session, process, or filesystem state.
+     */
+    val canBeParallel: Boolean
+        get() = false
+
     fun execute(project: Project): I
 }

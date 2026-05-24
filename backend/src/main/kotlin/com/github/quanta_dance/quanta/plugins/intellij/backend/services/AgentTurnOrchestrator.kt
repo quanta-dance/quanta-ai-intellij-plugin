@@ -15,6 +15,10 @@ import com.intellij.openapi.project.Project
 import com.openai.models.responses.ResponseFunctionToolCall
 import com.openai.models.responses.ResponseInputItem
 import com.openai.models.responses.StructuredResponse
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.runBlocking
 
 /**
  * Runs the main agent-turn orchestration loop for OpenAI-backed chat turns.
@@ -117,6 +121,201 @@ class AgentTurnOrchestrator(
         )
     }
 
+    private data class ToolExecutionPlan(
+        val functionCall: ResponseFunctionToolCall,
+        val callId: String,
+        val filePath: String?,
+        val isRead: Boolean,
+        val isWrite: Boolean,
+        val decision: GuardrailDecision,
+        val canRunInParallel: Boolean,
+    )
+
+    private data class ToolExecutionOutcome(
+        val plan: ToolExecutionPlan,
+        val executionMode: String,
+        val parallelBatchSize: Int = 1,
+        val result: ToolExecutionService.ToolExecutionResult? = null,
+        val failure: Throwable? = null,
+    )
+
+    private fun buildToolExecutionPlan(
+        functionCall: ResponseFunctionToolCall,
+        toolExecutionService: ToolExecutionService,
+        guardrailState: TurnGuardrailState,
+    ): ToolExecutionPlan {
+        val filePath = extractFilePath(functionCall)
+        val isRead = isReadTool(functionCall.name())
+        val isWrite = isWriteTool(functionCall.name())
+        val decision = evaluateGuardrails(guardrailState, functionCall)
+        val canRunInParallel = decision.allowExecution && toolExecutionService.canExecuteInParallel(functionCall)
+        return ToolExecutionPlan(
+            functionCall = functionCall,
+            callId = functionCall.callId(),
+            filePath = filePath,
+            isRead = isRead,
+            isWrite = isWrite,
+            decision = decision,
+            canRunInParallel = canRunInParallel,
+        )
+    }
+
+    private fun executePlannedTool(
+        plan: ToolExecutionPlan,
+        agentLabel: String,
+        toolExecutionService: ToolExecutionService,
+        executionMode: String,
+        parallelBatchSize: Int = 1,
+    ): ToolExecutionOutcome =
+        runCatching {
+            val toolResult =
+                if (plan.decision.allowExecution) {
+                    toolExecutionService.executeToolCall(plan.functionCall, agentLabel)
+                } else {
+                    QDLog.warn(thisLogger()) {
+                        "OpenAIService.agentTurn: stability intervention tool=${plan.functionCall.name()} callId=${plan.callId} reason=${plan.decision.reason} executionMode=$executionMode"
+                    }
+                    guardrailToolResult(plan.functionCall, plan.decision.reason ?: "guardrail_blocked")
+                }
+            ToolExecutionOutcome(
+                plan = plan,
+                executionMode = executionMode,
+                parallelBatchSize = parallelBatchSize,
+                result = toolResult,
+            )
+        }.getOrElse {
+            ToolExecutionOutcome(
+                plan = plan,
+                executionMode = executionMode,
+                parallelBatchSize = parallelBatchSize,
+                failure = it,
+            )
+        }
+
+    private fun applyToolExecutionOutcome(
+        outcome: ToolExecutionOutcome,
+        guardrailState: TurnGuardrailState,
+        pendingToolOutputs: MutableList<ResponseInputItem>,
+        onToolUpdate: ((OpenAIService.ToolTurnUpdate) -> Unit)?,
+    ) {
+        val functionCall = outcome.plan.functionCall
+        outcome.failure?.let { failure ->
+            val failedItem =
+                toolExecutionPresenter.buildToolExecutionItem(
+                    functionCall,
+                    ToolExecutionStatus.FAILED,
+                    errorText = failure.message,
+                    detailText = failure.stackTraceToString().take(2_000),
+                )
+            onToolUpdate?.invoke(OpenAIService.ToolTurnUpdate(failedItem))
+            throw failure
+        }
+
+        val toolResult = outcome.result ?: error("Missing tool result for ${outcome.plan.callId}")
+        if (outcome.plan.decision.allowExecution) {
+            guardrailState.recordExecution(
+                functionCall.name(),
+                outcome.plan.filePath,
+                isWrite = outcome.plan.isWrite,
+                isRead = outcome.plan.isRead,
+            )
+        }
+        QDLog.info(thisLogger()) {
+            "OpenAIService.agentTurn: executed tool call name=${functionCall.name()} callId=${outcome.plan.callId} file=${outcome.plan.filePath ?: "<none>"} executionMode=${outcome.executionMode} parallelBatchSize=${outcome.parallelBatchSize} guardrail=${outcome.plan.decision.reason ?: "none"}"
+        }
+        val completedItem =
+            toolExecutionPresenter.buildToolExecutionItem(
+                functionCall,
+                if (toolResult.succeeded) ToolExecutionStatus.SUCCEEDED else ToolExecutionStatus.FAILED,
+                displaySummary = toolResult.displaySummary,
+                errorText = toolResult.errorText,
+                detailText = toolResult.detailText,
+            )
+        onToolUpdate?.invoke(OpenAIService.ToolTurnUpdate(completedItem))
+        pendingToolOutputs.add(ResponseInputItem.ofFunctionCallOutput(toolResult.toolOutput))
+    }
+
+    private fun executeFunctionCallBatch(
+        functionCalls: List<ResponseFunctionToolCall>,
+        toolExecutionService: ToolExecutionService,
+        guardrailState: TurnGuardrailState,
+        pendingToolOutputs: MutableList<ResponseInputItem>,
+        agentLabel: String,
+        onToolUpdate: ((OpenAIService.ToolTurnUpdate) -> Unit)?,
+    ) {
+        val plans =
+            functionCalls.map { functionCall ->
+                val plan = buildToolExecutionPlan(functionCall, toolExecutionService, guardrailState)
+                val startedItem =
+                    toolExecutionPresenter.buildToolExecutionItem(
+                        functionCall,
+                        ToolExecutionStatus.EXECUTING,
+                    )
+                onToolUpdate?.invoke(OpenAIService.ToolTurnUpdate(startedItem))
+                plan
+            }
+
+        var index = 0
+        while (index < plans.size) {
+            val plan = plans[index]
+            if (!plan.canRunInParallel) {
+                applyToolExecutionOutcome(
+                    outcome = executePlannedTool(
+                        plan = plan,
+                        agentLabel = agentLabel,
+                        toolExecutionService = toolExecutionService,
+                        executionMode = "sequential",
+                    ),
+                    guardrailState = guardrailState,
+                    pendingToolOutputs = pendingToolOutputs,
+                    onToolUpdate = onToolUpdate,
+                )
+                index += 1
+                continue
+            }
+
+            val parallelEndExclusive =
+                (index until plans.size)
+                    .firstOrNull { probe -> !plans[probe].canRunInParallel }
+                    ?: plans.size
+            val parallelPlans = plans.subList(index, parallelEndExclusive)
+            val outcomes =
+                if (parallelPlans.size == 1) {
+                    listOf(
+                        executePlannedTool(
+                            plan = parallelPlans.first(),
+                            agentLabel = agentLabel,
+                            toolExecutionService = toolExecutionService,
+                            executionMode = "sequential_parallel_capable",
+                        ),
+                    )
+                } else {
+                    runBlocking {
+                        parallelPlans.map { batchPlan ->
+                            async(Dispatchers.IO) {
+                                executePlannedTool(
+                                    plan = batchPlan,
+                                    agentLabel = agentLabel,
+                                    toolExecutionService = toolExecutionService,
+                                    executionMode = "parallel",
+                                    parallelBatchSize = parallelPlans.size,
+                                )
+                            }
+                        }.awaitAll()
+                    }
+                }
+            outcomes.forEach { outcome ->
+                applyToolExecutionOutcome(
+                    outcome = outcome,
+                    guardrailState = guardrailState,
+                    pendingToolOutputs = pendingToolOutputs,
+                    onToolUpdate = onToolUpdate,
+                )
+            }
+            index = parallelEndExclusive
+        }
+    }
+
     private fun logTurnSummary(
         state: TurnGuardrailState,
         agentLabel: String,
@@ -179,8 +378,12 @@ class AgentTurnOrchestrator(
             localPrevId = newId
             inputs.clear()
             val pendingToolOutputs = mutableListOf<ResponseInputItem>()
+            val toolExecutionService = project.service<ToolExecutionService>()
+            val outputItems = structResponse.output()
+            var outputIndex = 0
 
-            structResponse.output().forEach { item ->
+            while (outputIndex < outputItems.size) {
+                val item = outputItems[outputIndex]
                 when {
                     item.isReasoning() -> {
                         val reasoning = item.asReasoning()
@@ -196,65 +399,30 @@ class AgentTurnOrchestrator(
                                 ),
                             )
                         }
+                        outputIndex += 1
                     }
 
                     item.isFunctionCall() -> {
-                        val functionCall: ResponseFunctionToolCall = item.asFunctionCall()
-                        val callId = functionCall.callId()
-                        if (!processedCallIds.add(callId)) return@forEach
-
-                        val startedItem =
-                            toolExecutionPresenter.buildToolExecutionItem(
-                                functionCall,
-                                ToolExecutionStatus.EXECUTING,
-                            )
-                        onToolUpdate?.invoke(OpenAIService.ToolTurnUpdate(startedItem))
-                        try {
-                            val filePath = extractFilePath(functionCall)
-                            val isRead = isReadTool(functionCall.name())
-                            val isWrite = isWriteTool(functionCall.name())
-                            val decision = evaluateGuardrails(guardrailState, functionCall)
-                            val toolResult =
-                                if (decision.allowExecution) {
-                                    project.service<ToolExecutionService>().executeToolCall(functionCall, agentLabel)
-                                } else {
-                                    QDLog.warn(thisLogger()) {
-                                        "OpenAIService.agentTurn: stability intervention tool=${functionCall.name()} callId=$callId reason=${decision.reason}"
-                                    }
-                                    guardrailToolResult(functionCall, decision.reason ?: "guardrail_blocked")
-                                }
-                            if (decision.allowExecution) {
-                                guardrailState.recordExecution(
-                                    functionCall.name(),
-                                    filePath,
-                                    isWrite = isWrite,
-                                    isRead = isRead
-                                )
+                        val functionCalls = mutableListOf<ResponseFunctionToolCall>()
+                        var probeIndex = outputIndex
+                        while (probeIndex < outputItems.size && outputItems[probeIndex].isFunctionCall()) {
+                            val functionCall = outputItems[probeIndex].asFunctionCall()
+                            if (processedCallIds.add(functionCall.callId())) {
+                                functionCalls += functionCall
                             }
-                            QDLog.info(thisLogger()) {
-                                "OpenAIService.agentTurn: executed tool call name=${functionCall.name()} callId=$callId file=${filePath ?: "<none>"} guardrail=${decision.reason ?: "none"}"
-                            }
-                            val completedItem =
-                                toolExecutionPresenter.buildToolExecutionItem(
-                                    functionCall,
-                                    if (toolResult.succeeded) ToolExecutionStatus.SUCCEEDED else ToolExecutionStatus.FAILED,
-                                    displaySummary = toolResult.displaySummary,
-                                    errorText = toolResult.errorText,
-                                    detailText = toolResult.detailText,
-                                )
-                            onToolUpdate?.invoke(OpenAIService.ToolTurnUpdate(completedItem))
-                            pendingToolOutputs.add(ResponseInputItem.ofFunctionCallOutput(toolResult.toolOutput))
-                        } catch (t: Throwable) {
-                            val failedItem =
-                                toolExecutionPresenter.buildToolExecutionItem(
-                                    functionCall,
-                                    ToolExecutionStatus.FAILED,
-                                    errorText = t.message,
-                                    detailText = t.stackTraceToString().take(2_000),
-                                )
-                            onToolUpdate?.invoke(OpenAIService.ToolTurnUpdate(failedItem))
-                            throw t
+                            probeIndex += 1
                         }
+                        if (functionCalls.isNotEmpty()) {
+                            executeFunctionCallBatch(
+                                functionCalls = functionCalls,
+                                toolExecutionService = toolExecutionService,
+                                guardrailState = guardrailState,
+                                pendingToolOutputs = pendingToolOutputs,
+                                agentLabel = agentLabel,
+                                onToolUpdate = onToolUpdate,
+                            )
+                        }
+                        outputIndex = probeIndex
                     }
 
                     item.isMessage() -> {
@@ -312,6 +480,7 @@ class AgentTurnOrchestrator(
                                 }
                             }
                         }
+                        outputIndex += 1
                     }
                 }
             }

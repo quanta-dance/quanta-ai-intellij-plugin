@@ -4,7 +4,10 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.openai
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ToolsRegistry
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
@@ -29,7 +32,11 @@ class ToolExecutionService(
     )
 
     private val objectMapper = ObjectMapper()
+    private val toolMetadataMapper = jacksonObjectMapper()
     private val toolRouter = ToolRouter(project, DefaultToolInvoker(), objectMapper)
+
+    fun canExecuteInParallel(functionCall: ResponseFunctionToolCall): Boolean =
+        instantiateTool(functionCall)?.canBeParallel == true
 
     fun executeToolCall(
         functionCall: ResponseFunctionToolCall,
@@ -56,6 +63,17 @@ class ToolExecutionService(
             detailText = detailText,
             errorText = errorText,
         )
+    }
+
+    private fun instantiateTool(functionCall: ResponseFunctionToolCall): ToolInterface<*>? {
+        val toolClass =
+            ToolsRegistry
+                .toolsFor(project)
+                .firstOrNull { it.simpleName == functionCall.name() || it.name.endsWith(".${functionCall.name()}") }
+                ?: return null
+        return runCatching {
+            toolMetadataMapper.readValue(functionCall.arguments(), toolClass)
+        }.getOrNull() as? ToolInterface<*>
     }
 
     private fun isErrorResult(result: Any?): Boolean {

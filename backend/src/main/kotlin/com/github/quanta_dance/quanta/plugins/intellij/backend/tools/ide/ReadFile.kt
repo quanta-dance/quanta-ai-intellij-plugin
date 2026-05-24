@@ -70,6 +70,8 @@ constructor(
     )
     var toLine: Int? = null,
 ) : ToolInterface<ReadFileResult> {
+    override val canBeParallel: Boolean = true
+
     companion object {
         private val logger = Logger.getInstance(ReadFile::class.java)
     }

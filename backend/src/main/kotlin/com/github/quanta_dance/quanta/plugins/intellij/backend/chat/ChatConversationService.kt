@@ -174,6 +174,7 @@ class ChatConversationService(
                                     ),
                                 )
                                 firstAssistantMessageShown = true
+                                toolMessageId = null
                                 thinkingMessageId = appendAiThinkingMessage()
                             },
                             onToolUpdate = { update ->

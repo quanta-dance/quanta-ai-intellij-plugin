@@ -20,6 +20,8 @@ import kotlin.io.path.listDirectoryEntries
  */
 @JsonClassDescription("Read list of files in the requested directory")
 class ListFiles : ToolInterface<ListFiles.Result> {
+    override val canBeParallel: Boolean = true
+
     @JsonClassDescription("ListFiles operation result")
     data class Result(
         @field:JsonPropertyDescription("Requested directory path relative to project root. Blank means project root.")

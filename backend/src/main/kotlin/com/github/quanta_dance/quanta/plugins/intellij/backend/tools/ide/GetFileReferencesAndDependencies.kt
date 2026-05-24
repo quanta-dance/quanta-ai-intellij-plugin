@@ -27,6 +27,8 @@ import com.intellij.psi.PsiManager
     "Get file dependencies (imports resolved to libraries with versions) and PSI-based references/definitions for a given file.",
 )
 class GetFileReferencesAndDependencies : ToolInterface<Map<String, Any>> {
+    override val canBeParallel: Boolean = true
+
     @field:JsonPropertyDescription("Relative to the project root path to the requested file.")
     var filePath: String? = null
 

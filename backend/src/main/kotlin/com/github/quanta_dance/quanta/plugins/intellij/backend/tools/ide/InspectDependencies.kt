@@ -15,6 +15,8 @@ import com.intellij.psi.search.GlobalSearchScope
 
 @JsonClassDescription("Inspect available dependency classes and methods via PSI. Useful to discover SDK APIs by package.")
 class InspectDependencies : ToolInterface<InspectDependencies.Result> {
+    override val canBeParallel: Boolean = true
+
     @field:JsonPropertyDescription("Root package to inspect, e.g., 'com.openai.models.responses'")
     var packageName: String? = null
 
