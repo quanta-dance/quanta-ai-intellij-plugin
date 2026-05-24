@@ -117,5 +117,6 @@ class OpenAIBackendChatResponder(
     data class ChatTurn(
         val role: String,
         val content: String,
+        val sanitizedForAiContent: String? = null,
     )
 }

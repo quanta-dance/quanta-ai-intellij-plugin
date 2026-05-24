@@ -21,6 +21,7 @@ data class ChatMessage(
     val voiceSummary: String? = null,
     val toolItems: List<ToolExecutionItem> = emptyList(),
     val parentMessageId: String? = null,
+    val sanitizedForAiContent: String? = null,
 ) : Searchable {
     enum class ChatMessageType {
         AI_THINKING,

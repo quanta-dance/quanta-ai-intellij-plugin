@@ -20,6 +20,7 @@ data class ChatMessageDto(
     val voiceSummary: String? = null,
     val toolItems: List<com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem> = emptyList(),
     val parentMessageId: String? = null,
+    val sanitizedForAiContent: String? = null,
 )
 
 fun ChatMessageDto.toChatMessage(): ChatMessage =
@@ -33,6 +34,7 @@ fun ChatMessageDto.toChatMessage(): ChatMessage =
         voiceSummary = voiceSummary,
         toolItems = toolItems,
         parentMessageId = parentMessageId,
+        sanitizedForAiContent = sanitizedForAiContent,
     )
 
 fun ChatMessage.toChatMessageDto(): ChatMessageDto =
@@ -46,6 +48,7 @@ fun ChatMessage.toChatMessageDto(): ChatMessageDto =
         voiceSummary = voiceSummary,
         toolItems = toolItems,
         parentMessageId = parentMessageId,
+        sanitizedForAiContent = sanitizedForAiContent,
     )
 
 @Serializable

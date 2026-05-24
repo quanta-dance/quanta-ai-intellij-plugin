@@ -85,6 +85,7 @@ class ChatMessageFactory(
     fun createUserMessage(
         content: String,
         timestamp: LocalDateTime = LocalDateTime.now(),
+        sanitizedForAiContent: String? = null,
     ): ChatMessage =
         ChatMessage(
             content = content,
@@ -92,6 +93,7 @@ class ChatMessageFactory(
             timestamp = timestamp,
             isMyMessage = true,
             type = ChatMessage.ChatMessageType.TEXT,
+            sanitizedForAiContent = sanitizedForAiContent,
         )
 
     companion object {

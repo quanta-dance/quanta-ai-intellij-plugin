@@ -54,6 +54,7 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
         var voiceSummary: String? = null,
         var toolItems: MutableList<PersistedToolItem> = mutableListOf(),
         var parentMessageId: String? = null,
+        var sanitizedForAiContent: String? = null,
     )
 
     data class PersistedDelegatedTask(
@@ -202,6 +203,7 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
                     timestamp = LocalDateTime.parse(saved.timestamp),
                     type = ChatMessage.ChatMessageType.valueOf(saved.type),
                     voiceSummary = saved.voiceSummary,
+                    sanitizedForAiContent = saved.sanitizedForAiContent,
                     toolItems =
                         saved.toolItems.map { item ->
                             ToolExecutionItem(
@@ -393,6 +395,7 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
                         timestamp = message.timestamp.toString(),
                         type = message.type.name,
                         voiceSummary = message.voiceSummary,
+                        sanitizedForAiContent = message.sanitizedForAiContent,
                         toolItems =
                             message.toolItems
                                 .map { item ->

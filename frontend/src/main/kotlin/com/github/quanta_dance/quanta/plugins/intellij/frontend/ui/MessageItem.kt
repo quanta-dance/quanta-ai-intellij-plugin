@@ -122,6 +122,7 @@ fun messageBubble(
                     messageContent(message)
                 }
             }
+            sanitizedForAiInfo(message)
         }
     }
 }
@@ -438,6 +439,51 @@ private fun messageContent(message: ChatMessage) {
                 lineHeight = 18.sp,
             ),
     )
+}
+
+@Composable
+private fun sanitizedForAiInfo(message: ChatMessage) {
+    val sanitizedText = message.sanitizedForAiContent?.trim()?.takeIf { it.isNotBlank() } ?: return
+    var expanded by remember(message.id) { mutableStateOf(false) }
+
+    Spacer(modifier = Modifier.height(6.dp))
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        IconButton(onClick = { expanded = !expanded }) {
+            Icon(
+                key = ChatAppIcons.ToolStatus.details,
+                contentDescription = "Show AI sanitization details",
+                modifier = Modifier.size(14.dp),
+            )
+        }
+        Text(
+            text = "Message sanitized for AI",
+            style = JewelTheme.defaultTextStyle.copy(fontSize = 11.sp, color = ChatAppColors.Text.timestamp),
+        )
+    }
+    if (expanded) {
+        Spacer(modifier = Modifier.height(4.dp))
+        Box(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .background(Color.White.copy(alpha = 0.04f), RoundedCornerShape(6.dp))
+                    .padding(8.dp),
+        ) {
+            SelectionContainer {
+                Text(
+                    text = "Message sanitized for AI:\n$sanitizedText",
+                    style =
+                        JewelTheme.defaultTextStyle.copy(
+                            fontSize = 11.sp,
+                            color = ChatAppColors.Text.timestamp,
+                        ),
+                )
+            }
+        }
+    }
 }
 
 @Composable

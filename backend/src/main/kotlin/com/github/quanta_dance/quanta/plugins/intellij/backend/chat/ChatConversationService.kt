@@ -10,6 +10,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.repository.ChatMe
 import com.github.quanta_dance.quanta.plugins.intellij.backend.repository.OpenAIBackendChatResponder
 import com.github.quanta_dance.quanta.plugins.intellij.backend.repository.OpenAIBackendChatResponder.ChatTurn
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentManagerService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AiInputSanitizer
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.BackendExecutionContextsService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.OpenAIService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SessionPlanService
@@ -43,6 +44,8 @@ import kotlin.coroutines.cancellation.CancellationException
 class ChatConversationService(
     private val project: Project,
 ) {
+    private val aiInputSanitizer = AiInputSanitizer(project)
+
     @Suppress("ktlint:standard:backing-property-naming")
     private val chatMessageFactory = ChatMessageFactory("Quanta AI", "Me")
     private val openAIBackendChatResponder = OpenAIBackendChatResponder()
@@ -151,7 +154,11 @@ class ChatConversationService(
                 ) {
                     "ChatConversationService.sendUserMessage: user='${messageContent.replace("\n", "\\n").take(2_000)}'"
                 }
-                appendUserMessage(messageContent)
+                val sanitizedMessageContent = aiInputSanitizer.sanitizeForAi(messageContent)
+                appendUserMessage(
+                    messageContent = messageContent,
+                    sanitizedForAiContent = sanitizedMessageContent.takeIf { it != messageContent },
+                )
                 val inputs = buildRequestInputs()
                 thinkingMessageId = appendAiThinkingMessage()
                 val (responseText, _) =
@@ -231,7 +238,7 @@ class ChatConversationService(
                         EasyInputMessage
                             .builder()
                             .role(EasyInputMessage.Role.SYSTEM)
-                            .content(contextMessage)
+                            .content(aiInputSanitizer.sanitizeForAi(contextMessage))
                             .build(),
                     ),
                 )
@@ -242,16 +249,23 @@ class ChatConversationService(
                         EasyInputMessage
                             .builder()
                             .role(if (turn.role == "user") EasyInputMessage.Role.USER else EasyInputMessage.Role.ASSISTANT)
-                            .content(turn.content)
+                            .content(turn.sanitizedForAiContent ?: aiInputSanitizer.sanitizeForAi(turn.content))
                             .build(),
                     ),
                 )
             }
         }.toMutableList()
 
-    private fun appendUserMessage(messageContent: String) {
+    private fun appendUserMessage(
+        messageContent: String,
+        sanitizedForAiContent: String? = null,
+    ) {
         onChatPublicationThread {
-            _messages.value += chatMessageFactory.createUserMessage(messageContent)
+            _messages.value +=
+                chatMessageFactory.createUserMessage(
+                    content = messageContent,
+                    sanitizedForAiContent = sanitizedForAiContent,
+                )
             persistMessages()
         }
     }
@@ -433,7 +447,11 @@ class ChatConversationService(
             .filterNot { it.type == AI_THINKING }
             .map { message ->
                 val role = if (message.isMyMessage) "user" else "assistant"
-                ChatTurn(role = role, content = message.content)
+                ChatTurn(
+                    role = role,
+                    content = message.content,
+                    sanitizedForAiContent = message.sanitizedForAiContent,
+                )
             }
 
     private fun buildContextMessage(): String? {
