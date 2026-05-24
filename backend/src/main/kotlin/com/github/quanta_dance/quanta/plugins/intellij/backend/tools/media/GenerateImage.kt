@@ -17,19 +17,18 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
 import java.io.BufferedInputStream
-import java.io.OutputStream
 import java.net.URI
 import java.nio.file.Files
 import java.text.Normalizer
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
-import java.util.Base64
+import java.util.*
 
 @JsonClassDescription(
     "Generate or edit an image. " +
-        "Use sourceImagePath when modifying, redrawing, improving, or regenerating an existing image. " +
-        "If the user refers to the current/open image or says update/redraw/improve this image, pass that image path as sourceImagePath. " +
-        "If replacing the same image in place, set filePath to the same path as sourceImagePath.",
+            "Use sourceImagePath when modifying, redrawing, improving, or regenerating an existing image. " +
+            "If the user refers to the current/open image or says update/redraw/improve this image, pass that image path as sourceImagePath. " +
+            "If replacing the same image in place, set filePath to the same path as sourceImagePath.",
 )
 class GenerateImage :
     ToolInterface<Map<String, String>>,
@@ -49,8 +48,8 @@ class GenerateImage :
 
     @field:JsonPropertyDescription(
         "Optional existing image path to use as input for image editing/regeneration. " +
-            "Required when editing, improving, redrawing, or updating an existing image. " +
-            "If the user refers to the current image/current open image, use that file path here.",
+                "Required when editing, improving, redrawing, or updating an existing image. " +
+                "If the user refers to the current image/current open image, use that file path here.",
     )
     var sourceImagePath: String? = null
 
@@ -59,8 +58,8 @@ class GenerateImage :
 
     @field:JsonPropertyDescription(
         "Optional file path (including filename) where the image will be saved." +
-            " Reuse the same path as sourceImagePath to overwrite the original image in place. " +
-            "If omitted, the tool saves to a temporary system folder.",
+                " Reuse the same path as sourceImagePath to overwrite the original image in place. " +
+                "If omitted, the tool saves to a temporary system folder.",
     )
     var filePath: String? = null
 
@@ -146,7 +145,7 @@ class GenerateImage :
     private fun defaultOutputPath(title: String): String {
         val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
         val baseName = sanitizeFileName(title).ifBlank { "generated-image" }
-        val tempDir = Files.createDirectories(Files.createTempDirectory("quantadance-generated-images-"))
+        val tempDir = Files.createDirectories(java.nio.file.Paths.get("/var/tmp/quantadance-generated-images"))
         return tempDir.resolve("${baseName.take(40)}-$timestamp.png").toString()
     }
 
