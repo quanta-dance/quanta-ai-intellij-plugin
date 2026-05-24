@@ -29,8 +29,12 @@ class CurrentFileContextProvider(
 
     fun getCurrent(): CurrentFileContext? {
         val basePath = PathUtils.projectRootPath(project) ?: return null
-        val editor = FileEditorManager.getInstance(project).selectedTextEditor ?: return null
-        val vf = editor.virtualFile ?: return null
+        val fileEditorManager = FileEditorManager.getInstance(project)
+        val editor = fileEditorManager.selectedTextEditor
+        val vf =
+            editor?.virtualFile
+                ?: fileEditorManager.selectedFiles.firstOrNull()
+                ?: return null
 
         val rel =
             try {
@@ -61,9 +65,6 @@ class CurrentFileContextProvider(
             }
 
         return ApplicationManager.getApplication().runReadAction<CurrentFileContext> {
-            val caretModel = editor.caretModel
-            val selectionModel = editor.selectionModel
-
             var caretLine: Int? = null
             var caretCol: Int? = null
             var selStartLine: Int? = null
@@ -72,21 +73,26 @@ class CurrentFileContextProvider(
             var selEndCol: Int? = null
             var selText: String? = null
 
-            caretModel.currentCaret?.let { caret ->
-                val pos = caret.logicalPosition
-                caretLine = pos.line + 1
-                caretCol = pos.column
-            }
-            if (selectionModel.hasSelection()) {
-                selText = selectionModel.selectedText
-                val startOffset = selectionModel.selectionStart
-                val endOffset = selectionModel.selectionEnd
-                val startPos = editor.offsetToLogicalPosition(startOffset)
-                val endPos = editor.offsetToLogicalPosition(endOffset)
-                selStartLine = startPos.line + 1
-                selStartCol = startPos.column
-                selEndLine = endPos.line + 1
-                selEndCol = endPos.column
+            if (editor != null && editor.virtualFile == vf) {
+                val caretModel = editor.caretModel
+                val selectionModel = editor.selectionModel
+
+                caretModel.currentCaret?.let { caret ->
+                    val pos = caret.logicalPosition
+                    caretLine = pos.line + 1
+                    caretCol = pos.column
+                }
+                if (selectionModel.hasSelection()) {
+                    selText = selectionModel.selectedText
+                    val startOffset = selectionModel.selectionStart
+                    val endOffset = selectionModel.selectionEnd
+                    val startPos = editor.offsetToLogicalPosition(startOffset)
+                    val endPos = editor.offsetToLogicalPosition(endOffset)
+                    selStartLine = startPos.line + 1
+                    selStartCol = startPos.column
+                    selEndLine = endPos.line + 1
+                    selEndCol = endPos.column
+                }
             }
 
             CurrentFileContext(
