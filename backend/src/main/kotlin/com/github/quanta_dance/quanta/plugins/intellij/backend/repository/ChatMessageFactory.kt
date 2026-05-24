@@ -17,7 +17,6 @@ class ChatMessageFactory(
     private val aiCompanionName: String,
     private val myUserName: String,
 ) {
-
     /**
      * Creates a new instance of `ChatMessage` representing an AI-generated message response.
      *
@@ -76,5 +75,4 @@ class ChatMessageFactory(
             type = ChatMessage.ChatMessageType.TEXT,
             sanitizedForAiContent = sanitizedForAiContent,
         )
-
 }

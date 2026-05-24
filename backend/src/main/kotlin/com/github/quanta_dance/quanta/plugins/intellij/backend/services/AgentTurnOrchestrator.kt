@@ -235,6 +235,7 @@ class AgentTurnOrchestrator(
                 displaySummary = toolResult.displaySummary,
                 errorText = toolResult.errorText,
                 detailText = toolResult.detailText,
+                filePathOverride = toolResult.filePath,
             )
         onToolUpdate?.invoke(OpenAIService.ToolTurnUpdate(completedItem))
         pendingToolOutputs.add(ResponseInputItem.ofFunctionCallOutput(toolResult.toolOutput))

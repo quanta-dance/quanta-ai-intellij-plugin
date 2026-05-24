@@ -11,6 +11,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentMan
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AiInputSanitizer
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.BackendExecutionContextsService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.OpenAIService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SessionMemoryService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SessionPlanService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage.ChatMessageType.AI_THINKING
@@ -87,8 +88,7 @@ class ChatConversationService(
         }
     }
 
-    fun messagesFlow(): Flow<List<ChatMessageDto>> =
-        _messages.map { messagesList -> messagesList.map { it.toChatMessageDto() } }
+    fun messagesFlow(): Flow<List<ChatMessageDto>> = _messages.map { messagesList -> messagesList.map { it.toChatMessageDto() } }
 
     fun currentMessages(): List<ChatMessageDto> = _messages.value.map { it.toChatMessageDto() }
 
@@ -96,8 +96,7 @@ class ChatConversationService(
 
     fun currentSessions(): List<ChatSessionDto> = _sessions.value
 
-    private fun <T> onChatPublicationThread(action: () -> T): T =
-        runBlocking(executionContexts.chatPublicationDispatcher) { action() }
+    private fun <T> onChatPublicationThread(action: () -> T): T = runBlocking(executionContexts.chatPublicationDispatcher) { action() }
 
     fun createNewSession() {
         onChatPublicationThread {
@@ -161,42 +160,38 @@ class ChatConversationService(
                 val inputs = buildRequestInputs()
                 thinkingMessageId = appendAiThinkingMessage()
                 val (responseText, _) =
-                    awaitDetachedAgentTurn {
-                        openAIService.agentTurn(
+                    try {
+                        awaitManagerTurn(
                             inputs = inputs,
-                            previousId = null,
-                            agentLabel = "AI Manager",
-                            onAssistantMessage = { assistantMessage ->
-                                val visibleContent =
-                                    if (assistantMessage.isReasoning) {
-                                        "Reasoning\n${assistantMessage.text}"
-                                    } else {
-                                        assistantMessage.text
-                                    }
-                                replaceMessage(
-                                    thinkingMessageId,
-                                    chatMessageFactory.createAIMessage(
-                                        content = visibleContent,
-                                        voiceSummary = assistantMessage.ttsSummary,
-                                    ),
-                                )
-                                firstAssistantMessageShown = true
-                                toolMessageId = null
-                                thinkingMessageId = appendAiThinkingMessage()
-                            },
-                            onToolUpdate = { update ->
-                                val targetId =
-                                    toolMessageId ?: appendAiToolMessage(
-                                        toolItems = emptyList(),
-                                        beforeMessageId = thinkingMessageId,
-                                    ).also { toolMessageId = it }
-                                val existingItems = currentToolItems(targetId)
-                                val mergedItems = mergeToolItems(existingItems, update.item)
-                                replaceMessage(
-                                    targetId,
-                                    chatMessageFactory.createAIToolMessage(mergedItems),
-                                )
-                            },
+                            thinkingMessageIdProvider = { thinkingMessageId },
+                            onThinkingMessageIdChanged = { thinkingMessageId = it },
+                            toolMessageIdProvider = { toolMessageId },
+                            onToolMessageIdChanged = { toolMessageId = it },
+                            onFirstAssistantMessageShown = { firstAssistantMessageShown = true },
+                        )
+                    } catch (e: Throwable) {
+                        if (e is CancellationException) throw e
+                        if (!isContextWindowError(e)) throw e
+
+                        clearThinkingMessages()
+                        val brief = project.service<SessionMemoryService>().compactConversationHistory()
+                        compactConversationWithBrief(brief)
+                        thinkingMessageId = appendAiThinkingMessage()
+                        toolMessageId = null
+                        firstAssistantMessageShown = false
+
+                        awaitManagerTurn(
+                            inputs =
+                                buildCompactedRetryInputs(
+                                    brief = brief,
+                                    messageContent = messageContent,
+                                    sanitizedForAiContent = sanitizedMessageContent.takeIf { it != messageContent },
+                                ),
+                            thinkingMessageIdProvider = { thinkingMessageId },
+                            onThinkingMessageIdChanged = { thinkingMessageId = it },
+                            toolMessageIdProvider = { toolMessageId },
+                            onToolMessageIdChanged = { toolMessageId = it },
+                            onFirstAssistantMessageShown = { firstAssistantMessageShown = true },
                         )
                     }
                 if (!firstAssistantMessageShown) {
@@ -229,7 +224,28 @@ class ChatConversationService(
         }
     }
 
-    private fun buildRequestInputs(): MutableList<ResponseInputItem> =
+    private fun buildRequestInputs(): MutableList<ResponseInputItem> = buildInputsFromTurns(buildHistory())
+
+    private fun buildCompactedRetryInputs(
+        brief: String,
+        messageContent: String,
+        sanitizedForAiContent: String?,
+    ): MutableList<ResponseInputItem> =
+        buildInputsFromTurns(
+            listOf(
+                ChatTurn(
+                    role = "assistant",
+                    content = "Conversation compacted. Continue using this session brief for prior context:\n$brief",
+                ),
+                ChatTurn(
+                    role = "user",
+                    content = messageContent,
+                    sanitizedForAiContent = sanitizedForAiContent,
+                ),
+            ),
+        )
+
+    private fun buildInputsFromTurns(turns: List<ChatTurn>): MutableList<ResponseInputItem> =
         buildList {
             buildContextMessage()?.let { contextMessage ->
                 add(
@@ -242,7 +258,7 @@ class ChatConversationService(
                     ),
                 )
             }
-            buildHistory().forEach { turn ->
+            turns.forEach { turn ->
                 add(
                     ResponseInputItem.ofEasyInputMessage(
                         EasyInputMessage
@@ -420,11 +436,11 @@ class ChatConversationService(
                         .builder()
                         .addInputTextContent(
                             "Scheduled reminder context (internal only):\n" +
-                                    reminderContext +
-                                    "\n\nWrite a short, natural reminder to the user. " +
-                                    "Do not say the reminder was acknowledged, delivered, fired, or triggered. " +
-                                    "Do not repeat the reminder context verbatim. " +
-                                    "Use first-person phrasing like 'I want to remind you ...'.",
+                                reminderContext +
+                                "\n\nWrite a short, natural reminder to the user. " +
+                                "Do not say the reminder was acknowledged, delivered, fired, or triggered. " +
+                                "Do not repeat the reminder context verbatim. " +
+                                "Use first-person phrasing like 'I want to remind you ...'.",
                         ).role(ResponseInputItem.Message.Role.SYSTEM)
                         .build(),
                 ),
@@ -453,11 +469,65 @@ class ChatConversationService(
                 )
             }
 
+    private suspend fun awaitManagerTurn(
+        inputs: MutableList<ResponseInputItem>,
+        thinkingMessageIdProvider: () -> String,
+        onThinkingMessageIdChanged: (String) -> Unit,
+        toolMessageIdProvider: () -> String?,
+        onToolMessageIdChanged: (String?) -> Unit,
+        onFirstAssistantMessageShown: () -> Unit,
+    ): Pair<String, String?> =
+        awaitDetachedAgentTurn {
+            openAIService.agentTurn(
+                inputs = inputs,
+                previousId = null,
+                agentLabel = "AI Manager",
+                onAssistantMessage = { assistantMessage ->
+                    val visibleContent =
+                        if (assistantMessage.isReasoning) {
+                            "Reasoning\n${assistantMessage.text}"
+                        } else {
+                            assistantMessage.text
+                        }
+                    replaceMessage(
+                        thinkingMessageIdProvider(),
+                        chatMessageFactory.createAIMessage(
+                            content = visibleContent,
+                            voiceSummary = assistantMessage.ttsSummary,
+                        ),
+                    )
+                    onFirstAssistantMessageShown()
+                    onToolMessageIdChanged(null)
+                    onThinkingMessageIdChanged(appendAiThinkingMessage())
+                },
+                onToolUpdate = { update ->
+                    val targetId =
+                        toolMessageIdProvider()
+                            ?: appendAiToolMessage(
+                                toolItems = emptyList(),
+                                beforeMessageId = thinkingMessageIdProvider(),
+                            ).also { onToolMessageIdChanged(it) }
+                    val existingItems = currentToolItems(targetId)
+                    val mergedItems = mergeToolItems(existingItems, update.item)
+                    replaceMessage(
+                        targetId,
+                        chatMessageFactory.createAIToolMessage(mergedItems),
+                    )
+                },
+            )
+        }
+
+    private fun isContextWindowError(t: Throwable): Boolean {
+        val msg = t.message.orEmpty()
+        return msg.contains("exceeds context window", ignoreCase = true) ||
+            msg.contains("context window", ignoreCase = true)
+    }
+
     private fun buildContextMessage(): String? {
         val ctx = runCatching { CurrentFileContextProvider(project).getCurrent() }.getOrNull() ?: return null
         val header =
             "Current file open: ${ctx.filePathRelative}, file version: ${ctx.version} - " +
-                    "you must always reread file if version changed"
+                "you must always reread file if version changed"
 
         return buildString {
             append(header)

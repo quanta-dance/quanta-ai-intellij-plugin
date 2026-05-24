@@ -30,11 +30,12 @@ class ToolExecutionPresenter(
         displaySummary: String? = null,
         errorText: String? = null,
         detailText: String? = null,
+        filePathOverride: String? = null,
     ): ToolExecutionItem {
         val toolName = functionCall.name()
         val argsText = runCatching { functionCall.arguments() }.getOrDefault("")
         val argsJson = runCatching { mapper.readTree(argsText) }.getOrNull()
-        val filePath = extractFilePath(argsJson)
+        val filePath = filePathOverride ?: extractFilePath(argsJson)
         val toolPresentation = resolveToolPresentation(functionCall, status)
         val displayText =
             toolPresentation

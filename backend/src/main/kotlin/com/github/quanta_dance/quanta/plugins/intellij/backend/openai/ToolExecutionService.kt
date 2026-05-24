@@ -29,6 +29,7 @@ class ToolExecutionService(
         val displaySummary: String? = null,
         val detailText: String? = null,
         val errorText: String? = null,
+        val filePath: String? = null,
     )
 
     private val objectMapper = ObjectMapper()
@@ -48,6 +49,7 @@ class ToolExecutionService(
         val displaySummary = extractDisplaySummary(safeResult)
         val detailText = buildDetailText(safeResult, succeeded)
         val errorText = extractErrorText(functionResult)
+        val filePath = extractFilePath(safeResult)
         logToolResult(functionCall, safeResult, succeeded, agentLabel)
         val toolOutput =
             ResponseInputItem.FunctionCallOutput
@@ -61,6 +63,7 @@ class ToolExecutionService(
             displaySummary = displaySummary,
             detailText = detailText,
             errorText = errorText,
+            filePath = filePath,
         )
     }
 
@@ -126,6 +129,14 @@ class ToolExecutionService(
             ?.trim()
             ?.takeIf { it.isNotBlank() }
             ?.take(2_000)
+    }
+
+    private fun extractFilePath(safeResult: Any?): String? {
+        val map = asResultMap(safeResult) ?: return null
+        return listOf("filePath", "path")
+            .firstNotNullOfOrNull { key ->
+                map[key]?.toString()?.trim()?.takeIf { it.isNotBlank() }
+            }
     }
 
     private fun classifyOutcome(
