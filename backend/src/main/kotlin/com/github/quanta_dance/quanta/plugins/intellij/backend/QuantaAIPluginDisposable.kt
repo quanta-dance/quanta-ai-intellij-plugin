@@ -4,18 +4,16 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend
 
 import com.intellij.openapi.Disposable
-import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
-import com.intellij.openapi.project.Project
 
+/**
+ * Deprecated empty compatibility disposable.
+ *
+ * Prefer implementing [Disposable] directly on services that own resources so plugin unload can
+ * clean them up through IntelliJ-managed service disposal.
+ */
 @Service(Service.Level.APP, Service.Level.PROJECT)
 class QuantaAIPluginDisposable : Disposable {
-    companion object {
-        fun getInstance(): Disposable = ApplicationManager.getApplication().getService(QuantaAIPluginDisposable::class.java)
-
-        fun getInstance(project: Project): Disposable = project.getService(QuantaAIPluginDisposable::class.java)
-    }
-
     override fun dispose() {
         // Add dispose logic here if needed
     }

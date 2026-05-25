@@ -9,6 +9,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExecutorCoroutineDispatcher
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.cancel
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -51,12 +52,20 @@ class BackendExecutionContextsService : Disposable {
 
     override fun dispose() {
         listOf(
+            mcpScope,
+            agentOrchestrationScope,
+            chatPublicationScope,
+            voiceStreamingScope,
+        ).forEach { scope ->
+            scope.cancel()
+        }
+        listOf(
             mcpDispatcher,
             agentOrchestrationDispatcher,
             chatPublicationDispatcher,
             voiceStreamingDispatcher,
         ).forEach { dispatcher ->
-            (dispatcher as? ExecutorCoroutineDispatcher)?.close()
+            dispatcher.close()
         }
     }
 }

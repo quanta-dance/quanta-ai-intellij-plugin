@@ -6,6 +6,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.frontend.voice
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.sound.AudioCapture
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaBackendApi
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
@@ -14,6 +15,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,7 +27,7 @@ import java.util.UUID
 @Service(Service.Level.PROJECT)
 class FrontendMicrophoneService(
     private val project: Project,
-) {
+) : Disposable {
     companion object {
         private val logger = Logger.getInstance(FrontendMicrophoneService::class.java)
         private const val MIC_PASSIVE_DELAY_MS = 600L
@@ -138,7 +140,11 @@ class FrontendMicrophoneService(
     }
 
     fun stopListening() {
-        if (!_isListening.value) return
+        stopListeningInternal(cancelBackendSession = true)
+    }
+
+    private fun stopListeningInternal(cancelBackendSession: Boolean) {
+        if (!_isListening.value && capture == null && currentSessionId == null) return
         QDLog.info(logger) { "FrontendMicrophoneService.stopListening" }
         micPassiveDelayJob?.cancel()
         micPassiveDelayJob = null
@@ -148,7 +154,7 @@ class FrontendMicrophoneService(
         capture = null
         val sessionId = currentSessionId
         currentSessionId = null
-        if (sessionId != null) {
+        if (cancelBackendSession && sessionId != null) {
             scope.launch {
                 runCatching {
                     QuantaBackendApi.getInstance().cancelMicrophoneSession(project.projectId(), sessionId)
@@ -157,5 +163,10 @@ class FrontendMicrophoneService(
                 }
             }
         }
+    }
+
+    override fun dispose() {
+        stopListeningInternal(cancelBackendSession = false)
+        scope.cancel()
     }
 }

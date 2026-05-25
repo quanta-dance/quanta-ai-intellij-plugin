@@ -4,6 +4,7 @@
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.settings
 
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.logging.FrontendBackendLogBridge
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
@@ -31,7 +32,7 @@ import java.io.File
 @Service(Service.Level.PROJECT)
 class FrontendMcpConfigService(
     private val project: Project,
-) : AutoCloseable {
+) : Disposable {
     private val log = project.service<FrontendBackendLogBridge>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val connection: MessageBusConnection = project.messageBus.connect()
@@ -118,8 +119,9 @@ class FrontendMcpConfigService(
             null
         }
 
-    override fun close() {
+    override fun dispose() {
         syncJob?.cancel()
+        syncJob = null
         connection.dispose()
         scope.cancel()
     }

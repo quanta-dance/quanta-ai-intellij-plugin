@@ -7,10 +7,12 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.SpeechChunkDto
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import java.net.URI
 import java.net.http.HttpClient
@@ -29,7 +31,7 @@ import java.util.concurrent.LinkedBlockingQueue
 @Service(Service.Level.PROJECT)
 class AIVoiceService(
     private val project: Project,
-) {
+) : Disposable {
     companion object {
         private val logger = Logger.getInstance(AIVoiceService::class.java)
         private const val STREAM_CHUNK_SIZE = 16 * 1024
@@ -240,5 +242,18 @@ class AIVoiceService(
         currentStreamJob?.cancel()
         currentStreamJob = null
         streams.clear()
+    }
+
+    override fun dispose() {
+        val activeJob = currentStreamJob
+        currentStreamJob = null
+        streams.clear()
+        if (activeJob != null) {
+            runCatching {
+                kotlinx.coroutines.runBlocking {
+                    activeJob.cancelAndJoin()
+                }
+            }
+        }
     }
 }

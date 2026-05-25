@@ -7,6 +7,7 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.ChatConversationService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
@@ -36,7 +37,7 @@ import javax.sound.sampled.AudioSystem
 @Service(Service.Level.PROJECT)
 class SpeechToTextService(
     private val project: Project,
-) {
+) : Disposable {
     companion object {
         private val logger = Logger.getInstance(SpeechToTextService::class.java)
         private const val MIN_PCM_BYTES = 4_096
@@ -46,6 +47,13 @@ class SpeechToTextService(
     private val audioFormat = AudioFormat(AudioFormat.Encoding.PCM_SIGNED, 16000f, 16, 1, 2, 16000f, false)
     private val httpClient: HttpClient = HttpClient.newHttpClient()
     private val objectMapper = jacksonObjectMapper()
+
+    override fun dispose() {
+        sessions.values.forEach { session ->
+            runCatching { session.close() }
+        }
+        sessions.clear()
+    }
 
     /**
      * Start a new capture session and reset any previous buffered audio.

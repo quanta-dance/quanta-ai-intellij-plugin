@@ -7,6 +7,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.frontend.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaBackendApi
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.FrontendLogDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.FrontendLogLevel
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
@@ -14,6 +15,7 @@ import com.intellij.platform.project.projectId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 /**
@@ -23,7 +25,7 @@ import kotlinx.coroutines.launch
 @Service(Service.Level.PROJECT)
 class FrontendBackendLogBridge(
     private val project: Project,
-) {
+) : Disposable {
     private val logger = Logger.getInstance(FrontendBackendLogBridge::class.java)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -53,5 +55,9 @@ class FrontendBackendLogBridge(
                 )
             }
         }
+    }
+
+    override fun dispose() {
+        scope.cancel()
     }
 }

@@ -9,6 +9,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.frontend.sound.Player
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaBackendApi
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.FrontendLogDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.FrontendLogLevel
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
@@ -17,6 +18,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -26,7 +28,7 @@ import java.util.UUID
 @Service(Service.Level.PROJECT)
 class FrontendAIVoiceService(
     private val project: Project,
-) {
+) : Disposable {
     private var process: Process? = null
     private val voiceRpcScope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
     private val frontendLogScope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
@@ -75,6 +77,7 @@ class FrontendAIVoiceService(
         try {
             QDLog.info(logger) { "FrontendAIVoiceService.stopTalking: stopping local playback/process" }
             process?.destroy()
+            process = null
         } catch (_: Throwable) {
         }
         try {
@@ -171,5 +174,13 @@ class FrontendAIVoiceService(
                     Player.stop()
                 }
             }
+    }
+
+    override fun dispose() {
+        currentSpeechJob?.cancel()
+        currentSpeechJob = null
+        stopTalkingInternal(stopBackend = false)
+        voiceRpcScope.cancel()
+        frontendLogScope.cancel()
     }
 }
