@@ -82,16 +82,31 @@ tasks {
 
         val excludedRuntimeJarMarkers = listOf(
             "slf4j",
+            "kotlin-reflect",
             "kotlinx-coroutines",
             "kotlinx-serialization",
             "ktor-",
+            "logback",
             "netty",
+        )
+        val excludedRuntimeJarPrefixes = listOf(
+            "jackson-annotations-",
+            "jackson-core-",
+            "jackson-databind-",
+            "kotlin-logging-logback-",
         )
 
         val runtimeFiles = quantaRuntime
             .filter { file ->
-                file.name.endsWith(".jar") &&
-                        excludedRuntimeJarMarkers.none { marker -> file.name.contains(marker, ignoreCase = true) }
+                val normalizedName = file.name.lowercase()
+                normalizedName.endsWith(".jar") &&
+                        excludedRuntimeJarMarkers.none { marker ->
+                            normalizedName.contains(
+                                marker,
+                                ignoreCase = true
+                            )
+                        } &&
+                        excludedRuntimeJarPrefixes.none { prefix -> normalizedName.startsWith(prefix) }
             }
             .map { zipTree(it) }
         from(runtimeFiles)

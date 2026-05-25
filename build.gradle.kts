@@ -72,6 +72,7 @@ dependencies {
 }
 
 intellijPlatform {
+    buildSearchableOptions = false
     splitMode = true
     pluginInstallationTarget.set(SplitModeAware.PluginInstallationTarget.BOTH)
 
