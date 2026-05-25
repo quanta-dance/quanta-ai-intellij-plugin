@@ -113,6 +113,8 @@ class AgentManagerService(
 
     fun addPropertyChangeListener(listener: PropertyChangeListener) = pcs.addPropertyChangeListener(listener)
 
+    fun removePropertyChangeListener(listener: PropertyChangeListener) = pcs.removePropertyChangeListener(listener)
+
     fun getAgentsSnapshot(): List<AgentSnapshot> {
         ensureAgentsLoadedFromSession()
         return agents.values.map { AgentSnapshot(it.id, it.config.role, it.config.instructions, it.config.model) }

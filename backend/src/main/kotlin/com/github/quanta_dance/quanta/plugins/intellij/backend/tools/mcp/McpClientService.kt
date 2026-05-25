@@ -45,7 +45,6 @@ import java.net.URI
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.runCatching
 import kotlin.time.Duration.Companion.seconds
 
 @Service(Service.Level.PROJECT)
@@ -71,13 +70,13 @@ class McpClientService(
     }
 
     override fun dispose() {
-        QDLog.debug(log) { "McpClientService dispose: destroying ${processes.size} processes" }
-        processes.values.forEach { p ->
-            try {
-                p.destroyForcibly()
-            } catch (_: Throwable) {
-            }
+        QDLog.debug(log) { "McpClientService dispose: shutting down ${processes.size} MCP servers" }
+        (processes.keys + clients.keys + toolCache.keys).toSet().forEach { name ->
+            shutdownServer(name)
         }
+        processes.clear()
+        clients.clear()
+        toolCache.clear()
     }
 
     private fun notifyRuntimeConfigIssue(

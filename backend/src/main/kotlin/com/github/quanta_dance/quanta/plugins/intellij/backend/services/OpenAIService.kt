@@ -144,7 +144,10 @@ class OpenAIService(
         // Chat restore happens in the frontend ToolWindowService when UI is ready.
     }
 
-    override fun dispose() {}
+    override fun dispose() {
+        oAI?.close()
+        oAI = null
+    }
 
     /**
      * Refreshes the cached OpenAI client if backend settings changed after service initialization.
@@ -162,6 +165,7 @@ class OpenAIService(
             QDLog.info(thisLogger()) {
                 "OpenAIService: rebuilding OpenAI client due to backend settings change. url=${settings.openAiUrl}, tokenPresent=${settings.openAiToken.isNotBlank()}"
             }
+            oAI?.close()
             oAI = OpenAIClientProvider.get(project)
             clientKey = latestClientKey
         }

@@ -5,6 +5,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.services
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
@@ -16,7 +17,7 @@ import java.beans.PropertyChangeListener
 @Service(Service.Level.PROJECT)
 class AgentRosterService(
     project: Project,
-) {
+) : Disposable {
     private val agentManager = project.service<AgentManagerService>()
     private val _agentsFlow = MutableStateFlow(currentAgents())
     val agentsFlow: StateFlow<List<AgentInfoDto>> = _agentsFlow.asStateFlow()
@@ -45,5 +46,9 @@ class AgentRosterService(
                 instructions = it.instructions,
             )
         }
+    }
+
+    override fun dispose() {
+        agentManager.removePropertyChangeListener(agentListener)
     }
 }

@@ -43,19 +43,17 @@ import com.github.quanta_dance.quanta.plugins.intellij.frontend.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.ChatAppColors
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.ChatAppIcons
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.components.typingIndicator
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.logging.FrontendBackendLogBridge
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.ui.cards.refactorSuggestionCard
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaBackendApi
-import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.FrontendLogDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.FrontendLogLevel
+import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.platform.project.projectId
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.Icon
@@ -63,7 +61,6 @@ import org.jetbrains.jewel.ui.component.IconButton
 import org.jetbrains.jewel.ui.component.Text
 
 private val logger = Logger.getInstance("ToolExecutionLink")
-private val linkLogScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
 @Composable
 fun messageBubble(
@@ -374,14 +371,7 @@ private fun frontendLinkLog(
         FrontendLogLevel.WARN -> QDLog.warn(logger) { message }
         FrontendLogLevel.ERROR -> QDLog.error(logger, { message }, null)
     }
-    linkLogScope.launch {
-        runCatching {
-            QuantaBackendApi.getInstance().logFrontend(
-                project.projectId(),
-                FrontendLogDto(level = level, message = message),
-            )
-        }
-    }
+    project.service<FrontendBackendLogBridge>().log(level, message)
 }
 
 @Composable

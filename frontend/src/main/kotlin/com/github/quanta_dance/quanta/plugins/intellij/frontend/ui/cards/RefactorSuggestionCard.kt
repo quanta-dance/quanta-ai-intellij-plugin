@@ -17,6 +17,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -27,11 +28,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.ChatAppIcons
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.logging.FrontendBackendLogBridge
 import com.github.quanta_dance.quanta.plugins.intellij.models.Suggestion
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaBackendApi
-import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.FrontendLogDto
-import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.FrontendLogLevel
+import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.LineNumberConverter
@@ -42,9 +43,6 @@ import com.intellij.openapi.editor.highlighter.EditorHighlighterFactory
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.project.Project
 import com.intellij.platform.project.projectId
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.Icon
@@ -56,7 +54,6 @@ import java.awt.EventQueue
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
 
-private val refactorCardScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 private val logger = Logger.getInstance("RefactorSuggestionCard")
 private val refactorCardPersistentStates = mutableMapOf<String, RefactorCardPersistentState>()
 
@@ -65,14 +62,7 @@ private fun frontendLog(
     message: String,
 ) {
     QDLog.info(logger) { message }
-    refactorCardScope.launch {
-        runCatching {
-            QuantaBackendApi.getInstance().logFrontend(
-                project.projectId(),
-                FrontendLogDto(level = FrontendLogLevel.INFO, message = message),
-            )
-        }
-    }
+    project.service<FrontendBackendLogBridge>().info(message)
 }
 
 private fun resolveFileType(filePath: String?) =
@@ -122,6 +112,7 @@ fun refactorSuggestionCard(
         remember(item.filePath, message, currentText, suggestedText, originalRange) {
             buildSuggestion(item, message, currentText, suggestedText, originalRange)
         }
+    val coroutineScope = rememberCoroutineScope()
 
     val editorScheme = EditorColorsManager.getInstance().globalScheme
     val foreground = Color(editorScheme.defaultForeground.rgb)
@@ -247,7 +238,7 @@ fun refactorSuggestionCard(
                 onClick = {
                     item.filePath?.let { path ->
                         frontendLog(project, "RefactorSuggestionCard.open: $path:${originalRange.first}")
-                        refactorCardScope.launch {
+                        coroutineScope.launch {
                             runCatching {
                                 QuantaBackendApi.getInstance().openProjectFileAtLine(
                                     project.projectId(),
@@ -272,7 +263,7 @@ fun refactorSuggestionCard(
                         frontendLog(project, "RefactorSuggestionCard.apply requested: ${item.displayText}")
                         applyError = null
                         isApplying = true
-                        refactorCardScope.launch {
+                        coroutineScope.launch {
                             runCatching {
                                 QuantaBackendApi
                                     .getInstance()

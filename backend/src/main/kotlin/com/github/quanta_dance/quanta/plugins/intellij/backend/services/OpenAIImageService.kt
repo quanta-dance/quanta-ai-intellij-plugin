@@ -73,13 +73,18 @@ class OpenAIImageService(
                 .model(DEFAULT_GENERATE_IMAGE_MODEL)
                 .outputFormat(generateOutputFormatForExtension(requestedExtension))
                 .build()
-        return requireClientReady()
-            .images()
-            .generate(params)
-            .data()
-            .orElseThrow()
-            .firstOrNull()
-            ?: throw IllegalStateException("Image API returned no image entries")
+        val client = requireClientReady()
+        try {
+            return client
+                .images()
+                .generate(params)
+                .data()
+                .orElseThrow()
+                .firstOrNull()
+                ?: throw IllegalStateException("Image API returned no image entries")
+        } finally {
+            client.close()
+        }
     }
 
     private fun editImage(
@@ -113,23 +118,33 @@ class OpenAIImageService(
             if (maskResolved != null) {
                 Files.newInputStream(maskResolved).use { maskStream ->
                     builder.mask(buildMaskPart(maskResolved, maskStream))
-                    return requireClientReady()
-                        .images()
-                        .edit(builder.build())
-                        .data()
-                        .orElseThrow()
-                        .firstOrNull()
-                        ?: throw IllegalStateException("Image edit API returned no image entries")
+                    val client = requireClientReady()
+                    try {
+                        return client
+                            .images()
+                            .edit(builder.build())
+                            .data()
+                            .orElseThrow()
+                            .firstOrNull()
+                            ?: throw IllegalStateException("Image edit API returned no image entries")
+                    } finally {
+                        client.close()
+                    }
                 }
             }
 
-            return requireClientReady()
-                .images()
-                .edit(builder.build())
-                .data()
-                .orElseThrow()
-                .firstOrNull()
-                ?: throw IllegalStateException("Image edit API returned no image entries")
+            val client = requireClientReady()
+            try {
+                return client
+                    .images()
+                    .edit(builder.build())
+                    .data()
+                    .orElseThrow()
+                    .firstOrNull()
+                    ?: throw IllegalStateException("Image edit API returned no image entries")
+            } finally {
+                client.close()
+            }
         }
     }
 

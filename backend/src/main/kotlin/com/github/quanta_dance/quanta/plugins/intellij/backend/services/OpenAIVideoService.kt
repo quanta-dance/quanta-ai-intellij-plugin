@@ -59,31 +59,36 @@ class OpenAIVideoService(
             ?.takeIf { it.isNotBlank() }
             ?.let { paramsBuilder.size(VideoSize.of(it)) }
 
-        val videos = requireClientReady().videos()
-        var video = videos.create(paramsBuilder.build())
-        while (video.status() != Video.Status.COMPLETED && video.status() != Video.Status.FAILED) {
-            Thread.sleep(pollIntervalMillis)
-            video = videos.retrieve(video.id())
-        }
-
-        if (video.status() == Video.Status.FAILED) {
-            val errorText = video.error().map { it.toString() }.orElse("Video creation failed")
-            throw IllegalStateException(errorText)
-        }
-
-        Files.createDirectories(outputPath.parent)
-        videos
-            .downloadContent(
-                VideoDownloadContentParams
-                    .builder()
-                    .videoId(video.id())
-                    .build(),
-            ).body()
-            .use { input ->
-                Files.newOutputStream(outputPath).use { output ->
-                    input.copyTo(output)
-                }
+        val client = requireClientReady()
+        try {
+            val videos = client.videos()
+            var video = videos.create(paramsBuilder.build())
+            while (video.status() != Video.Status.COMPLETED && video.status() != Video.Status.FAILED) {
+                Thread.sleep(pollIntervalMillis)
+                video = videos.retrieve(video.id())
             }
-        return video
+
+            if (video.status() == Video.Status.FAILED) {
+                val errorText = video.error().map { it.toString() }.orElse("Video creation failed")
+                throw IllegalStateException(errorText)
+            }
+
+            Files.createDirectories(outputPath.parent)
+            videos
+                .downloadContent(
+                    VideoDownloadContentParams
+                        .builder()
+                        .videoId(video.id())
+                        .build(),
+                ).body()
+                .use { input ->
+                    Files.newOutputStream(outputPath).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+            return video
+        } finally {
+            client.close()
+        }
     }
 }

@@ -18,6 +18,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMess
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatMessageDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.toChatMessageDto
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
@@ -31,6 +32,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import java.beans.PropertyChangeListener
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
@@ -42,7 +44,7 @@ import kotlin.coroutines.cancellation.CancellationException
 @Service(Service.Level.PROJECT)
 class ChatConversationService(
     private val project: Project,
-) {
+) : Disposable {
     private val aiInputSanitizer = AiInputSanitizer(project)
 
     @Suppress("ktlint:standard:backing-property-naming")
@@ -59,17 +61,12 @@ class ChatConversationService(
     @Suppress("ktlint:standard:backing-property-naming")
     private val _sessions = MutableStateFlow<List<ChatSessionDto>>(emptyList())
 
-    init {
-        persistence.ensureSessionExists()
-        _messages.value = persistence.loadActiveMessages()
-        _sessions.value = persistence.listSessions()
-        openAIService.switchToSession(persistence.getActiveSessionId(), persistence.getActiveLastResponseId())
-        agentManager.reloadAgentsFromSession()
-        agentManager.addPropertyChangeListener { event ->
+    private val agentTaskListener =
+        PropertyChangeListener { event ->
             when (event.propertyName) {
                 "agent_task_started" -> {
-                    val payload = event.newValue as? Map<*, *> ?: return@addPropertyChangeListener
-                    val agentId = payload["agentId"] as? String ?: return@addPropertyChangeListener
+                    val payload = event.newValue as? Map<*, *> ?: return@PropertyChangeListener
+                    val agentId = payload["agentId"] as? String ?: return@PropertyChangeListener
                     appendAgentThreadMessage(
                         agentId = agentId,
                         content = "Started delegated task",
@@ -77,8 +74,7 @@ class ChatConversationService(
                 }
 
                 "agent_task_finished" -> {
-                    val result =
-                        event.newValue as? AgentManagerService.AgentTaskResult ?: return@addPropertyChangeListener
+                    val result = event.newValue as? AgentManagerService.AgentTaskResult ?: return@PropertyChangeListener
                     appendAgentThreadMessage(
                         agentId = result.agentId,
                         content = result.text ?: result.error ?: "Completed delegated task",
@@ -86,6 +82,14 @@ class ChatConversationService(
                 }
             }
         }
+
+    init {
+        persistence.ensureSessionExists()
+        _messages.value = persistence.loadActiveMessages()
+        _sessions.value = persistence.listSessions()
+        openAIService.switchToSession(persistence.getActiveSessionId(), persistence.getActiveLastResponseId())
+        agentManager.reloadAgentsFromSession()
+        agentManager.addPropertyChangeListener(agentTaskListener)
     }
 
     fun messagesFlow(): Flow<List<ChatMessageDto>> = _messages.map { messagesList -> messagesList.map { it.toChatMessageDto() } }
@@ -95,6 +99,10 @@ class ChatConversationService(
     fun sessionsFlow(): Flow<List<ChatSessionDto>> = _sessions
 
     fun currentSessions(): List<ChatSessionDto> = _sessions.value
+
+    override fun dispose() {
+        agentManager.removePropertyChangeListener(agentTaskListener)
+    }
 
     private fun <T> onChatPublicationThread(action: () -> T): T = runBlocking(executionContexts.chatPublicationDispatcher) { action() }
 
