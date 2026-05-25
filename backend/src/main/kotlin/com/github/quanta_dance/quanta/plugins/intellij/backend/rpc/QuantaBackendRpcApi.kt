@@ -30,8 +30,6 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
-import com.intellij.platform.project.ProjectId
-import com.intellij.platform.project.findProjectOrNull
 import com.intellij.psi.PsiDocumentManager
 import java.util.Base64
 
@@ -49,7 +47,7 @@ class QuantaBackendRpcApi : QuantaBackendApi {
     override suspend fun ping(): String = "pong-from-backend"
 
     override suspend fun logFrontend(
-        projectId: ProjectId,
+        projectPath: String,
         entry: FrontendLogDto,
     ) {
         val message = "[Frontend][${entry.level}] ${entry.message}"
@@ -61,44 +59,44 @@ class QuantaBackendRpcApi : QuantaBackendApi {
         }
     }
 
-    override suspend fun getCurrentPlanStatus(projectId: ProjectId): ChatPlanStatusDto {
-        val backendProject = projectId.findProjectOrNull() ?: return ChatPlanStatusDto()
+    override suspend fun getCurrentPlanStatus(projectPath: String): ChatPlanStatusDto {
+        val backendProject = findBackendProject(projectPath) ?: return ChatPlanStatusDto()
         return backendProject.service<SessionPlanService>().getCurrentPlanStatus()
     }
 
-    override suspend fun getCurrentAgents(projectId: ProjectId): List<AgentInfoDto> {
-        val backendProject = projectId.findProjectOrNull() ?: return emptyList()
+    override suspend fun getCurrentAgents(projectPath: String): List<AgentInfoDto> {
+        val backendProject = findBackendProject(projectPath) ?: return emptyList()
         return backendProject.service<AgentRosterService>().agentsFlow.value.ifEmpty {
             backendProject.service<AgentManagerService>().ensureAgentsLoadedFromSession()
             backendProject.service<AgentRosterService>().agentsFlow.value
         }
     }
 
-    override suspend fun getCurrentDelegatedTasks(projectId: ProjectId): List<DelegatedTaskDto> {
-        val backendProject = projectId.findProjectOrNull() ?: return emptyList()
+    override suspend fun getCurrentDelegatedTasks(projectPath: String): List<DelegatedTaskDto> {
+        val backendProject = findBackendProject(projectPath) ?: return emptyList()
         return backendProject
             .service<com.github.quanta_dance.quanta.plugins.intellij.backend.chat.AgentChannelStateService>()
             .tasksFlow.value
     }
 
-    override suspend fun getCurrentChannelEvents(projectId: ProjectId): List<AgentChannelEventDto> {
-        val backendProject = projectId.findProjectOrNull() ?: return emptyList()
+    override suspend fun getCurrentChannelEvents(projectPath: String): List<AgentChannelEventDto> {
+        val backendProject = findBackendProject(projectPath) ?: return emptyList()
         return backendProject
             .service<com.github.quanta_dance.quanta.plugins.intellij.backend.chat.AgentChannelStateService>()
             .eventsFlow.value
     }
 
-    override suspend fun createDefaultAgentTeam(projectId: ProjectId): List<AgentInfoDto> {
-        val backendProject = projectId.findProjectOrNull() ?: return emptyList()
+    override suspend fun createDefaultAgentTeam(projectPath: String): List<AgentInfoDto> {
+        val backendProject = findBackendProject(projectPath) ?: return emptyList()
         backendProject.service<AgentManagerService>().createDefaultTeam()
-        return getCurrentAgents(projectId)
+        return getCurrentAgents(projectPath)
     }
 
     override suspend fun synthesizeSpeech(
-        projectId: ProjectId,
+        projectPath: String,
         text: String,
     ): SynthesizedSpeechDto {
-        val backendProject = projectId.findProjectOrNull() ?: return SynthesizedSpeechDto(audioBase64 = "")
+        val backendProject = findBackendProject(projectPath) ?: return SynthesizedSpeechDto(audioBase64 = "")
         val audioBytes = backendProject.getService(AIVoiceService::class.java).say(text)
         return SynthesizedSpeechDto(
             audioBase64 = Base64.getEncoder().encodeToString(audioBytes),
@@ -106,21 +104,21 @@ class QuantaBackendRpcApi : QuantaBackendApi {
     }
 
     override suspend fun startSpeechStream(
-        projectId: ProjectId,
+        projectPath: String,
         sessionId: String,
         text: String,
     ) {
-        val backendProject = projectId.findProjectOrNull() ?: return
+        val backendProject = findBackendProject(projectPath) ?: return
         backendProject.getService(AIVoiceService::class.java).startSpeechStream(sessionId, text)
     }
 
     override suspend fun pollSpeechChunk(
-        projectId: ProjectId,
+        projectPath: String,
         sessionId: String,
         afterSequence: Int,
     ): SpeechChunkDto {
         val backendProject =
-            projectId.findProjectOrNull() ?: return SpeechChunkDto(
+            findBackendProject(projectPath) ?: return SpeechChunkDto(
                 sessionId = sessionId,
                 sequence = afterSequence,
                 isLast = true,
@@ -129,35 +127,35 @@ class QuantaBackendRpcApi : QuantaBackendApi {
         return backendProject.getService(AIVoiceService::class.java).pollSpeechChunk(sessionId, afterSequence)
     }
 
-    override suspend fun stopSpeech(projectId: ProjectId) {
-        val backendProject = projectId.findProjectOrNull() ?: return
+    override suspend fun stopSpeech(projectPath: String) {
+        val backendProject = findBackendProject(projectPath) ?: return
         backendProject.getService(AIVoiceService::class.java).stopTalking()
     }
 
     override suspend fun startMicrophoneSession(
-        projectId: ProjectId,
+        projectPath: String,
         sessionId: String,
     ) {
-        val backendProject = projectId.findProjectOrNull() ?: return
+        val backendProject = findBackendProject(projectPath) ?: return
         backendProject.service<SpeechToTextService>().startSession(sessionId)
     }
 
     override suspend fun appendMicrophoneAudioChunk(
-        projectId: ProjectId,
+        projectPath: String,
         sessionId: String,
         chunkBase64: String,
     ) {
-        val backendProject = projectId.findProjectOrNull() ?: return
+        val backendProject = findBackendProject(projectPath) ?: return
         val chunkBytes = runCatching { Base64.getDecoder().decode(chunkBase64) }.getOrDefault(ByteArray(0))
         backendProject.service<SpeechToTextService>().appendAudioChunk(sessionId, chunkBytes)
     }
 
     override suspend fun finishMicrophoneSession(
-        projectId: ProjectId,
+        projectPath: String,
         sessionId: String,
     ): MicrophoneTranscriptionResultDto {
         val backendProject =
-            projectId.findProjectOrNull() ?: return MicrophoneTranscriptionResultDto(sessionId = sessionId)
+            findBackendProject(projectPath) ?: return MicrophoneTranscriptionResultDto(sessionId = sessionId)
         return MicrophoneTranscriptionResultDto(
             sessionId = sessionId,
             transcript = backendProject.service<SpeechToTextService>().finishSession(sessionId),
@@ -165,36 +163,36 @@ class QuantaBackendRpcApi : QuantaBackendApi {
     }
 
     override suspend fun cancelMicrophoneSession(
-        projectId: ProjectId,
+        projectPath: String,
         sessionId: String,
     ) {
-        val backendProject = projectId.findProjectOrNull() ?: return
+        val backendProject = findBackendProject(projectPath) ?: return
         backendProject.service<SpeechToTextService>().cancelSession(sessionId)
     }
 
     override suspend fun openProjectFile(
-        projectId: ProjectId,
+        projectPath: String,
         relativePath: String,
     ) {
-        val backendProject = projectId.findProjectOrNull() ?: return
+        val backendProject = findBackendProject(projectPath) ?: return
         OpenFileInEditorTool(filePath = relativePath).execute(backendProject)
     }
 
     override suspend fun openProjectFileAtLine(
-        projectId: ProjectId,
+        projectPath: String,
         relativePath: String,
         line: Int,
     ) {
-        val backendProject = projectId.findProjectOrNull() ?: return
+        val backendProject = findBackendProject(projectPath) ?: return
         OpenFileInEditorTool(filePath = relativePath, line = line).execute(backendProject)
     }
 
     override suspend fun applyRefactorSuggestion(
-        projectId: ProjectId,
+        projectPath: String,
         suggestion: Suggestion,
     ): ApplyRefactorSuggestionResultDto {
         val backendProject =
-            projectId.findProjectOrNull()
+            findBackendProject(projectPath)
                 ?: return ApplyRefactorSuggestionResultDto(applied = false, errorMessage = "Project not found")
         return applySuggestionDirectly(backendProject, suggestion)
     }

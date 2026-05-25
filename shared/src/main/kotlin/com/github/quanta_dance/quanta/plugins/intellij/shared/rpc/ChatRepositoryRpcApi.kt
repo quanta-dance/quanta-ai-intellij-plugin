@@ -5,7 +5,6 @@ package com.github.quanta_dance.quanta.plugins.intellij.shared.rpc
 
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatMessageDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
-import com.intellij.platform.project.ProjectId
 import com.intellij.platform.rpc.RemoteApiProviderService
 import fleet.rpc.RemoteApi
 import fleet.rpc.Rpc
@@ -23,19 +22,19 @@ interface ChatRepositoryRpcApi : RemoteApi<Unit> {
         suspend fun getInstance(): ChatRepositoryRpcApi = RemoteApiProviderService.resolve(remoteApiDescriptor<ChatRepositoryRpcApi>())
     }
 
-    suspend fun getCurrentMessages(projectId: ProjectId): List<ChatMessageDto>
+    suspend fun getCurrentMessages(projectPath: String): List<ChatMessageDto>
 
-    suspend fun getCurrentSessions(projectId: ProjectId): List<ChatSessionDto>
+    suspend fun getCurrentSessions(projectPath: String): List<ChatSessionDto>
 
-    suspend fun createNewSession(projectId: ProjectId)
+    suspend fun createNewSession(projectPath: String)
 
     suspend fun activateSession(
-        projectId: ProjectId,
+        projectPath: String,
         sessionId: String,
     )
 
     suspend fun deleteSession(
-        projectId: ProjectId,
+        projectPath: String,
         sessionId: String,
     )
 
@@ -45,9 +44,9 @@ interface ChatRepositoryRpcApi : RemoteApi<Unit> {
      * @param messageContent The content of the message to be sent.
      */
     suspend fun sendMessage(
-        projectId: ProjectId,
+        projectPath: String,
         messageContent: String,
     )
 
-    suspend fun stopAllAgents(projectId: ProjectId): Int
+    suspend fun stopAllAgents(projectPath: String): Int
 }

@@ -4,6 +4,7 @@
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel
 
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.rpc.FrontendSettingsRpcService
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.rpc.rpcProjectPath
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendMcpConfigService
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendQuantaSettingsState
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.toDto
@@ -21,7 +22,6 @@ import com.intellij.openapi.components.Service.Level
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
-import com.intellij.platform.project.projectId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -81,35 +81,35 @@ class FrontendChatRepositoryModel(
                     logger.warn("Failed to resolve backend RPC API", error)
                     return
                 }
-        val projectId = project.projectId()
+        val projectPath = project.rpcProjectPath()
 
         runCatching {
-            _messagesFlow.value = chatApi.getCurrentMessages(projectId).map { it.toChatMessage() }
+            _messagesFlow.value = chatApi.getCurrentMessages(projectPath).map { it.toChatMessage() }
         }.onFailure { error ->
             logger.warn("Failed to refresh current messages from backend", error)
         }
         runCatching {
-            _sessionsFlow.value = chatApi.getCurrentSessions(projectId)
+            _sessionsFlow.value = chatApi.getCurrentSessions(projectPath)
         }.onFailure { error ->
             logger.warn("Failed to refresh current sessions from backend", error)
         }
         runCatching {
-            _planStatusFlow.value = backendApi.getCurrentPlanStatus(projectId)
+            _planStatusFlow.value = backendApi.getCurrentPlanStatus(projectPath)
         }.onFailure { error ->
             logger.warn("Failed to refresh current plan status from backend", error)
         }
         runCatching {
-            _agentsFlow.value = backendApi.getCurrentAgents(projectId)
+            _agentsFlow.value = backendApi.getCurrentAgents(projectPath)
         }.onFailure { error ->
             logger.warn("Failed to refresh current agents from backend", error)
         }
         runCatching {
-            _delegatedTasksFlow.value = backendApi.getCurrentDelegatedTasks(projectId)
+            _delegatedTasksFlow.value = backendApi.getCurrentDelegatedTasks(projectPath)
         }.onFailure { error ->
             logger.warn("Failed to refresh current delegated tasks from backend", error)
         }
         runCatching {
-            _channelEventsFlow.value = backendApi.getCurrentChannelEvents(projectId)
+            _channelEventsFlow.value = backendApi.getCurrentChannelEvents(projectPath)
         }.onFailure { error ->
             logger.warn("Failed to refresh current channel events from backend", error)
         }
@@ -125,22 +125,22 @@ class FrontendChatRepositoryModel(
     override suspend fun sendMessage(messageContent: String) {
         ChatRepositoryRpcApi
             .getInstance()
-            .sendMessage(project.projectId(), messageContent)
+            .sendMessage(project.rpcProjectPath(), messageContent)
         refreshCurrentState()
     }
 
     override suspend fun createNewSession() {
-        ChatRepositoryRpcApi.getInstance().createNewSession(project.projectId())
+        ChatRepositoryRpcApi.getInstance().createNewSession(project.rpcProjectPath())
         refreshCurrentState()
     }
 
     override suspend fun activateSession(sessionId: String) {
-        ChatRepositoryRpcApi.getInstance().activateSession(project.projectId(), sessionId)
+        ChatRepositoryRpcApi.getInstance().activateSession(project.rpcProjectPath(), sessionId)
         refreshCurrentState()
     }
 
     override suspend fun deleteSession(sessionId: String) {
-        ChatRepositoryRpcApi.getInstance().deleteSession(project.projectId(), sessionId)
+        ChatRepositoryRpcApi.getInstance().deleteSession(project.rpcProjectPath(), sessionId)
         refreshCurrentState()
     }
 
@@ -153,12 +153,12 @@ class FrontendChatRepositoryModel(
     }
 
     override suspend fun createDefaultAgentTeam() {
-        QuantaBackendApi.getInstance().createDefaultAgentTeam(project.projectId())
+        QuantaBackendApi.getInstance().createDefaultAgentTeam(project.rpcProjectPath())
         refreshCurrentState()
     }
 
     override suspend fun stopAllAgents(): Int {
-        val stopped = ChatRepositoryRpcApi.getInstance().stopAllAgents(project.projectId())
+        val stopped = ChatRepositoryRpcApi.getInstance().stopAllAgents(project.rpcProjectPath())
         refreshCurrentState()
         return stopped
     }

@@ -4,13 +4,13 @@
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.voice
 
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.QDLog
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.rpc.rpcProjectPath
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.sound.AudioCapture
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaBackendApi
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
-import com.intellij.platform.project.projectId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -68,7 +68,7 @@ class FrontendMicrophoneService(
                     QDLog.info(logger) { "FrontendMicrophoneService.onStreamStart sessionId=$sessionId" }
                     scope.launch {
                         runCatching {
-                            QuantaBackendApi.getInstance().startMicrophoneSession(project.projectId(), sessionId)
+                            QuantaBackendApi.getInstance().startMicrophoneSession(project.rpcProjectPath(), sessionId)
                         }.onFailure { error ->
                             QDLog.warn(
                                 logger,
@@ -85,7 +85,7 @@ class FrontendMicrophoneService(
                         runCatching {
                             QuantaBackendApi
                                 .getInstance()
-                                .appendMicrophoneAudioChunk(project.projectId(), sessionId, chunkBase64)
+                                .appendMicrophoneAudioChunk(project.rpcProjectPath(), sessionId, chunkBase64)
                         }.onFailure { error ->
                             QDLog.warn(
                                 logger,
@@ -102,7 +102,9 @@ class FrontendMicrophoneService(
                     scope.launch {
                         runCatching {
                             val result =
-                                QuantaBackendApi.getInstance().finishMicrophoneSession(project.projectId(), sessionId)
+                                QuantaBackendApi
+                                    .getInstance()
+                                    .finishMicrophoneSession(project.rpcProjectPath(), sessionId)
                             QDLog.info(logger) {
                                 "FrontendMicrophoneService.finishSession sessionId=$sessionId submitted=${result.submitted} transcript=${
                                     result.transcript.take(
@@ -157,7 +159,7 @@ class FrontendMicrophoneService(
         if (cancelBackendSession && sessionId != null) {
             scope.launch {
                 runCatching {
-                    QuantaBackendApi.getInstance().cancelMicrophoneSession(project.projectId(), sessionId)
+                    QuantaBackendApi.getInstance().cancelMicrophoneSession(project.rpcProjectPath(), sessionId)
                 }.onFailure { error ->
                     QDLog.warn(logger, { "FrontendMicrophoneService.cancelSession failed: ${error.message}" }, error)
                 }

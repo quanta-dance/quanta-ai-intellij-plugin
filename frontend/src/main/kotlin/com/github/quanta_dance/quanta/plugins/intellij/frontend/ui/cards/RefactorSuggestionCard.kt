@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.sp
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.ChatAppIcons
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.logging.FrontendBackendLogBridge
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.rpc.rpcProjectPath
 import com.github.quanta_dance.quanta.plugins.intellij.models.Suggestion
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaBackendApi
@@ -42,7 +43,6 @@ import com.intellij.openapi.editor.ex.EditorEx
 import com.intellij.openapi.editor.highlighter.EditorHighlighterFactory
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.project.Project
-import com.intellij.platform.project.projectId
 import kotlinx.coroutines.launch
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.Icon
@@ -241,7 +241,7 @@ fun refactorSuggestionCard(
                         coroutineScope.launch {
                             runCatching {
                                 QuantaBackendApi.getInstance().openProjectFileAtLine(
-                                    project.projectId(),
+                                    project.rpcProjectPath(),
                                     path,
                                     originalRange.first,
                                 )
@@ -267,7 +267,7 @@ fun refactorSuggestionCard(
                             runCatching {
                                 QuantaBackendApi
                                     .getInstance()
-                                    .applyRefactorSuggestion(project.projectId(), suggestion)
+                                    .applyRefactorSuggestion(project.rpcProjectPath(), suggestion)
                             }.onSuccess { result ->
                                 EventQueue.invokeLater {
                                     if (result.applied) {

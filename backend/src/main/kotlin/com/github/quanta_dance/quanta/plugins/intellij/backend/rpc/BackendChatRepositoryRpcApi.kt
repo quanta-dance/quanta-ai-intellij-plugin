@@ -6,8 +6,6 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.rpc
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.ChatRepositoryRpcApi
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatMessageDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
-import com.intellij.platform.project.ProjectId
-import com.intellij.platform.project.findProjectOrNull
 
 /**
  * Backend implementation of the shared chat repository RPC.
@@ -16,47 +14,47 @@ import com.intellij.platform.project.findProjectOrNull
  * operations to the backend chat repository model.
  */
 class BackendChatRepositoryRpcApi : ChatRepositoryRpcApi {
-    override suspend fun getCurrentMessages(projectId: ProjectId): List<ChatMessageDto> {
-        val backendProject = projectId.findProjectOrNull() ?: return emptyList()
+    override suspend fun getCurrentMessages(projectPath: String): List<ChatMessageDto> {
+        val backendProject = findBackendProject(projectPath) ?: return emptyList()
         return BackendChatRepositoryModel.getInstance(backendProject).getCurrentMessages()
     }
 
-    override suspend fun getCurrentSessions(projectId: ProjectId): List<ChatSessionDto> {
-        val backendProject = projectId.findProjectOrNull() ?: return emptyList()
+    override suspend fun getCurrentSessions(projectPath: String): List<ChatSessionDto> {
+        val backendProject = findBackendProject(projectPath) ?: return emptyList()
         return BackendChatRepositoryModel.getInstance(backendProject).getCurrentSessions()
     }
 
-    override suspend fun createNewSession(projectId: ProjectId) {
-        val backendProject = projectId.findProjectOrNull() ?: return
+    override suspend fun createNewSession(projectPath: String) {
+        val backendProject = findBackendProject(projectPath) ?: return
         BackendChatRepositoryModel.getInstance(backendProject).createNewSession()
     }
 
     override suspend fun activateSession(
-        projectId: ProjectId,
+        projectPath: String,
         sessionId: String,
     ) {
-        val backendProject = projectId.findProjectOrNull() ?: return
+        val backendProject = findBackendProject(projectPath) ?: return
         BackendChatRepositoryModel.getInstance(backendProject).activateSession(sessionId)
     }
 
     override suspend fun deleteSession(
-        projectId: ProjectId,
+        projectPath: String,
         sessionId: String,
     ) {
-        val backendProject = projectId.findProjectOrNull() ?: return
+        val backendProject = findBackendProject(projectPath) ?: return
         BackendChatRepositoryModel.getInstance(backendProject).deleteSession(sessionId)
     }
 
     override suspend fun sendMessage(
-        projectId: ProjectId,
+        projectPath: String,
         messageContent: String,
     ) {
-        val backendProject = projectId.findProjectOrNull() ?: return
+        val backendProject = findBackendProject(projectPath) ?: return
         return BackendChatRepositoryModel.getInstance(backendProject).sendMessage(messageContent)
     }
 
-    override suspend fun stopAllAgents(projectId: ProjectId): Int {
-        val backendProject = projectId.findProjectOrNull() ?: return 0
+    override suspend fun stopAllAgents(projectPath: String): Int {
+        val backendProject = findBackendProject(projectPath) ?: return 0
         return BackendChatRepositoryModel.getInstance(backendProject).stopAllAgents()
     }
 }

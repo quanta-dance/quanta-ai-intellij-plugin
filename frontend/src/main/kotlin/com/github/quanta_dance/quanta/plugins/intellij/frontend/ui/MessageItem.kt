@@ -44,6 +44,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.ChatAppColo
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.ChatAppIcons
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.components.typingIndicator
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.logging.FrontendBackendLogBridge
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.rpc.rpcProjectPath
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.ui.cards.refactorSuggestionCard
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem
@@ -53,7 +54,6 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.Fronten
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
-import com.intellij.platform.project.projectId
 import kotlinx.coroutines.launch
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.Icon
@@ -261,7 +261,7 @@ private fun toolExecutionRow(
                                             runCatching {
                                                 QuantaBackendApi
                                                     .getInstance()
-                                                    .openProjectFile(project.projectId(), filePath!!)
+                                                    .openProjectFile(project.rpcProjectPath(), filePath!!)
                                             }.onFailure { error ->
                                                 frontendLinkLog(
                                                     project,

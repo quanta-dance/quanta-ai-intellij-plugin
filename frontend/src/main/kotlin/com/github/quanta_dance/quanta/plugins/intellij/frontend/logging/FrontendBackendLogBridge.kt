@@ -4,6 +4,7 @@
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.logging
 
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.QDLog
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.rpc.rpcProjectPath
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaBackendApi
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.FrontendLogDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.FrontendLogLevel
@@ -11,7 +12,6 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
-import com.intellij.platform.project.projectId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -50,7 +50,7 @@ class FrontendBackendLogBridge(
         scope.launch {
             runCatching {
                 QuantaBackendApi.getInstance().logFrontend(
-                    project.projectId(),
+                    project.rpcProjectPath(),
                     FrontendLogDto(level = level, message = message),
                 )
             }

@@ -13,7 +13,6 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.Fronten
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.MicrophoneTranscriptionResultDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.SpeechChunkDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.SynthesizedSpeechDto
-import com.intellij.platform.project.ProjectId
 import com.intellij.platform.rpc.RemoteApiProviderService
 import fleet.rpc.RemoteApi
 import fleet.rpc.Rpc
@@ -34,73 +33,73 @@ interface QuantaBackendApi : RemoteApi<Unit> {
     suspend fun ping(): String
 
     suspend fun logFrontend(
-        projectId: ProjectId,
+        projectPath: String,
         entry: FrontendLogDto,
     )
 
-    suspend fun getCurrentPlanStatus(projectId: ProjectId): ChatPlanStatusDto
+    suspend fun getCurrentPlanStatus(projectPath: String): ChatPlanStatusDto
 
-    suspend fun getCurrentAgents(projectId: ProjectId): List<AgentInfoDto>
+    suspend fun getCurrentAgents(projectPath: String): List<AgentInfoDto>
 
-    suspend fun getCurrentDelegatedTasks(projectId: ProjectId): List<DelegatedTaskDto>
+    suspend fun getCurrentDelegatedTasks(projectPath: String): List<DelegatedTaskDto>
 
-    suspend fun getCurrentChannelEvents(projectId: ProjectId): List<AgentChannelEventDto>
+    suspend fun getCurrentChannelEvents(projectPath: String): List<AgentChannelEventDto>
 
-    suspend fun createDefaultAgentTeam(projectId: ProjectId): List<AgentInfoDto>
+    suspend fun createDefaultAgentTeam(projectPath: String): List<AgentInfoDto>
 
     suspend fun synthesizeSpeech(
-        projectId: ProjectId,
+        projectPath: String,
         text: String,
     ): SynthesizedSpeechDto
 
     suspend fun startSpeechStream(
-        projectId: ProjectId,
+        projectPath: String,
         sessionId: String,
         text: String,
     )
 
     suspend fun pollSpeechChunk(
-        projectId: ProjectId,
+        projectPath: String,
         sessionId: String,
         afterSequence: Int,
     ): SpeechChunkDto
 
-    suspend fun stopSpeech(projectId: ProjectId)
+    suspend fun stopSpeech(projectPath: String)
 
     suspend fun startMicrophoneSession(
-        projectId: ProjectId,
+        projectPath: String,
         sessionId: String,
     )
 
     suspend fun appendMicrophoneAudioChunk(
-        projectId: ProjectId,
+        projectPath: String,
         sessionId: String,
         chunkBase64: String,
     )
 
     suspend fun finishMicrophoneSession(
-        projectId: ProjectId,
+        projectPath: String,
         sessionId: String,
     ): MicrophoneTranscriptionResultDto
 
     suspend fun cancelMicrophoneSession(
-        projectId: ProjectId,
+        projectPath: String,
         sessionId: String,
     )
 
     suspend fun openProjectFile(
-        projectId: ProjectId,
+        projectPath: String,
         relativePath: String,
     )
 
     suspend fun openProjectFileAtLine(
-        projectId: ProjectId,
+        projectPath: String,
         relativePath: String,
         line: Int,
     )
 
     suspend fun applyRefactorSuggestion(
-        projectId: ProjectId,
+        projectPath: String,
         suggestion: Suggestion,
     ): ApplyRefactorSuggestionResultDto
 }
