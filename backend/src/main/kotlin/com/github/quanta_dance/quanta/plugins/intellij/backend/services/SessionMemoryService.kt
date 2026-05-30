@@ -26,7 +26,7 @@ class SessionMemoryService(
         private const val MAX_BRIEF_CHARS = 2_500
         private const val MAX_SECTION_ITEMS = 12
         private const val MAX_LOG_ITEMS = 20
-        private const val COMPACTION_TAIL_MESSAGES = 6
+        private const val COMPACTION_TAIL_MESSAGES = 12
     }
 
     private val log = Logger.getInstance(SessionMemoryService::class.java)

@@ -198,7 +198,8 @@ private fun requiresBody(method: com.openai.core.http.HttpMethod): Boolean =
     when (method) {
         com.openai.core.http.HttpMethod.POST,
         com.openai.core.http.HttpMethod.PUT,
-        com.openai.core.http.HttpMethod.PATCH -> true
+        com.openai.core.http.HttpMethod.PATCH,
+        -> true
 
         else -> false
     }

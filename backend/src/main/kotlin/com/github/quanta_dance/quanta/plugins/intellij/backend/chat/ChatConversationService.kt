@@ -11,10 +11,14 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentMan
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AiInputSanitizer
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.BackendExecutionContextsService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.OpenAIService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.ProjectAgentsFileManager
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SessionMemoryService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SessionPlanService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ToolsRegistry
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage.ChatMessageType.AI_THINKING
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatMessageDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.toChatMessageDto
@@ -92,7 +96,10 @@ class ChatConversationService(
         agentManager.addPropertyChangeListener(agentTaskListener)
     }
 
-    fun messagesFlow(): Flow<List<ChatMessageDto>> = _messages.map { messagesList -> messagesList.map { it.toChatMessageDto() } }
+    fun messagesFlow(): Flow<List<ChatMessageDto>> =
+        _messages.map { messagesList ->
+            messagesList.map { it.toChatMessageDto() }
+        }
 
     fun currentMessages(): List<ChatMessageDto> = _messages.value.map { it.toChatMessageDto() }
 
@@ -104,7 +111,8 @@ class ChatConversationService(
         agentManager.removePropertyChangeListener(agentTaskListener)
     }
 
-    private fun <T> onChatPublicationThread(action: () -> T): T = runBlocking(executionContexts.chatPublicationDispatcher) { action() }
+    private fun <T> onChatPublicationThread(action: () -> T): T =
+        runBlocking(executionContexts.chatPublicationDispatcher) { action() }
 
     fun createNewSession() {
         onChatPublicationThread {
@@ -444,11 +452,11 @@ class ChatConversationService(
                         .builder()
                         .addInputTextContent(
                             "Scheduled reminder context (internal only):\n" +
-                                reminderContext +
-                                "\n\nWrite a short, natural reminder to the user. " +
-                                "Do not say the reminder was acknowledged, delivered, fired, or triggered. " +
-                                "Do not repeat the reminder context verbatim. " +
-                                "Use first-person phrasing like 'I want to remind you ...'.",
+                                    reminderContext +
+                                    "\n\nWrite a short, natural reminder to the user. " +
+                                    "Do not say the reminder was acknowledged, delivered, fired, or triggered. " +
+                                    "Do not repeat the reminder context verbatim. " +
+                                    "Use first-person phrasing like 'I want to remind you ...'.",
                         ).role(ResponseInputItem.Message.Role.SYSTEM)
                         .build(),
                 ),
@@ -467,7 +475,7 @@ class ChatConversationService(
 
     private fun buildHistory(): List<ChatTurn> =
         _messages.value
-            .filterNot { it.type == AI_THINKING }
+            .filter { it.isMyMessage || it.isTextMessage() }
             .map { message ->
                 val role = if (message.isMyMessage) "user" else "assistant"
                 ChatTurn(
@@ -528,14 +536,14 @@ class ChatConversationService(
     private fun isContextWindowError(t: Throwable): Boolean {
         val msg = t.message.orEmpty()
         return msg.contains("exceeds context window", ignoreCase = true) ||
-            msg.contains("context window", ignoreCase = true)
+                msg.contains("context window", ignoreCase = true)
     }
 
     private fun buildContextMessage(): String? {
         val ctx = runCatching { CurrentFileContextProvider(project).getCurrent() }.getOrNull() ?: return null
         val header =
             "Current file open: ${ctx.filePathRelative}, file version: ${ctx.version} - " +
-                "you must always reread file if version changed"
+                    "you must always reread file if version changed"
 
         return buildString {
             append(header)
@@ -568,13 +576,37 @@ class ChatConversationService(
     }
 
     fun compactConversationWithBrief(brief: String) {
-        val notice =
-            if (brief.isBlank()) {
-                "Conversation compacted. Continuing from session memory."
-            } else {
-                "Conversation compacted. Continuing from session memory.\n\n${brief.take(1200)}"
+        val agentsText =
+            runCatching { ProjectAgentsFileManager(project).readAgentsFile(maxChars = 8_000) }
+                .getOrNull()
+                .orEmpty()
+        val toolCount = runCatching { ToolsRegistry.toolsFor(project).size }.getOrDefault(0)
+        val compactedDetails =
+            buildString {
+                append("Conversation compacted.")
+                append(" Continuing from session memory.")
+                append("\n\nTool inventory refresh:\n")
+                append("Current tool count: ").append(toolCount)
+                if (agentsText.isNotBlank()) {
+                    append("\n\nAGENTS.md refresh:\n")
+                    append(agentsText.take(2_000))
+                }
+                if (brief.isNotBlank()) {
+                    append("\n\nSession brief:\n")
+                    append(brief.take(1_200))
+                }
             }
-        _messages.value = listOf(chatMessageFactory.createAIMessage(notice))
+        val compactionToolItem =
+            ToolExecutionItem(
+                callId = "session-compaction",
+                toolName = "SessionMemoryService.compactConversationHistory",
+                displayText = "Compaction completed",
+                status = ToolExecutionStatus.SUCCEEDED,
+                detailText = compactedDetails,
+            )
+        val toolMessage = chatMessageFactory.createAIToolMessage(listOf(compactionToolItem))
+        val notice = chatMessageFactory.createAIMessage(compactedDetails)
+        _messages.value = listOf(toolMessage, notice)
         persistMessages()
     }
 

@@ -37,6 +37,9 @@ class ToolExecutionPresenter(
         val argsJson = runCatching { mapper.readTree(argsText) }.getOrNull()
         val filePath = filePathOverride ?: extractFilePath(argsJson)
         val toolPresentation = resolveToolPresentation(functionCall, status)
+        val effectiveDetailText =
+            detailText?.trim()?.ifBlank { null }
+                ?: toolPresentation?.detail?.trim()?.ifBlank { null }
         val displayText =
             toolPresentation
                 ?.title
@@ -44,9 +47,6 @@ class ToolExecutionPresenter(
                 .orEmpty()
                 .ifBlank { displaySummary?.trim().orEmpty() }
                 .ifBlank { buildFallbackDisplayText(toolName, filePath) }
-        val effectiveDetailText =
-            detailText?.trim()?.ifBlank { null }
-                ?: toolPresentation?.detail?.trim()?.ifBlank { null }
         return ToolExecutionItem(
             callId = functionCall.callId(),
             toolName = toolName,
@@ -122,6 +122,6 @@ class ToolExecutionPresenter(
     private fun isDebugMode(): Boolean =
         runCatching {
             ApplicationManager.getApplication()?.isUnitTestMode == true ||
-                java.lang.Boolean.getBoolean("quanta.toolWindow.debugLinks")
+                    java.lang.Boolean.getBoolean("quanta.toolWindow.debugLinks")
         }.getOrDefault(false)
 }
