@@ -12,24 +12,46 @@ import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
 
 object ProjectVersionUtil {
-    fun getProjectBuildFiles(project: Project): List<String> {
-        val projectBaseDir =
-            PathUtils.projectRootPath(project)?.let { LocalFileSystem.getInstance().findFileByPath(it) }
-                ?: return emptyList()
+    private val buildFileNames =
+        setOf(
+            "build.gradle.kts",
+            "build.gradle",
+            "pom.xml",
+            "build.sbt",
+            "Cargo.toml",
+            "go.mod",
+            "go.work",
+            "package.json",
+        )
 
-        return projectBaseDir.children
-            .filter { file ->
-                file.name in
-                    listOf(
-                        "build.gradle.kts",
-                        "build.gradle",
-                        "pom.xml",
-                        "build.sbt",
-                        "Cargo.toml",
-                        "go.mod",
-                        "package.json",
-                    )
-            }.map { it.name }
+    fun getProjectBuildFiles(project: Project): List<String> {
+        val projectRootPath = PathUtils.projectRootPath(project) ?: return emptyList()
+        val projectBaseDir = LocalFileSystem.getInstance().findFileByPath(projectRootPath)
+            ?: return emptyList()
+
+        val foundFiles = mutableListOf<String>()
+        collectProjectBuildFiles(projectRootPath, projectBaseDir, 0, 3, foundFiles)
+        return foundFiles.distinct()
+    }
+
+    private fun collectProjectBuildFiles(
+        projectRootPath: String,
+        file: VirtualFile,
+        currentDepth: Int,
+        maxDepth: Int,
+        result: MutableList<String>,
+    ) {
+        if (currentDepth > maxDepth) return
+        if (!file.isDirectory) {
+            if (file.name in buildFileNames) {
+                result.add(file.path.removePrefix(projectRootPath).trimStart('/'))
+            }
+            return
+        }
+
+        file.children.forEach { child ->
+            collectProjectBuildFiles(projectRootPath, child, currentDepth + 1, maxDepth, result)
+        }
     }
 
     fun buildProjectFileTree(
