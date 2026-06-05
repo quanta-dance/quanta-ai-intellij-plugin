@@ -3,9 +3,11 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.settings
 
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.coroutines.CoroutineScopeHolder
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.ProjectActivity
+import kotlinx.coroutines.launch
 
 /**
  * Startup sync that pushes the local frontend settings snapshot to the backend.
@@ -16,6 +18,8 @@ import com.intellij.openapi.startup.ProjectActivity
 class FrontendSettingsStartupActivity : ProjectActivity {
     override suspend fun execute(project: Project) {
         project.service<FrontendMcpConfigService>()
-        project.service<FrontendSettingsSyncStateService>().syncOnStartup()
+        CoroutineScopeHolder.getInstance(project).getPluginScope().launch {
+            project.service<FrontendSettingsSyncStateService>().syncOnStartup()
+        }
     }
 }

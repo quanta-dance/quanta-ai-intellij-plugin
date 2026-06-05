@@ -83,14 +83,14 @@ class AgentTurnOrchestrator(
 
     private fun isReadTool(toolName: String): Boolean =
         toolName.equals("ReadFile", ignoreCase = true) ||
-            toolName.equals("ReadFileContent", ignoreCase = true) ||
-            toolName.equals("ReadPsiBlockAtPosition", ignoreCase = true)
+                toolName.equals("ReadFileContent", ignoreCase = true) ||
+                toolName.equals("ReadPsiBlockAtPosition", ignoreCase = true)
 
     private fun isWriteTool(toolName: String): Boolean =
         toolName.equals("PatchFile", ignoreCase = true) ||
-            toolName.equals("CreateOrUpdateFile", ignoreCase = true) ||
-            toolName.equals("DeleteFileTool", ignoreCase = true) ||
-            toolName.equals("CopyFileOrDirectoryTool", ignoreCase = true)
+                toolName.equals("CreateOrUpdateFile", ignoreCase = true) ||
+                toolName.equals("DeleteFileTool", ignoreCase = true) ||
+                toolName.equals("CopyFileOrDirectoryTool", ignoreCase = true)
 
     private fun evaluateGuardrails(
         state: TurnGuardrailState,
@@ -331,8 +331,8 @@ class AgentTurnOrchestrator(
     ) {
         QDLog.info(thisLogger()) {
             "OpenAIService.agentTurn summary: agent=$agentLabel responseId=${responseId ?: "<none>"} " +
-                "toolCalls=${state.toolNames.size} skipped=${state.guardrailSkips} " +
-                "files=${state.touchedFiles.size} tools=${state.toolNames.distinct().joinToString(",") { it }}"
+                    "toolCalls=${state.toolNames.size} skipped=${state.guardrailSkips} " +
+                    "files=${state.touchedFiles.size} tools=${state.toolNames.distinct().joinToString(",") { it }}"
         }
     }
 
@@ -437,13 +437,21 @@ class AgentTurnOrchestrator(
                         item.message().ifPresent { messageItem ->
                             messageItem.content().forEach { content ->
                                 val message = content.asOutputText()
-                                val txt = message.summaryMessage
+                                val txt =
+                                    message.summaryMessage.trim().ifBlank {
+                                        listOfNotNull(
+                                            message.ttsSummary.trim().takeIf { it.isNotBlank() },
+                                            message.planBlockingQuestion?.trim()?.takeIf { it.isNotBlank() },
+                                            message.nextStep?.trim()?.takeIf { it.isNotBlank() }
+                                                ?.let { "Next step: $it" },
+                                        ).firstOrNull().orEmpty()
+                                    }
                                 QDLog.info(thisLogger()) {
                                     val trimmed = txt.trim()
                                     val summary = trimmed.take(160)
                                     "OpenAIService.agentTurn outputText: nextStep=${message.nextStep} " +
-                                        "planNeedsUserConfirmation=${message.planNeedsUserConfirmation} " +
-                                        "summaryChars=${trimmed.length} summary='$summary'"
+                                            "planNeedsUserConfirmation=${message.planNeedsUserConfirmation} " +
+                                            "summaryChars=${trimmed.length} summary='$summary'"
                                 }
 
                                 aggregated.append(txt).append('\n')
