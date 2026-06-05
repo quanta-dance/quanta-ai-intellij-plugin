@@ -17,17 +17,18 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.SwingPanel
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.ChatAppIcons
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.coroutines.CoroutineScopeHolder
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.logging.FrontendBackendLogBridge
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.rpc.rpcProjectPath
 import com.github.quanta_dance.quanta.plugins.intellij.models.Suggestion
@@ -112,7 +113,7 @@ fun refactorSuggestionCard(
         remember(item.filePath, message, currentText, suggestedText, originalRange) {
             buildSuggestion(item, message, currentText, suggestedText, originalRange)
         }
-    val coroutineScope = rememberCoroutineScope()
+    val rpcScope = remember(project) { CoroutineScopeHolder.getInstance(project).getPluginScope() }
 
     val editorScheme = EditorColorsManager.getInstance().globalScheme
     val foreground = Color(editorScheme.defaultForeground.rgb)
@@ -132,6 +133,7 @@ fun refactorSuggestionCard(
     var applyError by remember(item.callId) { mutableStateOf<String?>(null) }
     var actionState by persistentState::actionState
     var appliedRange by persistentState::appliedRange
+    val linkTargetLine = appliedRange?.first ?: originalRange.first
     val displayedSuggestedRange = appliedRange ?: suggestedRange
 
     Column(
@@ -162,11 +164,35 @@ fun refactorSuggestionCard(
             Text(
                 text =
                     "$fileLabel:${originalRange.first}-${originalRange.second}" +
-                        " → ${displayedSuggestedRange.first}-${displayedSuggestedRange.second}",
+                            " → ${displayedSuggestedRange.first}-${displayedSuggestedRange.second}",
                 style =
                     JewelTheme.defaultTextStyle.copy(
-                        color = foreground.copy(alpha = 0.75f),
+                        fontWeight = FontWeight.Medium,
+                        color = Color(0xFF69B7FF),
+                        textDecoration = TextDecoration.Underline,
                     ),
+                modifier =
+                    Modifier.clickable {
+                        item.filePath?.let { path ->
+                            frontendLog(
+                                project,
+                                "RefactorSuggestionCard.openLink: $path:$linkTargetLine",
+                            )
+                            rpcScope.launch {
+                                runCatching {
+                                    QuantaBackendApi.getInstance().openProjectFileAtLine(
+                                        project.rpcProjectPath(),
+                                        path,
+                                        linkTargetLine,
+                                    )
+                                }.onFailure { error ->
+                                    QDLog.warn(logger) {
+                                        "Failed to open linked refactor suggestion file: ${error.message}"
+                                    }
+                                }
+                            }
+                        }
+                    },
             )
         }
 
@@ -237,8 +263,8 @@ fun refactorSuggestionCard(
                 accent = actionAccent,
                 onClick = {
                     item.filePath?.let { path ->
-                        frontendLog(project, "RefactorSuggestionCard.open: $path:${originalRange.first}")
-                        coroutineScope.launch {
+                        frontendLog(project, "RefactorSuggestionCard.open: $path:${linkTargetLine}")
+                        rpcScope.launch {
                             runCatching {
                                 QuantaBackendApi.getInstance().openProjectFileAtLine(
                                     project.rpcProjectPath(),
@@ -263,7 +289,7 @@ fun refactorSuggestionCard(
                         frontendLog(project, "RefactorSuggestionCard.apply requested: ${item.displayText}")
                         applyError = null
                         isApplying = true
-                        coroutineScope.launch {
+                        rpcScope.launch {
                             runCatching {
                                 QuantaBackendApi
                                     .getInstance()
