@@ -4,6 +4,7 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.project
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.FileHashUtil
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
@@ -17,7 +18,7 @@ class CurrentFileContextProvider(
     data class CurrentFileContext(
         val projectBase: String,
         val filePathRelative: String,
-        val version: Long,
+        val fileHashSha256: String,
         val caretLine: Int?,
         val caretColumn: Int?,
         val selectionStartLine: Int?,
@@ -55,13 +56,10 @@ class CurrentFileContextProvider(
                 return null
             }
 
-        val version =
-            ApplicationManager.getApplication().runReadAction<Long> {
-                val psi = PsiManager.getInstance(project).findFile(vf)
-                val psiStamp = psi?.modificationStamp ?: 0L
-                val docStamp = FileDocumentManager.getInstance().getDocument(vf)?.modificationStamp ?: 0L
-                val vfsStamp = VersionUtil.safeVfsStamp(vf)
-                VersionUtil.computeVersion(psiStamp, docStamp, vfsStamp)
+        val fileHashSha256 =
+            ApplicationManager.getApplication().runReadAction<String> {
+                val documentText = FileDocumentManager.getInstance().getDocument(vf)?.text
+                FileHashUtil.sha256Normalized(documentText ?: vf.contentsToByteArray().toString(Charsets.UTF_8))
             }
 
         return ApplicationManager.getApplication().runReadAction<CurrentFileContext> {
@@ -98,7 +96,7 @@ class CurrentFileContextProvider(
             CurrentFileContext(
                 projectBase = basePath,
                 filePathRelative = rel,
-                version = version,
+                fileHashSha256 = fileHashSha256,
                 caretLine = caretLine,
                 caretColumn = caretCol,
                 selectionStartLine = selStartLine,
@@ -109,4 +107,6 @@ class CurrentFileContextProvider(
             )
         }
     }
+
+
 }

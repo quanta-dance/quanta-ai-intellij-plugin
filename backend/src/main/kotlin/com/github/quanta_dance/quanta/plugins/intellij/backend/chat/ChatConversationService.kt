@@ -541,24 +541,25 @@ class ChatConversationService(
 
     private fun buildContextMessage(): String? {
         val ctx = runCatching { CurrentFileContextProvider(project).getCurrent() }.getOrNull() ?: return null
-        val header =
-            "Current file open: ${ctx.filePathRelative}, file version: ${ctx.version} - " +
-                    "you must always reread file if version changed"
+        val caretSuffix =
+            buildString {
+                val caretLine = ctx.caretLine
+                val caretCol = ctx.caretColumn
+                if (caretLine != null && caretCol != null) {
+                    append("; caret line ").append(caretLine).append(", column ").append(caretCol)
+                }
+            }
 
         return buildString {
-            append(header)
-            val caretLine = ctx.caretLine
-            val caretCol = ctx.caretColumn
-            if (caretLine != null && caretCol != null) {
-                append(
-                    """
-                    User Caret position in the file ${ctx.filePathRelative} - Line: ${'$'}caretLine, Column (Offset): ${'$'}caretCol
-                    """.trimIndent(),
-                )
-            }
-            if (ctx.selectedText != null) {
+            append("Current file open: ")
+            append(ctx.filePathRelative)
+            append("; file hash sha256: ")
+            append(ctx.fileHashSha256)
+            append("; reread the file if the hash changed")
+            append(caretSuffix)
+            ctx.selectedText?.takeIf { it.isNotBlank() }?.let { selectedText ->
                 append("\nSelected text:\n")
-                append(ctx.selectedText)
+                append(selectedText.take(2_000))
             }
         }
     }
