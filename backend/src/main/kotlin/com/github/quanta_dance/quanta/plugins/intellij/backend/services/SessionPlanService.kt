@@ -181,13 +181,7 @@ class SessionPlanService(
                 state.sessionPlans.remove(key)
             }
             publishCurrentStatus()
-            try {
-                project.service<SessionMemoryService>().refreshFromCurrentState(
-                    reason = "plan_update",
-                    explicitNote = "Session plan updated: ${nextPlan.normalizedStatus()}",
-                )
-            } catch (_: Throwable) {
-            }
+
             return PlanWriteResult(changed = true, plan = nextPlan)
         } catch (t: Throwable) {
             log.warn("Failed to persist session plan state: ${t.message}", t)

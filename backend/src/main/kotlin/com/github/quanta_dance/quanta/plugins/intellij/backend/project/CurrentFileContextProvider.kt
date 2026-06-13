@@ -9,7 +9,6 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
-import com.intellij.psi.PsiManager
 import java.nio.file.Paths
 
 class CurrentFileContextProvider(
@@ -107,6 +106,4 @@ class CurrentFileContextProvider(
             )
         }
     }
-
-
 }

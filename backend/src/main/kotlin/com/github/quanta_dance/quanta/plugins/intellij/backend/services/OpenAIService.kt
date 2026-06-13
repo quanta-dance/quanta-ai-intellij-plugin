@@ -13,7 +13,6 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.QuantaAI
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
-import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
 import com.openai.client.OpenAIClient
@@ -122,15 +121,6 @@ class OpenAIService(
         responseId: String? = null,
     ) {
         persistOnly(role, text, responseId)
-        if (role.equals("assistant", ignoreCase = true) && text.isNotBlank()) {
-            try {
-                project.service<SessionMemoryService>().refreshFromCurrentState(
-                    reason = "assistant_turn",
-                    assistantText = text,
-                )
-            } catch (_: Throwable) {
-            }
-        }
     }
 
     init {

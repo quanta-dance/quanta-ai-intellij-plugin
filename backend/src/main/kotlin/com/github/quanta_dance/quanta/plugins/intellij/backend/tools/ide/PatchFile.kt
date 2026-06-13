@@ -27,7 +27,6 @@ import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiManager
 import com.intellij.psi.codeStyle.CodeStyleManager
 
-
 /**
  * Backend tool for guarded, line-oriented file patching.
  *
@@ -36,15 +35,13 @@ import com.intellij.psi.codeStyle.CodeStyleManager
  */
 @JsonClassDescription(
     "Apply one or more line-range patches to a specified file. Patches are applied in a single write action, " +
-            "from bottom to top (descending start line), so earlier replacements do not shift later ranges. " +
-            "Lines are 1-based inclusive; offsets are computed from the current Document. Supports optional guards.",
+        "from bottom to top (descending start line), so earlier replacements do not shift later ranges. " +
+        "Lines are 1-based inclusive; offsets are computed from the current Document. Supports optional guards.",
 )
 class PatchFile :
     ToolInterface<String>,
     ToolPresentationProvider {
-    data class Patch
-    @JsonCreator
-    constructor(
+    data class Patch @JsonCreator constructor(
         @param:JsonProperty("fromLine")
         @field:JsonPropertyDescription("1-based start line (inclusive)")
         var fromLine: Int = 1,
@@ -57,7 +54,7 @@ class PatchFile :
         @param:JsonProperty("expectedText")
         @field:JsonPropertyDescription(
             "Optional expected current text for the specified line range. " +
-                    "If provided and does not match, patch is skipped or triggers failure depending on stopOnMismatch.",
+                "If provided and does not match, patch is skipped or triggers failure depending on stopOnMismatch.",
         )
         var expectedText: String? = null,
     )

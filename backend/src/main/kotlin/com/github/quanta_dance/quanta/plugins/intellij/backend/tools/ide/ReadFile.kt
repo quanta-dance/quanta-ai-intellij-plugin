@@ -22,7 +22,6 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.isFile
 
-
 /**
  * Backend tool for reading file content with optional slicing and truncation strategies.
  *

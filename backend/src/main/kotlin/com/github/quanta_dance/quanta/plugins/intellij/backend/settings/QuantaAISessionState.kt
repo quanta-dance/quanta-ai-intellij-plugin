@@ -3,7 +3,6 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.backend.settings
 
-import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SessionMemoryFacts
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SessionPlan
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.PersistentStateComponent
@@ -71,8 +70,6 @@ class QuantaAISessionState : PersistentStateComponent<QuantaAISessionState.State
         var conversationSummaries: MutableMap<String, String> = mutableMapOf(),
         var agentInboxes: MutableMap<String, MutableList<AgentInboxMessage>> = mutableMapOf(),
         var sessionPlans: MutableMap<String, SessionPlan> = mutableMapOf(),
-        /** Structured per-session memory keyed the same way as the main conversation history. */
-        var sessionMemories: MutableMap<String, SessionMemoryFacts> = mutableMapOf(),
         var mainLastResponseId: String? = null,
     )
 

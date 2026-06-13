@@ -26,8 +26,9 @@ object ProjectVersionUtil {
 
     fun getProjectBuildFiles(project: Project): List<String> {
         val projectRootPath = PathUtils.projectRootPath(project) ?: return emptyList()
-        val projectBaseDir = LocalFileSystem.getInstance().findFileByPath(projectRootPath)
-            ?: return emptyList()
+        val projectBaseDir =
+            LocalFileSystem.getInstance().findFileByPath(projectRootPath)
+                ?: return emptyList()
 
         val foundFiles = mutableListOf<String>()
         collectProjectBuildFiles(projectRootPath, projectBaseDir, 0, 3, foundFiles)

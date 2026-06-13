@@ -122,6 +122,6 @@ class ToolExecutionPresenter(
     private fun isDebugMode(): Boolean =
         runCatching {
             ApplicationManager.getApplication()?.isUnitTestMode == true ||
-                    java.lang.Boolean.getBoolean("quanta.toolWindow.debugLinks")
+                java.lang.Boolean.getBoolean("quanta.toolWindow.debugLinks")
         }.getOrDefault(false)
 }
