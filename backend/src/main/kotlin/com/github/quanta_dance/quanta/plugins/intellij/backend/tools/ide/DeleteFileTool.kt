@@ -49,6 +49,7 @@ class DeleteFileTool : ToolInterface<String> {
             } catch (e: IllegalArgumentException) {
                 return e.message ?: "Invalid path"
             }
+        val deletedPath = filePath?.trim().orEmpty().ifBlank { target.toString() }
 
         return try {
             if (Files.isDirectory(target)) {
@@ -60,9 +61,9 @@ class DeleteFileTool : ToolInterface<String> {
             } else {
                 Files.deleteIfExists(target)
             }
-            "Delete successful"
+            "Delete successful: $deletedPath"
         } catch (e: Exception) {
-            val msg = "Error deleting: ${e.message}"
+            val msg = "Error deleting $deletedPath: ${e.message}"
             msg
         }
     }

@@ -41,7 +41,9 @@ import com.intellij.psi.codeStyle.CodeStyleManager
 class PatchFile :
     ToolInterface<String>,
     ToolPresentationProvider {
-    data class Patch @JsonCreator constructor(
+    data class Patch
+    @JsonCreator
+    constructor(
         @param:JsonProperty("fromLine")
         @field:JsonPropertyDescription("1-based start line (inclusive)")
         var fromLine: Int = 1,

@@ -29,11 +29,13 @@ import com.openai.models.responses.StructuredResponseCreateParams
 import com.openai.models.responses.Tool
 import java.math.BigDecimal
 import java.math.BigInteger
+import java.util.concurrent.ConcurrentHashMap
 
 class ResponseBuilder(
     private val project: Project,
 ) {
     private val mapper = jacksonObjectMapper()
+    private val builtInToolCache = ConcurrentHashMap<String, Tool>()
 
     private fun mergedInstructions(): String {
         val base = Instructions.instructions
@@ -166,19 +168,23 @@ class ResponseBuilder(
             ToolsRegistry
                 .toolsFor(project)
                 .asSequence()
-                .filter { toolClass -> allowedToolClassFilter?.invoke(toolClass) ?: true }
-                .filter { toolClass -> allowedBuiltInNames?.contains(toolClass.simpleName) ?: true }
-                .map { toolClass ->
+                .mapNotNull { toolClass ->
                     val toolName = toolClass.simpleName
-                    Tool.ofFunction(
-                        FunctionTool
-                            .builder()
-                            .name(toolName)
-                            .description(builtInToolDescription(toolClass))
-                            .parameters(builtInToolParameters(toolClass))
-                            .strict(true)
-                            .build(),
-                    )
+                    val cachedTool =
+                        builtInToolCache.computeIfAbsent(toolName) {
+                            Tool.ofFunction(
+                                FunctionTool
+                                    .builder()
+                                    .name(toolName)
+                                    .description(builtInToolDescription(toolClass))
+                                    .parameters(builtInToolParameters(toolClass))
+                                    .strict(true)
+                                    .build(),
+                            )
+                        }
+                    if (allowedToolClassFilter?.invoke(toolClass) == false) return@mapNotNull null
+                    if (allowedBuiltInNames?.contains(toolName) == false) return@mapNotNull null
+                    cachedTool
                 }.toList()
         if (!includeMcp) return builtInTools
 

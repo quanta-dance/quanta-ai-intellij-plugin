@@ -9,7 +9,6 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.project.ProjectVersionUtil
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
-import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
