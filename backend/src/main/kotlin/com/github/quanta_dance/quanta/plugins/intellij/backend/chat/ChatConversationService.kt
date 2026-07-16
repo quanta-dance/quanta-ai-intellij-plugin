@@ -511,7 +511,9 @@ class ChatConversationService(
                     )
                     onFirstAssistantMessageShown()
                     onToolMessageIdChanged(null)
-                    onThinkingMessageIdChanged(appendAiThinkingMessage())
+                    if (assistantMessage.isReasoning) {
+                        onThinkingMessageIdChanged(appendAiThinkingMessage())
+                    }
                 },
                 onToolUpdate = { update ->
                     val targetId =

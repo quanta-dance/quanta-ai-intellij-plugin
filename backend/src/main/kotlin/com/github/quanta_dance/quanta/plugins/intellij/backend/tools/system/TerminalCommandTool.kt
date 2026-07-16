@@ -192,7 +192,7 @@ class TerminalCommandTool : ToolInterface<String> {
                 QDLog.warn(logger, { "Command '$cmd' exited with $exitCode" })
             }
 
-            outputBuilder.toString().trim()
+            tailPreservingOutput(outputBuilder.toString().trim())
         } catch (e: IOException) {
             val errorMsg = "Error executing command: ${e.message}\n"
             consoleView?.print(errorMsg, ConsoleViewContentType.ERROR_OUTPUT)
@@ -203,6 +203,26 @@ class TerminalCommandTool : ToolInterface<String> {
             consoleView?.print(errorMsg, ConsoleViewContentType.ERROR_OUTPUT)
             QDLog.error(logger, { "Process creation failed" }, e)
             errorMsg
+        }
+    }
+
+    private fun tailPreservingOutput(output: String): String {
+        if (output.length <= 12_000) return output
+
+        val lines = output.lines()
+        val tailLineTarget = 200
+        val tailLines = lines.takeLast(tailLineTarget)
+        val tailText = tailLines.joinToString("\n")
+        return buildString {
+            append("[output truncated; showing last ")
+            append(tailLines.size)
+            append(" lines of ")
+            append(lines.size)
+            append("]\n")
+            append(tailText)
+            if (output.endsWith("\n") && !tailText.endsWith("\n")) {
+                append('\n')
+            }
         }
     }
 }

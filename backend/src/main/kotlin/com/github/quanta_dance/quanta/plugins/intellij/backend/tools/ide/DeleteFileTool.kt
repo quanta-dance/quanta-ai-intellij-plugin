@@ -6,7 +6,9 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolExecutionPresentation
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolPresentationProvider
 import com.intellij.openapi.project.Project
 import java.nio.file.Files
 import java.nio.file.Path
@@ -21,7 +23,19 @@ import java.nio.file.Path
     "Tool to delete a specified file from the project. " +
         "Before modifying methods in the file you may need to check for this method references as they might need to be updated.",
 )
-class DeleteFileTool : ToolInterface<String> {
+class DeleteFileTool :
+    ToolInterface<String>,
+    ToolPresentationProvider {
+    override fun presentation(
+        status: com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus,
+    ): ToolExecutionPresentation =
+        ToolExecutionPresentation(
+            title =
+                filePath?.trim()?.takeIf { it.isNotBlank() }?.let { path ->
+                    "Deleting $path"
+                } ?: "Deleting file",
+        )
+
     @field:JsonPropertyDescription("Relative to the project root path to the file to be deleted.")
     var filePath: String? = null
 
@@ -61,7 +75,7 @@ class DeleteFileTool : ToolInterface<String> {
             } else {
                 Files.deleteIfExists(target)
             }
-            "Delete successful: $deletedPath"
+            "Deleted $deletedPath"
         } catch (e: Exception) {
             val msg = "Error deleting $deletedPath: ${e.message}"
             msg

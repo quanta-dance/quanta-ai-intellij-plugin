@@ -10,6 +10,26 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.rpc.BackendSettin
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.Instructions
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.QuantaAISessionState
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent.AgentPostMessageTool
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent.AgentSendMessageTool
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.builder.GetTestInfoTool
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.builder.GradleSyncTool
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.builder.RunGradleBuildTool
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.builder.RunGradleTestsTool
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.CopyFileOrDirectoryTool
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.CreateOrUpdateFile
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.DeleteFileTool
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.GetFileReferencesAndDependencies
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.InspectDependencies
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.ListFiles
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.OpenFileInEditorTool
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.PatchFile
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.ReadFile
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.ReadPsiBlockAtPosition
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.ValidateClassFileTool
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.project.GetProjectDetails
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.project.SearchInFiles
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.refactor.CodeRefactorSuggester
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelAuthorTypeDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventKindDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskStatusDto
@@ -618,54 +638,52 @@ class AgentManagerService(
         // Inbox messages are delivered automatically at the start of each turn.
         val commonComms =
             setOf(
-                "AgentSendMessageTool",
-                "AgentPostMessageTool",
-            )
+                AgentSendMessageTool::class.java,
+                AgentPostMessageTool::class.java,
+            ).map { toString() }.toSet()
 
         val developerTools =
             commonComms +
                 setOf(
-                    "CodeRefactorSuggester",
-                    "CreateOrUpdateFile",
-                    "PatchFile",
-                    "ReadFileContent",
-                    "ReadPsiBlockAtPosition",
-                    "SearchInFiles",
-                    "SearchProjectEmbeddings",
-                    "UpsertProjectEmbedding",
-                    "GetProjectDetails",
-                    "ListFiles",
-                    "GetFileReferencesAndDependencies",
-                    "InspectDependencies",
-                    "OpenFileInEditorTool",
-                    "ValidateClassFileTool",
-                    "CopyFileOrDirectoryTool",
-                    "DeleteFileTool",
-                )
+                    CodeRefactorSuggester::class.java,
+                    CodeRefactorSuggester::class.java,
+                    CreateOrUpdateFile::class.java,
+                    PatchFile::class.java,
+                    ReadFile::class.java,
+                    ReadPsiBlockAtPosition::class.java,
+                    SearchInFiles::class.java,
+                    GetProjectDetails::class.java,
+                    ListFiles::class.java,
+                    GetFileReferencesAndDependencies::class.java,
+                    InspectDependencies::class.java,
+                    OpenFileInEditorTool::class.java,
+                    ValidateClassFileTool::class.java,
+                    CopyFileOrDirectoryTool::class.java,
+                    DeleteFileTool::class.java,
+                ).map { toString() }.toSet()
 
         val testTools =
             commonComms +
                 setOf(
-                    "RunGradleTestsTool",
-                    "RunGradleBuildTool",
-                    "GetTestInfoTool",
-                    "GradleSyncTool",
-                    "ReadFileContent",
-                    "SearchInFiles",
-                    "GetProjectDetails",
-                )
+                    RunGradleTestsTool::class.java,
+                    RunGradleBuildTool::class.java,
+                    GetTestInfoTool::class.java,
+                    GradleSyncTool::class.java,
+                    ReadFile::class.java,
+                    SearchInFiles::class.java,
+                    GetProjectDetails::class.java,
+                ).map { toString() }.toSet()
 
         val analystTools =
             commonComms +
                 setOf(
-                    "GetProjectDetails",
-                    "SearchInFiles",
-                    "ReadFileContent",
-                    "SearchProjectEmbeddings",
-                    "GetFileReferencesAndDependencies",
-                    "InspectDependencies",
-                    "ListFiles",
-                )
+                    GetProjectDetails::class.java,
+                    SearchInFiles::class.java,
+                    ReadFile::class.java,
+                    GetFileReferencesAndDependencies::class.java,
+                    InspectDependencies::class.java,
+                    ListFiles::class.java,
+                ).map { toString() }
 
         val ids = mutableListOf<String>()
         ids +=

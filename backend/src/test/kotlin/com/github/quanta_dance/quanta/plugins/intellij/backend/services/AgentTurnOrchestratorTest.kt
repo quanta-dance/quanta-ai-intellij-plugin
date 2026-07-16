@@ -90,7 +90,7 @@ class AgentTurnOrchestratorTest {
 
         assertEquals(1, fixture.createResponseCallCount)
         assertTrue(fixture.systemMessages.isEmpty())
-        assertEquals(listOf("Blocked on missing credential."), fixture.persistedMessages)
+        assertEquals(listOf("Blocked on missing credential.\nNext step: WAIT_USER"), fixture.persistedMessages)
     }
 
     @Test
@@ -171,7 +171,7 @@ class AgentTurnOrchestratorTest {
         assertEquals(3, fixture.createResponseCallCount)
         assertTrue(fixture.systemMessages.any { it.contains("still has unchecked tasks") })
         assertTrue(fixture.systemMessages.any { it.contains("without making progress") })
-        assertEquals(listOf("Blocked on external approval."), fixture.persistedMessages)
+        assertEquals(listOf("Blocked on external approval.\nNext step: WAIT_USER"), fixture.persistedMessages)
     }
 
     private fun orchestratorFixture(

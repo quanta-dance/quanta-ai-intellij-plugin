@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.insert
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.foundation.verticalScroll
@@ -185,7 +186,9 @@ fun promptInput(
                         if (keyEvent.key == Key.Enter && keyEvent.type == KeyEventType.KeyDown) {
                             if (keyEvent.isShiftPressed) {
                                 skipInputChangeUpdate = true
-                                textFieldState.setTextAndPlaceCursorAtEnd("${textFieldState.text}\n")
+                                textFieldState.edit {
+                                    insert(selection.start, "\n")
+                                }
                                 false
                             } else {
                                 val message = textFieldState.text
@@ -403,15 +406,15 @@ fun promptInput(
                 }
 
                 promptInputState == MessageInputState.Disabled ||
-                    promptInputState is MessageInputState.Enabled ||
-                    promptInputState is MessageInputState.SendFailed ||
-                    promptInputState is MessageInputState.Sent -> {
+                        promptInputState is MessageInputState.Enabled ||
+                        promptInputState is MessageInputState.SendFailed ||
+                        promptInputState is MessageInputState.Sent -> {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (availableModels.isNotEmpty()) {
                             key(currentModel) {
                                 ComboBox(
                                     labelText =
-                                    currentModel,
+                                        currentModel,
                                     modifier =
                                         Modifier
                                             .widthIn(min = 120.dp)

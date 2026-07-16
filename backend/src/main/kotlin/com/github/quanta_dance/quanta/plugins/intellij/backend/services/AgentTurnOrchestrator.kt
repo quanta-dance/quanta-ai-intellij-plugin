@@ -8,6 +8,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.ToolExecutionService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.models.OpenAIResponse
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.ReadFile
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
@@ -83,14 +84,14 @@ class AgentTurnOrchestrator(
 
     private fun isReadTool(toolName: String): Boolean =
         toolName.equals("ReadFile", ignoreCase = true) ||
-            toolName.equals("ReadFileContent", ignoreCase = true) ||
-            toolName.equals("ReadPsiBlockAtPosition", ignoreCase = true)
+                toolName.equals(ReadFile.toString(), ignoreCase = true) ||
+                toolName.equals("ReadPsiBlockAtPosition", ignoreCase = true)
 
     private fun isWriteTool(toolName: String): Boolean =
         toolName.equals("PatchFile", ignoreCase = true) ||
-            toolName.equals("CreateOrUpdateFile", ignoreCase = true) ||
-            toolName.equals("DeleteFileTool", ignoreCase = true) ||
-            toolName.equals("CopyFileOrDirectoryTool", ignoreCase = true)
+                toolName.equals("CreateOrUpdateFile", ignoreCase = true) ||
+                toolName.equals("DeleteFileTool", ignoreCase = true) ||
+                toolName.equals("CopyFileOrDirectoryTool", ignoreCase = true)
 
     private fun evaluateGuardrails(
         state: TurnGuardrailState,
@@ -331,8 +332,8 @@ class AgentTurnOrchestrator(
     ) {
         QDLog.info(thisLogger()) {
             "OpenAIService.agentTurn summary: agent=$agentLabel responseId=${responseId ?: "<none>"} " +
-                "toolCalls=${state.toolNames.size} skipped=${state.guardrailSkips} " +
-                "files=${state.touchedFiles.size} tools=${state.toolNames.distinct().joinToString(",") { it }}"
+                    "toolCalls=${state.toolNames.size} skipped=${state.guardrailSkips} " +
+                    "files=${state.touchedFiles.size} tools=${state.toolNames.distinct().joinToString(",") { it }}"
         }
     }
 
@@ -452,8 +453,8 @@ class AgentTurnOrchestrator(
                                     val trimmed = txt.trim()
                                     val summary = trimmed.take(160)
                                     "OpenAIService.agentTurn outputText: nextStep=${message.nextStep} " +
-                                        "planNeedsUserConfirmation=${message.planNeedsUserConfirmation} " +
-                                        "summaryChars=${trimmed.length} summary='$summary'"
+                                            "planNeedsUserConfirmation=${message.planNeedsUserConfirmation} " +
+                                            "summaryChars=${trimmed.length} summary='$summary'"
                                 }
 
                                 aggregated.append(txt).append('\n')
@@ -470,7 +471,6 @@ class AgentTurnOrchestrator(
                                         loopState = loopState,
                                     )
                                 loopState = evaluation.loopState
-                                val effectivePlanStatus = evaluation.effectivePlanStatus
 
                                 evaluation.retryInstruction?.let { retryInstruction ->
                                     reprocess = true
@@ -483,7 +483,7 @@ class AgentTurnOrchestrator(
                                     onAssistantMessage?.invoke(
                                         OpenAIService.AssistantTurnMessage(
                                             text = txt,
-                                            ttsSummary = message.ttsSummary?.trim()?.ifBlank { null },
+                                            ttsSummary = message.ttsSummary.trim().ifBlank { null },
                                             isReasoning = false,
                                         ),
                                     )
@@ -497,6 +497,13 @@ class AgentTurnOrchestrator(
                                     }
                                 }
                             }
+                        }
+                        outputIndex += 1
+                    }
+
+                    else -> {
+                        QDLog.warn(thisLogger()) {
+                            "OpenAIService.agentTurn unhandled message type: " + outputItems[outputIndex]
                         }
                         outputIndex += 1
                     }

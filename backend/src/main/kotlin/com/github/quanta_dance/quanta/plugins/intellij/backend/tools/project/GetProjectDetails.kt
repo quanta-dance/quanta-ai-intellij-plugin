@@ -43,8 +43,8 @@ class GetProjectDetails : ToolInterface<String> {
 
     @field:JsonPropertyDescription(
         "Maximum depth to traverse (root’s direct children are depth 1). Default: 12.\n" +
-                "Adaptive behavior: for JVM projects (Java/Kotlin/Scala with src/main/java|kotlin|scala), " +
-                "an effective depth of at least 32 is used to accommodate deep package structures.",
+            "Adaptive behavior: for JVM projects (Java/Kotlin/Scala with src/main/java|kotlin|scala), " +
+            "an effective depth of at least 32 is used to accommodate deep package structures.",
     )
     var maxDepth: Int = 12
 
@@ -210,10 +210,10 @@ class GetProjectDetails : ToolInterface<String> {
             try {
                 parent?.children?.firstOrNull {
                     it.isValid && it.isDirectory &&
-                            it.name.equals(
-                                name,
-                                ignoreCase = false,
-                            )
+                        it.name.equals(
+                            name,
+                            ignoreCase = false,
+                        )
                 }
             } catch (_: Throwable) {
                 null
@@ -226,11 +226,11 @@ class GetProjectDetails : ToolInterface<String> {
         fun hasJvmLangDir(base: VirtualFile?): Boolean {
             if (base == null) return false
             return (findChildDir(base, "java") != null) || (findChildDir(base, "kotlin") != null) || (
-                    findChildDir(
-                        base,
-                        "scala",
-                    ) != null
-                    )
+                findChildDir(
+                    base,
+                    "scala",
+                ) != null
+            )
         }
         return hasJvmLangDir(main) || hasJvmLangDir(test)
     }
