@@ -196,7 +196,7 @@ class TerminalCommandJobManagerTest {
         hardTimeout: Duration = Duration.ofSeconds(30),
         maxLogBytesPerStream: Long = 8L * 1024 * 1024,
         consoleSink: (String, Boolean) -> Unit = { _, _ -> },
-        loginShellPathProvider: () -> String? = { null },
+        loginShellPathProvider: () -> String? = { System.getenv("PATH") },
         block: (TerminalCommandJobManager) -> Unit,
     ) {
         val tempRoot = Files.createTempDirectory("terminal-job-test-")

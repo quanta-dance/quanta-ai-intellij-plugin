@@ -13,7 +13,9 @@ import java.nio.file.StandardOpenOption
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
-import java.util.*
+import java.util.LinkedHashMap
+import java.util.LinkedHashSet
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.ThreadFactory
@@ -371,8 +373,7 @@ internal class TerminalCommandJobManager(
             )
     }
 
-    private fun requireJob(jobId: String): TerminalJob =
-        jobs[jobId] ?: throw IllegalArgumentException("Terminal job not found: $jobId")
+    private fun requireJob(jobId: String): TerminalJob = jobs[jobId] ?: throw IllegalArgumentException("Terminal job not found: $jobId")
 
     private fun shellProcessBuilder(command: String): ProcessBuilder =
         if (isWindows()) {
@@ -518,7 +519,7 @@ internal class BoundedLogFile(
 
     private fun appendMarkerLocked() {
         if (truncatedMarkerWritten) return
-        val marker = "\n[terminal output truncated after ${maxBytes} bytes]\n"
+        val marker = "\n[terminal output truncated after $maxBytes bytes]\n"
         val markerChunk = fitToBytes(marker, max(0L, maxBytes - sizeBytes))
         if (markerChunk.isNotEmpty()) {
             writer.write(markerChunk)
