@@ -19,7 +19,7 @@ import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
-import java.util.*
+import java.util.Locale
 import java.util.concurrent.CompletableFuture
 
 /**
@@ -76,7 +76,8 @@ class OpenAIJdkHttpClient : HttpClient {
 //                    .resolve("openai-request-dump.json")
 //                    .also { path -> Files.writeString(path, requestBytes.decodeToStringPreview(1_000_000)) }
 //            }.getOrNull()
-        Path.of(System.getProperty("user.dir") ?: ".")
+        Path
+            .of(System.getProperty("user.dir") ?: ".")
             .toAbsolutePath()
             .normalize()
             .resolve("openai-request-dump.json")
@@ -181,12 +182,24 @@ private fun HttpRequest.openConnection(
 }
 
 private fun RequestOptions.connectTimeoutMillis(): Int =
-    requestTimeout()?.connect()?.toMillis()?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt()
+    requestTimeout()
+        ?.connect()
+        ?.toMillis()
+        ?.coerceAtMost(Int.MAX_VALUE.toLong())
+        ?.toInt()
         ?: Duration.ofSeconds(30).toMillis().toInt()
 
 private fun RequestOptions.readTimeoutMillis(): Int =
-    requestTimeout()?.read()?.toMillis()?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt()
-        ?: requestTimeout()?.request()?.toMillis()?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt()
+    requestTimeout()
+        ?.read()
+        ?.toMillis()
+        ?.coerceAtMost(Int.MAX_VALUE.toLong())
+        ?.toInt()
+        ?: requestTimeout()
+            ?.request()
+            ?.toMillis()
+            ?.coerceAtMost(Int.MAX_VALUE.toLong())
+            ?.toInt()
         ?: Duration.ofMinutes(2).toMillis().toInt()
 
 private fun RequestOptions.requestTimeout(): com.openai.core.Timeout? =
@@ -238,5 +251,4 @@ private fun ByteArray.decodeToStringFull(): String =
         .getOrElse { "<non-text-body size=$size>" }
         .replace("\n", "\\n")
 
-private fun ByteArray.decodeToStringPreview(maxChars: Int): String =
-    decodeToStringFull().take(maxChars)
+private fun ByteArray.decodeToStringPreview(maxChars: Int): String = decodeToStringFull().take(maxChars)

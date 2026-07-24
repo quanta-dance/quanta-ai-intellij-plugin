@@ -4,6 +4,7 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.services
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.ToolExecutionService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.models.OpenAIResponse
 import com.intellij.openapi.project.Project
 import com.openai.models.responses.ResponseInputItem
@@ -90,7 +91,7 @@ class AgentTurnOrchestratorTest {
 
         assertEquals(1, fixture.createResponseCallCount)
         assertTrue(fixture.systemMessages.isEmpty())
-        assertEquals(listOf("Blocked on missing credential.\nNext step: WAIT_USER"), fixture.persistedMessages)
+        assertEquals(listOf("Blocked on missing credential."), fixture.persistedMessages)
     }
 
     @Test
@@ -171,7 +172,7 @@ class AgentTurnOrchestratorTest {
         assertEquals(3, fixture.createResponseCallCount)
         assertTrue(fixture.systemMessages.any { it.contains("still has unchecked tasks") })
         assertTrue(fixture.systemMessages.any { it.contains("without making progress") })
-        assertEquals(listOf("Blocked on external approval.\nNext step: WAIT_USER"), fixture.persistedMessages)
+        assertEquals(listOf("Blocked on external approval."), fixture.persistedMessages)
     }
 
     private fun orchestratorFixture(
@@ -181,12 +182,14 @@ class AgentTurnOrchestratorTest {
     ): OrchestratorFixture {
         val project = mockk<Project>()
         val planService = mockk<SessionPlanService>()
+        val toolExecutionService = mockk<ToolExecutionService>(relaxed = true)
         val persistedMessages = mutableListOf<String>()
         val systemMessages = mutableListOf<String>()
         var createResponseCallCount = 0
         val plans = planSequence ?: ArrayDeque(listOf(plan ?: SessionPlan()))
 
         every { project.getService(SessionPlanService::class.java) } returns planService
+        every { project.getService(ToolExecutionService::class.java) } returns toolExecutionService
         every { planService.isActive() } answers { currentPlan(plans).isActive() }
         every { planService.loadPlanSnapshot() } answers { currentPlan(plans) }
 
