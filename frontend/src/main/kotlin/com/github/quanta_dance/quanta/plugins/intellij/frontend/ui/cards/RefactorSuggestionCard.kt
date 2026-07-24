@@ -164,7 +164,7 @@ fun refactorSuggestionCard(
             Text(
                 text =
                     "$fileLabel:${originalRange.first}-${originalRange.second}" +
-                            " → ${displayedSuggestedRange.first}-${displayedSuggestedRange.second}",
+                        " → ${displayedSuggestedRange.first}-${displayedSuggestedRange.second}",
                 style =
                     JewelTheme.defaultTextStyle.copy(
                         fontWeight = FontWeight.Medium,
@@ -263,7 +263,7 @@ fun refactorSuggestionCard(
                 accent = actionAccent,
                 onClick = {
                     item.filePath?.let { path ->
-                        frontendLog(project, "RefactorSuggestionCard.open: $path:${linkTargetLine}")
+                        frontendLog(project, "RefactorSuggestionCard.open: $path:$linkTargetLine")
                         rpcScope.launch {
                             runCatching {
                                 QuantaBackendApi.getInstance().openProjectFileAtLine(
