@@ -26,6 +26,7 @@ import org.jetbrains.jewel.bridge.addComposeTab
  * This factory wires the Compose chat surface, voice service, and title-bar actions into the
  * frontend-only presentation layer used in local and split-mode IDE sessions.
  */
+@Suppress("UnstableApiUsage")
 class QuantaFrontendToolWindowFactory : ToolWindowFactory {
     override fun shouldBeAvailable(project: Project) = true
 

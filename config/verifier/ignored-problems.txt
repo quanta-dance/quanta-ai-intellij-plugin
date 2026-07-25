@@ -1,0 +1,15 @@
+.*com\.fasterxml\.jackson\.core\.internal\.shaded\..*
+.*VarHandle\.set\(byte\[\], int, (int|long)\).*
+.*okhttp3\.internal\.platform\..*
+.*android\..*
+.*org\.conscrypt\..*
+.*org\.openjsse\..*
+.*org\.bouncycastle\..*
+.*ch\.qos\.logback\..*
+.*io\.github\.oshai\.kotlinlogging\.logback\..*
+.*fleet\.rpc\..*
+Package 'android.*
+Package 'ch'.*
+Package 'org\.openjsse'.*
+Package 'org\.conscrypt'.*
+Package 'org\.bouncycastle'.*
