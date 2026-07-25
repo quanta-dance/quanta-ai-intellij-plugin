@@ -5,8 +5,6 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-val quantaRuntime by configurations.creating
-
 repositories {
     mavenCentral()
     intellijPlatform {
@@ -21,13 +19,13 @@ dependencies {
         bundledPlugin("com.intellij.java")
         bundledPlugin("com.intellij.gradle")
 
-        implementation(libs.kotlin.serialization.core.jvm)
-        implementation(libs.kotlin.serialization.json.jvm)
-
         composeUI()
     }
 
     compileOnly(project(":shared"))
+    // kotlinx-serialization is provided by the IDE's frontend classpath — do not bundle
+    compileOnly(libs.kotlin.serialization.core.jvm)
+    compileOnly(libs.kotlin.serialization.json.jvm)
     implementation(libs.javazoom)
 
     testImplementation(kotlin("test"))
@@ -38,8 +36,6 @@ dependencies {
     testImplementation(project(":shared"))
     testRuntimeOnly("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.2")
     testRuntimeOnly("org.jetbrains.kotlinx:kotlinx-coroutines-debug:1.10.2")
-
-    quantaRuntime(libs.javazoom)
 }
 
 kotlin {
@@ -50,13 +46,5 @@ tasks {
     withType<Test>().configureEach {
         jvmArgs("-Dkotlinx.coroutines.debug=off")
         systemProperty("kotlinx.coroutines.debug", "off")
-    }
-
-    withType<Jar>().configureEach {
-        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-        val runtimeFiles = quantaRuntime
-            .filter { it.name.endsWith(".jar") }
-            .map { zipTree(it) }
-        from(runtimeFiles)
     }
 }

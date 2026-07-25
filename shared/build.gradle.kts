@@ -1,5 +1,4 @@
 plugins {
-    id("org.jetbrains.intellij.platform.module")
     id("org.jetbrains.kotlin.jvm")
     id("org.jetbrains.kotlin.plugin.serialization")
     id("rpc")
@@ -16,4 +15,8 @@ dependencies {
     intellijPlatform {
         intellijIdea(libs.versions.intellij.platform)
     }
+}
+
+kotlin {
+    jvmToolchain(21)
 }

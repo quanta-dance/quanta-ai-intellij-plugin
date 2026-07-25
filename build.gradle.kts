@@ -20,7 +20,6 @@ group = "com.github.quanta_dance"
 plugins {
     java
     alias(libs.plugins.kotlin) apply false
-    application
     alias(libs.plugins.intellij.platform)
     alias(libs.plugins.kotlin.serialization) apply false
     alias(libs.plugins.compose.compiler) apply false
@@ -68,7 +67,6 @@ dependencies {
         pluginModule(implementation(project(":frontend")))
     }
 
-    implementation(project(path = ":backend", configuration = "runtimeElements"))
 }
 
 intellijPlatform {
@@ -79,7 +77,7 @@ intellijPlatform {
     pluginVerification {
         ides {
             create(
-                IntelliJPlatformType.IntellijIdeaUltimate,
+                IntelliJPlatformType.IntellijIdea,
                 libs.versions.intellij.platform.get(),
             )
         }
