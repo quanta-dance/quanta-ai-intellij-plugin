@@ -679,9 +679,6 @@ private fun chatList(
     listState: LazyListState,
     searchState: SearchState,
 ) {
-    val topLevelMessages = remember(chatMessages) { chatMessages.filter { it.parentMessageId == null } }
-    val threadMessagesByParent =
-        remember(chatMessages) { chatMessages.filter { it.parentMessageId != null }.groupBy { it.parentMessageId } }
     Box(modifier = modifier) {
         if (chatMessages.isEmpty()) {
             emptyChatListPlaceholder()
@@ -696,27 +693,16 @@ private fun chatList(
                     contentPadding = PaddingValues(vertical = 4.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    items(topLevelMessages, key = { it.id }) { message ->
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            messageBubble(
-                                project = project,
-                                message = message,
-                                modifier = Modifier.fillMaxWidth(),
-                                isMatchingSearch =
-                                    searchState.searchQuery?.let { query -> message.matches(query) }
-                                        ?: false,
-                                isHighlightedInSearch = message.id == searchState.currentSelectedSearchResultId,
-                            )
-                            val threadMessages = threadMessagesByParent[message.id].orEmpty()
-                            if (threadMessages.isNotEmpty()) {
-                                agentThread(
-                                    project = project,
-                                    parentId = message.id,
-                                    threadMessages = threadMessages,
-                                    searchState = searchState,
-                                )
-                            }
-                        }
+                    items(chatMessages, key = { it.id }) { message ->
+                        messageBubble(
+                            project = project,
+                            message = message,
+                            modifier = Modifier.fillMaxWidth(),
+                            isMatchingSearch =
+                                searchState.searchQuery?.let { query -> message.matches(query) }
+                                    ?: false,
+                            isHighlightedInSearch = message.id == searchState.currentSelectedSearchResultId,
+                        )
                     }
                 }
             }
