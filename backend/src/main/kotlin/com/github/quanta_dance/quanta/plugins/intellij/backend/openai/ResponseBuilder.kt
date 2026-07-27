@@ -20,7 +20,6 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolProg
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.openai.core.JsonValue
-import com.openai.models.ChatModel
 import com.openai.models.responses.FunctionTool
 import com.openai.models.responses.ResponseCreateParams
 import com.openai.models.responses.ResponseInputItem
@@ -226,7 +225,7 @@ class ResponseBuilder(
                 .inputOfResponse(inputs)
                 // .reasoning(TODO)
                 // .maxOutputTokens(TODO)
-                .model(ChatModel.of(model))
+                .model(model)
                 .text(format)
                 .tools(
                     availableTools(

@@ -19,7 +19,6 @@ kotlin-serialization-core-jvm = { module = "org.jetbrains.kotlinx:kotlinx-serial
 kotlin-serialization-json-jvm = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json-jvm", version.ref = "kotlin-serialization" }
 javazoom = { group = "javazoom", name = "jlayer", version = "1.0.1" }
 openai = { group = "com.openai", name = "openai-java", version = "4.45.0" }
-openai-okhttp = { group = "com.openai", name = "openai-java-client-okhttp", version = "4.45.0" }
 byte-buddy = { group = "net.bytebuddy", name = "byte-buddy", version.ref = "byte-buddy" }
 byte-buddy-agent = { group = "net.bytebuddy", name = "byte-buddy-agent", version.ref = "byte-buddy" }
 ktor-client-java = { group = "io.ktor", name = "ktor-client-java", version.ref = "ktor" }

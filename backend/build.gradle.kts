@@ -53,19 +53,16 @@ dependencies {
     // Third-party libs needed at runtime in the backend process — added to backendRuntime
     // so they get bundled into the backend module JAR below
     compileOnly(libs.openai)
-    compileOnly(libs.openai.okhttp)
     compileOnly("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.2")
     compileOnly("org.eclipse.jgit:org.eclipse.jgit:6.10.0.202406032230-r")
     compileOnly("io.modelcontextprotocol:kotlin-sdk-client:0.12.0")
 
     backendRuntime(libs.openai)
-    backendRuntime(libs.openai.okhttp)
     backendRuntime("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.2")
     backendRuntime("org.eclipse.jgit:org.eclipse.jgit:6.10.0.202406032230-r")
     backendRuntime("io.modelcontextprotocol:kotlin-sdk-client:0.12.0")
 
     testImplementation(libs.openai)
-    testImplementation(libs.openai.okhttp)
     testImplementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.2")
     testImplementation("org.eclipse.jgit:org.eclipse.jgit:6.10.0.202406032230-r")
     testImplementation("io.modelcontextprotocol:kotlin-sdk-client:0.12.0")
@@ -90,6 +87,28 @@ tasks {
 
     named<Jar>("jar") {
         duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-        from(backendRuntime.filter { it.name.endsWith(".jar") }.map { zipTree(it) })
+        from(
+            provider {
+                backendRuntime
+                    .resolvedConfiguration
+                    .resolvedArtifacts
+                    .filter { it.file.name.endsWith(".jar") }
+                    // Exclude JARs not needed at runtime — we use OpenAIJdkHttpClient
+                    .filter { !it.file.name.startsWith("openai-java-client-okhttp") }
+                    .filter { !it.file.name.startsWith("okhttp") }
+                    .filter { !it.file.name.startsWith("okio") }
+                    // jackson-core is provided by the IDE platform; bundling it adds shaded
+                    // FastDoubleParse classes that reference VarHandle.set unavailable on older JVMs
+                    .filter { !it.file.name.startsWith("jackson-core") }
+                    // kotlin-logging-jvm logback integration references ch.qos.logback which isn't bundled
+                    .filter { !it.file.name.startsWith("kotlin-logging-jvm") }
+                    .map {
+                        zipTree(it.file).matching {
+                            // Android TLS stubs — dead code on JVM
+                            exclude("android/**")
+                        }
+                    }
+            },
+        )
     }
 }

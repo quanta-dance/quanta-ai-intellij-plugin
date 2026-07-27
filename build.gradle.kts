@@ -89,7 +89,6 @@ intellijPlatform {
                 VerifyPluginTask.FailureLevel.OVERRIDE_ONLY_API_USAGES,
             ),
         )
-        ignoredProblemsFile.set(rootProject.file("config/verifier/ignored-problems.txt"))
     }
 }
 

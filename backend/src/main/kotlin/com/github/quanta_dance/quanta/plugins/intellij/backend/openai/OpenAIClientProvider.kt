@@ -6,7 +6,6 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.openai
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
 import com.intellij.openapi.project.Project
 import com.openai.client.OpenAIClient
-import com.openai.client.okhttp.OpenAIOkHttpClient
 
 /**
  * Provider for obtaining OpenAIClient instances configured from the backend runtime settings.
@@ -24,7 +23,7 @@ object OpenAIClientProvider {
             "OpenAI client creation requested before frontend settings sync completed."
         }
         val state = snapshot.state
-        return OpenAIOkHttpClient
+        return OpenAIJdkHttpClient
             .builder()
             .apiKey(state.openAiToken)
             .baseUrl(state.openAiUrl)

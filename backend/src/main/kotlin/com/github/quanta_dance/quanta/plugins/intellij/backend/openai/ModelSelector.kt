@@ -7,15 +7,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendR
 import com.openai.models.ChatModel
 
 object ModelSelector {
-    fun normalize(id: String): String {
-        val cm = ChatModel.of(id)
-        return try {
-            cm.validate()
-            cm.toString()
-        } catch (_: Throwable) {
-            ChatModel.GPT_5_MINI.toString()
-        }
-    }
+    fun normalize(id: String): String = id.ifBlank { ChatModel.GPT_5_MINI.toString() }
 
     private fun rank(id: String): Int {
         val s = id.lowercase()
