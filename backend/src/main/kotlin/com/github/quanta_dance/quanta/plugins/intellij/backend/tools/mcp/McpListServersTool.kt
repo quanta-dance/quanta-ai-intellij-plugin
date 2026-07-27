@@ -9,19 +9,36 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterfac
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 
-@JsonClassDescription("List available MCP servers discovered by the plugin.")
+@JsonClassDescription(
+    "List MCP servers configured in mcp-servers.json with their connection status. " +
+        "Always returns status for every configured server so you can diagnose connection problems.",
+)
 class McpListServersTool : ToolInterface<Map<String, Any>> {
-    @field:JsonPropertyDescription("If true, include tool counts per server in the response")
-    var includeDetails: Boolean = false
-
     override fun execute(project: Project): Map<String, Any> {
         val mcp = project.service<McpClientService>()
         val servers = mcp.listServers()
-        val base: MutableMap<String, Any> = linkedMapOf("servers" to servers)
-        if (includeDetails) {
-            val details = servers.associateWith { s -> mcp.getTools(s).size }
-            base["details"] = details
+        val result = linkedMapOf<String, Any>()
+
+        val configError = mcp.getConfigLoadError()
+        if (configError != null) {
+            result["configError"] = configError
         }
-        return base
+
+        if (servers.isEmpty()) {
+            result["configuredCount"] = mcp.getConfiguredCount()
+            result["servers"] = emptyList<Any>()
+            return result
+        }
+
+        result["servers"] =
+            servers.map { name ->
+                val status = mcp.getServerStatus(name)
+                val entry = linkedMapOf<String, Any?>("name" to name, "connected" to status.connected)
+                if (status.connected) entry["toolCount"] = status.toolCount
+                if (status.error != null) entry["error"] = status.error
+                entry
+            }
+
+        return result
     }
 }

@@ -54,15 +54,25 @@ class McpClientService(
     private val log = Logger.getInstance(McpClientService::class.java)
     private val executionContexts = project.getService(BackendExecutionContextsService::class.java)
 
+    data class ServerStatus(
+        val connected: Boolean,
+        val toolCount: Int,
+        val error: String? = null,
+    )
+
     @Volatile
     private var serversConfig: McpServersFile = McpServersFile()
     private val processes = ConcurrentHashMap<String, Process>()
     private val clients = ConcurrentHashMap<String, Client>()
     private val toolCache = ConcurrentHashMap<String, List<Tool>>()
+    private val serverErrors = ConcurrentHashMap<String, String>()
     private val initialized = AtomicBoolean(false)
 
     @Volatile
     private var lastLoadedConfigHash: Int? = null
+
+    @Volatile
+    private var configLoadError: String? = null
 
     init {
         // Do not schedule refresh here; perform initial refresh from ProjectActivity when project is open
@@ -105,7 +115,7 @@ class McpClientService(
                 sourceName = "frontend-synced mcp-servers.json",
             )
         if (load.parseError != null) {
-            // Keep existing config running; inform the user with clickable link
+            configLoadError = load.parseError
             notifyRuntimeConfigIssue(
                 "Invalid synced MCP configuration",
                 load.parseError,
@@ -114,6 +124,7 @@ class McpClientService(
             QDLog.warn(log) { "refresh(): parse error - ${load.parseError}" }
             return
         }
+        configLoadError = null
         val newConfig = load.file ?: McpServersFile()
         QDLog.info(log) { "McpClientService refresh: loaded ${newConfig.mcpServers.size} configured server(s)" }
         if (newConfig.mcpServers.isEmpty()) {
@@ -235,8 +246,8 @@ class McpClientService(
             } catch (_: Throwable) {
             }
         }
-        // Clear discovered tools
         toolCache.remove(name)
+        serverErrors.remove(name)
     }
 
     private fun startServer(
@@ -279,6 +290,7 @@ class McpClientService(
             }
             ensureClient(name, proc)
         } catch (e: Exception) {
+            serverErrors[name] = e.message ?: e.javaClass.simpleName
             QDLog.error(log, { "Failed to start MCP server '$name'" }, e)
         }
     }
@@ -298,8 +310,10 @@ class McpClientService(
             runBlocking(executionContexts.mcpDispatcher) { client.connect(transport) }
             QDLog.info(log) { "ensureClient: connected to MCP server '$name'" }
             clients[name] = client
+            serverErrors.remove(name)
             client
         } catch (e: Exception) {
+            serverErrors[name] = e.message ?: e.javaClass.simpleName
             QDLog.error(log, { "ensureClient failed for '$name'" }, e)
             null
         }
@@ -396,16 +410,20 @@ class McpClientService(
                     runBlocking(executionContexts.mcpDispatcher) { withTimeout(30_000) { client.connect(transport) } }
                     QDLog.info(log) { "ensureClient(url): connected to MCP server '$name' via $label" }
                     clients[name] = client
+                    serverErrors.remove(name)
                     return client
                 } catch (_: TimeoutCancellationException) {
+                    serverErrors[name] = "timed out connecting via $label"
                     QDLog.warn(log) { "ensureClient(url): timed out connecting '$name' via $label" }
                 } catch (e: Exception) {
+                    serverErrors[name] = e.message ?: e.javaClass.simpleName
                     QDLog.warn(log) { "ensureClient(url): failed connecting '$name' via $label - ${e.message}" }
                 }
             }
 
             null
         } catch (e: Exception) {
+            serverErrors[name] = e.message ?: e.javaClass.simpleName
             QDLog.warn(log) { "ensureClient(url) failed for '$name': ${e.message}" }
             QDLog.error(log, { "ensureClient(url) failed for '$name'" }, e)
             null
@@ -455,6 +473,17 @@ class McpClientService(
         refreshIfConfigChanged()
         return serversConfig.mcpServers.keys.sorted()
     }
+
+    fun getServerStatus(name: String): ServerStatus {
+        val connected = clients.containsKey(name)
+        val toolCount = toolCache[name]?.size ?: 0
+        val error = serverErrors[name]
+        return ServerStatus(connected, toolCount, error)
+    }
+
+    fun getConfigLoadError(): String? = configLoadError
+
+    fun getConfiguredCount(): Int = serversConfig.mcpServers.size
 
     private fun extractFirstNumber(text: String): Number? {
         val m = Regex("[-+]?\\d+(?:\\.\\d+)?").find(text)
