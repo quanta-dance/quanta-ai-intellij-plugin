@@ -4,9 +4,12 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.rpc
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.McpClientService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaSettingsApi
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.QuantaSettingsDto
+import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.project.ProjectManager
 import com.openai.models.ChatModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -63,55 +66,26 @@ class BackendSettingsRpcApi : QuantaSettingsApi {
             )
         }
 
-    override suspend fun updateSettings(settings: QuantaSettingsDto) {
-        BackendRuntimeSettingsService.instance.updateFrom(settings)
-        /*   withContext(Dispatchers.IO) {
-            val runtimeSettings = BackendRuntimeSettingsService.instance
-            val previousJson = runtimeSettings.settings.mcpServersJson
-            runtimeSettings.updateFrom(settings)
+    override suspend fun updateSettings(settings: QuantaSettingsDto) =
+        withContext(Dispatchers.IO) {
+            val previousJson = BackendRuntimeSettingsService.instance.settings.mcpServersJson
+            BackendRuntimeSettingsService.instance.updateFrom(settings)
 
-            val previousServers =
-                McpServersConfigLoader
-                    .loadJsonWithDiagnostics(previousJson, sourceName = "previous synced MCP configuration")
-                    .file
-                    ?.mcpServers
-                    ?.keys
-                    ?.sorted()
-                    ?: emptyList()
-            val currentServers =
-                McpServersConfigLoader
-                    .loadJsonWithDiagnostics(settings.mcpServersJson, sourceName = "current synced MCP configuration")
-                    .file
-                    ?.mcpServers
-                    ?.keys
-                    ?.sorted()
-                    ?: emptyList()
-            val addedServers = currentServers - previousServers.toSet()
-            val removedServers = previousServers - currentServers.toSet()
-
-            log.info(
-                "Backend settings sync received MCP runtime config: chars=${settings.mcpServersJson.length}, " +
-                        "servers=${currentServers.joinToString().ifBlank { "<none>" }}, " +
-                        "added=${addedServers.joinToString().ifBlank { "<none>" }}, " +
-                        "removed=${removedServers.joinToString().ifBlank { "<none>" }}",
-            )
-            addedServers.forEach { name ->
-                log.info("Backend settings sync: MCP server added: $name")
-            }
-            removedServers.forEach { name ->
-                log.info("Backend settings sync: MCP server removed: $name")
-            }
-
-            ProjectManager.getInstance().openProjects.forEach { project ->
-                runCatching {
-                    log.info("Backend settings sync: refreshing MCP runtime for project=${project.name}")
-                    project.service<McpClientService>().refresh()
-                }.onFailure { error ->
-                    log.warn("Backend settings sync: failed to refresh MCP runtime for project=${project.name}", error)
+            if (settings.mcpServersJson != previousJson) {
+                log.info(
+                    "Backend settings sync: MCP config changed (chars=${settings.mcpServersJson.length}), refreshing MCP runtime",
+                )
+                ProjectManager.getInstance().openProjects.forEach { project ->
+                    runCatching {
+                        project.service<McpClientService>().refresh()
+                    }.onFailure { error ->
+                        log.warn("Backend settings sync: failed to refresh MCP for project=${project.name}", error)
+                    }
                 }
+            } else {
+                log.info("Backend settings sync: MCP config unchanged, skipping refresh")
             }
-        }*/
-    }
+        }
 
     private fun availableTtsVoices(): List<String> {
         val reflected =

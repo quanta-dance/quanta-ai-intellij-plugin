@@ -19,11 +19,11 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.net.URI
+import java.time.Duration
+import java.util.concurrent.CompletableFuture
 import java.net.http.HttpClient as JdkHttpClient
 import java.net.http.HttpRequest as JdkHttpRequest
 import java.net.http.HttpResponse as JdkHttpResponse
-import java.time.Duration
-import java.util.concurrent.CompletableFuture
 
 /**
  * JDK 11+ HTTP transport for the OpenAI SDK.

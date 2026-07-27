@@ -122,7 +122,7 @@ tasks {
 
     patchPluginXml {
         version = project.version.toString()
-        sinceBuild.set("252")
+        sinceBuild.set("261")
         untilBuild.set("271.*")
         changeNotes.set(latestChangeNotesFromChangelog())
     }
