@@ -110,8 +110,7 @@ class ChatConversationService(
         agentManager.removePropertyChangeListener(agentTaskListener)
     }
 
-    private fun <T> onChatPublicationThread(action: () -> T): T =
-        runBlocking(executionContexts.chatPublicationDispatcher) { action() }
+    private fun <T> onChatPublicationThread(action: () -> T): T = runBlocking(executionContexts.chatPublicationDispatcher) { action() }
 
     fun createNewSession() {
         onChatPublicationThread {
@@ -318,7 +317,6 @@ class ChatConversationService(
         }
     }
 
-
     private fun appendAiMessage(messageContent: String) {
         onChatPublicationThread {
             _messages.value += chatMessageFactory.createAIMessage(messageContent)
@@ -331,20 +329,27 @@ class ChatConversationService(
         beforeMessageId: String? = null,
     ): String =
         onChatPublicationThread {
-            val message = chatMessageFactory.createAIToolMessage(toolItems)
-            _messages.value =
+            // Emit per-item messages rather than a single aggregated tool message
+            if (toolItems.isEmpty()) return@onChatPublicationThread ""
+            val newMessages = toolItems.map { item -> chatMessageFactory.createAIToolMessage(listOf(item)) }
+            val baseList =
                 if (beforeMessageId == null) {
-                    _messages.value + message
+                    _messages.value + newMessages
                 } else {
                     val idx = _messages.value.indexOfFirst { it.id == beforeMessageId }
                     if (idx < 0) {
-                        _messages.value + message
+                        _messages.value + newMessages
                     } else {
-                        _messages.value.toMutableList().apply { add(idx, message) }
+                        buildList {
+                            addAll(_messages.value.take(idx))
+                            addAll(newMessages)
+                            addAll(_messages.value.drop(idx))
+                        }
                     }
                 }
+            _messages.value = baseList
             persistMessages()
-            message.id
+            newMessages.firstOrNull()?.id ?: ""
         }
 
     private fun currentToolItems(
@@ -449,11 +454,11 @@ class ChatConversationService(
                         .builder()
                         .addInputTextContent(
                             "Scheduled reminder context (internal only):\n" +
-                                    reminderContext +
-                                    "\n\nWrite a short, natural reminder to the user. " +
-                                    "Do not say the reminder was acknowledged, delivered, fired, or triggered. " +
-                                    "Do not repeat the reminder context verbatim. " +
-                                    "Use first-person phrasing like 'I want to remind you ...'.",
+                                reminderContext +
+                                "\n\nWrite a short, natural reminder to the user. " +
+                                "Do not say the reminder was acknowledged, delivered, fired, or triggered. " +
+                                "Do not repeat the reminder context verbatim. " +
+                                "Use first-person phrasing like 'I want to remind you ...'.",
                         ).role(ResponseInputItem.Message.Role.SYSTEM)
                         .build(),
                 ),
@@ -537,7 +542,7 @@ class ChatConversationService(
     private fun isContextWindowError(t: Throwable): Boolean {
         val msg = t.message.orEmpty()
         return msg.contains("exceeds context window", ignoreCase = true) ||
-                msg.contains("context window", ignoreCase = true)
+            msg.contains("context window", ignoreCase = true)
     }
 
     private fun buildContextMessage(): String? {
