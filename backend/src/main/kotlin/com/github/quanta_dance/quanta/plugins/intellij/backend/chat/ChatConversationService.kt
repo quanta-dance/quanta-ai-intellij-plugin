@@ -329,25 +329,24 @@ class ChatConversationService(
         beforeMessageId: String? = null,
     ): String =
         onChatPublicationThread {
-            if (toolItems.isEmpty()) return@onChatPublicationThread ""
-            val newMessages = toolItems.map { item -> chatMessageFactory.createAIToolMessage(listOf(item)) }
+            val message = chatMessageFactory.createAIToolMessage(toolItems)
             _messages.value =
                 if (beforeMessageId == null) {
-                    _messages.value + newMessages
+                    _messages.value + message
                 } else {
                     val idx = _messages.value.indexOfFirst { it.id == beforeMessageId }
                     if (idx < 0) {
-                        _messages.value + newMessages
+                        _messages.value + message
                     } else {
                         buildList {
                             addAll(_messages.value.take(idx))
-                            addAll(newMessages)
+                            add(message)
                             addAll(_messages.value.drop(idx))
                         }
                     }
                 }
             persistMessages()
-            newMessages.first().id
+            message.id
         }
 
     private fun currentToolItems(
@@ -492,10 +491,8 @@ class ChatConversationService(
         toolMessageIdProvider: () -> String?,
         onToolMessageIdChanged: (String?) -> Unit,
         onFirstAssistantMessageShown: () -> Unit,
-    ): Pair<String, String?> {
-        val toolMessageIdsByCallId = mutableMapOf<String, String>()
-
-        return awaitDetachedAgentTurn {
+    ): Pair<String, String?> =
+        awaitDetachedAgentTurn {
             openAIService.agentTurn(
                 inputs = inputs,
                 previousId = null,
@@ -516,24 +513,25 @@ class ChatConversationService(
                     )
                     onFirstAssistantMessageShown()
                     onToolMessageIdChanged(null)
-                    onThinkingMessageIdChanged(appendAiThinkingMessage())
+                    if (assistantMessage.isReasoning) {
+                        onThinkingMessageIdChanged(appendAiThinkingMessage())
+                    }
                 },
                 onToolUpdate = { update ->
                     val targetId =
-                        toolMessageIdsByCallId.getOrPut(update.item.callId) {
-                            appendAiToolMessage(
-                                toolItems = listOf(update.item),
+                        toolMessageIdProvider()
+                            ?: appendAiToolMessage(
+                                toolItems = emptyList(),
                                 beforeMessageId = thinkingMessageIdProvider(),
-                            )
-                        }
+                            ).also { onToolMessageIdChanged(it) }
+                    val mergedItems = mergeToolItems(currentToolItems(targetId), update.item)
                     replaceMessage(
                         targetId,
-                        chatMessageFactory.createAIToolMessage(listOf(update.item)),
+                        chatMessageFactory.createAIToolMessage(mergedItems),
                     )
                 },
             )
         }
-    }
 
     private fun isContextWindowError(t: Throwable): Boolean {
         val msg = t.message.orEmpty()
