@@ -329,10 +329,9 @@ class ChatConversationService(
         beforeMessageId: String? = null,
     ): String =
         onChatPublicationThread {
-            // Emit per-item messages rather than a single aggregated tool message
             if (toolItems.isEmpty()) return@onChatPublicationThread ""
             val newMessages = toolItems.map { item -> chatMessageFactory.createAIToolMessage(listOf(item)) }
-            val baseList =
+            _messages.value =
                 if (beforeMessageId == null) {
                     _messages.value + newMessages
                 } else {
@@ -347,9 +346,8 @@ class ChatConversationService(
                         }
                     }
                 }
-            _messages.value = baseList
             persistMessages()
-            newMessages.firstOrNull()?.id ?: ""
+            newMessages.first().id
         }
 
     private fun currentToolItems(
@@ -518,9 +516,7 @@ class ChatConversationService(
                     )
                     onFirstAssistantMessageShown()
                     onToolMessageIdChanged(null)
-                    if (assistantMessage.isReasoning) {
-                        onThinkingMessageIdChanged(appendAiThinkingMessage())
-                    }
+                    onThinkingMessageIdChanged(appendAiThinkingMessage())
                 },
                 onToolUpdate = { update ->
                     val targetId =
