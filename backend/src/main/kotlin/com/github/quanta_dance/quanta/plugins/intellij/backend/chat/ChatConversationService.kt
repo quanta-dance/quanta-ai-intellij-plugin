@@ -110,7 +110,8 @@ class ChatConversationService(
         agentManager.removePropertyChangeListener(agentTaskListener)
     }
 
-    private fun <T> onChatPublicationThread(action: () -> T): T = runBlocking(executionContexts.chatPublicationDispatcher) { action() }
+    private fun <T> onChatPublicationThread(action: () -> T): T =
+        runBlocking(executionContexts.chatPublicationDispatcher) { action() }
 
     fun createNewSession() {
         onChatPublicationThread {
@@ -164,7 +165,9 @@ class ChatConversationService(
                     com.intellij.openapi.diagnostic.Logger
                         .getInstance(ChatConversationService::class.java),
                 ) {
-                    "ChatConversationService.sendUserMessage: user='${messageContent.replace("\n", "\\n").take(2_000)}'"
+                    "ChatConversationService.sendUserMessage: user='${
+                        messageContent.replace("\n", "\\n").take(2_000)
+                    }'"
                 }
                 val sanitizedMessageContent = aiInputSanitizer.sanitizeForAi(messageContent)
                 appendUserMessage(
@@ -304,16 +307,17 @@ class ChatConversationService(
     ) {
         onChatPublicationThread {
             val agent = registry.getAgentsSnapshot().firstOrNull { it.id == agentId }
-            val parentMessageId = _messages.value.lastOrNull { it.isMyMessage }?.id
-            _messages.value +=
+            val aiMessage =
                 chatMessageFactory
                     .createAIMessage(
                         content = content,
-                        parentMessageId = parentMessageId,
+                        parentMessageId = null,
                     ).copy(author = agent?.role ?: "Agent")
+            _messages.value += aiMessage
             persistMessages()
         }
     }
+
 
     private fun appendAiMessage(messageContent: String) {
         onChatPublicationThread {
@@ -336,11 +340,7 @@ class ChatConversationService(
                     if (idx < 0) {
                         _messages.value + message
                     } else {
-                        buildList {
-                            addAll(_messages.value.take(idx))
-                            add(message)
-                            addAll(_messages.value.drop(idx))
-                        }
+                        _messages.value.toMutableList().apply { add(idx, message) }
                     }
                 }
             persistMessages()
@@ -449,11 +449,11 @@ class ChatConversationService(
                         .builder()
                         .addInputTextContent(
                             "Scheduled reminder context (internal only):\n" +
-                                reminderContext +
-                                "\n\nWrite a short, natural reminder to the user. " +
-                                "Do not say the reminder was acknowledged, delivered, fired, or triggered. " +
-                                "Do not repeat the reminder context verbatim. " +
-                                "Use first-person phrasing like 'I want to remind you ...'.",
+                                    reminderContext +
+                                    "\n\nWrite a short, natural reminder to the user. " +
+                                    "Do not say the reminder was acknowledged, delivered, fired, or triggered. " +
+                                    "Do not repeat the reminder context verbatim. " +
+                                    "Use first-person phrasing like 'I want to remind you ...'.",
                         ).role(ResponseInputItem.Message.Role.SYSTEM)
                         .build(),
                 ),
@@ -489,8 +489,10 @@ class ChatConversationService(
         toolMessageIdProvider: () -> String?,
         onToolMessageIdChanged: (String?) -> Unit,
         onFirstAssistantMessageShown: () -> Unit,
-    ): Pair<String, String?> =
-        awaitDetachedAgentTurn {
+    ): Pair<String, String?> {
+        val toolMessageIdsByCallId = mutableMapOf<String, String>()
+
+        return awaitDetachedAgentTurn {
             openAIService.agentTurn(
                 inputs = inputs,
                 previousId = null,
@@ -517,25 +519,25 @@ class ChatConversationService(
                 },
                 onToolUpdate = { update ->
                     val targetId =
-                        toolMessageIdProvider()
-                            ?: appendAiToolMessage(
-                                toolItems = emptyList(),
+                        toolMessageIdsByCallId.getOrPut(update.item.callId) {
+                            appendAiToolMessage(
+                                toolItems = listOf(update.item),
                                 beforeMessageId = thinkingMessageIdProvider(),
-                            ).also { onToolMessageIdChanged(it) }
-                    val existingItems = currentToolItems(targetId)
-                    val mergedItems = mergeToolItems(existingItems, update.item)
+                            )
+                        }
                     replaceMessage(
                         targetId,
-                        chatMessageFactory.createAIToolMessage(mergedItems),
+                        chatMessageFactory.createAIToolMessage(listOf(update.item)),
                     )
                 },
             )
         }
+    }
 
     private fun isContextWindowError(t: Throwable): Boolean {
         val msg = t.message.orEmpty()
         return msg.contains("exceeds context window", ignoreCase = true) ||
-            msg.contains("context window", ignoreCase = true)
+                msg.contains("context window", ignoreCase = true)
     }
 
     private fun buildContextMessage(): String? {
