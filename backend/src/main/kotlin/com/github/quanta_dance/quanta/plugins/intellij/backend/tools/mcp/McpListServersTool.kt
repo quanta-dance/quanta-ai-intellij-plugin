@@ -4,14 +4,13 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
-import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 
 @JsonClassDescription(
     "List MCP servers configured in mcp-servers.json with their connection status. " +
-        "Always returns status for every configured server so you can diagnose connection problems.",
+            "Always returns status for every configured server so you can diagnose connection problems.",
 )
 class McpListServersTool : ToolInterface<Map<String, Any>> {
     override fun execute(project: Project): Map<String, Any> {
@@ -24,9 +23,17 @@ class McpListServersTool : ToolInterface<Map<String, Any>> {
             result["configError"] = configError
         }
 
+        val configuredCount = mcp.getConfiguredCount()
+        result["configuredCount"] = configuredCount
+
         if (servers.isEmpty()) {
-            result["configuredCount"] = mcp.getConfiguredCount()
             result["servers"] = emptyList<Any>()
+            result["message"] =
+                when {
+                    configError != null -> "MCP config loaded, but no servers are attached online yet. Check the config error and restart/reload the MCP settings."
+                    configuredCount > 0 -> "MCP servers are configured, but none are attached online yet."
+                    else -> "No MCP servers are configured. Add them to mcp-servers.json and reload the settings."
+                }
             return result
         }
 
@@ -38,6 +45,14 @@ class McpListServersTool : ToolInterface<Map<String, Any>> {
                 if (status.error != null) entry["error"] = status.error
                 entry
             }
+        result["message"] =
+            "Configured MCP servers: $configuredCount; attached MCP servers: ${servers.size}; online tool-capable servers: ${
+                servers.count {
+                    mcp.getServerStatus(
+                        it
+                    ).connected
+                }
+            }"
 
         return result
     }

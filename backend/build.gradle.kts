@@ -28,7 +28,10 @@ val backendRuntime by configurations.creating {
     exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-serialization-json-jvm")
     exclude(group = "org.slf4j")
     exclude(group = "ch.qos.logback")
-    exclude(group = "io.ktor")
+    // io.ktor is NOT bundled by the IDE — it must be included here so MCP (which uses
+    // ktor-client-core for SSE/HTTP transport) and McpClientService (HttpClient(Java)) work
+    // in the installed plugin. runIDE works without this because compileOnly puts ktor on the
+    // Gradle classpath, masking the missing jar.
     exclude(group = "io.netty")
 }
 
@@ -61,6 +64,7 @@ dependencies {
     backendRuntime("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.2")
     backendRuntime("org.eclipse.jgit:org.eclipse.jgit:6.10.0.202406032230-r")
     backendRuntime("io.modelcontextprotocol:kotlin-sdk-client:0.12.0")
+    backendRuntime(libs.ktor.client.java)
 
     testImplementation(libs.openai)
     testImplementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.2")
@@ -100,12 +104,13 @@ tasks {
                     // jackson-core is provided by the IDE platform; bundling it adds shaded
                     // FastDoubleParse classes that reference VarHandle.set unavailable on older JVMs
                     .filter { !it.file.name.startsWith("jackson-core") }
-                    // kotlin-logging-jvm logback integration references ch.qos.logback which isn't bundled
-                    .filter { !it.file.name.startsWith("kotlin-logging-jvm") }
                     .map {
                         zipTree(it.file).matching {
                             // Android TLS stubs — dead code on JVM
                             exclude("android/**")
+                            // kotlin-logging-jvm's logback integration references ch.qos.logback
+                            // which is not bundled in the IDE; exclude the whole logback sub-package
+                            exclude("io/github/oshai/kotlinlogging/logback/**")
                         }
                     }
             },

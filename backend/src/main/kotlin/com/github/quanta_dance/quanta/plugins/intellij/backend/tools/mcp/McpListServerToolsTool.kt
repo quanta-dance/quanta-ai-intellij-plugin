@@ -17,6 +17,15 @@ class McpListServerToolsTool : ToolInterface<Map<String, Any>> {
     override fun execute(project: Project): Map<String, Any> {
         val mcp = project.service<McpClientService>()
         val tools: List<String> = mcp.getTools(server).map { it.name }
-        return mapOf("server" to server, "tools" to tools)
+        return mapOf(
+            "server" to server,
+            "tools" to tools,
+            "message" to
+                    if (tools.isEmpty()) {
+                        "MCP server '$server' is configured, but no tools are online yet."
+                    } else {
+                        "MCP server '$server' is online with ${tools.size} tool(s)."
+                    },
+        )
     }
 }
