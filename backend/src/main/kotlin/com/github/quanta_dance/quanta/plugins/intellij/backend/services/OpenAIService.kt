@@ -257,6 +257,7 @@ class OpenAIService(
 
     data class ToolTurnUpdate(
         val item: ToolExecutionItem,
+        val responseId: String?,
     )
 
     /**

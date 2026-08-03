@@ -202,6 +202,7 @@ class AgentTurnOrchestrator(
         outcome: ToolExecutionOutcome,
         guardrailState: TurnGuardrailState,
         pendingToolOutputs: MutableList<ResponseInputItem>,
+        responseId: String?,
         onToolUpdate: ((OpenAIService.ToolTurnUpdate) -> Unit)?,
     ) {
         val functionCall = outcome.plan.functionCall
@@ -213,7 +214,7 @@ class AgentTurnOrchestrator(
                     errorText = failure.message,
                     detailText = failure.stackTraceToString().take(2_000),
                 )
-            onToolUpdate?.invoke(OpenAIService.ToolTurnUpdate(failedItem))
+            onToolUpdate?.invoke(OpenAIService.ToolTurnUpdate(failedItem, responseId))
             throw failure
         }
 
@@ -238,7 +239,7 @@ class AgentTurnOrchestrator(
                 detailText = toolResult.detailText,
                 filePathOverride = toolResult.filePath,
             )
-        onToolUpdate?.invoke(OpenAIService.ToolTurnUpdate(completedItem))
+        onToolUpdate?.invoke(OpenAIService.ToolTurnUpdate(completedItem, responseId))
         pendingToolOutputs.add(ResponseInputItem.ofFunctionCallOutput(toolResult.toolOutput))
     }
 
@@ -248,6 +249,7 @@ class AgentTurnOrchestrator(
         guardrailState: TurnGuardrailState,
         pendingToolOutputs: MutableList<ResponseInputItem>,
         agentLabel: String,
+        responseId: String?,
         onToolUpdate: ((OpenAIService.ToolTurnUpdate) -> Unit)?,
     ) {
         val plans =
@@ -258,7 +260,7 @@ class AgentTurnOrchestrator(
                         functionCall,
                         ToolExecutionStatus.EXECUTING,
                     )
-                onToolUpdate?.invoke(OpenAIService.ToolTurnUpdate(startedItem))
+                onToolUpdate?.invoke(OpenAIService.ToolTurnUpdate(startedItem, responseId))
                 plan
             }
 
@@ -276,6 +278,7 @@ class AgentTurnOrchestrator(
                         ),
                     guardrailState = guardrailState,
                     pendingToolOutputs = pendingToolOutputs,
+                    responseId = responseId,
                     onToolUpdate = onToolUpdate,
                 )
                 index += 1
@@ -318,6 +321,7 @@ class AgentTurnOrchestrator(
                     outcome = outcome,
                     guardrailState = guardrailState,
                     pendingToolOutputs = pendingToolOutputs,
+                    responseId = responseId,
                     onToolUpdate = onToolUpdate,
                 )
             }
@@ -428,6 +432,7 @@ class AgentTurnOrchestrator(
                                 guardrailState = guardrailState,
                                 pendingToolOutputs = pendingToolOutputs,
                                 agentLabel = agentLabel,
+                                responseId = newId,
                                 onToolUpdate = onToolUpdate,
                             )
                         }

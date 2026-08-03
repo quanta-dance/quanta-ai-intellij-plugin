@@ -157,7 +157,6 @@ class ChatConversationService(
     suspend fun sendUserMessage(messageContent: String) {
         withContext(Dispatchers.IO) {
             var thinkingMessageId: String
-            var toolMessageId: String? = null
             var firstAssistantMessageShown = false
             try {
                 QDLog.info(
@@ -181,8 +180,6 @@ class ChatConversationService(
                             inputs = inputs,
                             thinkingMessageIdProvider = { thinkingMessageId },
                             onThinkingMessageIdChanged = { thinkingMessageId = it },
-                            toolMessageIdProvider = { toolMessageId },
-                            onToolMessageIdChanged = { toolMessageId = it },
                             onFirstAssistantMessageShown = { firstAssistantMessageShown = true },
                         )
                     } catch (e: Throwable) {
@@ -192,7 +189,6 @@ class ChatConversationService(
                         clearThinkingMessages()
                         compactConversationWithBrief("")
                         thinkingMessageId = appendAiThinkingMessage()
-                        toolMessageId = null
                         firstAssistantMessageShown = false
 
                         awaitManagerTurn(
@@ -204,8 +200,6 @@ class ChatConversationService(
                                 ),
                             thinkingMessageIdProvider = { thinkingMessageId },
                             onThinkingMessageIdChanged = { thinkingMessageId = it },
-                            toolMessageIdProvider = { toolMessageId },
-                            onToolMessageIdChanged = { toolMessageId = it },
                             onFirstAssistantMessageShown = { firstAssistantMessageShown = true },
                         )
                     }
@@ -329,27 +323,24 @@ class ChatConversationService(
         beforeMessageId: String? = null,
     ): String =
         onChatPublicationThread {
-            // Emit per-item messages rather than a single aggregated tool message
-            if (toolItems.isEmpty()) return@onChatPublicationThread ""
-            val newMessages = toolItems.map { item -> chatMessageFactory.createAIToolMessage(listOf(item)) }
-            val baseList =
+            val message = chatMessageFactory.createAIToolMessage(toolItems)
+            _messages.value =
                 if (beforeMessageId == null) {
-                    _messages.value + newMessages
+                    _messages.value + message
                 } else {
                     val idx = _messages.value.indexOfFirst { it.id == beforeMessageId }
                     if (idx < 0) {
-                        _messages.value + newMessages
+                        _messages.value + message
                     } else {
                         buildList {
                             addAll(_messages.value.take(idx))
-                            addAll(newMessages)
+                            add(message)
                             addAll(_messages.value.drop(idx))
                         }
                     }
                 }
-            _messages.value = baseList
             persistMessages()
-            newMessages.firstOrNull()?.id ?: ""
+            message.id
         }
 
     private fun currentToolItems(
@@ -491,11 +482,9 @@ class ChatConversationService(
         inputs: MutableList<ResponseInputItem>,
         thinkingMessageIdProvider: () -> String,
         onThinkingMessageIdChanged: (String) -> Unit,
-        toolMessageIdProvider: () -> String?,
-        onToolMessageIdChanged: (String?) -> Unit,
         onFirstAssistantMessageShown: () -> Unit,
     ): Pair<String, String?> {
-        val toolMessageIdsByCallId = mutableMapOf<String, String>()
+        val toolMessageIdsByResponseId = mutableMapOf<String, String>()
 
         return awaitDetachedAgentTurn {
             openAIService.agentTurn(
@@ -517,20 +506,21 @@ class ChatConversationService(
                         ),
                     )
                     onFirstAssistantMessageShown()
-                    onToolMessageIdChanged(null)
                     onThinkingMessageIdChanged(appendAiThinkingMessage())
                 },
                 onToolUpdate = { update ->
+                    val groupingId = update.responseId ?: update.item.callId
                     val targetId =
-                        toolMessageIdsByCallId.getOrPut(update.item.callId) {
+                        toolMessageIdsByResponseId.getOrPut(groupingId) {
                             appendAiToolMessage(
-                                toolItems = listOf(update.item),
+                                toolItems = emptyList(),
                                 beforeMessageId = thinkingMessageIdProvider(),
                             )
                         }
+                    val mergedItems = mergeToolItems(currentToolItems(targetId), update.item)
                     replaceMessage(
                         targetId,
-                        chatMessageFactory.createAIToolMessage(listOf(update.item)),
+                        chatMessageFactory.createAIToolMessage(mergedItems),
                     )
                 },
             )
