@@ -484,7 +484,7 @@ class ChatConversationService(
         onThinkingMessageIdChanged: (String) -> Unit,
         onFirstAssistantMessageShown: () -> Unit,
     ): Pair<String, String?> {
-        val toolMessageIdsByResponseId = mutableMapOf<String, String>()
+        var activeToolMessageId: String? = null
 
         return awaitDetachedAgentTurn {
             openAIService.agentTurn(
@@ -505,18 +505,17 @@ class ChatConversationService(
                             voiceSummary = assistantMessage.ttsSummary,
                         ),
                     )
+                    activeToolMessageId = null
                     onFirstAssistantMessageShown()
                     onThinkingMessageIdChanged(appendAiThinkingMessage())
                 },
                 onToolUpdate = { update ->
-                    val groupingId = update.responseId ?: update.item.callId
                     val targetId =
-                        toolMessageIdsByResponseId.getOrPut(groupingId) {
-                            appendAiToolMessage(
+                        activeToolMessageId
+                            ?: appendAiToolMessage(
                                 toolItems = emptyList(),
                                 beforeMessageId = thinkingMessageIdProvider(),
-                            )
-                        }
+                            ).also { activeToolMessageId = it }
                     val mergedItems = mergeToolItems(currentToolItems(targetId), update.item)
                     replaceMessage(
                         targetId,
