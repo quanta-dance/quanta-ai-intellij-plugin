@@ -2,6 +2,12 @@ import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask
 import org.jetbrains.intellij.platform.gradle.tasks.aware.SplitModeAware
 
+fun escapeHtml(text: String): String = text
+    .replace("&", "&amp;")
+    .replace("<", "&lt;")
+    .replace(">", "&gt;")
+    .replace("\"", "&quot;")
+
 fun latestChangeNotesFromChangelog(): String {
     val changelog = file("CHANGELOG.md").takeIf { it.exists() }?.readText().orEmpty()
     if (changelog.isBlank()) return ""
@@ -11,9 +17,41 @@ fun latestChangeNotesFromChangelog(): String {
     if (startIndex < 0) return ""
     val endIndex = lines.drop(startIndex + 1).indexOfFirst { it.startsWith("## [") }
         .let { if (it < 0) lines.size else startIndex + 1 + it }
-    return lines.subList(startIndex + 1, endIndex)
-        .joinToString("\n")
-        .trim()
+
+    val html = StringBuilder()
+    var listOpen = false
+
+    fun closeList() {
+        if (listOpen) {
+            html.appendLine("</ul>")
+            listOpen = false
+        }
+    }
+
+    lines.subList(startIndex + 1, endIndex).forEach { line ->
+        when {
+            line.isBlank() -> closeList()
+            line.startsWith("### ") -> {
+                closeList()
+                html.appendLine("<h3>${escapeHtml(line.removePrefix("### "))}</h3>")
+            }
+
+            line.startsWith("- ") -> {
+                if (!listOpen) {
+                    html.appendLine("<ul>")
+                    listOpen = true
+                }
+                html.appendLine("<li>${escapeHtml(line.removePrefix("- "))}</li>")
+            }
+
+            else -> {
+                closeList()
+                html.appendLine("<p>${escapeHtml(line)}</p>")
+            }
+        }
+    }
+    closeList()
+    return html.toString().trim()
 }
 
 group = "com.github.quanta_dance"

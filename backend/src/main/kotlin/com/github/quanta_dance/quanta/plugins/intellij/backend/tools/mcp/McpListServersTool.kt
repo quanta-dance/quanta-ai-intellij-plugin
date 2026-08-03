@@ -10,7 +10,7 @@ import com.intellij.openapi.project.Project
 
 @JsonClassDescription(
     "List MCP servers configured in mcp-servers.json with their connection status. " +
-            "Always returns status for every configured server so you can diagnose connection problems.",
+        "Always returns status for every configured server so you can diagnose connection problems.",
 )
 class McpListServersTool : ToolInterface<Map<String, Any>> {
     override fun execute(project: Project): Map<String, Any> {
@@ -30,9 +30,18 @@ class McpListServersTool : ToolInterface<Map<String, Any>> {
             result["servers"] = emptyList<Any>()
             result["message"] =
                 when {
-                    configError != null -> "MCP config loaded, but no servers are attached online yet. Check the config error and restart/reload the MCP settings."
-                    configuredCount > 0 -> "MCP servers are configured, but none are attached online yet."
-                    else -> "No MCP servers are configured. Add them to mcp-servers.json and reload the settings."
+                    configError != null -> {
+                        "MCP config loaded, but no servers are attached online yet. " +
+                            "Check the config error and restart or reload the MCP settings."
+                    }
+
+                    configuredCount > 0 -> {
+                        "MCP servers are configured, but none are attached online yet."
+                    }
+
+                    else -> {
+                        "No MCP servers are configured. Add them to mcp-servers.json and reload the settings."
+                    }
                 }
             return result
         }
@@ -45,14 +54,10 @@ class McpListServersTool : ToolInterface<Map<String, Any>> {
                 if (status.error != null) entry["error"] = status.error
                 entry
             }
+        val onlineServerCount = servers.count { mcp.getServerStatus(it).connected }
         result["message"] =
-            "Configured MCP servers: $configuredCount; attached MCP servers: ${servers.size}; online tool-capable servers: ${
-                servers.count {
-                    mcp.getServerStatus(
-                        it
-                    ).connected
-                }
-            }"
+            "Configured MCP servers: $configuredCount; attached MCP servers: ${servers.size}; " +
+            "online tool-capable servers: $onlineServerCount"
 
         return result
     }

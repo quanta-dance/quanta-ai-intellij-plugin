@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2026.08.03]
+
+This release makes Quanta AI more reliable in modern IntelliJ environments and easier to follow during long, tool-driven tasks.
+
+### Highlights
+- Added support for IntelliJ split mode and Remote Development workflows.
+- Added image generation and editing, plus short video generation from text prompts.
+- Improved agent planning, scheduled follow-ups, terminal jobs, and MCP server integration for longer development tasks.
+- Redesigned chat rendering so assistant responses remain separate and consecutive tool executions are grouped until the next user or assistant message.
+
+### Improved
+- File reading and editing now use clearer range metadata, SHA-256 guards, safer patch matching, and more actionable validation output.
+- Terminal commands now support managed foreground and background jobs, status polling, cancellation, and more reliable PATH resolution.
+- MCP tools now report server connection status and provide clearer discovery and error messages.
+- Tool cards, progress messages, compaction notices, model selection, and prompt formatting are clearer and more consistent.
+- Image editing preserves the selected file path and refreshes saved files in the IDE.
+- Plugin packaging, dynamic unload behavior, startup safety, and IntelliJ Plugin Verifier compatibility were strengthened.
+
+### Fixed
+- Assistant messages could be appended to an earlier Quanta AI message instead of appearing as separate responses.
+- Tool executions could be split or merged at the wrong UI boundary; uninterrupted tool activity is now shown as one group and a new group starts after visible user or assistant output.
+- Chat input and history could render or refresh incorrectly during agent activity.
+- Project context could disappear while project analysis was running.
+- Terminal output, tool names, prompt newlines, file hashes, and delete-tool summaries could be displayed incorrectly.
+- MCP, settings synchronization, media tools, and chat recovery now handle unavailable services and transient failures more safely.
+
 ## [2026.05.24]
 
 ### Added

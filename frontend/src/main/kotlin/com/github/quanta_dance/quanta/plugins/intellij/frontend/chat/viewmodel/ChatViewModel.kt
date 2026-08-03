@@ -90,15 +90,21 @@ class ChatViewModel(
     override fun onPromptInputChanged(input: String) {
         _promptInputState.value =
             when {
-                input.isEmpty() ->
+                input.isEmpty() -> {
                     if (_promptInputState.value is MessageInputState.Sending) {
                         MessageInputState.Sending("")
                     } else {
                         MessageInputState.Disabled
                     }
+                }
 
-                _promptInputState.value is MessageInputState.Sending -> MessageInputState.Enabled(input)
-                else -> MessageInputState.Enabled(input)
+                _promptInputState.value is MessageInputState.Sending -> {
+                    MessageInputState.Enabled(input)
+                }
+
+                else -> {
+                    MessageInputState.Enabled(input)
+                }
             }
     }
 

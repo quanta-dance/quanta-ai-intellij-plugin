@@ -14,9 +14,9 @@ import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.components.service
 import com.intellij.openapi.options.ShowSettingsUtil
+import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
-import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import org.jetbrains.jewel.bridge.addComposeTab
@@ -28,7 +28,9 @@ import org.jetbrains.jewel.bridge.addComposeTab
  * frontend-only presentation layer used in local and split-mode IDE sessions.
  */
 @Suppress("UnstableApiUsage")
-class QuantaFrontendToolWindowFactory : ToolWindowFactory, DumbAware {
+class QuantaFrontendToolWindowFactory :
+    ToolWindowFactory,
+    DumbAware {
     override fun shouldBeAvailable(project: Project) = true
 
     override fun createToolWindowContent(

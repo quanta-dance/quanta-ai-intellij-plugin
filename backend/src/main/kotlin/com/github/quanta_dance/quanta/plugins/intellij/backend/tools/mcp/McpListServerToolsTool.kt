@@ -21,11 +21,11 @@ class McpListServerToolsTool : ToolInterface<Map<String, Any>> {
             "server" to server,
             "tools" to tools,
             "message" to
-                    if (tools.isEmpty()) {
-                        "MCP server '$server' is configured, but no tools are online yet."
-                    } else {
-                        "MCP server '$server' is online with ${tools.size} tool(s)."
-                    },
+                if (tools.isEmpty()) {
+                    "MCP server '$server' is configured, but no tools are online yet."
+                } else {
+                    "MCP server '$server' is online with ${tools.size} tool(s)."
+                },
         )
     }
 }

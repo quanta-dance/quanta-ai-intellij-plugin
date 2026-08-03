@@ -1,12 +1,39 @@
-<idea-plugin url="https://github.com/quanta-dance/quanta-ai-intelliJ-plugin" require-restart="false"
+<idea-plugin url="https://github.com/quanta-dance/quanta-ai-intellij-plugin" require-restart="false"
              icon="/pluginIcon.svg">
     <id>com.github.quanta_dance.quanta-ai-intellij-plugin</id>
     <name>Quanta AI</name>
     <vendor url="https://github.com/quanta-dance">Quanta Dance Tech.</vendor>
 
     <description><![CDATA[
-    <h2>Quanta — AI coding assistant for IntelliJ</h2>
-    <p>Quanta AI integrates a context-aware AI assistant directly into your IntelliJ-based IDE.</p>
+    <h2>Quanta AI — an agentic coding assistant for IntelliJ-based IDEs</h2>
+    <p>
+        Plan, implement, review, and refactor code without leaving your IDE. Quanta AI combines OpenAI models with
+        project-aware tools so it can inspect your codebase, make guarded edits, run commands, and report progress in a
+        readable chat timeline.
+    </p>
+
+    <h3>Key features</h3>
+    <ul>
+        <li><b>Agentic development:</b> handle multi-step coding tasks with planning, tool use, and scheduled follow-ups.</li>
+        <li><b>Project-aware assistance:</b> inspect files, references, dependencies, build configuration, and project structure.</li>
+        <li><b>Safe code changes:</b> apply focused patches with content guards, review refactoring suggestions, and validate updates.</li>
+        <li><b>IDE and terminal tools:</b> search the project, run managed commands, execute tests, and inspect results.</li>
+        <li><b>MCP integration:</b> connect external Model Context Protocol servers and make their tools available to the assistant.</li>
+        <li><b>Voice and media:</b> use speech input and output, generate or edit images, and create short videos.</li>
+        <li><b>Remote-ready UI:</b> work in local IntelliJ projects, split mode, and Remote Development environments.</li>
+    </ul>
+
+    <h3>Getting started</h3>
+    <ol>
+        <li>Install Quanta AI and open its tool window.</li>
+        <li>Add an OpenAI API key in the plugin settings.</li>
+        <li>Choose a model and describe the task you want to complete.</li>
+    </ol>
+
+    <p>
+        An OpenAI account with available API credit is required. Terminal access is optional and disabled unless enabled
+        in settings. You can restrict allowed command prefixes and choose which built-in or MCP tools are available.
+    </p>
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
