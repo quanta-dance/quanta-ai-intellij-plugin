@@ -1,0 +1,41 @@
+<idea-plugin>
+    <dependencies>
+        <module name="intellij.platform.frontend"/>
+        <module name="intellij.platform.compose"/>
+        <module name="intellij-quanta-ai-plugin.shared"/>
+    </dependencies>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <postStartupActivity
+                implementation="com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendSettingsStartupActivity"/>
+    </extensions>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow
+                factoryClass="com.github.quanta_dance.quanta.plugins.intellij.frontend.toolwindow.QuantaFrontendToolWindowFactory"
+                id="Quanta AI"
+                anchor="right"
+                icon="/icons/toolWindowIcon.svg"/>
+        <applicationConfigurable
+                parentId="tools"
+                id="com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendQuantaPluginConfigurable"
+                displayName="Quanta AI"
+                instance="com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendQuantaPluginConfigurable"/>
+        <notificationGroup id="Plugin Notifications" displayType="STICKY_BALLOON" isLogByDefault="true"/>
+    </extensions>
+
+    <actions>
+        <group id="EditorPopupMenu.QuantaAI.Frontend"
+               class="com.github.quanta_dance.quanta.plugins.intellij.frontend.actions.FrontendConfiguredActionsGroup"
+               text="QuantaDance Actions" popup="true" description="QuantaDance"
+               icon="/icons/quantadance.svg">
+            <add-to-group group-id="EditorPopupMenu" anchor="first"/>
+        </group>
+
+        <action id="QuantaFrontend.SettingsAction"
+                class="com.github.quanta_dance.quanta.plugins.intellij.frontend.actions.SettingsAction"
+                text="Quanta AI Settings"
+                description="Open Quanta AI frontend settings"
+                icon="AllIcons.General.Settings"/>
+    </actions>
+</idea-plugin>

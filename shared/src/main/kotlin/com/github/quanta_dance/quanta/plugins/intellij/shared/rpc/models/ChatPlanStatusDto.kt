@@ -1,0 +1,18 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
+package com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models
+
+import kotlinx.serialization.Serializable
+
+@Serializable
+data class ChatPlanStatusDto(
+    val status: String = "",
+    val text: String = "",
+    val goal: String = "",
+    val definitionOfDone: String = "",
+    val tasks: List<String> = emptyList(),
+    val completedTasks: List<String> = emptyList(),
+    val uncheckedTasks: List<String> = emptyList(),
+    val revision: Long = 0,
+)

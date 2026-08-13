@@ -1,0 +1,57 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
+package com.github.quanta_dance.quanta.plugins.intellij.frontend.settings
+
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.QuantaSettingsDto
+import com.intellij.openapi.project.Project
+
+fun FrontendQuantaSettingsState.State.toDto(
+    project: Project,
+    mcpServersJson: String,
+): QuantaSettingsDto =
+    QuantaSettingsDto(
+        openAiUrl = openAiUrl,
+        openAiToken = openAiToken,
+        model = model,
+        aiChatModel = aiChatModel,
+        availableChatModels = availableChatModels,
+        availableTtsVoices = availableTtsVoices,
+        voiceEnabled = voiceEnabled,
+        voiceByLocalTTS = voiceByLocalTTS,
+        preferredOpenAiTtsVoice = preferredOpenAiTtsVoice,
+        maxTokens = maxTokens,
+        dynamicModelEnabled = dynamicModelEnabled,
+        agenticEnabled = agenticEnabled,
+        extraInstructions = extraInstructions,
+        debugEnabled = debugEnabled,
+        maxAutomaticTurns = maxAutomaticTurns,
+        followEnabled = followEnabled,
+        terminalToolEnabled = terminalToolEnabled,
+        terminalAllowedCommandsCsv = terminalAllowedCommandsCsv,
+        actionConfigsJson = actionConfigsJson,
+        mcpServersJson = mcpServersJson,
+    )
+
+fun QuantaSettingsDto.toFrontendState(): FrontendQuantaSettingsState.State =
+    FrontendQuantaSettingsState.State(
+        openAiUrl = openAiUrl,
+        openAiToken = openAiToken,
+        model = model,
+        aiChatModel = aiChatModel,
+        availableChatModels = availableChatModels,
+        availableTtsVoices = availableTtsVoices,
+        voiceEnabled = voiceEnabled,
+        voiceByLocalTTS = voiceByLocalTTS,
+        preferredOpenAiTtsVoice = preferredOpenAiTtsVoice,
+        maxTokens = maxTokens,
+        dynamicModelEnabled = dynamicModelEnabled,
+        agenticEnabled = agenticEnabled,
+        extraInstructions = extraInstructions,
+        debugEnabled = debugEnabled,
+        maxAutomaticTurns = maxAutomaticTurns,
+        followEnabled = followEnabled,
+        terminalToolEnabled = terminalToolEnabled,
+        terminalAllowedCommandsCsv = terminalAllowedCommandsCsv,
+        actionConfigsJson = actionConfigsJson,
+    )

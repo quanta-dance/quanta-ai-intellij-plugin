@@ -1,0 +1,398 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2025 Aleksandr Nekrasov (Quanta-Dance)
+
+package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.go
+
+import com.fasterxml.jackson.annotation.JsonClassDescription
+import com.fasterxml.jackson.annotation.JsonPropertyDescription
+import com.github.quanta_dance.quanta.plugins.intellij.backend.openai.ToolFriendlyException
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
+import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolExecutionPresentation
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
+import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolPresentationProvider
+import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.SystemInfo
+import com.intellij.openapi.vfs.VfsUtil
+import java.io.File
+import java.nio.charset.StandardCharsets
+import java.util.HashSet
+import java.util.LinkedList
+import java.util.concurrent.TimeUnit
+
+@JsonClassDescription("Run Go tests (go test) with optional -run filter and stream progress; auto-detects go module in project root")
+class RunGoTestsTool :
+    ToolInterface<RunGoTestsTool.Result>,
+    ToolPresentationProvider {
+    data class Result(
+        val success: Boolean,
+        val totalPackages: Int,
+        val failedPackages: Int,
+        val stdoutTail: String?,
+        val error: String?,
+        val displaySummary: String? = null,
+        val content: String? = null,
+    )
+
+    override fun presentation(status: ToolExecutionStatus): ToolExecutionPresentation {
+        val target = workingDir?.trim()?.takeIf { it.isNotBlank() } ?: "."
+        return ToolExecutionPresentation(title = "Running go tests in $target")
+    }
+
+    @field:JsonPropertyDescription("Go package pattern to test (default: './...')")
+    var packages: String? = null
+
+    @field:JsonPropertyDescription("-run filter (regexp) to select tests, e.g., 'TestFoo|TestBar'")
+    var runRegex: String? = null
+
+    @field:JsonPropertyDescription("Enable verbose output (-v) (default: false). Output is still bounded in returned stdout tail.")
+    var verbose: Boolean = false
+
+    @field:JsonPropertyDescription(
+        "Working directory relative to the project root (default: project root). " +
+            "If autoDetectModule=true and go.mod exists in project root, it will be used.",
+    )
+    var workingDir: String? = null
+
+    @field:JsonPropertyDescription("Auto-detect go module by checking go.mod in project root (default: true)")
+    var autoDetectModule: Boolean = true
+
+    @field:JsonPropertyDescription("How many lines of stdout tail to include in the result (0 = none). Default: 50")
+    var stdoutTailLines: Int = 50
+
+    @field:JsonPropertyDescription("Timeout minutes for go test. Default: 30")
+    var timeoutMinutes: Long = 30
+
+    @field:JsonPropertyDescription(
+        "Absolute path to go binary (optional). If omitted, we try GOROOT/bin/go, common locations, or '/usr/bin/env go'.",
+    )
+    var goBinary: String? = null
+
+    private fun resolveGoBinary(): String? {
+        // 1) Explicit field
+        val user = goBinary?.trim()?.takeIf { it.isNotEmpty() }
+        if (user != null && File(user).canExecute()) return user
+        // 2) GOROOT/bin/go
+        val goroot = System.getenv("GOROOT")?.trim()?.takeIf { it.isNotEmpty() }
+        if (goroot != null) {
+            val p = File(goroot, "bin${File.separator}${if (SystemInfo.isWindows) "go.exe" else "go"}")
+            if (p.canExecute()) return p.absolutePath
+        }
+        // 3) Common locations
+        val candidates = mutableListOf<String>()
+        if (SystemInfo.isMac) {
+            candidates +=
+                listOf(
+                    "/opt/homebrew/bin/go",
+                    "/usr/local/bin/go",
+                    "/usr/local/go/bin/go",
+                    "/usr/bin/go",
+                )
+        } else if (SystemInfo.isWindows) {
+            candidates +=
+                listOf(
+                    "C:/Program Files/Go/bin/go.exe",
+                    "C:/Go/bin/go.exe",
+                )
+        } else {
+            candidates +=
+                listOf(
+                    "/usr/local/go/bin/go",
+                    "/usr/local/bin/go",
+                    "/usr/bin/go",
+                    "/snap/bin/go",
+                )
+        }
+        for (c in candidates) if (File(c).canExecute()) return c
+        // 4) Try '/usr/bin/env go' to resolve from PATH
+        return if (canInvoke(arrayOf("/usr/bin/env", "go", "version"))) "go" else null
+    }
+
+    private fun canInvoke(
+        cmd: Array<String>,
+        wd: File? = null,
+    ): Boolean =
+        try {
+            val p =
+                ProcessBuilder(*cmd)
+                    .directory(wd)
+                    .redirectErrorStream(true)
+                    .start()
+            p.waitFor(3, TimeUnit.SECONDS)
+        } catch (_: Throwable) {
+            false
+        }
+
+    override fun execute(project: Project): Result =
+        try {
+            executeInternal(project)
+        } catch (e: Throwable) {
+            val rootCause = rootCauseOf(e)
+            if (rootCause is ToolFriendlyException) throw rootCause
+            if (rootCause is java.util.concurrent.CancellationException) {
+                throw ToolFriendlyException(
+                    "Go test execution was cancelled before completion.",
+                    code = "cancelled",
+                    retriable = true,
+                )
+            }
+            throw e
+        }
+
+    private fun executeInternal(project: Project): Result {
+        val basePath =
+            PathUtils.projectRootPath(project) ?: return Result(false, 0, 0, null, "Project base path not found")
+        val pkg = (packages?.trim()?.takeIf { it.isNotEmpty() } ?: "./...")
+
+        // Auto-detect module root
+        val workDir =
+            run {
+                val userWd = workingDir?.trim()?.takeIf { it.isNotEmpty() }
+                if (!autoDetectModule) {
+                    File(basePath, userWd ?: ".")
+                } else {
+                    val rootGoMod = File(basePath, "go.mod")
+                    if (rootGoMod.exists()) File(basePath) else File(basePath, userWd ?: ".")
+                }
+            }
+
+        val run = runRegex?.trim()
+        val displayWorkDir =
+            runCatching { PathUtils.relativizeToProject(basePath, workDir.toPath()) }
+                .getOrDefault(workDir.name.ifBlank { "." })
+        val goPath = resolveGoBinary()
+        if (goPath == null) {
+            val hint =
+                buildString {
+                    append("Go binary not found. Set goBinary explicitly or ensure PATH includes 'go'.\n")
+                    append("Tried GOROOT/bin/go and common locations. On macOS with Homebrew: /opt/homebrew/bin/go\n")
+                }
+            return Result(
+                false,
+                0,
+                0,
+                null,
+                hint.trim(),
+                content =
+                    buildResultDetail(
+                        workingDirectory = displayWorkDir,
+                        packages = pkg,
+                        runRegex = run,
+                        success = false,
+                        totalPackages = 0,
+                        failedPackages = 0,
+                        stdoutTail = null,
+                        error = hint.trim(),
+                    ),
+            )
+        }
+
+        val args = mutableListOf<String>()
+        args += goPath
+        args += listOf("test", pkg)
+        if (verbose) args += "-v"
+        if (!run.isNullOrEmpty()) {
+            args += listOf("-run", run)
+        }
+
+        val taskLine = "cmd=${args.joinToString(" ")}\nwd=${workDir.absolutePath}"
+        val output = StringBuilder()
+        val process =
+            try {
+                ProcessBuilder(args)
+                    .directory(workDir)
+                    .redirectErrorStream(true)
+                    .start()
+            } catch (e: Exception) {
+                val message = "Failed to start go test: ${e.message}"
+                return Result(
+                    false,
+                    0,
+                    0,
+                    null,
+                    message,
+                    content =
+                        buildResultDetail(
+                            workingDirectory = displayWorkDir,
+                            packages = pkg,
+                            runRegex = run,
+                            success = false,
+                            totalPackages = 0,
+                            failedPackages = 0,
+                            stdoutTail = null,
+                            error = message,
+                        ),
+                )
+            }
+
+        // Streaming progress (bounded recent buffer)
+        val recent = LinkedList<String>()
+        val recentCapacity = 50
+        var totalPkgs = 0
+        var failedPkgs = 0
+        var lastPulse = 0L
+        val start = System.currentTimeMillis()
+
+        fun pushRecent(line: String) {
+            recent.add(line)
+            if (recent.size > recentCapacity) recent.removeFirst()
+        }
+
+        fun pulse() {
+            val now = System.currentTimeMillis()
+            if (now - lastPulse >= 1500) {
+                lastPulse = now
+                val elapsed = (now - start) / 1000
+                val body =
+                    buildString {
+                        append(taskLine)
+                        append("\nElapsed: ").append(elapsed).append("s\n")
+                        append("Packages: ")
+                            .append(totalPkgs)
+                            .append(", Failed: ")
+                            .append(failedPkgs)
+                            .append("\n")
+                        if (recent.isNotEmpty()) append(recent.joinToString("\n"))
+                    }
+            }
+        }
+
+        process.inputStream.bufferedReader(StandardCharsets.UTF_8).use { reader ->
+            var line: String?
+            while (reader.readLine().also { line = it } != null) {
+                val ln = line!!
+                output.appendLine(ln)
+                val t = ln.trim()
+                when {
+                    t.startsWith("ok\t") -> {
+                        totalPkgs += 1
+                        pushRecent(t)
+                        pulse()
+                    }
+
+                    t.startsWith("FAIL\t") -> {
+                        totalPkgs += 1
+                        failedPkgs += 1
+                        pushRecent(t)
+                        pulse()
+                    }
+
+                    t.startsWith("?\t") -> {
+                        totalPkgs += 1
+                        pushRecent(t)
+                        pulse()
+                    }
+
+                    t.startsWith("--- FAIL:") || t.startsWith("--- PASS:") || t.startsWith("=== RUN") -> {
+                        pushRecent(t)
+                        pulse()
+                    }
+                }
+            }
+        }
+
+        val finished = process.waitFor(timeoutMinutes, TimeUnit.MINUTES)
+        if (!finished) {
+            process.destroyForcibly()
+            val outputTail = tail(output, stdoutTailLines)
+            return Result(
+                false,
+                totalPkgs,
+                failedPkgs,
+                outputTail,
+                "go test timed out",
+                displaySummary = "Timed out after ${timeoutMinutes}m",
+                content =
+                    buildResultDetail(
+                        workingDirectory = displayWorkDir,
+                        packages = pkg,
+                        runRegex = run,
+                        success = false,
+                        totalPackages = totalPkgs,
+                        failedPackages = failedPkgs,
+                        stdoutTail = outputTail,
+                        error = "go test timed out",
+                    ),
+            )
+        }
+        val exitCode = process.exitValue()
+
+        // Refresh VFS
+        VfsUtil.markDirtyAndRefresh(true, true, true, workDir)
+
+        val success = exitCode == 0
+        val outputTail = tail(output, stdoutTailLines)
+        val errorMessage = if (success) "" else "go test failed with exit code $exitCode"
+
+        return Result(
+            success,
+            totalPkgs,
+            failedPkgs,
+            outputTail,
+            errorMessage,
+            displaySummary =
+                if (success) {
+                    "Passed: $totalPkgs package(s)"
+                } else {
+                    "Failed: $failedPkgs of $totalPkgs package(s)"
+                },
+            content =
+                buildResultDetail(
+                    workingDirectory = displayWorkDir,
+                    packages = pkg,
+                    runRegex = run,
+                    success = success,
+                    totalPackages = totalPkgs,
+                    failedPackages = failedPkgs,
+                    stdoutTail = outputTail,
+                    error = errorMessage.ifBlank { null },
+                ),
+        )
+    }
+
+    private fun rootCauseOf(error: Throwable): Throwable {
+        var current: Throwable = error
+        val visited = HashSet<Throwable>()
+        while (current.cause != null && visited.add(current)) {
+            current = current.cause!!
+        }
+        return current
+    }
+
+    private fun buildResultDetail(
+        workingDirectory: String,
+        packages: String,
+        runRegex: String?,
+        success: Boolean,
+        totalPackages: Int,
+        failedPackages: Int,
+        stdoutTail: String?,
+        error: String?,
+    ): String =
+        buildString {
+            append("Working directory: ").append(workingDirectory)
+            append("\nPackages: ").append(packages)
+            if (!runRegex.isNullOrBlank()) {
+                append("\nRun filter: ").append(runRegex)
+            }
+            append("\nResult: ").append(if (success) "success" else "failure")
+            append("\nPackages processed: ").append(totalPackages)
+            append("\nFailed packages: ").append(failedPackages)
+            error?.takeIf { it.isNotBlank() }?.let {
+                append("\nError: ").append(it)
+            }
+            stdoutTail?.takeIf { it.isNotBlank() }?.let {
+                append("\n\nOutput tail:\n").append(it)
+            }
+        }
+
+    private fun tail(
+        sb: StringBuilder,
+        n: Int,
+    ): String? {
+        if (n <= 0) return null
+        val lines = sb.toString().lines()
+        val count = if (n > lines.size) lines.size else n
+        return lines.takeLast(count).joinToString("\n")
+    }
+}

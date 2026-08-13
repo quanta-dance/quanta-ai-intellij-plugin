@@ -37,3 +37,6 @@ replay_pid*
 .intellijPlatform
 build
 *.iml
+
+.quantadance
+memory
