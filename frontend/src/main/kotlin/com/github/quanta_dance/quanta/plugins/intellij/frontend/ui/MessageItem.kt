@@ -421,14 +421,18 @@ private fun messageHeader(message: ChatMessage) {
 
 @Composable
 private fun messageContent(message: ChatMessage) {
-    Text(
-        text = message.content,
-        style =
-            JewelTheme.defaultTextStyle.copy(
-                fontSize = 13.sp,
-                lineHeight = 18.sp,
-            ),
-    )
+    if (message.isMyMessage) {
+        Text(
+            text = message.content,
+            style =
+                JewelTheme.defaultTextStyle.copy(
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                ),
+        )
+    } else {
+        markdownText(message.content)
+    }
 }
 
 @Composable
