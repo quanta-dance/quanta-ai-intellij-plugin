@@ -17,6 +17,7 @@ import java.util.LinkedHashMap
 import java.util.LinkedHashSet
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.ThreadFactory
 import java.util.concurrent.TimeUnit
@@ -175,8 +176,13 @@ internal class TerminalCommandJobManager(
         timeoutSeconds: Int,
     ): TerminalJobSnapshot {
         val job = requireJob(jobId)
+        val deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds.toLong())
         if (job.process.isAlive) {
             job.process.waitFor(timeoutSeconds.toLong(), TimeUnit.SECONDS)
+        }
+        if (!job.process.isAlive) {
+            val remainingNanos = (deadlineNanos - System.nanoTime()).coerceAtLeast(0)
+            job.outputPumpsDone.await(remainingNanos, TimeUnit.NANOSECONDS)
         }
         return snapshot(job)
     }
@@ -268,6 +274,7 @@ internal class TerminalCommandJobManager(
                 job.timedOut.set(true)
                 destroyProcessTree(job.process)
             }
+            job.outputPumpsDone.await()
             val exitCode = runCatching { job.process.exitValue() }.getOrNull()
             updateSnapshot(job, exitCode)
         } catch (t: Throwable) {
@@ -280,28 +287,32 @@ internal class TerminalCommandJobManager(
         job: TerminalJob,
         stream: TerminalOutputStream,
     ) {
-        val input =
-            when (stream) {
-                TerminalOutputStream.STDOUT -> job.process.inputStream
-                TerminalOutputStream.STDERR -> job.process.errorStream
-                TerminalOutputStream.COMBINED -> return
+        try {
+            val input =
+                when (stream) {
+                    TerminalOutputStream.STDOUT -> job.process.inputStream
+                    TerminalOutputStream.STDERR -> job.process.errorStream
+                    TerminalOutputStream.COMBINED -> return
+                }
+            val capture =
+                when (stream) {
+                    TerminalOutputStream.STDOUT -> job.stdoutCapture
+                    TerminalOutputStream.STDERR -> job.stderrCapture
+                    TerminalOutputStream.COMBINED -> job.combinedCapture
+                }
+            input.bufferedReader(StandardCharsets.UTF_8).use { reader ->
+                val buffer = CharArray(4096)
+                while (true) {
+                    val count = reader.read(buffer)
+                    if (count <= 0) break
+                    val text = String(buffer, 0, count)
+                    capture.append(text)
+                    job.combinedCapture.append(text)
+                    job.emitToConsole(text, stream == TerminalOutputStream.STDERR)
+                }
             }
-        val capture =
-            when (stream) {
-                TerminalOutputStream.STDOUT -> job.stdoutCapture
-                TerminalOutputStream.STDERR -> job.stderrCapture
-                TerminalOutputStream.COMBINED -> job.combinedCapture
-            }
-        input.bufferedReader(StandardCharsets.UTF_8).use { reader ->
-            val buffer = CharArray(4096)
-            while (true) {
-                val count = reader.read(buffer)
-                if (count <= 0) break
-                val text = String(buffer, 0, count)
-                capture.append(text)
-                job.combinedCapture.append(text)
-                job.consoleSink(text, stream == TerminalOutputStream.STDERR)
-            }
+        } finally {
+            job.outputPumpsDone.countDown()
         }
     }
 
@@ -336,7 +347,7 @@ internal class TerminalCommandJobManager(
                 )
             return
         }
-        if (job.process.isAlive && !job.timedOut.get()) {
+        if ((job.process.isAlive || job.outputPumpsDone.count > 0) && !job.timedOut.get()) {
             job.snapshot =
                 job.snapshot.copy(
                     stdoutBytes = job.stdoutCapture.sizeBytes,
@@ -440,10 +451,17 @@ private class TerminalJob(
     val stdoutCapture: BoundedLogFile,
     val stderrCapture: BoundedLogFile,
     val combinedCapture: BoundedLogFile,
-    val consoleSink: (String, Boolean) -> Unit,
+    private val consoleSink: (String, Boolean) -> Unit,
 ) : Closeable {
     val cancelRequested = AtomicBoolean(false)
     val timedOut = AtomicBoolean(false)
+    val outputPumpsDone = CountDownLatch(2)
+
+    @Synchronized
+    fun emitToConsole(
+        text: String,
+        isError: Boolean,
+    ) = consoleSink(text, isError)
 
     override fun close() {
         stdoutCapture.close()
