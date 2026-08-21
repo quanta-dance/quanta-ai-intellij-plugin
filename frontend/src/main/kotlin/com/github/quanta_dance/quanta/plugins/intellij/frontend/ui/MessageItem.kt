@@ -3,6 +3,8 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.ui
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -30,6 +32,7 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.platform.LocalDensity
@@ -59,9 +62,12 @@ import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.Icon
 import org.jetbrains.jewel.ui.component.IconButton
 import org.jetbrains.jewel.ui.component.Text
+import java.awt.Toolkit
+import java.awt.datatransfer.StringSelection
 
 private val logger = Logger.getInstance("ToolExecutionLink")
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun messageBubble(
     project: Project,
@@ -70,6 +76,7 @@ fun messageBubble(
     isMatchingSearch: Boolean = false,
     isHighlightedInSearch: Boolean = false,
 ) {
+    var isHovered by remember(message.id) { mutableStateOf(false) }
     if (message.isAIThinkingMessage()) {
         thinkingMessageRow(message = message, modifier = modifier)
         return
@@ -93,9 +100,7 @@ fun messageBubble(
         }
 
     Row(
-        modifier =
-            modifier
-                .padding(horizontal = 8.dp, vertical = 4.dp),
+        modifier = modifier.padding(horizontal = 8.dp, vertical = 4.dp),
         horizontalArrangement = if (isMyMessage) Arrangement.End else Arrangement.Start,
     ) {
         Column(
@@ -103,11 +108,13 @@ fun messageBubble(
                 Modifier
                     .widthIn(min = 120.dp, max = 420.dp)
                     .wrapContentSize()
+                    .onPointerEvent(PointerEventType.Enter) { isHovered = true }
+                    .onPointerEvent(PointerEventType.Exit) { isHovered = false }
                     .background(messageBackgroundColor, messageShape)
                     .messageBorder(messageShape, isMyMessage, isHighlightedInSearch, isMatchingSearch)
                     .padding(horizontal = 12.dp, vertical = 10.dp),
         ) {
-            messageHeader(message)
+            messageHeader(message = message, showCopyButton = isHovered)
             if (message.toolItems.isNotEmpty()) {
                 toolExecutionGroup(project = project, toolItems = message.toolItems)
                 if (message.content.isNotBlank()) {
@@ -392,8 +399,17 @@ private fun thinkingMessageRow(
 }
 
 @Composable
-private fun messageHeader(message: ChatMessage) {
+private fun messageHeader(
+    message: ChatMessage,
+    showCopyButton: Boolean,
+) {
     val displayAuthor = if (message.isMyMessage) "Me" else message.author
+    val copyButtonAlpha by
+        animateFloatAsState(
+            targetValue = if (showCopyButton) 1f else 0f,
+            animationSpec = tween(durationMillis = 150),
+            label = "messageCopyButtonAlpha",
+        )
     Row(
         modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -408,27 +424,51 @@ private fun messageHeader(message: ChatMessage) {
                     color = ChatAppColors.Text.authorName,
                 ),
         )
-        Text(
-            text = message.formattedTime(),
-            style =
-                JewelTheme.defaultTextStyle.copy(
-                    fontSize = 11.sp,
-                    color = ChatAppColors.Text.timestamp,
-                ),
-        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(
+                onClick = { copyMessageToClipboard(message.content) },
+                enabled = showCopyButton,
+                modifier = Modifier.graphicsLayer { alpha = copyButtonAlpha },
+            ) {
+                Icon(
+                    key = ChatAppIcons.Message.copy,
+                    contentDescription = "Copy message",
+                    modifier = Modifier.size(14.dp),
+                )
+            }
+            Text(
+                text = message.formattedTime(),
+                style =
+                    JewelTheme.defaultTextStyle.copy(
+                        fontSize = 11.sp,
+                        color = ChatAppColors.Text.timestamp,
+                    ),
+            )
+        }
     }
+}
+
+private fun copyMessageToClipboard(content: String) {
+    Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(content), null)
 }
 
 @Composable
 private fun messageContent(message: ChatMessage) {
-    Text(
-        text = message.content,
-        style =
-            JewelTheme.defaultTextStyle.copy(
-                fontSize = 13.sp,
-                lineHeight = 18.sp,
-            ),
-    )
+    if (message.isMyMessage) {
+        Text(
+            text = message.content,
+            style =
+                JewelTheme.defaultTextStyle.copy(
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                ),
+        )
+    } else {
+        markdownText(message.content)
+    }
 }
 
 @Composable

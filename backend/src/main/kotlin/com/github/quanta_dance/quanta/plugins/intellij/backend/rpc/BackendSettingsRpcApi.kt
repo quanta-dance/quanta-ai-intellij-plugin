@@ -10,6 +10,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.QuantaS
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.ProjectManager
+import com.openai.models.AllModels
 import com.openai.models.ChatModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -27,6 +28,7 @@ class BackendSettingsRpcApi : QuantaSettingsApi {
     companion object {
         val AVAILABLE_CHAT_MODELS =
             listOf(
+                AllModels.ResponsesOnlyModel.GPT_5_6_CYBER.toString(),
                 ChatModel.GPT_5_6_SOL.toString(),
                 ChatModel.GPT_5_6_TERRA.toString(),
                 ChatModel.GPT_5_6_LUNA.toString(),
