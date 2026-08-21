@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2026.08.21]
+
+This release makes AI responses easier to read and reuse with rich Markdown rendering, message copying, and an expanded model selection.
+
+### Added
+- AI responses now render Markdown headings, emphasis, strikethrough, inline and fenced code, lists, block quotes, horizontal rules, and line breaks.
+- Markdown tables support header styling, cell wrapping, inline formatting, escaped pipes, and left, center, or right column alignment.
+- Markdown links are clickable, including links with titles and parenthesized destinations; image Markdown provides clickable alternative text without downloading remote images.
+- A copy button appears to the left of the message timestamp while hovering over any message and copies the complete original message, including its Markdown source.
+- Added GPT-5.6 Cyber to the available chat models.
+
+### Improved
+- The message copy action fades in and out smoothly while reserving its layout space, so hovering does not resize messages or shift timestamps.
+- Updated the OpenAI Java SDK to 4.52.0.
+
 ## [2026.08.03]
 
 This release makes Quanta AI more reliable in modern IntelliJ environments and easier to follow during long, tool-driven tasks.
