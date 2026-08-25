@@ -519,15 +519,17 @@ private fun AnnotatedString.Builder.appendMarkdown(markdown: String) {
 
             markdown.startsWith("**", index) || markdown.startsWith("__", index) -> {
                 val marker = markdown.substring(index, index + 2)
-                val end = markdown.indexOf(marker, index + 2)
-                if (end > index + 2) {
+                val canOpen = marker == "**" || canOpenUnderscoreDelimiter(markdown, index, marker.length)
+                val end =
+                    if (canOpen) findClosingDelimiter(markdown, marker, index + marker.length) else -1
+                if (end > index + marker.length) {
                     pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
-                    appendMarkdown(markdown.substring(index + 2, end))
+                    appendMarkdown(markdown.substring(index + marker.length, end))
                     pop()
-                    index = end + 2
+                    index = end + marker.length
                 } else {
                     append(marker)
-                    index += 2
+                    index += marker.length
                 }
             }
 
@@ -566,7 +568,9 @@ private fun AnnotatedString.Builder.appendMarkdown(markdown: String) {
 
             markdown[index] == '*' || markdown[index] == '_' -> {
                 val marker = markdown[index]
-                val end = markdown.indexOf(marker, index + 1)
+                val canOpen = marker == '*' || canOpenUnderscoreDelimiter(markdown, index, 1)
+                val end =
+                    if (canOpen) findClosingDelimiter(markdown, marker.toString(), index + 1) else -1
                 if (end > index + 1) {
                     pushStyle(SpanStyle(fontStyle = FontStyle.Italic))
                     appendMarkdown(markdown.substring(index + 1, end))
@@ -587,6 +591,41 @@ private fun AnnotatedString.Builder.appendMarkdown(markdown: String) {
             }
         }
     }
+}
+
+private fun findClosingDelimiter(
+    markdown: String,
+    marker: String,
+    startIndex: Int,
+): Int {
+    var candidate = markdown.indexOf(marker, startIndex)
+    while (candidate >= 0) {
+        if (marker.first() != '_' || canCloseUnderscoreDelimiter(markdown, candidate, marker.length)) {
+            return candidate
+        }
+        candidate = markdown.indexOf(marker, candidate + marker.length)
+    }
+    return -1
+}
+
+private fun canOpenUnderscoreDelimiter(
+    markdown: String,
+    index: Int,
+    length: Int,
+): Boolean {
+    val previous = markdown.getOrNull(index - 1)
+    val next = markdown.getOrNull(index + length) ?: return false
+    return !next.isWhitespace() && !(previous?.isLetterOrDigit() == true && next.isLetterOrDigit())
+}
+
+private fun canCloseUnderscoreDelimiter(
+    markdown: String,
+    index: Int,
+    length: Int,
+): Boolean {
+    val previous = markdown.getOrNull(index - 1) ?: return false
+    val next = markdown.getOrNull(index + length)
+    return !previous.isWhitespace() && !(previous.isLetterOrDigit() && next?.isLetterOrDigit() == true)
 }
 
 private data class InlineLink(

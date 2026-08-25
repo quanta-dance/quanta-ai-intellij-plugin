@@ -142,6 +142,31 @@ class MarkdownTextTest {
     }
 
     @Test
+    fun `keeps underscores in variable names literal`() {
+        val content =
+            "PRIMARY_FEATURE_OPTION_VALUE and SECONDARY_FEATURE_VALUE remain unchanged, " +
+                "while _italic_ and __bold__ are formatted."
+
+        val rendered = parseMarkdownInline(content)
+
+        assertEquals(
+            "PRIMARY_FEATURE_OPTION_VALUE and SECONDARY_FEATURE_VALUE remain unchanged, " +
+                "while italic and bold are formatted.",
+            rendered.text,
+        )
+    }
+
+    @Test
+    fun `keeps identifiers surrounded by punctuation literal`() {
+        val identifier = "PRIMARY_FEATURE_OPTION_VALUE"
+        val content = "Set ($identifier), `$identifier`, and foo_bar_baz."
+
+        val rendered = parseMarkdownInline(content)
+
+        assertEquals("Set ($identifier), $identifier, and foo_bar_baz.", rendered.text)
+    }
+
+    @Test
     fun `keeps ordinary plain text unchanged`() {
         val content = "A plain response\nwith a second line."
 
