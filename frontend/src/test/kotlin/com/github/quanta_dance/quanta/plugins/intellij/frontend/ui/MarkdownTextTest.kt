@@ -60,6 +60,61 @@ class MarkdownTextTest {
     }
 
     @Test
+    fun `renders bare http and https urls as clickable links`() {
+        val content = "Open https://example.com/docs?q=1 and http://localhost:8080/path."
+
+        val rendered = parseMarkdownInline(content)
+        val links = rendered.getStringAnnotations("markdown-link", 0, rendered.length)
+
+        assertEquals(content, rendered.text)
+        assertEquals(
+            listOf("https://example.com/docs?q=1", "http://localhost:8080/path"),
+            links.map { it.item },
+        )
+        assertEquals(
+            links.map { it.item }.map { url -> content.indexOf(url) to content.indexOf(url) + url.length },
+            links.map { it.start to it.end },
+        )
+    }
+
+    @Test
+    fun `excludes prose punctuation but keeps balanced parentheses in bare urls`() {
+        val url = "https://example.com/assets/image_(1).png"
+        val content = "See ($url), then continue."
+
+        val rendered = parseMarkdownInline(content)
+        val links = rendered.getStringAnnotations("markdown-link", 0, rendered.length)
+
+        assertEquals(content, rendered.text)
+        assertEquals(listOf(url), links.map { it.item })
+        assertEquals(
+            listOf(content.indexOf(url) to content.indexOf(url) + url.length),
+            links.map { it.start to it.end },
+        )
+    }
+
+    @Test
+    fun `does not auto link urls in code or explicit markdown link labels`() {
+        val content = "`https://code.example` and [https://label.example](https://target.example)"
+
+        val rendered = parseMarkdownInline(content)
+        val links = rendered.getStringAnnotations("markdown-link", 0, rendered.length)
+
+        assertEquals("https://code.example and https://label.example", rendered.text)
+        assertEquals(listOf("https://target.example"), links.map { it.item })
+    }
+
+    @Test
+    fun `does not auto link unsupported schemes or embedded url-like text`() {
+        val content = "ftp://example.com and prefixhttps://example.com remain plain text."
+
+        val rendered = parseMarkdownInline(content)
+
+        assertEquals(content, rendered.text)
+        assertEquals(emptyList(), rendered.getStringAnnotations("markdown-link", 0, rendered.length))
+    }
+
+    @Test
     fun `keeps incomplete image alternative text literal`() {
         val content = "!Alternative image text"
 
