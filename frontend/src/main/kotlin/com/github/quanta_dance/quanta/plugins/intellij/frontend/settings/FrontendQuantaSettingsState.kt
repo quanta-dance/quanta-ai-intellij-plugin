@@ -35,12 +35,17 @@ class FrontendQuantaSettingsState : PersistentStateComponent<FrontendQuantaSetti
         var followEnabled: Boolean = true,
         var terminalToolEnabled: Boolean? = false,
         var terminalAllowedCommandsCsv: String = "git status,git diff,git add,git commit",
+        var maxMessageWidth: Int = DEFAULT_MAX_MESSAGE_WIDTH,
         var actionConfigsJson: String = FrontendActionCatalog.encode(FrontendActionCatalog.defaultActions),
     )
 
     companion object {
         const val DEFAULT_OPENAI_URL = "https://api.openai.com/v1/"
         const val DEFAULT_MODEL = "gpt-5-nano"
+        const val MIN_MESSAGE_WIDTH = 420
+        const val MAX_MESSAGE_WIDTH = 2_000
+        const val DEFAULT_MAX_MESSAGE_WIDTH = MIN_MESSAGE_WIDTH
+        val MESSAGE_WIDTH_RANGE = MIN_MESSAGE_WIDTH..MAX_MESSAGE_WIDTH
 
         val instance: FrontendQuantaSettingsState
             get() = ApplicationManager.getApplication().service<FrontendQuantaSettingsState>()
@@ -51,6 +56,7 @@ class FrontendQuantaSettingsState : PersistentStateComponent<FrontendQuantaSetti
     override fun getState(): State = state
 
     override fun loadState(state: State) {
+        state.maxMessageWidth = state.maxMessageWidth.coerceIn(MESSAGE_WIDTH_RANGE)
         this.state = state
     }
 }

@@ -56,8 +56,31 @@ class FrontendSettingsSyncStateServiceTest {
     }
 
     @Test
+    fun `settings use the legacy message width as the default`() {
+        assertEquals(420, FrontendQuantaSettingsState.State().maxMessageWidth)
+    }
+
+    @Test
+    fun `loaded message width is constrained to the supported range`() {
+        frontendState.loadState(
+            FrontendQuantaSettingsState.State(
+                maxMessageWidth = FrontendQuantaSettingsState.MIN_MESSAGE_WIDTH - 1,
+            ),
+        )
+        assertEquals(FrontendQuantaSettingsState.MIN_MESSAGE_WIDTH, frontendState.state.maxMessageWidth)
+
+        frontendState.loadState(
+            FrontendQuantaSettingsState.State(
+                maxMessageWidth = FrontendQuantaSettingsState.MAX_MESSAGE_WIDTH + 1,
+            ),
+        )
+        assertEquals(FrontendQuantaSettingsState.MAX_MESSAGE_WIDTH, frontendState.state.maxMessageWidth)
+    }
+
+    @Test
     fun `syncOnStartup marks state ready after successful sync`() =
         runBlocking {
+            frontendState.state.maxMessageWidth = 760
             val service = FrontendSettingsSyncStateService(project)
             val backendDto =
                 QuantaSettingsDto(
@@ -89,6 +112,7 @@ class FrontendSettingsSyncStateServiceTest {
             assertEquals(FrontendSettingsSyncStateService.Status.READY, service.stateFlow.value.status)
             assertEquals(backendDto.openAiUrl, frontendState.state.openAiUrl)
             assertEquals(backendDto.aiChatModel, frontendState.state.aiChatModel)
+            assertEquals(760, frontendState.state.maxMessageWidth)
         }
 
     @Test
