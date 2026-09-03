@@ -41,6 +41,7 @@ class AudioCapture(
         private set
 
     private var outputBuffer = ByteArrayOutputStream()
+    private var preSpeechAudio = ByteArray(0)
 
     private val audioFormat =
         AudioFormat(
@@ -185,6 +186,10 @@ class AudioCapture(
 
                             val silent = isMuted || avgAmplitude < SILENCE_THRESHOLD
                             if (silent) {
+                                if (!inSpeech && !isMuted) {
+                                    preSpeechAudio =
+                                        appendPreRoll(preSpeechAudio, buffer.copyOf(bytesRead), PRE_SPEECH_BYTES)
+                                }
                                 if (!inSilence) {
                                     inSilence = true
                                     QDLog.info(logger) { "AudioCapture.silenceDetected avgAmplitude=$avgAmplitude" }
@@ -192,7 +197,8 @@ class AudioCapture(
                                     silenceStart = now
                                 }
                             } else {
-                                if (inSilence) {
+                                val notifySpeech = shouldNotifySpeech(inSilence = inSilence, inSpeech = inSpeech)
+                                if (notifySpeech) {
                                     QDLog.info(logger) { "AudioCapture.speechDetected avgAmplitude=$avgAmplitude" }
                                     onSpeech()
                                 }
@@ -204,6 +210,8 @@ class AudioCapture(
                                     QDLog.info(logger) { "AudioCapture.streamStart avgAmplitude=$avgAmplitude" }
                                     try {
                                         onStreamStart?.invoke(ByteArrayInputStream(ByteArray(0)))
+                                        writeStreamBytes(preSpeechAudio)
+                                        preSpeechAudio = ByteArray(0)
                                     } catch (t: Throwable) {
                                         QDLog.warn(logger) { "onStreamStart failed: ${t.message}" }
                                     }
@@ -211,12 +219,7 @@ class AudioCapture(
                             }
 
                             if (inSpeech && !isMuted) {
-                                outputBuffer.write(buffer, 0, bytesRead)
-                                try {
-                                    onStreamBytes?.invoke(buffer.copyOfRange(0, bytesRead), bytesRead)
-                                } catch (t: Throwable) {
-                                    QDLog.warn(logger) { "onStreamBytes failed: ${t.message}" }
-                                }
+                                writeStreamBytes(buffer.copyOf(bytesRead))
                             }
                         }
 
@@ -284,6 +287,16 @@ class AudioCapture(
         worker.start()
     }
 
+    private fun writeStreamBytes(bytes: ByteArray) {
+        if (bytes.isEmpty()) return
+        outputBuffer.write(bytes)
+        try {
+            onStreamBytes?.invoke(bytes, bytes.size)
+        } catch (t: Throwable) {
+            QDLog.warn(logger) { "onStreamBytes failed: ${t.message}" }
+        }
+    }
+
     fun mute() {
         if (isMuted) return
         isMuted = true
@@ -297,6 +310,7 @@ class AudioCapture(
             }
         }
         outputBuffer.reset()
+        preSpeechAudio = ByteArray(0)
         if (!inSilence) {
             inSilence = true
         }
@@ -325,17 +339,43 @@ class AudioCapture(
         }
         captureThread = null
         outputBuffer.reset()
+        preSpeechAudio = ByteArray(0)
         QDLog.info(logger) { "Capture stopped" }
     }
 
     companion object {
         private val logger = Logger.getInstance(AudioCapture::class.java)
+
+        internal fun shouldNotifySpeech(
+            inSilence: Boolean,
+            inSpeech: Boolean,
+        ): Boolean = inSilence || !inSpeech
+
+        internal fun appendPreRoll(
+            existing: ByteArray,
+            chunk: ByteArray,
+            maxBytes: Int,
+        ): ByteArray {
+            require(maxBytes >= 0) { "maxBytes must not be negative" }
+            if (maxBytes == 0 || chunk.isEmpty()) return if (maxBytes == 0) ByteArray(0) else existing
+            if (chunk.size >= maxBytes) return chunk.copyOfRange(chunk.size - maxBytes, chunk.size)
+
+            val bytesToKeep = minOf(existing.size, maxBytes - chunk.size)
+            return ByteArray(bytesToKeep + chunk.size).also { combined ->
+                existing.copyInto(combined, destinationOffset = 0, startIndex = existing.size - bytesToKeep)
+                chunk.copyInto(combined, destinationOffset = bytesToKeep)
+            }
+        }
+
         const val SILENCE_THRESHOLD: Int = 1_200
         const val SILENCE_DURATION_MS: Int = 350
         const val SPEECH_LENGHT_MIN_MS: Int = 1200
         const val SPEECH_PAUSE_DURATION_MIN_MS: Int = 900
         const val MAX_SPEECH_SEGMENT_MS: Int = 15000
         const val AUDIO_LEVEL_LOG_INTERVAL_MS: Long = 1000
+        const val PRE_SPEECH_AUDIO_MS: Int = 500
+        private const val PCM_BYTES_PER_MS: Int = 32
+        internal const val PRE_SPEECH_BYTES: Int = PRE_SPEECH_AUDIO_MS * PCM_BYTES_PER_MS
 
         @JvmStatic
         fun main(args: Array<String>) {
