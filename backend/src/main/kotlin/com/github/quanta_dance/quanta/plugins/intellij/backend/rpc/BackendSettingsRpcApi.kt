@@ -28,6 +28,7 @@ class BackendSettingsRpcApi : QuantaSettingsApi {
     companion object {
         val AVAILABLE_CHAT_MODELS =
             listOf(
+                ChatModel.GPT_6_ASTRA.toString(),
                 AllModels.ResponsesOnlyModel.GPT_5_6_CYBER.toString(),
                 ChatModel.GPT_5_6_SOL.toString(),
                 ChatModel.GPT_5_6_TERRA.toString(),

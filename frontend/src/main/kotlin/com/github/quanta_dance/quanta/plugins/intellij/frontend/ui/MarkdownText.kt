@@ -3,6 +3,8 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.ui
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -14,13 +16,25 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -34,8 +48,13 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.ChatAppColors
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.ChatAppIcons
 import org.jetbrains.jewel.foundation.theme.JewelTheme
+import org.jetbrains.jewel.ui.component.Icon
+import org.jetbrains.jewel.ui.component.IconButton
 import org.jetbrains.jewel.ui.component.Text
+import java.awt.Toolkit
+import java.awt.datatransfer.StringSelection
 
 private const val LINK_TAG = "markdown-link"
 private val unorderedListPattern = Regex("^\\s*[-+*]\\s+(.+)$")
@@ -200,36 +219,69 @@ private fun markdownBlockQuote(text: String) {
     }
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun markdownCodeBlock(block: MarkdownBlock.CodeBlock) {
-    Column(
+    var isHovered by remember(block.code) { mutableStateOf(false) }
+    val copyButtonAlpha by
+        animateFloatAsState(
+            targetValue = if (isHovered) 1f else 0f,
+            animationSpec = tween(durationMillis = 150),
+            label = "markdownCodeBlockCopyButtonAlpha",
+        )
+
+    Box(
         modifier =
             Modifier
                 .fillMaxWidth()
                 .background(Color.Black.copy(alpha = 0.22f), RoundedCornerShape(6.dp))
-                .padding(8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+                .onPointerEvent(PointerEventType.Enter) { isHovered = true }
+                .onPointerEvent(PointerEventType.Exit) { isHovered = false },
     ) {
-        block.language?.takeIf { it.isNotBlank() }?.let { language ->
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(8.dp).padding(end = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            block.language?.takeIf { it.isNotBlank() }?.let { language ->
+                Text(
+                    text = language,
+                    style =
+                        JewelTheme.defaultTextStyle.copy(
+                            fontSize = 10.sp,
+                            color = ChatAppColors.Text.normal.copy(alpha = 0.55f),
+                        ),
+                )
+            }
             Text(
-                text = language,
+                text = block.code,
                 style =
                     JewelTheme.defaultTextStyle.copy(
-                        fontSize = 10.sp,
-                        color = ChatAppColors.Text.normal.copy(alpha = 0.55f),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp,
                     ),
             )
         }
-        Text(
-            text = block.code,
-            style =
-                JewelTheme.defaultTextStyle.copy(
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 12.sp,
-                    lineHeight = 17.sp,
-                ),
-        )
+        IconButton(
+            onClick = { copyCodeBlockToClipboard(block.code) },
+            enabled = isHovered,
+            modifier =
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 4.dp, end = 4.dp)
+                    .graphicsLayer { alpha = copyButtonAlpha },
+        ) {
+            Icon(
+                key = ChatAppIcons.Message.copy,
+                contentDescription = "Copy code block",
+                modifier = Modifier.size(14.dp),
+            )
+        }
     }
+}
+
+private fun copyCodeBlockToClipboard(code: String) {
+    Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(code), null)
 }
 
 @Composable
@@ -282,6 +334,7 @@ private fun markdownTableRow(
     }
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun markdownInlineText(
     text: String,
@@ -293,10 +346,24 @@ private fun markdownInlineText(
 ) {
     val annotatedText = parseMarkdownInline(text)
     val uriHandler = LocalUriHandler.current
+    var hoveredLink by remember(annotatedText) { mutableStateOf(false) }
+    var textLayoutResult by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
     ClickableText(
         text = annotatedText,
-        modifier = Modifier.fillMaxWidth(),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .pointerHoverIcon(
+                    icon = if (hoveredLink) PointerIcon.Hand else PointerIcon.Default,
+                    overrideDescendants = true,
+                ).onPointerEvent(PointerEventType.Move) { event ->
+                    val position = event.changes.firstOrNull()?.position
+                    hoveredLink = position != null && textLayoutResult?.hasLinkAt(position, annotatedText) == true
+                }.onPointerEvent(PointerEventType.Exit) {
+                    hoveredLink = false
+                },
         style = baseStyle,
+        onTextLayout = { textLayoutResult = it },
         onClick = { offset ->
             annotatedText
                 .getStringAnnotations(LINK_TAG, offset, offset)
@@ -305,6 +372,19 @@ private fun markdownInlineText(
                 ?.let(uriHandler::openUri)
         },
     )
+}
+
+private fun androidx.compose.ui.text.TextLayoutResult.hasLinkAt(
+    position: Offset,
+    text: AnnotatedString,
+): Boolean {
+    if (position.y < 0f || position.y > size.height || position.x < 0f || position.x > size.width) return false
+    val line = getLineForVerticalPosition(position.y)
+    val lineStart = minOf(getLineLeft(line), getLineRight(line))
+    val lineEnd = maxOf(getLineLeft(line), getLineRight(line))
+    if (position.x !in lineStart..lineEnd) return false
+    val offset = getOffsetForPosition(position)
+    return text.getStringAnnotations(LINK_TAG, offset, offset).isNotEmpty()
 }
 
 internal fun parseMarkdownBlocks(markdown: String): List<MarkdownBlock> {
@@ -488,10 +568,13 @@ private fun startsMarkdownBlock(
 
 internal fun parseMarkdownInline(markdown: String): AnnotatedString =
     buildAnnotatedString {
-        appendMarkdown(markdown)
+        appendMarkdown(markdown, detectBareLinks = true)
     }
 
-private fun AnnotatedString.Builder.appendMarkdown(markdown: String) {
+private fun AnnotatedString.Builder.appendMarkdown(
+    markdown: String,
+    detectBareLinks: Boolean,
+) {
     var index = 0
     while (index < markdown.length) {
         when {
@@ -519,15 +602,17 @@ private fun AnnotatedString.Builder.appendMarkdown(markdown: String) {
 
             markdown.startsWith("**", index) || markdown.startsWith("__", index) -> {
                 val marker = markdown.substring(index, index + 2)
-                val end = markdown.indexOf(marker, index + 2)
-                if (end > index + 2) {
+                val canOpen = marker == "**" || canOpenUnderscoreDelimiter(markdown, index, marker.length)
+                val end =
+                    if (canOpen) findClosingDelimiter(markdown, marker, index + marker.length) else -1
+                if (end > index + marker.length) {
                     pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
-                    appendMarkdown(markdown.substring(index + 2, end))
+                    appendMarkdown(markdown.substring(index + marker.length, end), detectBareLinks)
                     pop()
-                    index = end + 2
+                    index = end + marker.length
                 } else {
                     append(marker)
-                    index += 2
+                    index += marker.length
                 }
             }
 
@@ -535,7 +620,7 @@ private fun AnnotatedString.Builder.appendMarkdown(markdown: String) {
                 val end = markdown.indexOf("~~", index + 2)
                 if (end > index + 2) {
                     pushStyle(SpanStyle(textDecoration = TextDecoration.LineThrough))
-                    appendMarkdown(markdown.substring(index + 2, end))
+                    appendMarkdown(markdown.substring(index + 2, end), detectBareLinks)
                     pop()
                     index = end + 2
                 } else {
@@ -564,17 +649,22 @@ private fun AnnotatedString.Builder.appendMarkdown(markdown: String) {
                 }
             }
 
-            markdown[index] == '*' || markdown[index] == '_' -> {
-                val marker = markdown[index]
-                val end = markdown.indexOf(marker, index + 1)
-                if (end > index + 1) {
-                    pushStyle(SpanStyle(fontStyle = FontStyle.Italic))
-                    appendMarkdown(markdown.substring(index + 1, end))
-                    pop()
-                    index = end + 1
+            detectBareLinks -> {
+                val link = parseBareHttpLink(markdown, index)
+                if (link != null) {
+                    appendLink(link)
+                    index = link.endIndex
+                } else if (markdown[index] == '*' || markdown[index] == '_') {
+                    index = appendEmphasis(markdown, index, detectBareLinks)
                 } else {
-                    append(markdown[index++])
+                    val next = findNextInlineSyntax(markdown, index + 1)
+                    append(markdown.substring(index, next))
+                    index = next
                 }
+            }
+
+            markdown[index] == '*' || markdown[index] == '_' -> {
+                index = appendEmphasis(markdown, index, detectBareLinks)
             }
 
             else -> {
@@ -587,6 +677,118 @@ private fun AnnotatedString.Builder.appendMarkdown(markdown: String) {
             }
         }
     }
+}
+
+private fun AnnotatedString.Builder.appendEmphasis(
+    markdown: String,
+    index: Int,
+    detectBareLinks: Boolean,
+): Int {
+    val marker = markdown[index]
+    val canOpen = marker == '*' || canOpenUnderscoreDelimiter(markdown, index, 1)
+    val end = if (canOpen) findClosingDelimiter(markdown, marker.toString(), index + 1) else -1
+    return if (end > index + 1) {
+        pushStyle(SpanStyle(fontStyle = FontStyle.Italic))
+        appendMarkdown(markdown.substring(index + 1, end), detectBareLinks)
+        pop()
+        end + 1
+    } else {
+        append(markdown[index])
+        index + 1
+    }
+}
+
+private fun findNextInlineSyntax(
+    markdown: String,
+    startIndex: Int,
+): Int {
+    var index = startIndex
+    while (index < markdown.length) {
+        if (markdown[index] in "\\`*_~[!" || parseBareHttpLink(markdown, index) != null) return index
+        index++
+    }
+    return markdown.length
+}
+
+private fun parseBareHttpLink(
+    markdown: String,
+    startIndex: Int,
+): InlineLink? {
+    val schemeLength =
+        when {
+            markdown.regionMatches(startIndex, "https://", 0, 8, ignoreCase = true) -> 8
+            markdown.regionMatches(startIndex, "http://", 0, 7, ignoreCase = true) -> 7
+            else -> return null
+        }
+    val previous = markdown.getOrNull(startIndex - 1)
+    if (previous != null && (previous.isLetterOrDigit() || previous in "._-/@")) return null
+
+    var endIndex = startIndex + schemeLength
+    while (endIndex < markdown.length && !markdown[endIndex].isWhitespace() && markdown[endIndex] !in "<>\"") {
+        endIndex++
+    }
+    endIndex = trimBareLinkEnd(markdown, startIndex, endIndex)
+    if (endIndex <= startIndex + schemeLength) return null
+
+    val url = markdown.substring(startIndex, endIndex)
+    return InlineLink(label = url, url = url, endIndex = endIndex)
+}
+
+private fun trimBareLinkEnd(
+    markdown: String,
+    startIndex: Int,
+    initialEndIndex: Int,
+): Int {
+    var endIndex = initialEndIndex
+    while (endIndex > startIndex && markdown[endIndex - 1] in ".,;:!?") endIndex--
+
+    val delimiterPairs = listOf('(' to ')', '[' to ']', '{' to '}')
+    delimiterPairs.forEach { (opening, closing) ->
+        while (
+            endIndex > startIndex &&
+            markdown[endIndex - 1] == closing &&
+            markdown.substring(startIndex, endIndex).count { it == closing } >
+            markdown.substring(startIndex, endIndex).count { it == opening }
+        ) {
+            endIndex--
+        }
+    }
+    return endIndex
+}
+
+private fun findClosingDelimiter(
+    markdown: String,
+    marker: String,
+    startIndex: Int,
+): Int {
+    var candidate = markdown.indexOf(marker, startIndex)
+    while (candidate >= 0) {
+        if (marker.first() != '_' || canCloseUnderscoreDelimiter(markdown, candidate, marker.length)) {
+            return candidate
+        }
+        candidate = markdown.indexOf(marker, candidate + marker.length)
+    }
+    return -1
+}
+
+private fun canOpenUnderscoreDelimiter(
+    markdown: String,
+    index: Int,
+    length: Int,
+): Boolean {
+    val previous = markdown.getOrNull(index - 1)
+    val next = markdown.getOrNull(index + length) ?: return false
+    return !next.isWhitespace() && !(previous?.isLetterOrDigit() == true && next.isLetterOrDigit())
+}
+
+private fun canCloseUnderscoreDelimiter(
+    markdown: String,
+    index: Int,
+    length: Int,
+): Boolean {
+    val previous = markdown.getOrNull(index - 1) ?: return false
+    val next = markdown.getOrNull(index + length)
+    return !previous.isWhitespace() && !(previous.isLetterOrDigit() && next?.isLetterOrDigit() == true)
 }
 
 private data class InlineLink(
@@ -637,7 +839,7 @@ private fun parseInlineLink(
 private fun AnnotatedString.Builder.appendLink(link: InlineLink) {
     pushStringAnnotation(LINK_TAG, link.url)
     pushStyle(SpanStyle(color = Color(0xFF69B7FF), textDecoration = TextDecoration.Underline))
-    appendMarkdown(link.label)
+    appendMarkdown(link.label, detectBareLinks = false)
     pop()
     pop()
 }

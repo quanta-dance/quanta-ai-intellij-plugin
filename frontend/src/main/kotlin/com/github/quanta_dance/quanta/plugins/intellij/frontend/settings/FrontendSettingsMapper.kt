@@ -33,7 +33,9 @@ fun FrontendQuantaSettingsState.State.toDto(
         mcpServersJson = mcpServersJson,
     )
 
-fun QuantaSettingsDto.toFrontendState(): FrontendQuantaSettingsState.State =
+fun QuantaSettingsDto.toFrontendState(
+    maxMessageWidth: Int = FrontendQuantaSettingsState.DEFAULT_MAX_MESSAGE_WIDTH,
+): FrontendQuantaSettingsState.State =
     FrontendQuantaSettingsState.State(
         openAiUrl = openAiUrl,
         openAiToken = openAiToken,
@@ -53,5 +55,6 @@ fun QuantaSettingsDto.toFrontendState(): FrontendQuantaSettingsState.State =
         followEnabled = followEnabled,
         terminalToolEnabled = terminalToolEnabled,
         terminalAllowedCommandsCsv = terminalAllowedCommandsCsv,
+        maxMessageWidth = maxMessageWidth,
         actionConfigsJson = actionConfigsJson,
     )

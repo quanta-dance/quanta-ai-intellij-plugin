@@ -113,6 +113,13 @@ fun chatApp(
     var selectedModel by remember { mutableStateOf(FrontendQuantaSettingsState.instance.state.aiChatModel) }
     var availableModels by remember { mutableStateOf(FrontendQuantaSettingsState.instance.state.availableChatModels) }
     var agenticEnabled by remember { mutableStateOf(FrontendQuantaSettingsState.instance.state.agenticEnabled ?: true) }
+    var maxMessageWidth by remember {
+        mutableStateOf(
+            FrontendQuantaSettingsState.instance.state.maxMessageWidth.coerceIn(
+                FrontendQuantaSettingsState.MESSAGE_WIDTH_RANGE,
+            ),
+        )
+    }
     val planStatus by viewModel.planStatusFlow.collectAsState(ChatPlanStatusDto())
     val agents by viewModel.agentsFlow.collectAsState(emptyList())
     val delegatedTasks by viewModel.delegatedTasksFlow.collectAsState(emptyList())
@@ -188,6 +195,11 @@ fun chatApp(
             if (availableModels != settings.availableChatModels) {
                 availableModels = settings.availableChatModels
             }
+            val configuredMaxMessageWidth =
+                settings.maxMessageWidth.coerceIn(FrontendQuantaSettingsState.MESSAGE_WIDTH_RANGE)
+            if (maxMessageWidth != configuredMaxMessageWidth) {
+                maxMessageWidth = configuredMaxMessageWidth
+            }
             kotlinx.coroutines.delay(300)
         }
     }
@@ -253,6 +265,7 @@ fun chatApp(
                 chatMessages = chatMessages,
                 listState = listState,
                 searchState = searchState,
+                maxMessageWidth = maxMessageWidth,
             )
 
             if (agenticEnabled) {
@@ -678,6 +691,7 @@ private fun chatList(
     chatMessages: List<ChatMessage>,
     listState: LazyListState,
     searchState: SearchState,
+    maxMessageWidth: Int,
 ) {
     Box(modifier = modifier) {
         if (chatMessages.isEmpty()) {
@@ -697,6 +711,7 @@ private fun chatList(
                         messageBubble(
                             project = project,
                             message = message,
+                            maxMessageWidth = maxMessageWidth,
                             modifier = Modifier.fillMaxWidth(),
                             isMatchingSearch =
                                 searchState.searchQuery?.let { query -> message.matches(query) }
@@ -733,6 +748,10 @@ private fun agentThread(
                 messageBubble(
                     project = project,
                     message = threadMessage,
+                    maxMessageWidth =
+                        FrontendQuantaSettingsState.instance.state.maxMessageWidth.coerceIn(
+                            FrontendQuantaSettingsState.MESSAGE_WIDTH_RANGE,
+                        ),
                     modifier = Modifier.fillMaxWidth(),
                     isMatchingSearch = searchState.searchQuery?.let { query -> threadMessage.matches(query) } ?: false,
                     isHighlightedInSearch = threadMessage.id == searchState.currentSelectedSearchResultId,

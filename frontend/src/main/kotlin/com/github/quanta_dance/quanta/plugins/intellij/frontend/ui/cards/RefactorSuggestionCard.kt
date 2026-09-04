@@ -7,21 +7,28 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.awt.SwingPanel
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
@@ -36,11 +43,8 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExec
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaBackendApi
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
-import com.intellij.openapi.editor.EditorFactory
-import com.intellij.openapi.editor.LineNumberConverter
 import com.intellij.openapi.editor.colors.EditorColorsManager
 import com.intellij.openapi.editor.colors.EditorColorsScheme
-import com.intellij.openapi.editor.ex.EditorEx
 import com.intellij.openapi.editor.highlighter.EditorHighlighterFactory
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.project.Project
@@ -50,8 +54,8 @@ import org.jetbrains.jewel.ui.component.Icon
 import org.jetbrains.jewel.ui.component.IconButton
 import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.ui.icons.AllIconsKeys
-import java.awt.Dimension
 import java.awt.EventQueue
+import java.awt.Font
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
 
@@ -73,11 +77,6 @@ private fun resolveFileType(filePath: String?) =
         ?: FileTypeManager.getInstance().getFileTypeByExtension("")
 
 private const val MAX_CODE_BLOCK_HEIGHT = 320
-
-private fun contentPreferredHeight(
-    lineCount: Int,
-    lineHeight: Int,
-): Int = (lineCount.coerceAtLeast(1) * lineHeight).coerceAtMost(MAX_CODE_BLOCK_HEIGHT)
 
 @Composable
 fun refactorSuggestionCard(
@@ -369,7 +368,6 @@ fun refactorSuggestionCard(
     }
 }
 
-@Suppress("ktlint:standard:max-line-length")
 @Composable
 private fun syntaxHighlightedBlock(
     project: Project,
@@ -380,34 +378,9 @@ private fun syntaxHighlightedBlock(
     scheme: EditorColorsScheme,
 ) {
     val fileType = resolveFileType(filePath)
-
-    val editorData =
-        remember(text, filePath, startLine, scheme) {
-            val document =
-                EditorFactory
-                    .getInstance()
-                    .createDocument(text)
-            val editor =
-                EditorFactory
-                    .getInstance()
-                    .createViewer(document) as EditorEx
-
-            editor.isOneLineMode = false
-            editor.colorsScheme = scheme
-            editor.backgroundColor = scheme.defaultBackground
-            editor.setFontSize(11f)
-            editor.settings.isLineMarkerAreaShown = true
-            editor.settings.isLineNumbersShown = true
-            editor.settings.isFoldingOutlineShown = true
-            editor.settings.isUseSoftWraps = true
-            editor.settings.isCaretRowShown = false
-            editor.settings.isWhitespacesShown = false
-            editor.settings.setAdditionalLinesCount(0)
-            editor.settings.isVirtualSpace = false
-            editor.settings.isAdditionalPageAtBottom = false
-            editor.setHorizontalScrollbarVisible(false)
-            editor.setVerticalScrollbarVisible(true)
-            editor.highlighter =
+    val highlightedText =
+        remember(text, filePath, scheme) {
+            val highlighter =
                 filePath
                     ?.let {
                         EditorHighlighterFactory
@@ -418,76 +391,86 @@ private fun syntaxHighlightedBlock(
                         .getInstance()
                         .createEditorHighlighter(fileType, scheme, project)
 
-            editor.gutterComponentEx.setLineNumberConverter(
-                object : LineNumberConverter {
-                    override fun convert(
-                        editor: com.intellij.openapi.editor.Editor,
-                        line: Int,
-                    ): Int = line + startLine - 1
-
-                    override fun getMaxLineNumber(editor: com.intellij.openapi.editor.Editor): Int =
-                        editor.document.lineCount + startLine - 1
-                },
-            )
-
-            editor.component.background = scheme.defaultBackground
-            editor.contentComponent.background = scheme.defaultBackground
-            editor.scrollPane.background = scheme.defaultBackground
-            editor.scrollPane.viewport.background = scheme.defaultBackground
-            editor.gutterComponentEx.background = scheme.defaultBackground
-            editor.component.isOpaque = true
-            editor.contentComponent.isOpaque = true
-            editor.scrollPane.isOpaque = true
-            editor.scrollPane.viewport.isOpaque = true
-            editor.gutterComponentEx.isOpaque = true
-
-            val preferredHeight = contentPreferredHeight(document.lineCount, editor.lineHeight)
-            val componentWidth = editor.component.preferredSize.width
-            val scrollPaneWidth = editor.scrollPane.preferredSize.width
-
-            editor.component.preferredSize =
-                Dimension(
-                    componentWidth,
-                    preferredHeight,
-                )
-            editor.scrollPane.preferredSize =
-                Dimension(
-                    scrollPaneWidth,
-                    preferredHeight,
-                )
-
-            editor to document
-        }
-
-    DisposableEffect(editorData) {
-        onDispose {
-            val (editor, document) = editorData
-            EditorFactory.getInstance().releaseEditor(editor)
-        }
-    }
-
-    SwingPanel(
-        factory = {
-            javax.swing.JPanel(java.awt.BorderLayout()).apply {
-                isOpaque = true
-                background = scheme.defaultBackground
-                add(editorData.first.component, java.awt.BorderLayout.CENTER)
+            highlighter.setText(text)
+            buildAnnotatedString {
+                append(text)
+                if (text.isNotEmpty()) {
+                    val iterator = highlighter.createIterator(0)
+                    while (!iterator.atEnd()) {
+                        val attributes = iterator.textAttributes
+                        addStyle(
+                            SpanStyle(
+                                color =
+                                    attributes.foregroundColor
+                                        ?.let { Color(it.rgb) }
+                                        ?: Color(scheme.defaultForeground.rgb),
+                                background =
+                                    attributes.backgroundColor
+                                        ?.let { Color(it.rgb) }
+                                        ?: Color.Unspecified,
+                                fontWeight =
+                                    if (attributes.fontType and Font.BOLD != 0) {
+                                        FontWeight.Bold
+                                    } else {
+                                        FontWeight.Normal
+                                    },
+                                fontStyle =
+                                    if (attributes.fontType and Font.ITALIC != 0) {
+                                        FontStyle.Italic
+                                    } else {
+                                        FontStyle.Normal
+                                    },
+                            ),
+                            iterator.start,
+                            iterator.end,
+                        )
+                        iterator.advance()
+                    }
+                }
             }
-        },
+        }
+    val lineNumbers =
+        remember(text, startLine) {
+            List(text.lineSequence().count().coerceAtLeast(1)) { index -> startLine + index }
+                .joinToString("\n")
+        }
+    val scrollState = rememberScrollState()
+    val background = Color(scheme.defaultBackground.rgb)
+
+    Box(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .background(Color(scheme.defaultBackground.rgb), RoundedCornerShape(8.dp))
-                .border(1.dp, borderColor, RoundedCornerShape(8.dp)),
-    )
-}
-
-private fun setPreferredHeight(
-    target: javax.swing.JComponent,
-    width: Int,
-    height: Int,
-) {
-    target.preferredSize = Dimension(width, height)
+                .heightIn(max = MAX_CODE_BLOCK_HEIGHT.dp)
+                .background(background, RoundedCornerShape(8.dp))
+                .border(1.dp, borderColor, RoundedCornerShape(8.dp))
+                .verticalScroll(scrollState)
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+    ) {
+        Row(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = lineNumbers,
+                style =
+                    JewelTheme.defaultTextStyle.copy(
+                        color = Color(scheme.defaultForeground.rgb).copy(alpha = 0.55f),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                    ),
+                modifier = Modifier.padding(end = 10.dp),
+            )
+            SelectionContainer(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = highlightedText,
+                    style =
+                        JewelTheme.defaultTextStyle.copy(
+                            color = Color(scheme.defaultForeground.rgb),
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                        ),
+                )
+            }
+        }
+    }
 }
 
 private fun extractLineRange(displayText: String): Pair<Int, Int> {

@@ -16,6 +16,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,6 +35,10 @@ class FrontendMicrophoneService(
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
+
+    // RPC calls suspend, so launching them on a single-parallelism dispatcher does not preserve completion order.
+    // A FIFO command channel keeps start, PCM chunks, and finish strictly ordered across suspension points.
+    private val backendCommands = Channel<suspend () -> Unit>(Channel.UNLIMITED)
     private val _isListening = MutableStateFlow(false)
     val isListening: StateFlow<Boolean> = _isListening.asStateFlow()
     private val _isVoiceDetected = MutableStateFlow(false)
@@ -47,6 +52,18 @@ class FrontendMicrophoneService(
 
     @Volatile
     private var micPassiveDelayJob: Job? = null
+
+    init {
+        scope.launch {
+            for (command in backendCommands) command()
+        }
+    }
+
+    private fun enqueueBackendCommand(command: suspend () -> Unit) {
+        if (backendCommands.trySend(command).isFailure) {
+            QDLog.warn(logger) { "FrontendMicrophoneService: backend command queue is closed" }
+        }
+    }
 
     fun toggleListening() {
         if (_isListening.value) {
@@ -66,7 +83,7 @@ class FrontendMicrophoneService(
                     val sessionId = UUID.randomUUID().toString()
                     currentSessionId = sessionId
                     QDLog.info(logger) { "FrontendMicrophoneService.onStreamStart sessionId=$sessionId" }
-                    scope.launch {
+                    enqueueBackendCommand {
                         runCatching {
                             QuantaBackendApi.getInstance().startMicrophoneSession(project.rpcProjectPath(), sessionId)
                         }.onFailure { error ->
@@ -81,7 +98,7 @@ class FrontendMicrophoneService(
                 onStreamBytes = { bytes, length ->
                     val sessionId = currentSessionId ?: return@AudioCapture
                     val chunkBase64 = Base64.getEncoder().encodeToString(bytes.copyOf(length))
-                    scope.launch {
+                    enqueueBackendCommand {
                         runCatching {
                             QuantaBackendApi
                                 .getInstance()
@@ -99,7 +116,7 @@ class FrontendMicrophoneService(
                     val sessionId = currentSessionId ?: return@AudioCapture
                     currentSessionId = null
                     QDLog.info(logger) { "FrontendMicrophoneService.onStreamEnd sessionId=$sessionId" }
-                    scope.launch {
+                    enqueueBackendCommand {
                         runCatching {
                             val result =
                                 QuantaBackendApi
@@ -123,6 +140,7 @@ class FrontendMicrophoneService(
                 },
             )
         capture = audioCapture
+        _isVoiceDetected.value = false
         audioCapture.startCapture(
             onSilence = {
                 micPassiveDelayJob?.cancel()
@@ -138,7 +156,6 @@ class FrontendMicrophoneService(
             },
         )
         _isListening.value = true
-        _isVoiceDetected.value = false
     }
 
     fun stopListening() {
@@ -157,7 +174,7 @@ class FrontendMicrophoneService(
         val sessionId = currentSessionId
         currentSessionId = null
         if (cancelBackendSession && sessionId != null) {
-            scope.launch {
+            enqueueBackendCommand {
                 runCatching {
                     QuantaBackendApi.getInstance().cancelMicrophoneSession(project.rpcProjectPath(), sessionId)
                 }.onFailure { error ->
@@ -169,6 +186,7 @@ class FrontendMicrophoneService(
 
     override fun dispose() {
         stopListeningInternal(cancelBackendSession = false)
+        backendCommands.close()
         scope.cancel()
     }
 }

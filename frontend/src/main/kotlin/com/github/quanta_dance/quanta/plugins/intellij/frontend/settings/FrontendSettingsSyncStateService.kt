@@ -103,7 +103,9 @@ class FrontendSettingsSyncStateService(
                         rpc.updateSettings(currentState.toDto(project, mcpServersJson))
                         rpc.getSettings()
                     }
-                FrontendQuantaSettingsState.instance.loadState(backendSettings.toFrontendState())
+                FrontendQuantaSettingsState.instance.loadState(
+                    backendSettings.toFrontendState(maxMessageWidth = currentState.maxMessageWidth),
+                )
                 _stateFlow.value = State(status = Status.READY)
                 logger.info(
                     "Quanta AI frontend settings synced to backend after attempt ${attemptIndex + 1} for project=${project.name}, reason=$reason",

@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2026.09.04]
+
+This release improves chat readability and reuse, stabilizes microphone capture, and restores compatibility with upcoming IntelliJ IDEA 2026.3 builds.
+
+### Added
+- Message width is configurable from 420 to 2000 dp, with digits-only input and validation in plugin settings.
+- Fenced Markdown code blocks now provide a hover copy button that copies only the raw code, without fences or the language identifier.
+- Bare HTTP and HTTPS URLs in Markdown messages are now clickable.
+
+### Improved
+- Microphone capture now preserves the beginning of speech with a short pre-roll and sends audio chunks to the backend in strict FIFO order.
+- Syntax-highlighted refactoring previews now use native Compose rendering while retaining IntelliJ-aware highlighting, line numbers, selection, scrolling, and theme colors.
+
+### Fixed
+- Removed the binary-incompatible Compose Desktop `SwingPanel` call that could cause `NoSuchMethodError` on IntelliJ IDEA IU-263.3889.65.
+- Markdown identifiers containing underscores are preserved instead of being interpreted as emphasis.
+- Stabilized terminal job timing tests in CI.
+
 ## [2026.08.21]
 
 This release makes AI responses easier to read and reuse with rich Markdown rendering, message copying, and an expanded model selection.

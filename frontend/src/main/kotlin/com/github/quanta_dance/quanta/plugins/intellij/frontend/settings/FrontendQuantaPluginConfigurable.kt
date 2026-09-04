@@ -10,6 +10,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.service
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.options.Configurable
+import com.intellij.openapi.options.ConfigurationException
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.ui.ComboBox
@@ -31,6 +32,9 @@ import javax.swing.JButton
 import javax.swing.JComponent
 import javax.swing.JPanel
 import javax.swing.JScrollPane
+import javax.swing.text.AbstractDocument
+import javax.swing.text.AttributeSet
+import javax.swing.text.DocumentFilter
 
 /**
  * Frontend settings UI for editing Quanta runtime and UX configuration.
@@ -58,6 +62,7 @@ class FrontendQuantaPluginConfigurable : Configurable {
                 dynamicModelEnabled != (settings.dynamicModelEnabled ?: false) ||
                 debugEnabled != settings.debugEnabled ||
                 maxAutomaticTurns != settings.maxAutomaticTurns ||
+                maxMessageWidth != settings.maxMessageWidth ||
                 terminalToolEnabled != (settings.terminalToolEnabled ?: false) ||
                 terminalAllowedCommandsCsv != settings.terminalAllowedCommandsCsv ||
                 extraInstructionsValue != (settings.extraInstructions ?: "") ||
@@ -66,6 +71,7 @@ class FrontendQuantaPluginConfigurable : Configurable {
     }
 
     override fun apply() {
+        settingsComponent.validateMaxMessageWidth()
         val settings = FrontendQuantaSettingsState.instance.state
         settingsComponent.run {
             settings.openAiUrl = hostValue
@@ -78,6 +84,7 @@ class FrontendQuantaPluginConfigurable : Configurable {
             settings.dynamicModelEnabled = dynamicModelEnabled
             settings.debugEnabled = debugEnabled
             settings.maxAutomaticTurns = maxAutomaticTurns
+            settings.maxMessageWidth = maxMessageWidth
             settings.terminalToolEnabled = terminalToolEnabled
             settings.terminalAllowedCommandsCsv = terminalAllowedCommandsCsv
             settings.extraInstructions = extraInstructionsValue.ifBlank { null }
@@ -103,6 +110,7 @@ class FrontendQuantaPluginConfigurable : Configurable {
             dynamicModelEnabled = settings.dynamicModelEnabled ?: false
             debugEnabled = settings.debugEnabled
             maxAutomaticTurns = settings.maxAutomaticTurns
+            maxMessageWidth = settings.maxMessageWidth
             terminalToolEnabled = settings.terminalToolEnabled ?: false
             terminalAllowedCommandsCsv = settings.terminalAllowedCommandsCsv
             extraInstructionsValue = settings.extraInstructions ?: ""
@@ -163,6 +171,13 @@ private class FrontendQuantaSettingsComponent {
     private val maxAutomaticTurnsField =
         JBTextField().apply {
             toolTipText = "Maximum automatic CONTINUE turns per user request (1..100)."
+        }
+    private val maxMessageWidthField =
+        JBTextField().apply {
+            (document as AbstractDocument).documentFilter = DigitsOnlyDocumentFilter()
+            toolTipText =
+                "Maximum chat message width in dp " +
+                "(${FrontendQuantaSettingsState.MIN_MESSAGE_WIDTH}..${FrontendQuantaSettingsState.MAX_MESSAGE_WIDTH})."
         }
     private val followEnabledField = JBCheckBox("Follow enabled")
     private val terminalToolEnabledField = JBCheckBox("Enable Terminal tool (dangerous)")
@@ -259,6 +274,7 @@ private class FrontendQuantaSettingsComponent {
             .addComponent(dynamicModelEnabledField)
             .addComponent(debugEnabledField)
             .addLabeledComponent(JBLabel("Max automatic turns: "), maxAutomaticTurnsField, 1, false)
+            .addLabeledComponent(JBLabel("Max message width (dp): "), maxMessageWidthField, 1, false)
             .addComponent(terminalToolEnabledField)
             .addLabeledComponent(JBLabel("Terminal allowed commands: "), terminalAllowedCommandsCsvField, 1, false)
             .addSeparator()
@@ -374,6 +390,23 @@ private class FrontendQuantaSettingsComponent {
             maxAutomaticTurnsField.text = value.coerceIn(1, 100).toString()
         }
 
+    fun validateMaxMessageWidth() {
+        val value = maxMessageWidthField.text.toIntOrNull()
+        if (value == null || value !in FrontendQuantaSettingsState.MESSAGE_WIDTH_RANGE) {
+            throw ConfigurationException(
+                "Max message width must be a whole number from " +
+                    "${FrontendQuantaSettingsState.MIN_MESSAGE_WIDTH} to " +
+                    "${FrontendQuantaSettingsState.MAX_MESSAGE_WIDTH} dp.",
+            )
+        }
+    }
+
+    var maxMessageWidth: Int
+        get() = maxMessageWidthField.text.toIntOrNull() ?: FrontendQuantaSettingsState.DEFAULT_MAX_MESSAGE_WIDTH
+        set(value) {
+            maxMessageWidthField.text = value.coerceIn(FrontendQuantaSettingsState.MESSAGE_WIDTH_RANGE).toString()
+        }
+
     var terminalAllowedCommandsCsv: String
         get() = terminalAllowedCommandsCsvField.text
         set(value) {
@@ -403,4 +436,29 @@ private class FrontendQuantaSettingsComponent {
         set(value) {
             followEnabledField.isSelected = value
         }
+
+    private class DigitsOnlyDocumentFilter : DocumentFilter() {
+        override fun insertString(
+            fb: FilterBypass,
+            offset: Int,
+            string: String?,
+            attr: AttributeSet?,
+        ) {
+            if (string == null || string.all { it in '0'..'9' }) {
+                super.insertString(fb, offset, string, attr)
+            }
+        }
+
+        override fun replace(
+            fb: FilterBypass,
+            offset: Int,
+            length: Int,
+            text: String?,
+            attrs: AttributeSet?,
+        ) {
+            if (text == null || text.all { it in '0'..'9' }) {
+                super.replace(fb, offset, length, text, attrs)
+            }
+        }
+    }
 }

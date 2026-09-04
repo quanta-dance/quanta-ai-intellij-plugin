@@ -72,6 +72,7 @@ private val logger = Logger.getInstance("ToolExecutionLink")
 fun messageBubble(
     project: Project,
     message: ChatMessage,
+    maxMessageWidth: Int,
     modifier: Modifier = Modifier,
     isMatchingSearch: Boolean = false,
     isHighlightedInSearch: Boolean = false,
@@ -106,7 +107,7 @@ fun messageBubble(
         Column(
             modifier =
                 Modifier
-                    .widthIn(min = 120.dp, max = 420.dp)
+                    .widthIn(min = 120.dp, max = maxMessageWidth.dp)
                     .wrapContentSize()
                     .onPointerEvent(PointerEventType.Enter) { isHovered = true }
                     .onPointerEvent(PointerEventType.Exit) { isHovered = false }
