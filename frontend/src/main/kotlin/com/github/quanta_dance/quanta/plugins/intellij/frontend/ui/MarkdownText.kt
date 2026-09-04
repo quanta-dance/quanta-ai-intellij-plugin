@@ -3,6 +3,8 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.ui
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.ClickableText
@@ -27,6 +30,7 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.onPointerEvent
@@ -44,8 +48,13 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.ChatAppColors
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.ChatAppIcons
 import org.jetbrains.jewel.foundation.theme.JewelTheme
+import org.jetbrains.jewel.ui.component.Icon
+import org.jetbrains.jewel.ui.component.IconButton
 import org.jetbrains.jewel.ui.component.Text
+import java.awt.Toolkit
+import java.awt.datatransfer.StringSelection
 
 private const val LINK_TAG = "markdown-link"
 private val unorderedListPattern = Regex("^\\s*[-+*]\\s+(.+)$")
@@ -210,36 +219,69 @@ private fun markdownBlockQuote(text: String) {
     }
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun markdownCodeBlock(block: MarkdownBlock.CodeBlock) {
-    Column(
+    var isHovered by remember(block.code) { mutableStateOf(false) }
+    val copyButtonAlpha by
+        animateFloatAsState(
+            targetValue = if (isHovered) 1f else 0f,
+            animationSpec = tween(durationMillis = 150),
+            label = "markdownCodeBlockCopyButtonAlpha",
+        )
+
+    Box(
         modifier =
             Modifier
                 .fillMaxWidth()
                 .background(Color.Black.copy(alpha = 0.22f), RoundedCornerShape(6.dp))
-                .padding(8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+                .onPointerEvent(PointerEventType.Enter) { isHovered = true }
+                .onPointerEvent(PointerEventType.Exit) { isHovered = false },
     ) {
-        block.language?.takeIf { it.isNotBlank() }?.let { language ->
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(8.dp).padding(end = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            block.language?.takeIf { it.isNotBlank() }?.let { language ->
+                Text(
+                    text = language,
+                    style =
+                        JewelTheme.defaultTextStyle.copy(
+                            fontSize = 10.sp,
+                            color = ChatAppColors.Text.normal.copy(alpha = 0.55f),
+                        ),
+                )
+            }
             Text(
-                text = language,
+                text = block.code,
                 style =
                     JewelTheme.defaultTextStyle.copy(
-                        fontSize = 10.sp,
-                        color = ChatAppColors.Text.normal.copy(alpha = 0.55f),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp,
                     ),
             )
         }
-        Text(
-            text = block.code,
-            style =
-                JewelTheme.defaultTextStyle.copy(
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 12.sp,
-                    lineHeight = 17.sp,
-                ),
-        )
+        IconButton(
+            onClick = { copyCodeBlockToClipboard(block.code) },
+            enabled = isHovered,
+            modifier =
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 4.dp, end = 4.dp)
+                    .graphicsLayer { alpha = copyButtonAlpha },
+        ) {
+            Icon(
+                key = ChatAppIcons.Message.copy,
+                contentDescription = "Copy code block",
+                modifier = Modifier.size(14.dp),
+            )
+        }
     }
+}
+
+private fun copyCodeBlockToClipboard(code: String) {
+    Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(code), null)
 }
 
 @Composable
