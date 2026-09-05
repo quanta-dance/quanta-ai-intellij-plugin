@@ -123,6 +123,7 @@ class FrontendChatRepositoryModel(
     }
 
     override suspend fun sendMessage(messageContent: String) {
+        syncSettingsToBackend()
         ChatRepositoryRpcApi
             .getInstance()
             .sendMessage(project.rpcProjectPath(), messageContent)
@@ -145,11 +146,18 @@ class FrontendChatRepositoryModel(
     }
 
     override suspend fun setAgenticMode(enabled: Boolean) {
-        val settings = FrontendQuantaSettingsState.instance.state
-        settings.agenticEnabled = enabled
-        val mcpServersJson = project.service<FrontendMcpConfigService>().readForSync()
-        FrontendSettingsRpcService.getInstance(project).updateSettings(settings.toDto(project, mcpServersJson!!))
+        FrontendQuantaSettingsState.instance.state.agenticEnabled = enabled
+        syncSettingsToBackend()
         refreshCurrentState()
+    }
+
+    private suspend fun syncSettingsToBackend() {
+        val settings = FrontendQuantaSettingsState.instance.state
+        val mcpServersJson =
+            checkNotNull(project.service<FrontendMcpConfigService>().readForSync()) {
+                "MCP config is empty or unreadable"
+            }
+        FrontendSettingsRpcService.getInstance(project).updateSettings(settings.toDto(project, mcpServersJson))
     }
 
     override suspend fun createDefaultAgentTeam() {
