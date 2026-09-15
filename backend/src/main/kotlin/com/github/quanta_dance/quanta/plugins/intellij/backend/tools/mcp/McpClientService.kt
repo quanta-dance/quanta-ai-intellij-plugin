@@ -12,6 +12,7 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
+import io.micrometer.context.ContextRegistry
 import io.modelcontextprotocol.client.McpClient
 import io.modelcontextprotocol.client.McpSyncClient
 import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport
@@ -27,6 +28,7 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import reactor.util.context.ReactorContextAccessor
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -241,8 +243,26 @@ class McpClientService(
         ensureClient(name, cfg)
     }
 
-    private fun createClient(transport: McpClientTransport): McpSyncClient =
-        McpClient
+    /**
+     * Registers Reactor's context adapter without relying on ServiceLoader's thread-context loader.
+     *
+     * IntelliJ's split backend class loader can hide service-provider resources from Micrometer even
+     * though the provider class is bundled in this module. Reactor 3.7 consults this registry while
+     * initializing its HTTP transport, so register the adapter explicitly before building a client.
+     */
+    private fun ensureReactorContextAccessor() {
+        val registry = ContextRegistry.getInstance()
+        synchronized(registry) {
+            if (registry.contextAccessors.none { it is ReactorContextAccessor }) {
+                registry.registerContextAccessor(ReactorContextAccessor())
+                QDLog.debug(log) { "Registered Reactor context accessor for MCP runtime" }
+            }
+        }
+    }
+
+    private fun createClient(transport: McpClientTransport): McpSyncClient {
+        ensureReactorContextAccessor()
+        return McpClient
             .sync(transport)
             // .clientInfo(Implementation("Quanta-AI-IDE", "1.0"))
             .initializationTimeout(Duration.ofSeconds(30))
@@ -253,6 +273,7 @@ class McpClientService(
             .loggingConsumer { message -> System.out.println("Log message: " + message) }
             .build()
             .also { it.initialize() }
+    }
 
     private fun ensureClient(
         name: String,
@@ -484,7 +505,8 @@ class McpClientService(
     }
 
     private fun coerceArgsHeuristics(args: MutableMap<String, Any?>) {
-        val numericKeys = setOf("project_id", "merge_request_iid", "iid", "id", "limit", "offset", "page", "per_page")
+        val numericKeys =
+            setOf("project_id", "merge_request_iid", "iid", "id", "limit", "offset", "page", "per_page")
         val regexNumeric = Regex(".*(_id|_iid|_number|_count)$")
         args.keys.toList().forEach { key ->
             val v = args[key]
@@ -534,7 +556,10 @@ class McpClientService(
                     "number", "integer" -> {
                         if (v is String) {
                             val num = extractFirstNumber(v)
-                            if (num != null) args[key] = if (expectedType == "integer") num.toLong() else num.toDouble()
+                            if (num != null) {
+                                args[key] =
+                                    if (expectedType == "integer") num.toLong() else num.toDouble()
+                            }
                         }
                     }
 

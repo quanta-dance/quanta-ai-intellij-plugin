@@ -142,7 +142,6 @@ tasks {
                             exclude("reactor/core/publisher/CallSiteSupplierFactory*")
                             // Reactor's metrics and BlockHound bridges are optional integrations that
                             // are not used by the MCP client.
-                            exclude("META-INF/services/io.micrometer.context.ContextAccessor")
                             exclude("META-INF/services/reactor.blockhound.integration.BlockHoundIntegration")
                             // Reactor uses Micrometer's core instrument types, but the optional binders
                             // target unrelated application frameworks (Jetty, Hibernate, servlet APIs, etc.).
