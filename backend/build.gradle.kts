@@ -1,3 +1,4 @@
+import org.gradle.api.file.RelativePath
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 
 plugins {
@@ -53,31 +54,43 @@ dependencies {
     compileOnly(libs.openai)
     compileOnly("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.2")
     compileOnly("org.eclipse.jgit:org.eclipse.jgit:6.10.0.202406032230-r")
-    compileOnly(platform("io.modelcontextprotocol.sdk:mcp-bom:2.0.1"))
-    compileOnly("io.modelcontextprotocol.sdk:mcp") {
-        // The default JSON provider is Jackson 3 (`tools.jackson.*`), which the IDE does not provide.
-        exclude(group = "io.modelcontextprotocol.sdk", module = "mcp-json-jackson3")
-    }
-    compileOnly("io.modelcontextprotocol.sdk:mcp-json-jackson2")
+    compileOnly("io.modelcontextprotocol.sdk:mcp-core:2.0.1")
+    compileOnly("io.modelcontextprotocol.sdk:mcp-json-jackson2:2.0.1")
+    // Keep MCP transitive runtime dependencies on verified patch releases while retaining
+    // the SDK's compatible major versions.
+    compileOnly("io.projectreactor:reactor-core:3.7.19")
+    compileOnly("com.networknt:json-schema-validator:2.0.7")
+    // Satisfy optional regex/context implementations packaged inside the required MCP runtime.
+    compileOnly("io.micrometer:context-propagation:1.2.1")
+    // Reactor's optional metrics API links against the compatible Micrometer core API.
+    compileOnly("io.micrometer:micrometer-core:1.12.10")
+    compileOnly("org.jruby.joni:joni:2.2.6")
+    // NetworkNT's optional GraalJS regex backend compiles against this API artifact.
+    compileOnly("org.graalvm.sdk:graal-sdk:21.3.10")
 
     backendRuntime(libs.openai)
     backendRuntime("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.2")
     backendRuntime("org.eclipse.jgit:org.eclipse.jgit:6.10.0.202406032230-r")
-    backendRuntime(platform("io.modelcontextprotocol.sdk:mcp-bom:2.0.1"))
-    backendRuntime("io.modelcontextprotocol.sdk:mcp") {
-        // IntelliJ ships Jackson 2 (`com.fasterxml.jackson.*`), so use that SDK provider instead.
-        exclude(group = "io.modelcontextprotocol.sdk", module = "mcp-json-jackson3")
-    }
-    backendRuntime("io.modelcontextprotocol.sdk:mcp-json-jackson2")
+    backendRuntime("io.modelcontextprotocol.sdk:mcp-core:2.0.1")
+    backendRuntime("io.modelcontextprotocol.sdk:mcp-json-jackson2:2.0.1")
+    backendRuntime("io.projectreactor:reactor-core:3.7.19")
+    backendRuntime("com.networknt:json-schema-validator:2.0.7")
+    backendRuntime("io.micrometer:context-propagation:1.2.1")
+    backendRuntime("io.micrometer:micrometer-core:1.12.10")
+    backendRuntime("org.jruby.joni:joni:2.2.6")
+    backendRuntime("org.graalvm.sdk:graal-sdk:21.3.10")
 
     testImplementation(libs.openai)
     testImplementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.2")
     testImplementation("org.eclipse.jgit:org.eclipse.jgit:6.10.0.202406032230-r")
-    testImplementation(platform("io.modelcontextprotocol.sdk:mcp-bom:2.0.1"))
-    testImplementation("io.modelcontextprotocol.sdk:mcp") {
-        exclude(group = "io.modelcontextprotocol.sdk", module = "mcp-json-jackson3")
-    }
-    testImplementation("io.modelcontextprotocol.sdk:mcp-json-jackson2")
+    testImplementation("io.modelcontextprotocol.sdk:mcp-core:2.0.1")
+    testImplementation("io.modelcontextprotocol.sdk:mcp-json-jackson2:2.0.1")
+    testImplementation("io.projectreactor:reactor-core:3.7.19")
+    testImplementation("com.networknt:json-schema-validator:2.0.7")
+    testImplementation("io.micrometer:context-propagation:1.2.1")
+    testImplementation("io.micrometer:micrometer-core:1.12.10")
+    testImplementation("org.jruby.joni:joni:2.2.6")
+    testImplementation("org.graalvm.sdk:graal-sdk:21.3.10")
     testImplementation(kotlin("test"))
     testImplementation(kotlin("stdlib"))
     testImplementation("io.mockk:mockk:1.13.12")
@@ -116,11 +129,68 @@ tasks {
                     .filter { !it.file.name.startsWith("jackson-core") }
                     .map {
                         zipTree(it.file).matching {
-                            // Android TLS stubs — dead code on JVM
+                            // Fat-JAR assembly keeps only this plugin's manifest, so it cannot retain
+                            // dependency Multi-Release attributes. Exclude dependency version overlays;
+                            // the Java 11 Reactor call-site implementation is restored below.
+                            exclude("META-INF/versions/**")
+                            exclude("reactor/core/publisher/CallSiteSupplierFactory*")
+                            // Reactor's metrics and BlockHound bridges are optional integrations that
+                            // are not used by the MCP client.
+                            exclude("META-INF/services/io.micrometer.context.ContextAccessor")
+                            exclude("META-INF/services/reactor.blockhound.integration.BlockHoundIntegration")
+                            // Reactor uses Micrometer's core instrument types, but the optional binders
+                            // target unrelated application frameworks (Jetty, Hibernate, servlet APIs, etc.).
+                            // Reactor's scheduler metrics bridge additionally requires this class; restore it below.
+                            exclude("io/micrometer/core/instrument/binder/**")
+                            exclude("io/micrometer/core/instrument/dropwizard/**")
+                            // Micrometer AOP integrations require AspectJ, which is not used by the MCP client.
+                            exclude("io/micrometer/core/aop/**")
+                            exclude("io/micrometer/common/annotation/**")
+                            exclude("io/micrometer/observation/aop/**")
+                            // NetworkNT provides optional ECMAScript regex engines that are not
+                            // selected by this plugin's JSON schema validation.
+                            // Android TLS stubs — dead code on JVM.
+                            // Android TLS stubs — dead code on JVM.
                             exclude("android/**")
-                            // kotlin-logging-jvm's logback integration references ch.qos.logback
-                            // which is not bundled in the IDE; exclude the whole logback sub-package
+                            // kotlin-logging-jvm's logback integration references ch.qos.logback,
+                            // which is not bundled in the IDE.
                             exclude("io/github/oshai/kotlinlogging/logback/**")
+                            // The Java MCP SDK includes servlet server transports. This plugin is an
+                            // MCP client and does not bundle the Jakarta Servlet API.
+                            exclude("io/modelcontextprotocol/server/transport/HttpServlet**")
+                            // Reactor's BlockHound integration is optional and needs an absent library.
+                            exclude("reactor/core/scheduler/ReactorBlockHoundIntegration.class")
+                        }
+                    }
+            },
+        )
+        // Reactor's Java 8 call-site implementation references unavailable sun.misc APIs. Restore its
+        // Java 11 implementation at the normal class path because a flattened JAR is not multi-release.
+        from(
+            provider {
+                backendRuntime
+                    .resolvedConfiguration
+                    .resolvedArtifacts
+                    .filter { it.moduleVersion.id.group == "io.projectreactor" && it.name == "reactor-core" }
+                    .map { zipTree(it.file).matching { include("META-INF/versions/11/reactor/core/publisher/CallSiteSupplierFactory.class") } }
+            },
+        ) {
+            eachFile {
+                relativePath = RelativePath(true, "reactor", "core", "publisher", "CallSiteSupplierFactory.class")
+            }
+        }
+        // Reactor's SchedulerMetricDecorator directly links this single Micrometer JVM binder.
+        // Restore it and its lightweight MeterBinder interface after removing unrelated binders above.
+        from(
+            provider {
+                backendRuntime
+                    .resolvedConfiguration
+                    .resolvedArtifacts
+                    .filter { it.moduleVersion.id.group == "io.micrometer" && it.name == "micrometer-core" }
+                    .map {
+                        zipTree(it.file).matching {
+                            include("io/micrometer/core/instrument/binder/MeterBinder.class")
+                            include("io/micrometer/core/instrument/binder/jvm/ExecutorServiceMetrics*")
                         }
                     }
             },
