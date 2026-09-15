@@ -1,6 +1,6 @@
 [versions]
 # libraries
-openai = "4.58.0"
+openai = "4.63.2"
 
 # plugins
 kotlin = "2.2.0"

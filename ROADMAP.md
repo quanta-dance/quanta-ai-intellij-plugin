@@ -31,6 +31,8 @@ Near-term work should strengthen the trust, reliability, and usability around th
 - [x] Add project search, PSI block inspection, dependency/reference inspection, terminal jobs, build/test execution, and scheduled follow-ups.
 - [x] Support role-based agents, per-agent built-in/MCP tool allowlists, and dynamic model switching.
 - [x] Add MCP integration and local SQLite-backed project embeddings/vector search.
+- [x] Migrate remote MCP connectivity to the Java MCP SDK with challenge-driven OAuth, PKCE, Password Safe token storage, and safe diagnostics.
+- [x] Publish an MCP server configuration and OAuth troubleshooting guide.
 
 ### Recent reliability and UX work
 
@@ -129,7 +131,6 @@ Near-term work should strengthen the trust, reliability, and usability around th
 - [ ] Add an architecture diagram for `Frontend ↔ typed RPC ↔ Backend ↔ project/indexes/tools`.
 - [ ] Publish a remote-workspace tutorial and troubleshooting guide.
 - [ ] Add provider/gateway configuration and unsupported-model troubleshooting.
-- [ ] Add an MCP tutorial with one complete, reproducible integration.
 - [ ] Document tool permissions, terminal safety, context exclusions, and recovery/rollback behavior.
 - [ ] Keep module READMEs, architecture docs, behavioral scenarios, and migration notes aligned with executable behavior.
 
