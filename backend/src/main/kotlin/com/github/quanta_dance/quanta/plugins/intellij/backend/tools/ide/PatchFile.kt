@@ -4,7 +4,6 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
-import com.fasterxml.jackson.annotation.JsonCreator
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
@@ -41,25 +40,23 @@ import com.intellij.psi.codeStyle.CodeStyleManager
 class PatchFile :
     ToolInterface<String>,
     ToolPresentationProvider {
-    data class Patch
-        @JsonCreator
-        constructor(
-            @param:JsonProperty("fromLine")
-            @field:JsonPropertyDescription("1-based start line (inclusive)")
-            var fromLine: Int = 1,
-            @param:JsonProperty("toLine")
-            @field:JsonPropertyDescription("1-based end line (inclusive)")
-            var toLine: Int = 1,
-            @param:JsonProperty("newContent")
-            @field:JsonPropertyDescription("Replacement content for the specified line range")
-            var newContent: String = "",
-            @param:JsonProperty("expectedText")
-            @field:JsonPropertyDescription(
-                "Optional expected current text for the specified line range. " +
-                    "If provided and does not match, patch is skipped or triggers failure depending on stopOnMismatch.",
-            )
-            var expectedText: String? = null,
+    data class Patch(
+        @param:JsonProperty("fromLine")
+        @field:JsonPropertyDescription("1-based start line (inclusive)")
+        var fromLine: Int = 1,
+        @param:JsonProperty("toLine")
+        @field:JsonPropertyDescription("1-based end line (inclusive)")
+        var toLine: Int = 1,
+        @param:JsonProperty("newContent")
+        @field:JsonPropertyDescription("Replacement content for the specified line range")
+        var newContent: String = "",
+        @param:JsonProperty("expectedText")
+        @field:JsonPropertyDescription(
+            "Optional expected current text for the specified line range. " +
+                "If provided and does not match, patch is skipped or triggers failure depending on stopOnMismatch.",
         )
+        var expectedText: String? = null,
+    )
 
     override fun presentation(status: ToolExecutionStatus): ToolExecutionPresentation =
         ToolExecutionPresentation(

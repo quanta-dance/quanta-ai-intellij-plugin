@@ -28,10 +28,6 @@ val backendRuntime by configurations.creating {
     exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-serialization-json-jvm")
     exclude(group = "org.slf4j")
     exclude(group = "ch.qos.logback")
-    // io.ktor is NOT bundled by the IDE — it must be included here so MCP (which uses
-    // ktor-client-core for SSE/HTTP transport) and McpClientService (HttpClient(Java)) work
-    // in the installed plugin. runIDE works without this because compileOnly puts ktor on the
-    // Gradle classpath, masking the missing jar.
     exclude(group = "io.netty")
 }
 
@@ -51,26 +47,37 @@ dependencies {
     // Provided by the IDE at runtime — compile against them but do not bundle
     compileOnly(libs.kotlin.serialization.core.jvm)
     compileOnly(libs.kotlin.serialization.json.jvm)
-    compileOnly(libs.ktor.client.java)
 
     // Third-party libs needed at runtime in the backend process — added to backendRuntime
     // so they get bundled into the backend module JAR below
     compileOnly(libs.openai)
     compileOnly("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.2")
     compileOnly("org.eclipse.jgit:org.eclipse.jgit:6.10.0.202406032230-r")
-    compileOnly("io.modelcontextprotocol:kotlin-sdk-client:0.12.0")
+    compileOnly(platform("io.modelcontextprotocol.sdk:mcp-bom:2.0.1"))
+    compileOnly("io.modelcontextprotocol.sdk:mcp") {
+        // The default JSON provider is Jackson 3 (`tools.jackson.*`), which the IDE does not provide.
+        exclude(group = "io.modelcontextprotocol.sdk", module = "mcp-json-jackson3")
+    }
+    compileOnly("io.modelcontextprotocol.sdk:mcp-json-jackson2")
 
     backendRuntime(libs.openai)
     backendRuntime("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.2")
     backendRuntime("org.eclipse.jgit:org.eclipse.jgit:6.10.0.202406032230-r")
-    backendRuntime("io.modelcontextprotocol:kotlin-sdk-client:0.12.0")
-    backendRuntime(libs.ktor.client.java)
+    backendRuntime(platform("io.modelcontextprotocol.sdk:mcp-bom:2.0.1"))
+    backendRuntime("io.modelcontextprotocol.sdk:mcp") {
+        // IntelliJ ships Jackson 2 (`com.fasterxml.jackson.*`), so use that SDK provider instead.
+        exclude(group = "io.modelcontextprotocol.sdk", module = "mcp-json-jackson3")
+    }
+    backendRuntime("io.modelcontextprotocol.sdk:mcp-json-jackson2")
 
     testImplementation(libs.openai)
     testImplementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.2")
     testImplementation("org.eclipse.jgit:org.eclipse.jgit:6.10.0.202406032230-r")
-    testImplementation("io.modelcontextprotocol:kotlin-sdk-client:0.12.0")
-    testImplementation(libs.ktor.client.java)
+    testImplementation(platform("io.modelcontextprotocol.sdk:mcp-bom:2.0.1"))
+    testImplementation("io.modelcontextprotocol.sdk:mcp") {
+        exclude(group = "io.modelcontextprotocol.sdk", module = "mcp-json-jackson3")
+    }
+    testImplementation("io.modelcontextprotocol.sdk:mcp-json-jackson2")
     testImplementation(kotlin("test"))
     testImplementation(kotlin("stdlib"))
     testImplementation("io.mockk:mockk:1.13.12")

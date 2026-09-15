@@ -6,19 +6,17 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
-import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
 import com.intellij.openapi.diagnostic.Logger
-import com.intellij.openapi.project.Project
-import java.io.File
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class McpServerConfig(
     val command: String? = null,
     val args: List<String> = emptyList(),
-    val transport: String? = null,
     val env: Map<String, String>? = null,
     val url: String? = null,
     val headers: Map<String, String>? = null,
+    /** Optional public client ID for OAuth servers that do not permit dynamic client registration. */
+    val oauthClientId: String? = null,
 )
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -54,22 +52,8 @@ object McpServersConfigLoader {
         }
     }
 
-    private fun validate(cfg: McpServersFile): List<String> {
-        val issues = mutableListOf<String>()
-        cfg.mcpServers.forEach { (name, s) ->
-            if ((s.url == null || s.url.isBlank()) && (s.command == null || s.command.isBlank())) {
-                issues += "Server '$name' must specify either 'url' or 'command'"
-            }
-            s.transport?.let { t ->
-                val lt = t.lowercase()
-                if (s.url != null && lt !in setOf("websocket", "sse", "ws", "wss", "http", "https")) {
-                    issues += "Server '$name' has url but unsupported transport '$t'"
-                }
-                if (s.url == null && lt != "stdio") {
-                    issues += "Server '$name' without url must use transport=stdio (got '$t')"
-                }
-            }
-        }
-        return issues
-    }
+    private fun validate(cfg: McpServersFile): List<String> =
+        cfg.mcpServers
+            .filter { (_, server) -> server.url.isNullOrBlank() && server.command.isNullOrBlank() }
+            .map { (name, _) -> "Server '$name' must specify either 'url' or 'command'" }
 }

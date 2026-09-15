@@ -16,7 +16,7 @@ class McpListServerToolsTool : ToolInterface<Map<String, Any>> {
 
     override fun execute(project: Project): Map<String, Any> {
         val mcp = project.service<McpClientService>()
-        val tools: List<String> = mcp.getTools(server).map { it.name }
+        val tools: List<String> = mcp.getTools(server).map { it.name() }
         return mapOf(
             "server" to server,
             "tools" to tools,

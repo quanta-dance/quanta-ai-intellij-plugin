@@ -1,116 +1,145 @@
-# QuantaDance IntelliJ Plugin – Roadmap (Open Source)
+# Quanta AI IntelliJ Plugin Roadmap
 
-This roadmap lists areas of improvement and future directions for the QuantaDance IntelliJ plugin. It is community‑driven and intended to evolve via issues, pull requests, and discussions. Use this as a living document to propose, track, and refine ideas.
+This roadmap prioritizes the work needed to make Quanta AI a reliable, transparent, and extensible IDE-native agent platform for both local and remote JetBrains workspaces. It is a living document: proposals should be discussed through issues and delivered as small, verifiable pull requests.
 
-Contributions welcome: If you want to pick up an item, please open/claim an issue. When you have a new idea, open an issue or PR to propose and discuss.
+## Product direction
 
-## Recently Completed (Highlights)
+Quanta AI is not intended to be only another chat panel. Its differentiators are:
 
-- Tooling and Safety
-  - Switched to SHA‑only guards for patching with per‑patch expectedText (no version/timestamp gating).
-  - PatchFile: bottom‑to‑top range application; optional reformatAfterUpdate and optimizeImportsAfterUpdate; overlap detection (rejectOverlappingPatches=true by default).
-  - CreateOrUpdateFile: supports patches; forwards SHA guard and PSI post‑processing flags to PatchFile.
-  - ReadFileContent: returns normalized SHA‑256 (fileHashSha256) and content; default maxChars lowered to 6k; caret‑aware windowing retained.
-  - ReadPsiBlockAtPosition: new tool to read enclosing PSI block (function/method/class/field/object) at a given position with structured metadata, caret‑aware, thread‑safe commits.
-  - GradleSyncTool: added schema properties and background refresh.
+- an explicit `frontend` / `backend` / `shared` architecture designed for JetBrains remote workspaces;
+- project-aware execution beside the project, indexes, terminal, build system, and tests;
+- configurable OpenAI-compatible providers and enterprise gateways;
+- inspectable agent tools, multi-agent orchestration, and MCP integrations;
+- local, project-scoped embeddings and retrieval;
+- an open-source implementation that teams can audit and customize.
 
-- Agent/Manager UX
-  - New session triggers agent session reset (previousId cleared).
-  - On first turn, bootstrap includes sub‑agents list; startup UI noise removed.
-  - All tools are exposed by default (scoping tool removed from registry); Terminal remains disabled by default via setting.
-  - Per‑agent allow‑lists (built‑ins/MCP) so manager can assign tools to sub‑agents.
+Near-term work should strengthen the trust, reliability, and usability around those capabilities before adding more isolated tools, model names, or visual refinements.
 
-- Serialization/Display
-  - ToolRouter wraps String results into structured objects ({"text": ...}) to avoid escape noise.
+## Recently completed
 
-- Instructions
-  - Updated to prefer patch‑in‑place with SHA guard + expectedText; optional PSI reformat/imports; removed version/timestamp guidance.
+### Distributed architecture and remote workspaces
 
-- Tests
-  - PatchFile platform tests updated for SHA‑only guards; added commit/save after tool exec for consistent assertions.
+- [x] Split the plugin into `:frontend`, `:backend`, and `:shared` Gradle modules.
+- [x] Establish typed RPC contracts between frontend UI concerns and backend project execution.
+- [x] Move project analysis, file/workspace operations, terminal, build/test, MCP, embeddings, and model orchestration to the backend side.
+- [x] Keep durable user-editable settings on the frontend and synchronize a runtime snapshot to the backend.
+- [x] Package and verify the split plugin through the root IntelliJ plugin descriptor.
 
-## Near‑Term Improvements (Good First / Low Risk)
+### Agent tooling and extensibility
 
-- Logging & Debugging
-  - [ ] Add a “Verbose logging” toggle in plugin settings to surface debug logs without internal mode.
-  - [ ] Document typical failure patterns for patch guards (hash mismatch, expectedText mismatch, overlaps) and suggested recovery.
+- [x] Provide guarded file reads and patches using normalized SHA-256 and per-patch `expectedText` checks.
+- [x] Add project search, PSI block inspection, dependency/reference inspection, terminal jobs, build/test execution, and scheduled follow-ups.
+- [x] Support role-based agents, per-agent built-in/MCP tool allowlists, and dynamic model switching.
+- [x] Add MCP integration and local SQLite-backed project embeddings/vector search.
 
-- Audio/Voice Stability
-  - [ ] Make thresholds/durations configurable via plugin settings.
-  - [ ] Optional RMS detection (instead of avg abs amplitude) toggle.
-  - [ ] Cap maximum phrase duration to avoid unbounded buffers on noisy inputs.
+### Recent reliability and UX work
 
-- Tooling UX
-  - [ ] Add a ReadFileHeadTail tool (head N / tail N) for very large files.
-  - [ ] Optional “reject overlapping patches” preflight command to preview conflicts without applying.
+- [x] Synchronize current frontend settings, including the selected model, before sending a chat message.
+- [x] Avoid unsafe lazy initialization of the legacy agent registry during concurrent agent publication.
+- [x] Improve microphone voice detection, first-word capture, and ordered audio delivery.
+- [x] Add validated message-width settings and copy controls for fenced Markdown code blocks.
+- [x] Remove the binary-incompatible Compose `SwingPanel` dependency from syntax-highlighted refactoring previews.
 
-- Validation Flow
-  - [ ] Add tests for ReadPsiBlockAtPosition, including caret/line/column coverage and fallback window behavior.
-  - [ ] Improve validation summaries (diff‑like snippets around errors).
+## Priority 1 — Release reliability and structured failures
 
-## Core Enhancements
+- [ ] Replace raw backend stack traces in chat with concise, actionable, structured errors.
+- [ ] Preserve plain-text and non-standard error bodies returned by OpenAI-compatible gateways.
+- [ ] Map authentication, unsupported model, rate limit, context limit, timeout, cancellation, RPC disconnect, and tool failures to distinct UI states.
+- [ ] Add a **Copy diagnostics** action while keeping full exception details in IDE logs.
+- [ ] Remove or migrate the obsolete `AgentRegistryService` and retain one authoritative owner for active agent state.
+- [ ] Audit persisted collections and service initialization for concurrent mutation and lifecycle races.
+- [ ] Add stress coverage for simultaneous agent completion, wake-up, cancellation, publication, and project disposal.
+- [ ] Verify that child agents, terminal jobs, coroutines, and streams terminate on cancellation, project close, and plugin unload.
 
-- PSI‑powered edits
-  - [ ] Add PSI element‑level tools (insert/replace method/class/property) using Psi/Kt factories with formatting/imports.
-  - [ ] Safe delete (PSI) with preview (RefactoringFactory.createSafeDelete); fall back to VFS only when necessary.
-  - [ ] Move/Copy via refactoring processors (MoveFilesOrDirectoriesProcessor, RefactoringFactory.copy) with reference updates.
+## Priority 2 — Provider and model capability management
 
-- Realtime/Multimodal (pending SDK support)
-  - [ ] Upgrade com.openai:openai‑java to versions supporting input_audio for multimodal turns when available.
-  - [ ] Realtime client path; streaming mic and partial tokens.
+- [ ] Add **Test connection** to settings with clear endpoint, credential, and API compatibility results.
+- [ ] Discover available models from providers/gateways when supported, with an advanced custom model-ID option.
+- [ ] Represent model capabilities such as Responses API support, tool calling, structured output, reasoning, vision/audio, and context limits.
+- [ ] Prevent or clearly warn about selecting a model unavailable from the configured gateway.
+- [ ] Refresh capabilities when endpoint, credentials, or provider configuration changes.
+- [ ] Keep frontend/backend settings synchronization ordered, observable, and covered by executable scenarios.
+- [ ] Add a guided first-run setup flow and presets for supported providers without reducing custom-gateway flexibility.
 
-- Search & Navigation
-  - [ ] Enhance SearchInFiles: case sensitivity toggle, literal mode, filename‑only search, better grouping/previews.
+## Priority 3 — Safe and reviewable agent execution
 
-- Embeddings & Indexing
-  - [ ] Improve chunking (sliding window + semantic boundaries), byte‑size guard, and max chunk count.
-  - [ ] Track per‑file embedding freshness; background re‑index on save/idle; “Re‑index project” command with progress.
+- [ ] Add an execution timeline showing goals, active step, delegated agents, tool calls, files, commands, and validation results.
+- [ ] Show where each operation executes: frontend machine, backend workspace, or external MCP service.
+- [ ] Provide first-class diffs with accept/reject per file and per hunk before applying proposed changes.
+- [ ] Support reverting an individual agent action and restoring the complete pre-task state.
+- [ ] Make destructive, externally visible, credential-sensitive, or policy-restricted actions require explicit approval.
+- [ ] Allow retrying a failed step without restarting an otherwise successful multi-step task.
+- [ ] Display cancellation, failure, timeout, and disconnection as different outcomes.
+- [ ] Optionally expose model, token, latency, and cost information for each turn.
 
-- Settings & Preferences
-  - [ ] Expose audio thresholds/durations and capture buffer size in settings.
-  - [ ] Add verbosity toggles and controls for tool behaviors (e.g., auto‑open updated files, default patch formatting/imports flags, overlap rejection).
+## Priority 4 — Remote-workspace resilience
 
-## Longer‑Term Directions
+- [ ] Add a visible frontend/backend connection and synchronization status indicator.
+- [ ] Introduce explicit backend readiness/settings-synchronized signaling instead of relying only on startup retries.
+- [ ] Recover cleanly from temporary network loss, frontend reconnect, and backend restart.
+- [ ] Detect incompatible frontend/backend RPC contract versions and provide an actionable upgrade message.
+- [ ] Propagate cancellation and progress reliably across RPC boundaries.
+- [ ] Restore conversations and in-progress task state where safe after reconnect or IDE restart.
+- [ ] Exercise high-latency links, large streamed responses, multiple remote projects, and project switching in tests.
+- [ ] Publish a verified compatibility matrix for local IDEs and supported JetBrains remote-development modes.
 
-- Multimodal Enhancements
-  - [ ] Full multimodal turns: input_text + input_image + (when available) input_audio in one message.
-  - [ ] Output audio (when supported) for short synthesized replies.
+## Priority 5 — Context transparency and privacy
 
-- Realtime UX
-  - [ ] Adaptive latency tuning, chunk sizing, and better interruption handling.
-  - [ ] Unified voice+text transcript with timestamps in the Tool Window.
+- [ ] Add explicit context attachments for selection, file, symbol, directory, commit, issue, terminal output, and image.
+- [ ] Display active context as removable and pinnable items with an approximate context budget.
+- [ ] Explain which files automatic retrieval selected and why.
+- [ ] Add project-level exclusion rules for secrets, generated files, binaries, and sensitive paths.
+- [ ] Provide an optional outbound-context preview for privacy and debugging.
+- [ ] Improve embedding chunking with semantic boundaries, size limits, freshness tracking, and background re-indexing.
+- [ ] Add a visible **Re-index project** action with progress and cancellation.
+- [ ] Document what data is sent to providers, retained locally, and written to logs.
 
-- AI‑Assisted Refactor/Review
-  - [ ] “Propose & apply” diffs: show diffs for user review and apply accepted changes in one write action.
-  - [ ] Cross‑file refactor assistance with dependency awareness.
+## Priority 6 — Editor-native workflows
 
-- Testing & QA
-  - [ ] IntelliJ platform test harness for VFS/PSI and Tool Window states.
-  - [ ] Snapshot/golden tests for tool output and streamed progress messages.
+- [ ] Add selection/symbol actions for explain, fix, refactor, document, and generate tests.
+- [ ] Surface AI assistance from inspections, compiler errors, failed tests, and stack traces.
+- [ ] Generate commit messages and pull-request descriptions from the actual repository diff.
+- [ ] Review local changes, commits, and branches with navigation back to referenced files and symbols.
+- [ ] Add PSI element-level insert/replace tools with formatting and import management.
+- [ ] Add safe-delete, move, and copy operations through IntelliJ refactoring APIs with preview and reference updates.
+- [ ] Decide and document whether inline completion belongs in Quanta AI's product scope; prioritize agent workflows if it does not.
 
-- Performance & Reliability
-  - [ ] Backpressure and chunked uploads for large audio.
-  - [ ] Non‑blocking write actions for file operations; queue operations to avoid UI stalls.
-  - [ ] Optional telemetry/metrics (opt‑in) to understand failures/hotspots.
+## Priority 7 — Security and enterprise controls
 
-## Technical Notes / Conventions
+- [ ] Centralize policy for allowed providers, endpoints, tools, commands, paths, network access, and MCP servers.
+- [ ] Redact secrets from model requests, tool output, diagnostics, and logs.
+- [ ] Add workspace-trust checks and defenses against prompt injection from project files, terminal output, and MCP responses.
+- [ ] Add project-scoped permissions and auditable records of tool calls and modifications.
+- [ ] Support enterprise proxies, custom certificates, and secure credential storage.
+- [ ] Document provider retention, privacy, and threat-model assumptions.
 
-- Logging
-  - [x] Use com.intellij.openapi.diagnostic.Logger via QDLog.
-  - [x] In internal mode (runIde), QDLog.info echoes to console; otherwise, logs go to idea.log.
+## Priority 8 — Quality, performance, and accessibility
 
-- File guards & Patching
-  - [x] Single precondition: expectedFileHashSha256 (normalized SHA‑256) from ReadFileContent.
-  - [x] Per‑patch expectedText guards; bottom‑to‑top application; stopOnMismatch recommended for atomicity.
-  - [x] Overlap detection (rejectOverlappingPatches=true by default) to avoid ambiguous edits.
+- [ ] Maintain executable behavioral scenarios for remote settings sync, agent concurrency, cancellation, reconnect, and rollback.
+- [ ] Add repeatable agent-quality evaluations for repository explanation, safe refactoring, build diagnosis, test generation, and prompt-injection resistance.
+- [ ] Track success rate, unnecessary tool calls, incorrect file modifications, latency, and token use across supported models.
+- [ ] Add performance coverage for large conversations, indexes, RPC payloads, diffs, terminal logs, and concurrent agents.
+- [ ] Add backpressure and bounded buffering for streamed or large payloads.
+- [ ] Verify keyboard navigation, screen-reader labels, focus handling, font scaling, high-contrast themes, and reduced motion.
+- [ ] Add opt-in operational metrics only after privacy behavior and retention are documented.
 
-- Threading
-  - [x] Respect IntelliJ read/write action rules; commit documents safely.
+## Documentation and adoption
 
-## How to Contribute
+- [ ] Publish a two-minute installation and first-run guide.
+- [ ] Add an architecture diagram for `Frontend ↔ typed RPC ↔ Backend ↔ project/indexes/tools`.
+- [ ] Publish a remote-workspace tutorial and troubleshooting guide.
+- [ ] Add provider/gateway configuration and unsupported-model troubleshooting.
+- [ ] Add an MCP tutorial with one complete, reproducible integration.
+- [ ] Document tool permissions, terminal safety, context exclusions, and recovery/rollback behavior.
+- [ ] Keep module READMEs, architecture docs, behavioral scenarios, and migration notes aligned with executable behavior.
 
-- Open an issue for discussion; tag proposals with area labels (audio, realtime, responses, ui/ux, tooling, search, embeddings).
-- Keep PRs small and incremental; follow IntelliJ read/write action rules.
-- Add tests for new utilities/tools; use platform test harness where applicable.
+## Contribution and delivery principles
 
-This document is a living roadmap. Please help refine it with your ideas, feedback, and contributions.
+- Open or claim an issue before beginning a roadmap item.
+- Migrate or improve one vertical slice at a time: shared contract, backend implementation, frontend experience, then executable verification.
+- Prefer small, reversible changes with guarded patches and focused tests.
+- Treat tests and executable scenarios as the source of truth for important behavior.
+- Run `spotlessCheck` for Kotlin changes and verify affected modules; run `buildPlugin` and plugin verification for release or boundary changes.
+- Preserve current behavior when code and documentation conflict, record the mismatch, and make the follow-up explicit.
+
+This roadmap should be reviewed after each release so completed work moves out of active priorities and newly observed reliability or remote-workspace issues are ranked before feature expansion.
