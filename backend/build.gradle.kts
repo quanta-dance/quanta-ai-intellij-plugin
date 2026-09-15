@@ -81,6 +81,9 @@ dependencies {
     testImplementation(kotlin("test"))
     testImplementation(kotlin("stdlib"))
     testImplementation("io.mockk:mockk:1.13.12")
+    // Match the IntelliJ Platform's coroutine debug agent (1.10.2). MockK otherwise
+    // resolves coroutines-core 1.6.4, which crashes the agent before tests start.
+    testRuntimeOnly("org.jetbrains.kotlinx:kotlinx-coroutines-debug:1.10.2")
     testImplementation(libs.byte.buddy)
     testImplementation(libs.byte.buddy.agent)
     testImplementation(project(":shared"))
