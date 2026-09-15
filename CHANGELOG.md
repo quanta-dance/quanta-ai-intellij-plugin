@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2026.09.15]
+
+This release modernizes remote MCP connectivity, adds standards-based OAuth authorization, improves chat reliability, and updates the OpenAI Java SDK.
+
+### Added
+- Remote MCP servers now support challenge-driven OAuth Authorization Code with PKCE, including protected-resource discovery and browser-based sign-in.
+- OAuth access and refresh tokens, plus dynamically registered public client IDs, are stored in IntelliJ Password Safe instead of MCP configuration files.
+- Added `docs/mcp-configuration.md`, covering local stdio servers, remote Streamable HTTP servers, OAuth, credential handling, and troubleshooting.
+
+### Improved
+- Migrated MCP support from the Kotlin SDK to the official Java SDK, avoiding Kotlin compiler metadata incompatibilities.
+- Remote URL-based MCP servers use Streamable HTTP with correct base-origin and endpoint-path handling for path-mounted services.
+- MCP OAuth connection, retry, and safe diagnostic behavior is clearer and avoids duplicate browser authorization prompts.
+- Updated the OpenAI Java SDK to 4.63.2.
+
+### Fixed
+- Fixed MCP JSON mapper and schema-validator loading under IntelliJ's isolated plugin classloader.
+- Fixed a Jackson creator conflict that could prevent built-in tool schema generation.
+- Synchronized the selected model before each chat request and prevented concurrent legacy agent-registry initialization.
+
 ## [2026.09.04]
 
 This release improves chat readability and reuse, stabilizes microphone capture, and restores compatibility with upcoming IntelliJ IDEA 2026.3 builds.

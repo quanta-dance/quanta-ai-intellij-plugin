@@ -3,7 +3,6 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.backend.chat
 
-import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.agents.AgentRegistryService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.project.CurrentFileContextProvider
 import com.github.quanta_dance.quanta.plugins.intellij.backend.repository.ChatMessageFactory
@@ -54,7 +53,6 @@ class ChatConversationService(
     private val chatMessageFactory = ChatMessageFactory("Quanta AI", "Me")
     private val openAIService: OpenAIService get() = project.service()
     private val agentManager: AgentManagerService get() = project.service()
-    private val registry: AgentRegistryService get() = project.service()
     private val persistence: ChatConversationStateService get() = project.service()
     private val executionContexts: BackendExecutionContextsService get() = project.service()
 
@@ -299,7 +297,7 @@ class ChatConversationService(
         content: String,
     ) {
         onChatPublicationThread {
-            val agent = registry.getAgentsSnapshot().firstOrNull { it.id == agentId }
+            val agent = agentManager.getAgentsSnapshot().firstOrNull { it.id == agentId }
             val aiMessage =
                 chatMessageFactory
                     .createAIMessage(

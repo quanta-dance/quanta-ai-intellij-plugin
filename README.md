@@ -34,6 +34,7 @@ models to assist developers with code modifications, reviews, and refactoring di
 ## Documentation
 
 - Module README files live in `backend/`, `frontend/`, and `shared/`.
+- Configure MCP servers with [`docs/mcp-configuration.md`](docs/mcp-configuration.md), including local stdio servers, remote Streamable HTTP servers, and challenge-driven OAuth.
 - Repo-level migration and ownership notes live in `docs/`, especially `docs/architecture-overview.md` and `docs/modular-migration-map.md`. The architecture overview also explains the current frontend-persisted/backend-runtime settings ownership model.
 - Important behavioral questions should be answered by tests, integration scenarios, or other executable verification before relying on prose.
 - Code-level API documentation should use Kotlin KDoc.

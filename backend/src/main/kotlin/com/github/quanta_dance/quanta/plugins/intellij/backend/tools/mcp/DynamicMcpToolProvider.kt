@@ -3,14 +3,12 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp
 
-import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.intellij.openapi.diagnostic.Logger
 import com.openai.core.JsonValue
 import com.openai.models.responses.FunctionTool
 import com.openai.models.responses.Tool
-import kotlinx.serialization.json.JsonElement
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -46,7 +44,7 @@ object DynamicMcpToolProvider {
             val tools = mcp.getTools(server)
             if (tools.isEmpty()) continue
             for (t in tools) {
-                val method = t.name
+                val method = t.name()
                 val fnName = buildName(server, method)
                 val dottedName = "$server.$method"
                 if (normalizedAllowedNames != null && fnName !in normalizedAllowedNames && dottedName !in normalizedAllowedNames) continue
@@ -59,14 +57,16 @@ object DynamicMcpToolProvider {
                             .append("' on server '")
                             .append(server)
                             .append("'. ")
-                        t.description?.let { if (it.isNotBlank()) append(it).append(' ') }
+                        t.description()?.let { if (it.isNotBlank()) append(it).append(' ') }
                     }
 
-                val map: MutableMap<String, JsonValue> = hashMapOf<String, JsonValue>()
-
-                t.inputSchema.properties!!.entries.forEach { entry: Map.Entry<String, JsonElement> ->
-                    map[entry.key] = JsonValue.fromJsonNode(jsonElementToJsonNode(entry.value))
+                val map: MutableMap<String, JsonValue> = hashMapOf()
+                val inputSchema = t.inputSchema()
+                val properties = inputSchema["properties"] as? Map<String, Any?> ?: emptyMap()
+                properties.forEach { (propertyName, definition) ->
+                    map[propertyName] = JsonValue.fromJsonNode(jacksonObjectMapper().valueToTree(definition))
                 }
+                val required = inputSchema["required"] as? List<String> ?: emptyList()
 
                 val fnTool =
                     FunctionTool
@@ -78,7 +78,7 @@ object DynamicMcpToolProvider {
                                 .builder()
                                 .putAdditionalProperty("type", JsonValue.from("object"))
                                 .putAdditionalProperty("properties", JsonValue.from(map))
-                                .putAdditionalProperty("required", JsonValue.from(t.inputSchema.required.orEmpty()))
+                                .putAdditionalProperty("required", JsonValue.from(required))
                                 .putAdditionalProperty("additionalProperties", JsonValue.from(false))
                                 .build(),
                         ).strict(false)
@@ -94,8 +94,6 @@ object DynamicMcpToolProvider {
         }
         return out
     }
-
-    fun jsonElementToJsonNode(elem: JsonElement): JsonNode = jacksonObjectMapper().readTree(elem.toString())
 
     fun resolve(name: String): Pair<String, String>? = nameMap[name]
 }
