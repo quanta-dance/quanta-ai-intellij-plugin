@@ -120,7 +120,8 @@ tasks {
                     .resolvedConfiguration
                     .resolvedArtifacts
                     .filter { it.file.name.endsWith(".jar") }
-                    // Exclude JARs not needed at runtime — we use OpenAIJdkHttpClient
+                    // Exclude the OpenAI OkHttp transport and its dependencies: the backend uses
+                    // OpenAIJdkHttpClient, and the IntelliJ runtime does not provide OkHttp.
                     .filter { !it.file.name.startsWith("openai-java-client-okhttp") }
                     .filter { !it.file.name.startsWith("okhttp") }
                     .filter { !it.file.name.startsWith("okio") }
@@ -129,6 +130,11 @@ tasks {
                     .filter { !it.file.name.startsWith("jackson-core") }
                     .map {
                         zipTree(it.file).matching {
+                            // Defense in depth: keep the optional OpenAI OkHttp transport out even
+                            // if future OpenAI artifacts package it alongside core classes.
+                            exclude("com/openai/core/http/okhttp/**")
+                            exclude("okhttp3/**")
+                            exclude("okio/**")
                             // Fat-JAR assembly keeps only this plugin's manifest, so it cannot retain
                             // dependency Multi-Release attributes. Exclude dependency version overlays;
                             // the Java 11 Reactor call-site implementation is restored below.
@@ -147,9 +153,6 @@ tasks {
                             exclude("io/micrometer/core/aop/**")
                             exclude("io/micrometer/common/annotation/**")
                             exclude("io/micrometer/observation/aop/**")
-                            // NetworkNT provides optional ECMAScript regex engines that are not
-                            // selected by this plugin's JSON schema validation.
-                            // Android TLS stubs — dead code on JVM.
                             // Android TLS stubs — dead code on JVM.
                             exclude("android/**")
                             // kotlin-logging-jvm's logback integration references ch.qos.logback,
