@@ -36,6 +36,8 @@ import java.time.Duration
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
+internal fun requiresInteractiveMcpConnection(config: McpServerConfig?): Boolean = config?.url != null
+
 @Service(Service.Level.PROJECT)
 class McpClientService(
     private val project: Project,
@@ -55,6 +57,7 @@ class McpClientService(
 
     data class ServerStatus(
         val connected: Boolean,
+        val connecting: Boolean,
         val toolCount: Int,
         val error: String? = null,
     )
@@ -317,8 +320,20 @@ class McpClientService(
         }
     }
 
+    /**
+     * Returns cached MCP tools immediately for remote servers and refreshes the cache in the background.
+     *
+     * A URL server can require interactive OAuth. Waiting for its browser callback here would make callers
+     * such as response construction block for up to the OAuth timeout when the user declines to open the
+     * browser. Local stdio servers retain the synchronous behavior because no user interaction is needed.
+     */
     fun getTools(server: String): List<Tool> {
         refreshIfConfigChanged()
+        val configuredServer = serversConfig.mcpServers[server]
+        if (requiresInteractiveMcpConnection(configuredServer)) {
+            discoverToolsAsync(server)
+            return toolCache[server] ?: emptyList()
+        }
         toolCache[server]?.let { cached ->
             if (cached.isNotEmpty()) return cached
         }
@@ -420,6 +435,13 @@ class McpClientService(
 
             val failure = serverErrors[name] ?: "remote MCP connection failed"
             failedUrlConnections[name] = failure
+            notifyRuntimeConfigIssue(
+                title = "MCP server unavailable",
+                content =
+                    "Could not connect to MCP server '$name': $failure. " +
+                        "Automatic retries are paused; update its configuration or restart the IDE to try again.",
+                type = NotificationType.WARNING,
+            )
             QDLog.warn(log) {
                 "ensureClient(url): pausing automatic retries for configured server '$name' at $url " +
                     "after connection failure: $failure. Change its MCP configuration or restart the IDE before retrying."
@@ -493,9 +515,10 @@ class McpClientService(
 
     fun getServerStatus(name: String): ServerStatus {
         val connected = clients.containsKey(name)
+        val connecting = !connected && name in connectingServers
         val toolCount = toolCache[name]?.size ?: 0
         val error = serverErrors[name]
-        return ServerStatus(connected, toolCount, error)
+        return ServerStatus(connected, connecting, toolCount, error)
     }
 
     fun getConfigLoadError(): String? = configLoadError
