@@ -32,6 +32,9 @@ class AcpDelegationTaskService(
     enum class Status {
         QUEUED,
         RUNNING,
+        WAITING_FOR_AUTHENTICATION,
+        WAITING_FOR_PERMISSION,
+        WAITING_FOR_USER_INPUT,
         COMPLETED,
         FAILED,
         CANCELLED,
@@ -47,12 +50,33 @@ class AcpDelegationTaskService(
         val completedAtMillis: Long? = null,
         val sessionId: String? = null,
         val summary: String? = null,
+        val activity: List<String> = emptyList(),
         val updateCount: Int = 0,
         val message: String? = null,
+        val chatMessageId: String? = null,
     )
+
+    /** A concise ACP signal worth sharing with the owning main-agent turn. */
+    data class MeaningfulEvent(
+        val delegationId: String,
+        val chatSessionId: String?,
+        val agentName: String,
+        val type: Type,
+        val text: String,
+        val occurredAtMillis: Long = System.currentTimeMillis(),
+    ) {
+        enum class Type {
+            FINDING,
+            ACTION_REQUIRED,
+            COMPLETED,
+            FAILED,
+        }
+    }
 
     private data class TaskRecord(
         var snapshot: TaskSnapshot,
+        val cancellation: AcpDelegationService.CancellationSignal = AcpDelegationService.CancellationSignal(),
+        val reportedEventFingerprints: MutableSet<String> = mutableSetOf(),
         var future: Future<*>? = null,
     )
 
@@ -94,7 +118,15 @@ class AcpDelegationTaskService(
                 update(delegationId, Status.RUNNING)
                 val result =
                     runCatching {
-                        AcpDelegationService().delegate(agent, task, workspacePath, timeoutMillis)
+                        AcpDelegationService().delegate(
+                            agent = agent,
+                            task = task,
+                            workspacePath = workspacePath,
+                            timeoutMillis = timeoutMillis,
+                            cancellation = record.cancellation,
+                            onInteraction = { interaction -> updateInteraction(delegationId, interaction) },
+                            onTextUpdate = { update -> appendActivity(delegationId, update) },
+                        )
                     }.getOrElse { error ->
                         AcpDelegationService.AcpDelegationResult(
                             agent = agent,
@@ -110,12 +142,25 @@ class AcpDelegationTaskService(
 
     fun get(delegationId: String): TaskSnapshot? = tasks[delegationId]?.snapshot
 
+    fun attachChatMessage(
+        delegationId: String,
+        chatMessageId: String,
+    ) {
+        val record = tasks[delegationId] ?: return
+        synchronized(record) {
+            if (record.snapshot.chatMessageId == null) {
+                record.snapshot = record.snapshot.copy(chatMessageId = chatMessageId)
+            }
+        }
+    }
+
     fun list(): List<TaskSnapshot> = tasks.values.map { it.snapshot }.sortedByDescending { it.createdAtMillis }
 
     fun cancel(delegationId: String): TaskSnapshot? {
         val record = tasks[delegationId] ?: return null
         synchronized(record) {
             if (record.snapshot.status !in ACTIVE_STATUSES) return record.snapshot
+            record.cancellation.cancel()
             record.future?.cancel(true)
             val cancelled =
                 record.snapshot.copy(
@@ -148,6 +193,11 @@ class AcpDelegationTaskService(
                 )
             record.snapshot = completed
             publish(completed)
+            publishMeaningfulEvent(
+                record = record,
+                type = if (completed.status == Status.COMPLETED) MeaningfulEvent.Type.COMPLETED else MeaningfulEvent.Type.FAILED,
+                text = completed.summary?.takeIf(String::isNotBlank) ?: completed.message.orEmpty(),
+            )
             QDLog.debug(logger) {
                 "ACP background delegation finished: id=$delegationId status=${completed.status} " +
                     "agent=${completed.agent.id} updates=${completed.updateCount}"
@@ -162,13 +212,84 @@ class AcpDelegationTaskService(
         val record = tasks[delegationId] ?: return
         synchronized(record) {
             if (record.snapshot.status == Status.CANCELLED) return
-            record.snapshot = record.snapshot.copy(status = status)
+            record.snapshot = record.snapshot.copy(status = status, message = null)
             publish(record.snapshot)
+        }
+    }
+
+    private fun appendActivity(
+        delegationId: String,
+        update: String,
+    ) {
+        val activity = update.trim().takeIf(String::isNotBlank) ?: return
+        val record = tasks[delegationId] ?: return
+        synchronized(record) {
+            if (record.snapshot.status == Status.CANCELLED || record.snapshot.activity.lastOrNull() == activity) return
+            record.snapshot =
+                record.snapshot.copy(
+                    activity = (record.snapshot.activity + activity).takeLast(MAX_ACTIVITY_ENTRIES),
+                )
+            publish(record.snapshot)
+            classifyFinding(activity)?.let { finding ->
+                publishMeaningfulEvent(record, MeaningfulEvent.Type.FINDING, finding)
+            }
+        }
+    }
+
+    private fun updateInteraction(
+        delegationId: String,
+        interaction: AcpDelegationService.AcpInteraction,
+    ) {
+        val record = tasks[delegationId] ?: return
+        synchronized(record) {
+            if (record.snapshot.status == Status.CANCELLED) return
+            val status =
+                when (interaction.type) {
+                    AcpDelegationService.AcpInteraction.Type.AUTHENTICATION -> Status.WAITING_FOR_AUTHENTICATION
+                    AcpDelegationService.AcpInteraction.Type.PERMISSION -> Status.WAITING_FOR_PERMISSION
+                    AcpDelegationService.AcpInteraction.Type.USER_INPUT -> Status.WAITING_FOR_USER_INPUT
+                }
+            record.snapshot = record.snapshot.copy(status = status, message = interaction.instructions)
+            publish(record.snapshot)
+            publishMeaningfulEvent(record, MeaningfulEvent.Type.ACTION_REQUIRED, interaction.instructions)
+            QDLog.debug(logger) {
+                "ACP delegation requires ${interaction.type.name.lowercase()}: id=$delegationId agent=${record.snapshot.agent.id}"
+            }
         }
     }
 
     private fun publish(snapshot: TaskSnapshot) {
         events.firePropertyChange("acp_delegation", null, snapshot)
+    }
+
+    private fun publishMeaningfulEvent(
+        record: TaskRecord,
+        type: MeaningfulEvent.Type,
+        text: String,
+    ) {
+        val normalizedText = text.trim().replace(Regex("\\s+"), " ").take(MAX_EVENT_TEXT_LENGTH)
+        if (normalizedText.isBlank()) return
+        val fingerprint = "$type:${normalizedText.lowercase()}"
+        if (!record.reportedEventFingerprints.add(fingerprint)) return
+        val snapshot = record.snapshot
+        events.firePropertyChange(
+            "acp_delegation_meaningful_event",
+            null,
+            MeaningfulEvent(
+                delegationId = snapshot.delegationId,
+                chatSessionId = snapshot.chatSessionId,
+                agentName = snapshot.agent.name,
+                type = type,
+                text = normalizedText,
+            ),
+        )
+    }
+
+    private fun classifyFinding(activity: String): String? {
+        val normalized = activity.trim().replace(Regex("\\s+"), " ")
+        if (normalized.length < MIN_FINDING_LENGTH) return null
+        val lower = normalized.lowercase()
+        return normalized.takeIf { marker -> FINDING_MARKERS.any(lower::contains) && !PROGRESS_PREFIXES.any(lower::startsWith) }
     }
 
     override fun dispose() {
@@ -180,6 +301,19 @@ class AcpDelegationTaskService(
     companion object {
         private const val MAX_CONCURRENT_TASKS = 2
         private const val MAX_TASK_TITLE_LENGTH = 160
-        private val ACTIVE_STATUSES = setOf(Status.QUEUED, Status.RUNNING)
+        private const val MAX_ACTIVITY_ENTRIES = 12
+        private const val MAX_EVENT_TEXT_LENGTH = 1_200
+        private const val MIN_FINDING_LENGTH = 40
+        private val FINDING_MARKERS =
+            listOf("found", "finding", "root cause", "conclusion", "recommend", "blocked", "issue is", "problem is")
+        private val PROGRESS_PREFIXES = listOf("reading ", "searching ", "inspecting ", "checking ", "analyzing ")
+        private val ACTIVE_STATUSES =
+            setOf(
+                Status.QUEUED,
+                Status.RUNNING,
+                Status.WAITING_FOR_AUTHENTICATION,
+                Status.WAITING_FOR_PERMISSION,
+                Status.WAITING_FOR_USER_INPUT,
+            )
     }
 }

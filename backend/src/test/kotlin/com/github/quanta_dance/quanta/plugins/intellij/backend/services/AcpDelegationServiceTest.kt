@@ -5,6 +5,8 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.services
 
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AcpAgentDto
 import java.net.ServerSocket
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -42,19 +44,69 @@ class AcpDelegationServiceTest {
                     }
                 }.apply { start() }
 
+            val streamedUpdates = mutableListOf<String>()
             val result =
                 AcpDelegationService().delegate(
                     agent = tcpAgent(server.localPort),
                     task = "Inspect the authentication flow.",
                     workspacePath = "/workspace",
                     timeoutMillis = 2_000,
+                    onTextUpdate = streamedUpdates::add,
                 )
 
             responder.join(2_000)
             assertEquals("completed", result.status)
             assertEquals("session-1", result.sessionId)
             assertEquals("Investigation complete.", result.summary)
+            assertEquals(listOf("Investigation complete."), streamedUpdates)
             assertEquals(1, result.updateCount)
+        }
+    }
+
+    @Test
+    fun `reports an authentication interaction from an ACP update`() {
+        ServerSocket(0).use { server ->
+            val interactionReceived = CountDownLatch(1)
+            var interaction: AcpDelegationService.AcpInteraction? = null
+            val responder =
+                Thread {
+                    server.accept().use { socket ->
+                        val reader = socket.getInputStream().bufferedReader()
+                        val writer = socket.getOutputStream().bufferedWriter()
+                        reader.readLine()
+                        writer.write("{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":1}}")
+                        writer.newLine()
+                        writer.flush()
+                        reader.readLine()
+                        writer.write("{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"sessionId\":\"session-1\"}}")
+                        writer.newLine()
+                        writer.flush()
+                        reader.readLine()
+                        writer.write(
+                            "{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"session-1\",\"update\":{\"sessionUpdate\":\"agent_message_chunk\",\"content\":{\"type\":\"text\",\"text\":\"Login with OpenCode to continue.\"}}}}",
+                        )
+                        writer.newLine()
+                        writer.write("{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"stopReason\":\"end_turn\"}}")
+                        writer.newLine()
+                        writer.flush()
+                    }
+                }.apply { start() }
+
+            AcpDelegationService().delegate(
+                agent = tcpAgent(server.localPort),
+                task = "Inspect the authentication flow.",
+                workspacePath = "/workspace",
+                timeoutMillis = 2_000,
+                onInteraction = {
+                    interaction = it
+                    interactionReceived.countDown()
+                },
+            )
+
+            assertTrue(interactionReceived.await(2, TimeUnit.SECONDS))
+            assertEquals(AcpDelegationService.AcpInteraction.Type.AUTHENTICATION, interaction?.type)
+            assertEquals("Complete the external agent's sign-in, then return here.", interaction?.instructions)
+            responder.join(2_000)
         }
     }
 
@@ -88,6 +140,46 @@ class AcpDelegationServiceTest {
             responder.join(2_000)
             assertEquals("error", result.status)
             assertTrue(result.message!!.contains("session ID"))
+        }
+    }
+
+    @Test
+    fun `cancellation closes an active ACP transport without waiting for its timeout`() {
+        ServerSocket(0).use { server ->
+            val requestReceived = CountDownLatch(1)
+            val connectionClosed = CountDownLatch(1)
+            val responder =
+                Thread {
+                    server.accept().use { socket ->
+                        socket.getInputStream().bufferedReader().readLine()
+                        requestReceived.countDown()
+                        while (socket.getInputStream().read() != -1) {
+                            // Wait for the client to close the transport.
+                        }
+                        connectionClosed.countDown()
+                    }
+                }.apply { start() }
+            val cancellation = AcpDelegationService.CancellationSignal()
+            val worker =
+                Thread {
+                    runCatching {
+                        AcpDelegationService().delegate(
+                            agent = tcpAgent(server.localPort),
+                            task = "Inspect the authentication flow.",
+                            workspacePath = "/workspace",
+                            timeoutMillis = 30_000,
+                            cancellation = cancellation,
+                        )
+                    }
+                }.apply { start() }
+
+            assertTrue(requestReceived.await(2, TimeUnit.SECONDS))
+            cancellation.cancel()
+
+            assertTrue(connectionClosed.await(2, TimeUnit.SECONDS))
+            worker.join(2_000)
+            assertTrue(!worker.isAlive)
+            responder.join(2_000)
         }
     }
 

@@ -17,6 +17,8 @@ import java.net.Socket
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Runs one bounded delegation against an external ACP agent.
@@ -36,43 +38,61 @@ class AcpDelegationService(
         task: String,
         workspacePath: String?,
         timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
+        cancellation: CancellationSignal = CancellationSignal(),
+        onInteraction: (AcpInteraction) -> Unit = {},
+        onTextUpdate: (String) -> Unit = {},
     ): AcpDelegationResult {
         require(task.isNotBlank()) { "Delegated ACP task must not be empty." }
         val delegation = openTransport(agent, timeoutMillis)
         delegation.use { transport ->
-            QDLog.debug(logger) { "ACP delegation started for ${agent.name} (${agent.id})" }
-            transport.request(INITIALIZE_METHOD, initializeParams(), INITIALIZE_REQUEST_ID, timeoutMillis)
-            val session =
-                transport.request(
-                    SESSION_NEW_METHOD,
-                    sessionNewParams(workspacePath),
-                    SESSION_NEW_REQUEST_ID,
-                    timeoutMillis,
+            cancellation.register(transport)
+            try {
+                cancellation.throwIfCancelled()
+                QDLog.debug(logger) { "ACP delegation started for ${agent.name} (${agent.id})" }
+                transport.request(INITIALIZE_METHOD, initializeParams(), INITIALIZE_REQUEST_ID, timeoutMillis)
+                cancellation.throwIfCancelled()
+                val session =
+                    transport.request(
+                        SESSION_NEW_METHOD,
+                        sessionNewParams(workspacePath),
+                        SESSION_NEW_REQUEST_ID,
+                        timeoutMillis,
+                    )
+                val sessionId =
+                    session.path("sessionId").asText().takeIf(String::isNotBlank)
+                        ?: return failure(agent, "ACP agent did not return a session ID.")
+                val updates = mutableListOf<String>()
+                val promptResult =
+                    transport.request(
+                        SESSION_PROMPT_METHOD,
+                        promptParams(sessionId, task),
+                        SESSION_PROMPT_REQUEST_ID,
+                        timeoutMillis,
+                        onNotification = { notification ->
+                            extractInteraction(notification)?.let(onInteraction)
+                            extractTextUpdate(notification)?.let { update ->
+                                updates += update
+                                onTextUpdate(update)
+                            }
+                        },
+                        onServerRequest = onInteraction,
+                    )
+                cancellation.throwIfCancelled()
+                val summary = updates.joinToString(separator = "").trim().ifBlank { promptResult.toString() }
+                QDLog.debug(logger) {
+                    "ACP delegation completed for ${agent.name} (${agent.id}), session $sessionId, " +
+                        "${updates.size} text update(s)"
+                }
+                return AcpDelegationResult(
+                    agent = agent,
+                    status = "completed",
+                    sessionId = sessionId,
+                    summary = summary,
+                    updateCount = updates.size,
                 )
-            val sessionId =
-                session.path("sessionId").asText().takeIf(String::isNotBlank)
-                    ?: return failure(agent, "ACP agent did not return a session ID.")
-            val updates = mutableListOf<String>()
-            val promptResult =
-                transport.request(
-                    SESSION_PROMPT_METHOD,
-                    promptParams(sessionId, task),
-                    SESSION_PROMPT_REQUEST_ID,
-                    timeoutMillis,
-                    onNotification = { notification -> extractTextUpdate(notification)?.let(updates::add) },
-                )
-            val summary = updates.joinToString(separator = "").trim().ifBlank { promptResult.toString() }
-            QDLog.debug(logger) {
-                "ACP delegation completed for ${agent.name} (${agent.id}), session $sessionId, " +
-                    "${updates.size} text update(s)"
+            } finally {
+                cancellation.clear(transport)
             }
-            return AcpDelegationResult(
-                agent = agent,
-                status = "completed",
-                sessionId = sessionId,
-                summary = summary,
-                updateCount = updates.size,
-            )
         }
     }
 
@@ -145,12 +165,69 @@ class AcpDelegationService(
         return content.path("text").asText().takeIf(String::isNotBlank)
     }
 
+    private fun extractInteraction(notification: JsonNode): AcpInteraction? {
+        val method = notification.path("method").asText()
+        val text =
+            notification
+                .path("params")
+                .path("update")
+                .path("content")
+                .path("text")
+                .asText()
+                .trim()
+        return AcpInteraction.from(method = method, text = text)
+    }
+
     private fun failure(
         agent: AcpAgentDto,
         message: String,
     ): AcpDelegationResult {
         QDLog.debug(logger) { "ACP delegation failed for ${agent.name} (${agent.id}): $message" }
         return AcpDelegationResult(agent = agent, status = "error", message = message)
+    }
+
+    data class AcpInteraction(
+        val type: Type,
+        val instructions: String,
+    ) {
+        enum class Type {
+            AUTHENTICATION,
+            PERMISSION,
+            USER_INPUT,
+        }
+
+        companion object {
+            fun from(
+                method: String,
+                text: String,
+            ): AcpInteraction? {
+                val normalized = "$method $text".lowercase()
+                val type =
+                    when {
+                        normalized.contains("auth") || normalized.contains("login") || normalized.contains("sign in") -> Type.AUTHENTICATION
+                        normalized.contains("permission") || normalized.contains("approval") -> Type.PERMISSION
+                        normalized.contains("user_input") || normalized.contains("user input") -> Type.USER_INPUT
+                        else -> return null
+                    }
+                val instructions =
+                    when (type) {
+                        Type.AUTHENTICATION -> {
+                            "Complete the external agent's sign-in, then return here."
+                        }
+
+                        Type.PERMISSION -> {
+                            text.takeIf(String::isNotBlank)
+                                ?: "The external agent is waiting for an approval."
+                        }
+
+                        Type.USER_INPUT -> {
+                            text.takeIf(String::isNotBlank)
+                                ?: "The external agent is waiting for input."
+                        }
+                    }
+                return AcpInteraction(type, instructions)
+            }
+        }
     }
 
     data class AcpDelegationResult(
@@ -168,6 +245,7 @@ class AcpDelegationService(
         private val closeAction: () -> Unit,
         private val mapper: ObjectMapper,
     ) : Closeable {
+        private val closed = AtomicBoolean(false)
         private val readExecutor =
             Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "acp-response-reader") }
 
@@ -177,6 +255,7 @@ class AcpDelegationService(
             requestId: Int,
             timeoutMillis: Long,
             onNotification: (JsonNode) -> Unit = {},
+            onServerRequest: (AcpInteraction) -> Unit = {},
         ): JsonNode {
             writer.write(
                 mapper.writeValueAsString(
@@ -193,8 +272,13 @@ class AcpDelegationService(
             while (true) {
                 val line = readLine(timeoutMillis)
                 val message = mapper.readTree(line)
-                if (message.has("method") && !message.has("id")) {
-                    onNotification(message)
+                if (message.has("method")) {
+                    if (message.has("id")) {
+                        AcpInteraction.from(message.path("method").asText(), "")?.let(onServerRequest)
+                        respondUnsupportedServerRequest(message)
+                    } else {
+                        onNotification(message)
+                    }
                     continue
                 }
                 if (message.path("id").asInt(Int.MIN_VALUE) != requestId) continue
@@ -217,11 +301,55 @@ class AcpDelegationService(
             }
         }
 
+        private fun respondUnsupportedServerRequest(message: JsonNode) {
+            writer.write(
+                mapper.writeValueAsString(
+                    mapOf(
+                        "jsonrpc" to "2.0",
+                        "id" to message.path("id").asText(),
+                        "error" to
+                            mapOf(
+                                "code" to -32601,
+                                "message" to "Quanta cannot respond to interactive ACP requests yet.",
+                            ),
+                    ),
+                ),
+            )
+            writer.newLine()
+            writer.flush()
+        }
+
         override fun close() {
+            if (!closed.compareAndSet(false, true)) return
             readExecutor.shutdownNow()
             runCatching { reader.close() }
             runCatching { writer.close() }
             closeAction()
+        }
+    }
+
+    class CancellationSignal {
+        private val cancelled = AtomicBoolean(false)
+        private val activeTransport = AtomicReference<Closeable?>(null)
+
+        fun cancel() {
+            cancelled.set(true)
+            activeTransport.getAndSet(null)?.let { transport -> runCatching(transport::close) }
+        }
+
+        fun register(transport: Closeable) {
+            if (!activeTransport.compareAndSet(null, transport)) {
+                error("ACP delegation already has an active transport.")
+            }
+            if (cancelled.get()) cancel()
+        }
+
+        fun clear(transport: Closeable) {
+            activeTransport.compareAndSet(transport, null)
+        }
+
+        fun throwIfCancelled() {
+            check(!cancelled.get()) { "ACP delegation cancelled." }
         }
     }
 

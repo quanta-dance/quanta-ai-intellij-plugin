@@ -142,10 +142,18 @@ private fun toolExecutionGroup(
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         toolItems.forEach { item ->
-            if (item.toolName == "CodeRefactorSuggester" && item.detailText?.contains("Suggested:") == true) {
-                refactorSuggestionCard(project = project, item = item)
-            } else {
-                toolExecutionRow(project = project, item = item)
+            when {
+                item.toolName == "CodeRefactorSuggester" && item.detailText?.contains("Suggested:") == true -> {
+                    refactorSuggestionCard(project = project, item = item)
+                }
+
+                item.toolName == "AcpDelegationCard" -> {
+                    acpDelegationCard(item)
+                }
+
+                else -> {
+                    toolExecutionRow(project = project, item = item)
+                }
             }
         }
     }
@@ -350,6 +358,98 @@ private fun toolExecutionRow(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun acpDelegationCard(item: ToolExecutionItem) {
+    var detailsExpanded by remember(item.callId) { mutableStateOf(false) }
+    val detail = item.detailText?.trim().orEmpty()
+    val requestedStatus = detail.lineSequence().firstOrNull { it.startsWith("Status: ") }?.removePrefix("Status: ")
+    val latestActivity =
+        detail.lineSequence().firstOrNull { it.startsWith("Latest activity: ") }?.removePrefix("Latest activity: ")
+    val (statusLabel, statusColor) =
+        when (requestedStatus) {
+            "Needs sign-in" -> {
+                "Needs sign-in" to Color(0xFFFFC56E)
+            }
+
+            "Needs approval" -> {
+                "Needs approval" to Color(0xFFFFC56E)
+            }
+
+            "Needs input" -> {
+                "Needs input" to Color(0xFFFFC56E)
+            }
+
+            else -> {
+                when (item.status) {
+                    ToolExecutionStatus.EXECUTING -> "Working" to Color(0xFF75C5FF)
+                    ToolExecutionStatus.SUCCEEDED -> "Completed" to Color(0xFF72D39B)
+                    ToolExecutionStatus.FAILED -> "Stopped" to Color(0xFFFF9A9A)
+                }
+            }
+        }
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .background(Color(0xFF4F7CAC).copy(alpha = 0.16f), RoundedCornerShape(10.dp))
+                .border(1.dp, Color(0xFF75C5FF).copy(alpha = 0.28f), RoundedCornerShape(10.dp))
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = item.displayText,
+                style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, fontWeight = FontWeight.SemiBold),
+            )
+            Text(
+                text = statusLabel,
+                style =
+                    JewelTheme.defaultTextStyle.copy(
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = statusColor,
+                    ),
+            )
+        }
+        Text(
+            text = "External ACP worker · Read-only",
+            style = JewelTheme.defaultTextStyle.copy(fontSize = 11.sp, color = ChatAppColors.Text.timestamp),
+        )
+        latestActivity?.takeIf(String::isNotBlank)?.let { activity ->
+            Text(
+                text = activity,
+                style = JewelTheme.defaultTextStyle.copy(fontSize = 11.sp, color = ChatAppColors.Text.timestamp),
+            )
+        }
+
+        if (detail.isNotBlank()) {
+            Text(
+                text = if (detailsExpanded) "Hide activity" else "View activity and result",
+                modifier = Modifier.clickable { detailsExpanded = !detailsExpanded },
+                style = JewelTheme.defaultTextStyle.copy(fontSize = 11.sp, color = Color(0xFF75C5FF)),
+            )
+            if (detailsExpanded) {
+                SelectionContainer {
+                    Text(
+                        text = detail,
+                        style = JewelTheme.defaultTextStyle.copy(fontSize = 11.sp, lineHeight = 16.sp),
+                    )
+                }
+            }
+        }
+        item.errorText?.takeIf(String::isNotBlank)?.let { error ->
+            Text(
+                text = error,
+                style = JewelTheme.defaultTextStyle.copy(fontSize = 11.sp, color = statusColor),
+            )
         }
     }
 }

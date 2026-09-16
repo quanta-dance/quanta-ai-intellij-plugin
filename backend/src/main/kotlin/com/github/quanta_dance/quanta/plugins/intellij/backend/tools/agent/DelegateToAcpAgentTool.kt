@@ -23,8 +23,9 @@ import com.intellij.openapi.project.Project
  */
 @JsonClassDescription(
     "Start a bounded, read-only background investigation with a discovered ACP agent. Call DiscoverAcpAgentsTool " +
-        "first and pass one returned agent ID. This returns a delegationId immediately; continue independent work, " +
-        "then use GetAcpDelegationStatusTool to read the external agent's findings or CancelAcpDelegationTool to stop it.",
+        "first and pass one returned agent ID. This returns a delegationId immediately; continue independent work. " +
+        "Do not wait or repeatedly poll in this agent turn: check with GetAcpDelegationStatusTool only in a later turn " +
+        "or when the user asks, and use CancelAcpDelegationTool to stop it.",
 )
 class DelegateToAcpAgentTool : ToolInterface<Map<String, Any>> {
     @field:JsonPropertyDescription("ID of an ACP agent returned by DiscoverAcpAgentsTool")

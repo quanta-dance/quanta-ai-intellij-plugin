@@ -33,9 +33,13 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.beans.PropertyChangeListener
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
@@ -64,6 +68,12 @@ class ChatConversationService(
     @Suppress("ktlint:standard:backing-property-naming")
     private val _sessions = MutableStateFlow<List<ChatSessionDto>>(emptyList())
 
+    private val mainAgentTurnRunning = AtomicBoolean(false)
+    private val acpContinuationRunning = AtomicBoolean(false)
+    private val acpEventInboxes =
+        ConcurrentHashMap<String, ConcurrentLinkedQueue<AcpDelegationTaskService.MeaningfulEvent>>()
+    private val acpContinuationScheduled = ConcurrentHashMap<String, AtomicBoolean>()
+
     private val agentTaskListener =
         PropertyChangeListener { event ->
             when (event.propertyName) {
@@ -88,34 +98,17 @@ class ChatConversationService(
 
     private val acpDelegationListener =
         PropertyChangeListener { event ->
-            if (event.propertyName != "acp_delegation") return@PropertyChangeListener
-            val task = event.newValue as? AcpDelegationTaskService.TaskSnapshot ?: return@PropertyChangeListener
-            if (task.chatSessionId != persistence.getActiveSessionId()) return@PropertyChangeListener
-            when (task.status) {
-                AcpDelegationTaskService.Status.RUNNING -> {
-                    appendAiMessage("${task.agent.name} is investigating in the background: ${task.taskTitle}")
+            when (event.propertyName) {
+                "acp_delegation" -> {
+                    val task = event.newValue as? AcpDelegationTaskService.TaskSnapshot ?: return@PropertyChangeListener
+                    if (task.chatSessionId == persistence.getActiveSessionId()) upsertAcpDelegationCard(task)
                 }
 
-                AcpDelegationTaskService.Status.COMPLETED -> {
-                    appendAiMessage(
-                        "${task.agent.name} completed its background investigation. " +
-                            (
-                                task.summary
-                                    ?: "Use GetAcpDelegationStatusTool with ${task.delegationId} to review the result."
-                            ),
-                    )
-                }
-
-                AcpDelegationTaskService.Status.FAILED -> {
-                    appendAiMessage("${task.agent.name} background investigation failed: ${task.message ?: "unknown error"}")
-                }
-
-                AcpDelegationTaskService.Status.CANCELLED -> {
-                    appendAiMessage("${task.agent.name} background investigation was cancelled.")
-                }
-
-                AcpDelegationTaskService.Status.QUEUED -> {
-                    Unit
+                "acp_delegation_meaningful_event" -> {
+                    val meaningfulEvent =
+                        event.newValue as? AcpDelegationTaskService.MeaningfulEvent
+                            ?: return@PropertyChangeListener
+                    enqueueAcpCoordinationEvent(meaningfulEvent)
                 }
             }
         }
@@ -192,6 +185,7 @@ class ChatConversationService(
 
     suspend fun sendUserMessage(messageContent: String) {
         withContext(Dispatchers.IO) {
+            mainAgentTurnRunning.set(true)
             var thinkingMessageId: String
             var firstAssistantMessageShown = false
             try {
@@ -265,6 +259,9 @@ class ChatConversationService(
                     }
                 clearThinkingMessages()
                 appendAiMessage(errorText)
+            } finally {
+                mainAgentTurnRunning.set(false)
+                scheduleAcpCoordinationTurn(persistence.getActiveSessionId())
             }
         }
     }
@@ -347,12 +344,185 @@ class ChatConversationService(
         }
     }
 
+    private fun upsertAcpDelegationCard(task: AcpDelegationTaskService.TaskSnapshot) {
+        onChatPublicationThread {
+            val cardId =
+                task.chatMessageId
+                    ?: _messages.value
+                        .firstOrNull { message ->
+                            message.toolItems.any { it.callId == task.delegationId }
+                        }?.id
+                    ?: insertAcpDelegationCard(task)
+            if (task.chatMessageId == null) {
+                acpDelegations.attachChatMessage(task.delegationId, cardId)
+            }
+            val updatedCard = chatMessageFactory.createAIToolMessage(listOf(acpDelegationToolItem(task)))
+            _messages.value =
+                _messages.value.map { message ->
+                    if (message.id == cardId) updatedCard.copy(id = cardId) else message
+                }
+            persistMessages()
+        }
+    }
+
+    private fun insertAcpDelegationCard(task: AcpDelegationTaskService.TaskSnapshot): String {
+        val message = chatMessageFactory.createAIToolMessage(listOf(acpDelegationToolItem(task)))
+        val thinkingIndex = _messages.value.indexOfLast { it.type == AI_THINKING }
+        _messages.value =
+            if (thinkingIndex < 0) {
+                _messages.value + message
+            } else {
+                _messages.value.toMutableList().apply { add(thinkingIndex, message) }
+            }
+        persistMessages()
+        return message.id
+    }
+
+    private fun acpDelegationToolItem(task: AcpDelegationTaskService.TaskSnapshot): ToolExecutionItem {
+        val status =
+            when (task.status) {
+                AcpDelegationTaskService.Status.QUEUED,
+                AcpDelegationTaskService.Status.RUNNING,
+                AcpDelegationTaskService.Status.WAITING_FOR_AUTHENTICATION,
+                AcpDelegationTaskService.Status.WAITING_FOR_PERMISSION,
+                AcpDelegationTaskService.Status.WAITING_FOR_USER_INPUT,
+                -> ToolExecutionStatus.EXECUTING
+
+                AcpDelegationTaskService.Status.COMPLETED -> ToolExecutionStatus.SUCCEEDED
+
+                AcpDelegationTaskService.Status.FAILED,
+                AcpDelegationTaskService.Status.CANCELLED,
+                -> ToolExecutionStatus.FAILED
+            }
+        val state =
+            when (task.status) {
+                AcpDelegationTaskService.Status.WAITING_FOR_AUTHENTICATION -> {
+                    "Needs sign-in"
+                }
+
+                AcpDelegationTaskService.Status.WAITING_FOR_PERMISSION -> {
+                    "Needs approval"
+                }
+
+                AcpDelegationTaskService.Status.WAITING_FOR_USER_INPUT -> {
+                    "Needs input"
+                }
+
+                else -> {
+                    task.status.name
+                        .lowercase()
+                        .replaceFirstChar(Char::titlecase)
+                }
+            }
+        val detail =
+            buildString {
+                append("External ACP worker · Read-only\nTask: ").append(task.taskTitle)
+                append("\nStatus: ").append(state)
+                task.activity.lastOrNull()?.let { append("\nLatest activity: ").append(it) }
+                task.activity.takeIf { it.isNotEmpty() }?.let { activity ->
+                    append("\n\nActivity\n")
+                    activity.forEach { update -> append("• ").append(update).append('\n') }
+                }
+                task.summary?.takeIf(String::isNotBlank)?.let { append("\nResult\n").append(it) }
+                task.message?.takeIf(String::isNotBlank)?.let { append("\nWhat you need to do\n").append(it) }
+            }
+        return ToolExecutionItem(
+            callId = task.delegationId,
+            toolName = "AcpDelegationCard",
+            displayText = "${task.agent.name} · Background investigation",
+            status = status,
+            errorText = task.message.takeIf { status == ToolExecutionStatus.FAILED },
+            detailText = detail,
+        )
+    }
+
+    private fun restoreAcpDelegationCards(sessionId: String) {
+        acpDelegations.list().filter { it.chatSessionId == sessionId }.forEach(::upsertAcpDelegationCard)
+    }
+
     private fun appendAiMessage(messageContent: String) {
         onChatPublicationThread {
             _messages.value += chatMessageFactory.createAIMessage(messageContent)
             persistMessages()
         }
     }
+
+    private fun enqueueAcpCoordinationEvent(event: AcpDelegationTaskService.MeaningfulEvent) {
+        val sessionId = event.chatSessionId ?: return
+        acpEventInboxes.computeIfAbsent(sessionId) { ConcurrentLinkedQueue() }.add(event)
+        scheduleAcpCoordinationTurn(sessionId)
+    }
+
+    private fun scheduleAcpCoordinationTurn(sessionId: String) {
+        if (sessionId != persistence.getActiveSessionId()) return
+        val scheduled = acpContinuationScheduled.computeIfAbsent(sessionId) { AtomicBoolean() }
+        if (!scheduled.compareAndSet(false, true)) return
+        executionContexts.agentOrchestrationScope.launch {
+            try {
+                runAcpCoordinationTurn(sessionId)
+            } finally {
+                scheduled.set(false)
+                if (acpEventInboxes[sessionId]?.isNotEmpty() == true) scheduleAcpCoordinationTurn(sessionId)
+            }
+        }
+    }
+
+    private suspend fun runAcpCoordinationTurn(sessionId: String) {
+        if (sessionId != persistence.getActiveSessionId() || !acpContinuationRunning.compareAndSet(false, true)) return
+        if (!mainAgentTurnRunning.compareAndSet(false, true)) {
+            acpContinuationRunning.set(false)
+            return
+        }
+        try {
+            val events = mutableListOf<AcpDelegationTaskService.MeaningfulEvent>()
+            val inbox = acpEventInboxes[sessionId] ?: return
+            repeat(MAX_ACP_EVENTS_PER_CONTINUATION) {
+                inbox.poll()?.let(events::add) ?: return@repeat
+            }
+            if (events.isEmpty()) return
+            withContext(Dispatchers.IO) {
+                var thinkingMessageId = appendAiThinkingMessage()
+                var firstAssistantMessageShown = false
+                val (responseText, _) =
+                    awaitManagerTurn(
+                        inputs = buildAcpCoordinationInputs(events),
+                        thinkingMessageIdProvider = { thinkingMessageId },
+                        onThinkingMessageIdChanged = { thinkingMessageId = it },
+                        onFirstAssistantMessageShown = { firstAssistantMessageShown = true },
+                    )
+                if (!firstAssistantMessageShown) {
+                    replaceMessage(thinkingMessageId, chatMessageFactory.createAIMessage(responseText))
+                } else {
+                    clearThinkingMessages()
+                }
+                persistMessages()
+            }
+        } finally {
+            acpContinuationRunning.set(false)
+            mainAgentTurnRunning.set(false)
+        }
+    }
+
+    private fun buildAcpCoordinationInputs(events: List<AcpDelegationTaskService.MeaningfulEvent>): MutableList<ResponseInputItem> =
+        buildRequestInputs().apply {
+            val eventSummary =
+                events.joinToString("\n") { event ->
+                    "- ${event.agentName} (${event.type.name.lowercase()}): ${event.text}"
+                }
+            add(
+                ResponseInputItem.ofEasyInputMessage(
+                    EasyInputMessage
+                        .builder()
+                        .role(EasyInputMessage.Role.SYSTEM)
+                        .content(
+                            "Background ACP-worker events are ready for review. These are curated findings or " +
+                                "terminal/blocking states, not raw progress. Assess them against the project, continue useful " +
+                                "work if appropriate, and give the user a concise update. Do not claim an external finding is " +
+                                "verified unless you verify it.\n$eventSummary",
+                        ).build(),
+                ),
+            )
+        }
 
     fun appendAiToolMessage(
         toolItems: List<com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem>,
@@ -560,6 +730,10 @@ class ChatConversationService(
                 },
             )
         }
+    }
+
+    companion object {
+        private const val MAX_ACP_EVENTS_PER_CONTINUATION = 4
     }
 
     private fun isContextWindowError(t: Throwable): Boolean {
