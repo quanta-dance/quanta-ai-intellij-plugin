@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2026.09.16]
+
+This hotfix corrects packaging and Reactor context propagation for remote MCP connections.
+
+### Fixed
+- Excluded OpenAI's unused OkHttp transport classes from the backend module JAR so Marketplace validation does not report unresolved `okhttp3` classes.
+- Restored Micrometer's Reactor context accessor service registration and registers the accessor explicitly for IntelliJ's isolated backend classloader, preventing remote MCP initialization failures.
+- Adjusted the flattened MCP runtime packaging so Plugin Verifier passes without an ignored-problems baseline.
+
 ## [2026.09.15]
 
 This release modernizes remote MCP connectivity, adds standards-based OAuth authorization, improves chat reliability, and updates the OpenAI Java SDK.
