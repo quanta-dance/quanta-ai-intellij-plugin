@@ -195,7 +195,11 @@ class AcpAgentDiscoveryService(
 
     companion object {
         private val logger = Logger.getInstance(AcpAgentDiscoveryService::class.java)
-        const val DEFAULT_TIMEOUT_MILLIS = 1_500L
+
+        /**
+         * Allows cold-starting Node-based ACP adapters to initialize without making discovery sluggish.
+         */
+        const val DEFAULT_TIMEOUT_MILLIS = 5_000L
         private const val INITIALIZE_REQUEST =
             """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientInfo":{"name":"quanta-ai-plugin","version":"0"},"clientCapabilities":{}}}"""
         private val PROTOCOL_VERSION = Regex("\\\"protocolVersion\\\"\\s*:\\s*(\\d+)")

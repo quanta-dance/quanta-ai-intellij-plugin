@@ -38,6 +38,29 @@ class AcpAgentDiscoveryServiceTest {
     }
 
     @Test
+    fun `waits for a cold-starting ACP adapter within the default handshake timeout`() {
+        val directory = Files.createTempDirectory("slow-acp-agent")
+        val script = directory.resolve("claude-agent-acp")
+        Files.writeString(
+            script,
+            """
+            #!/bin/sh
+            read request
+            sleep 2
+            echo '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentInfo":{"name":"Slow ACP"}}}'
+            """.trimIndent(),
+        )
+        assertTrue(script.toFile().setExecutable(true))
+
+        val agents =
+            AcpAgentDiscoveryService(
+                environment = mapOf("PATH" to directory.toString()),
+            ).discover()
+
+        assertEquals("Slow ACP", agents.single().name)
+    }
+
+    @Test
     fun `ignores executable that does not return an ACP result`() {
         val directory = Files.createTempDirectory("not-acp-agent")
         val script = directory.resolve("claude-agent-acp")

@@ -416,20 +416,21 @@ class ChatConversationService(
             }
         val detail =
             buildString {
-                append("External ACP worker · Read-only\nTask: ").append(task.taskTitle)
+                append("Independent external ACP agent\nTask: ").append(task.taskTitle)
                 append("\nStatus: ").append(state)
+                task.sessionId?.let { append("\nLive session: ").append(it) }
                 task.activity.lastOrNull()?.let { append("\nLatest activity: ").append(it) }
                 task.activity.takeIf { it.isNotEmpty() }?.let { activity ->
                     append("\n\nActivity\n")
                     activity.forEach { update -> append("• ").append(update).append('\n') }
                 }
-                task.summary?.takeIf(String::isNotBlank)?.let { append("\nResult\n").append(it) }
+                task.summary?.takeIf(String::isNotBlank)?.let { append("\nLatest result\n").append(it) }
                 task.message?.takeIf(String::isNotBlank)?.let { append("\nWhat you need to do\n").append(it) }
             }
         return ToolExecutionItem(
             callId = task.delegationId,
             toolName = "AcpDelegationCard",
-            displayText = "${task.agent.name} · Background investigation",
+            displayText = "${task.agent.name} · Live collaboration",
             status = status,
             errorText = task.message.takeIf { status == ToolExecutionStatus.FAILED },
             detailText = detail,
@@ -716,6 +717,7 @@ class ChatConversationService(
                     onThinkingMessageIdChanged(appendAiThinkingMessage())
                 },
                 onToolUpdate = { update ->
+                    if (isAcpCardOwnedTool(update.item.toolName)) return@agentTurn
                     val targetId =
                         activeToolMessageId
                             ?: appendAiToolMessage(
@@ -731,6 +733,8 @@ class ChatConversationService(
             )
         }
     }
+
+    private fun isAcpCardOwnedTool(toolName: String): Boolean = toolName in setOf("DelegateToAcpAgentTool", "SendAcpDelegationMessageTool")
 
     companion object {
         private const val MAX_ACP_EVENTS_PER_CONTINUATION = 4

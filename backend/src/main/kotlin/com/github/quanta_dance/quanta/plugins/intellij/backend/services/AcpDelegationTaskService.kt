@@ -77,6 +77,7 @@ class AcpDelegationTaskService(
         var snapshot: TaskSnapshot,
         val cancellation: AcpDelegationService.CancellationSignal = AcpDelegationService.CancellationSignal(),
         val reportedEventFingerprints: MutableSet<String> = mutableSetOf(),
+        var liveSession: AcpDelegationService.LiveSession? = null,
         var future: Future<*>? = null,
     )
 
@@ -118,15 +119,18 @@ class AcpDelegationTaskService(
                 update(delegationId, Status.RUNNING)
                 val result =
                     runCatching {
-                        AcpDelegationService().delegate(
-                            agent = agent,
-                            task = task,
-                            workspacePath = workspacePath,
-                            timeoutMillis = timeoutMillis,
-                            cancellation = record.cancellation,
-                            onInteraction = { interaction -> updateInteraction(delegationId, interaction) },
-                            onTextUpdate = { update -> appendActivity(delegationId, update) },
-                        )
+                        val service = AcpDelegationService()
+                        val session =
+                            service.openSession(
+                                agent = agent,
+                                workspacePath = workspacePath,
+                                timeoutMillis = timeoutMillis,
+                                cancellation = record.cancellation,
+                                onInteraction = { interaction -> updateInteraction(delegationId, interaction) },
+                                onTextUpdate = { update -> appendActivity(delegationId, update) },
+                            )
+                        synchronized(record) { record.liveSession = session }
+                        session.prompt(task)
                     }.getOrElse { error ->
                         AcpDelegationService.AcpDelegationResult(
                             agent = agent,
@@ -141,6 +145,35 @@ class AcpDelegationTaskService(
     }
 
     fun get(delegationId: String): TaskSnapshot? = tasks[delegationId]?.snapshot
+
+    /** Sends a follow-up prompt through the same retained ACP session. */
+    fun sendMessage(
+        delegationId: String,
+        message: String,
+    ): TaskSnapshot? {
+        require(message.isNotBlank()) { "ACP follow-up message must not be empty." }
+        val record = tasks[delegationId] ?: return null
+        synchronized(record) {
+            if (record.snapshot.status !in setOf(Status.RUNNING, Status.COMPLETED)) return record.snapshot
+            val session =
+                record.liveSession ?: return record.snapshot.copy(message = "ACP session is no longer available.")
+            update(delegationId, Status.RUNNING)
+            record.future =
+                executor.submit {
+                    val result =
+                        runCatching { session.prompt(message) }.getOrElse { error ->
+                            AcpDelegationService.AcpDelegationResult(
+                                agent = record.snapshot.agent,
+                                status = "error",
+                                sessionId = session.sessionId,
+                                message = error.message ?: error::class.simpleName,
+                            )
+                        }
+                    complete(delegationId, result)
+                }
+            return record.snapshot
+        }
+    }
 
     fun attachChatMessage(
         delegationId: String,
@@ -161,6 +194,8 @@ class AcpDelegationTaskService(
         synchronized(record) {
             if (record.snapshot.status !in ACTIVE_STATUSES) return record.snapshot
             record.cancellation.cancel()
+            record.liveSession?.close()
+            record.liveSession = null
             record.future?.cancel(true)
             val cancelled =
                 record.snapshot.copy(
@@ -192,6 +227,10 @@ class AcpDelegationTaskService(
                     message = result.message,
                 )
             record.snapshot = completed
+            if (completed.status == Status.FAILED) {
+                record.liveSession?.close()
+                record.liveSession = null
+            }
             publish(completed)
             publishMeaningfulEvent(
                 record = record,

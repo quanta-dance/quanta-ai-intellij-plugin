@@ -21,18 +21,51 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Runs one bounded delegation against an external ACP agent.
+ * Opens and manages ACP sessions for external agents.
  *
- * Unlike [AcpAgentDiscoveryService], this service keeps the transport open for the complete ACP
- * lifecycle: initialize, session creation, prompt, streamed updates, and final response. The
- * transport is deliberately closed after the delegation completes; persistent multi-turn ACP
- * sessions can be added later without coupling them to the discovery probes.
+ * Discovery probes remain short-lived in [AcpAgentDiscoveryService]. A [LiveSession] owns the
+ * separate, persistent transport used for collaboration: the main agent can send additional
+ * prompts on the same ACP session until it is cancelled or explicitly closed.
  */
 class AcpDelegationService(
     private val processFactory: (List<String>) -> Process = ::startProcess,
     private val socketFactory: () -> Socket = ::Socket,
     private val mapper: ObjectMapper = ObjectMapper(),
 ) {
+    fun openSession(
+        agent: AcpAgentDto,
+        workspacePath: String?,
+        timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
+        cancellation: CancellationSignal = CancellationSignal(),
+        onInteraction: (AcpInteraction) -> Unit = {},
+        onTextUpdate: (String) -> Unit = {},
+    ): LiveSession {
+        val transport = openTransport(agent, timeoutMillis)
+        cancellation.register(transport)
+        return try {
+            cancellation.throwIfCancelled()
+            QDLog.debug(logger) { "ACP collaboration session opening for ${agent.name} (${agent.id})" }
+            transport.request(INITIALIZE_METHOD, initializeParams(), INITIALIZE_REQUEST_ID, timeoutMillis)
+            cancellation.throwIfCancelled()
+            val session =
+                transport.request(
+                    SESSION_NEW_METHOD,
+                    sessionNewParams(workspacePath),
+                    SESSION_NEW_REQUEST_ID,
+                    timeoutMillis,
+                )
+            val sessionId =
+                session.path("sessionId").asText().takeIf(String::isNotBlank)
+                    ?: error("ACP agent did not return a session ID.")
+            LiveSession(agent, sessionId, transport, cancellation, timeoutMillis, onInteraction, onTextUpdate)
+        } catch (error: Throwable) {
+            cancellation.clear(transport)
+            transport.close()
+            throw error
+        }
+    }
+
+    /** Compatibility wrapper for callers that intentionally need one prompt and no retained session. */
     fun delegate(
         agent: AcpAgentDto,
         task: String,
@@ -41,58 +74,59 @@ class AcpDelegationService(
         cancellation: CancellationSignal = CancellationSignal(),
         onInteraction: (AcpInteraction) -> Unit = {},
         onTextUpdate: (String) -> Unit = {},
-    ): AcpDelegationResult {
-        require(task.isNotBlank()) { "Delegated ACP task must not be empty." }
-        val delegation = openTransport(agent, timeoutMillis)
-        delegation.use { transport ->
-            cancellation.register(transport)
-            try {
-                cancellation.throwIfCancelled()
-                QDLog.debug(logger) { "ACP delegation started for ${agent.name} (${agent.id})" }
-                transport.request(INITIALIZE_METHOD, initializeParams(), INITIALIZE_REQUEST_ID, timeoutMillis)
-                cancellation.throwIfCancelled()
-                val session =
-                    transport.request(
-                        SESSION_NEW_METHOD,
-                        sessionNewParams(workspacePath),
-                        SESSION_NEW_REQUEST_ID,
-                        timeoutMillis,
-                    )
-                val sessionId =
-                    session.path("sessionId").asText().takeIf(String::isNotBlank)
-                        ?: return failure(agent, "ACP agent did not return a session ID.")
-                val updates = mutableListOf<String>()
-                val promptResult =
-                    transport.request(
-                        SESSION_PROMPT_METHOD,
-                        promptParams(sessionId, task),
-                        SESSION_PROMPT_REQUEST_ID,
-                        timeoutMillis,
-                        onNotification = { notification ->
-                            extractInteraction(notification)?.let(onInteraction)
-                            extractTextUpdate(notification)?.let { update ->
-                                updates += update
-                                onTextUpdate(update)
-                            }
-                        },
-                        onServerRequest = onInteraction,
-                    )
-                cancellation.throwIfCancelled()
-                val summary = updates.joinToString(separator = "").trim().ifBlank { promptResult.toString() }
-                QDLog.debug(logger) {
-                    "ACP delegation completed for ${agent.name} (${agent.id}), session $sessionId, " +
-                        "${updates.size} text update(s)"
-                }
-                return AcpDelegationResult(
-                    agent = agent,
-                    status = "completed",
-                    sessionId = sessionId,
-                    summary = summary,
-                    updateCount = updates.size,
-                )
-            } finally {
-                cancellation.clear(transport)
+    ): AcpDelegationResult =
+        runCatching {
+            openSession(agent, workspacePath, timeoutMillis, cancellation, onInteraction, onTextUpdate).use { session ->
+                session.prompt(task)
             }
+        }.getOrElse { error -> failure(agent, error.message ?: error::class.simpleName.orEmpty()) }
+
+    inner class LiveSession internal constructor(
+        val agent: AcpAgentDto,
+        val sessionId: String,
+        private val transport: AcpTransport,
+        private val cancellation: CancellationSignal,
+        private val timeoutMillis: Long,
+        private val onInteraction: (AcpInteraction) -> Unit,
+        private val onTextUpdate: (String) -> Unit,
+    ) : Closeable {
+        private val closed = AtomicBoolean(false)
+        private val updates = mutableListOf<String>()
+        private var requestId = SESSION_PROMPT_REQUEST_ID
+
+        @Synchronized
+        fun prompt(task: String): AcpDelegationResult {
+            require(task.isNotBlank()) { "ACP prompt must not be empty." }
+            check(!closed.get()) { "ACP collaboration session is closed." }
+            cancellation.throwIfCancelled()
+            val promptResult =
+                transport.request(
+                    SESSION_PROMPT_METHOD,
+                    promptParams(sessionId, task),
+                    requestId++,
+                    timeoutMillis,
+                    onNotification = { notification ->
+                        extractInteraction(notification)?.let(onInteraction)
+                        extractTextUpdate(notification)?.let { update ->
+                            synchronized(updates) { updates += update }
+                            onTextUpdate(update)
+                        }
+                    },
+                    onServerRequest = onInteraction,
+                )
+            cancellation.throwIfCancelled()
+            val summary =
+                synchronized(updates) {
+                    updates.joinToString(separator = "").trim()
+                }.ifBlank { promptResult.toString() }
+            QDLog.debug(logger) { "ACP collaboration prompt completed for ${agent.name} (${agent.id}), session $sessionId" }
+            return AcpDelegationResult(agent, "completed", sessionId, summary, synchronized(updates) { updates.size })
+        }
+
+        override fun close() {
+            if (!closed.compareAndSet(false, true)) return
+            cancellation.clear(transport)
+            transport.close()
         }
     }
 
@@ -153,7 +187,7 @@ class AcpDelegationService(
                 listOf(
                     mapOf(
                         "type" to "text",
-                        "text" to "$READ_ONLY_INSTRUCTION\n\nDelegated task:\n$task",
+                        "text" to task,
                     ),
                 ),
         )
@@ -212,7 +246,8 @@ class AcpDelegationService(
                 val instructions =
                     when (type) {
                         Type.AUTHENTICATION -> {
-                            "Complete the external agent's sign-in, then return here."
+                            "Complete sign-in in the external ACP agent's own window or terminal. " +
+                                "Quanta cannot display or collect its credentials. The task should resume automatically after sign-in."
                         }
 
                         Type.PERMISSION -> {
@@ -239,7 +274,7 @@ class AcpDelegationService(
         val message: String? = null,
     )
 
-    private class AcpTransport(
+    internal class AcpTransport(
         private val reader: BufferedReader,
         private val writer: BufferedWriter,
         private val closeAction: () -> Unit,
@@ -366,9 +401,6 @@ class AcpDelegationService(
         private const val INITIALIZE_REQUEST_ID = 1
         private const val SESSION_NEW_REQUEST_ID = 2
         private const val SESSION_PROMPT_REQUEST_ID = 3
-        private const val READ_ONLY_INSTRUCTION =
-            "This is a read-only delegated investigation. Do not modify files, run commands that mutate state, " +
-                "or access credentials. Return findings and actionable recommendations to the delegating agent."
 
         private fun startProcess(command: List<String>): Process =
             ProcessBuilder(command)

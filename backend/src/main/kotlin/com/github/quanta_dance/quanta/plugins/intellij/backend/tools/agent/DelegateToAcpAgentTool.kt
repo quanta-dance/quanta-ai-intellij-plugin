@@ -14,24 +14,24 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 
 /**
- * Starts one bounded, read-only investigation with an ACP-compatible external agent.
+ * Starts an independent ACP collaboration task that retains its session for follow-up messages.
  *
  * The selected agent must be discovered first with [DiscoverAcpAgentsTool]. This tool returns as
- * soon as the background task is queued; use [GetAcpDelegationStatusTool] to inspect its result or
- * [CancelAcpDelegationTool] to stop it. The ACP transport is opened only by the background worker
- * and is always closed when that worker finishes.
+ * soon as the background task is queued. Use [SendAcpDelegationMessageTool] to coordinate with
+ * the live ACP session, [GetAcpDelegationStatusTool] for explicit status inspection, or
+ * [CancelAcpDelegationTool] to stop it.
  */
 @JsonClassDescription(
-    "Start a bounded, read-only background investigation with a discovered ACP agent. Call DiscoverAcpAgentsTool " +
-        "first and pass one returned agent ID. This returns a delegationId immediately; continue independent work. " +
-        "Do not wait or repeatedly poll in this agent turn: check with GetAcpDelegationStatusTool only in a later turn " +
-        "or when the user asks, and use CancelAcpDelegationTool to stop it.",
+    "Start an independent background task with a discovered ACP agent. Call DiscoverAcpAgentsTool first and " +
+        "pass one returned agent ID. This returns a delegationId immediately; continue independent work and use " +
+        "SendAcpDelegationMessageTool to share useful findings or redirect the live ACP teammate. Do not wait or " +
+        "repeatedly poll in this agent turn.",
 )
 class DelegateToAcpAgentTool : ToolInterface<Map<String, Any>> {
     @field:JsonPropertyDescription("ID of an ACP agent returned by DiscoverAcpAgentsTool")
     var agentId: String = ""
 
-    @field:JsonPropertyDescription("A focused investigation task for the ACP agent. Must be read-only.")
+    @field:JsonPropertyDescription("A focused task for the independent ACP agent.")
     var task: String = ""
 
     @field:JsonPropertyDescription("Maximum background delegation time in milliseconds, from 1,000 to 120,000. Default: 60,000.")

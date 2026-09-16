@@ -369,6 +369,12 @@ private fun acpDelegationCard(item: ToolExecutionItem) {
     val requestedStatus = detail.lineSequence().firstOrNull { it.startsWith("Status: ") }?.removePrefix("Status: ")
     val latestActivity =
         detail.lineSequence().firstOrNull { it.startsWith("Latest activity: ") }?.removePrefix("Latest activity: ")
+    val actionRequired =
+        detail
+            .substringAfter("What you need to do\n", missingDelimiterValue = "")
+            .substringBefore("\n\nActivity")
+            .trim()
+            .takeIf(String::isNotBlank)
     val (statusLabel, statusColor) =
         when (requestedStatus) {
             "Needs sign-in" -> {
@@ -420,7 +426,7 @@ private fun acpDelegationCard(item: ToolExecutionItem) {
             )
         }
         Text(
-            text = "External ACP worker · Read-only",
+            text = "Independent external ACP agent",
             style = JewelTheme.defaultTextStyle.copy(fontSize = 11.sp, color = ChatAppColors.Text.timestamp),
         )
         latestActivity?.takeIf(String::isNotBlank)?.let { activity ->
@@ -428,6 +434,26 @@ private fun acpDelegationCard(item: ToolExecutionItem) {
                 text = activity,
                 style = JewelTheme.defaultTextStyle.copy(fontSize = 11.sp, color = ChatAppColors.Text.timestamp),
             )
+        }
+        actionRequired?.let { instructions ->
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFFFFC56E).copy(alpha = 0.12f), RoundedCornerShape(6.dp))
+                        .border(1.dp, Color(0xFFFFC56E).copy(alpha = 0.42f), RoundedCornerShape(6.dp))
+                        .padding(8.dp),
+            ) {
+                Text(
+                    text = instructions,
+                    style =
+                        JewelTheme.defaultTextStyle.copy(
+                            fontSize = 11.sp,
+                            lineHeight = 16.sp,
+                            color = Color(0xFFFFD9A1),
+                        ),
+                )
+            }
         }
 
         if (detail.isNotBlank()) {
