@@ -6,6 +6,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.chat
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.project.CurrentFileContextProvider
 import com.github.quanta_dance.quanta.plugins.intellij.backend.repository.ChatMessageFactory
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AcpDelegationTaskService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentManagerService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AiInputSanitizer
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.BackendExecutionContextsService
@@ -55,6 +56,7 @@ class ChatConversationService(
     private val agentManager: AgentManagerService get() = project.service()
     private val persistence: ChatConversationStateService get() = project.service()
     private val executionContexts: BackendExecutionContextsService get() = project.service()
+    private val acpDelegations: AcpDelegationTaskService get() = project.service()
 
     @Suppress("ktlint:standard:backing-property-naming")
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
@@ -84,6 +86,40 @@ class ChatConversationService(
             }
         }
 
+    private val acpDelegationListener =
+        PropertyChangeListener { event ->
+            if (event.propertyName != "acp_delegation") return@PropertyChangeListener
+            val task = event.newValue as? AcpDelegationTaskService.TaskSnapshot ?: return@PropertyChangeListener
+            if (task.chatSessionId != persistence.getActiveSessionId()) return@PropertyChangeListener
+            when (task.status) {
+                AcpDelegationTaskService.Status.RUNNING -> {
+                    appendAiMessage("${task.agent.name} is investigating in the background: ${task.taskTitle}")
+                }
+
+                AcpDelegationTaskService.Status.COMPLETED -> {
+                    appendAiMessage(
+                        "${task.agent.name} completed its background investigation. " +
+                            (
+                                task.summary
+                                    ?: "Use GetAcpDelegationStatusTool with ${task.delegationId} to review the result."
+                            ),
+                    )
+                }
+
+                AcpDelegationTaskService.Status.FAILED -> {
+                    appendAiMessage("${task.agent.name} background investigation failed: ${task.message ?: "unknown error"}")
+                }
+
+                AcpDelegationTaskService.Status.CANCELLED -> {
+                    appendAiMessage("${task.agent.name} background investigation was cancelled.")
+                }
+
+                AcpDelegationTaskService.Status.QUEUED -> {
+                    Unit
+                }
+            }
+        }
+
     init {
         persistence.ensureSessionExists()
         _messages.value = persistence.loadActiveMessages()
@@ -91,6 +127,7 @@ class ChatConversationService(
         openAIService.switchToSession(persistence.getActiveSessionId(), persistence.getActiveLastResponseId())
         agentManager.reloadAgentsFromSession()
         agentManager.addPropertyChangeListener(agentTaskListener)
+        acpDelegations.addPropertyChangeListener(acpDelegationListener)
     }
 
     fun messagesFlow(): Flow<List<ChatMessageDto>> =
@@ -106,6 +143,7 @@ class ChatConversationService(
 
     override fun dispose() {
         agentManager.removePropertyChangeListener(agentTaskListener)
+        acpDelegations.removePropertyChangeListener(acpDelegationListener)
     }
 
     private fun <T> onChatPublicationThread(action: () -> T): T = runBlocking(executionContexts.chatPublicationDispatcher) { action() }

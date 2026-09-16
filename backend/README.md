@@ -21,9 +21,11 @@ Duplicate application targets and duplicate TCP host/port pairs are rejected. Co
 
 ## ACP delegation
 
-The main AI can call `DiscoverAcpAgentsTool`, then use `DelegateToAcpAgentTool` with a returned agent ID and a focused task. Delegation creates a fresh stdio or TCP connection, completes `initialize`, creates an ACP session, sends `session/prompt`, collects streamed `session/update` text, and closes the session transport after the final response.
+The main AI calls `DiscoverAcpAgentsTool`, then uses `DelegateToAcpAgentTool` with a returned agent ID and a focused task. The delegate tool queues work and returns a `delegationId` immediately, so the main agent and internal team can continue independent work. `GetAcpDelegationStatusTool` reads the current state or final findings; `CancelAcpDelegationTool` stops queued/running work.
 
-The initial integration is deliberately bounded and advisory: it adds a read-only instruction to every delegated task and returns the external agent's findings for the main AI to verify. It does not expose ACP agent edits, permissions, credentials, or a reusable interactive session yet. Transport failures and cleanup are handled automatically; the request timeout is configurable from 1 to 120 seconds per tool call.
+The background worker creates a fresh stdio or TCP connection, completes `initialize`, creates an ACP session, sends `session/prompt`, collects streamed `session/update` text, and closes the transport after final completion, cancellation, or failure. Delegations are session-scoped in memory, capped at two concurrent tasks per project, and cancelled when the project closes.
+
+Chat displays concise running/completed/failed/cancelled activity only while the task's originating chat session remains active. Completion is deliberately informational rather than an automatic new main-agent turn, so it cannot interrupt or overwrite a newer user request. The initial integration remains bounded and advisory: every task has a read-only instruction; ACP edits, permissions, credentials, and reusable multi-turn sessions are not exposed yet. Transport failures and cleanup are handled automatically; the timeout is configurable from 1 to 120 seconds per task.
 
 ## Key packages
 - `project/` — project and PSI helpers

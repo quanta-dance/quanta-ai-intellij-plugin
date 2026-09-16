@@ -7,20 +7,24 @@ import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AcpAgentDiscoveryService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AcpDelegationService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AcpDelegationTaskService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
+import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 
 /**
- * Delegates one bounded, read-only investigation to an ACP-compatible external agent.
+ * Starts one bounded, read-only investigation with an ACP-compatible external agent.
  *
- * The selected agent must be discovered first with [DiscoverAcpAgentsTool]. The transport remains
- * open only for this delegation's ACP initialize/session/prompt lifecycle and is closed afterward.
+ * The selected agent must be discovered first with [DiscoverAcpAgentsTool]. This tool returns as
+ * soon as the background task is queued; use [GetAcpDelegationStatusTool] to inspect its result or
+ * [CancelAcpDelegationTool] to stop it. The ACP transport is opened only by the background worker
+ * and is always closed when that worker finishes.
  */
 @JsonClassDescription(
-    "Delegate one bounded, read-only investigation to a discovered ACP agent. Call DiscoverAcpAgentsTool first " +
-        "and pass one returned agent ID. The external agent's findings are returned for you to verify and act on; " +
-        "do not use this tool for editing, commands that mutate state, credentials, or destructive work.",
+    "Start a bounded, read-only background investigation with a discovered ACP agent. Call DiscoverAcpAgentsTool " +
+        "first and pass one returned agent ID. This returns a delegationId immediately; continue independent work, " +
+        "then use GetAcpDelegationStatusTool to read the external agent's findings or CancelAcpDelegationTool to stop it.",
 )
 class DelegateToAcpAgentTool : ToolInterface<Map<String, Any>> {
     @field:JsonPropertyDescription("ID of an ACP agent returned by DiscoverAcpAgentsTool")
@@ -29,7 +33,7 @@ class DelegateToAcpAgentTool : ToolInterface<Map<String, Any>> {
     @field:JsonPropertyDescription("A focused investigation task for the ACP agent. Must be read-only.")
     var task: String = ""
 
-    @field:JsonPropertyDescription("Maximum time to wait for the delegation in milliseconds, from 1,000 to 120,000. Default: 60,000.")
+    @field:JsonPropertyDescription("Maximum background delegation time in milliseconds, from 1,000 to 120,000. Default: 60,000.")
     var timeoutMillis: Long = AcpDelegationService.DEFAULT_TIMEOUT_MILLIS
 
     override fun execute(project: Project): Map<String, Any> {
@@ -46,23 +50,23 @@ class DelegateToAcpAgentTool : ToolInterface<Map<String, Any>> {
             agents.firstOrNull { it.id == agentId }
                 ?: return error("Unknown or unavailable ACP agent ID '$agentId'. Refresh discovery and try again.")
         return runCatching {
-            AcpDelegationService()
-                .delegate(agent, task, project.basePath, timeoutMillis)
+            project
+                .service<AcpDelegationTaskService>()
+                .start(agent, task, project.basePath, timeoutMillis)
                 .toToolResult()
-        }.getOrElse { error ->
-            error("ACP delegation to ${agent.name} failed: ${error.message ?: error::class.simpleName}")
+        }.getOrElse { exception ->
+            error("Could not start ACP delegation to ${agent.name}: ${exception.message ?: exception::class.simpleName}")
         }
     }
 
-    private fun AcpDelegationService.AcpDelegationResult.toToolResult(): Map<String, Any> =
-        buildMap {
-            put("status", status)
-            put("agent", mapOf("id" to agent.id, "name" to agent.name, "version" to agent.version))
-            sessionId?.let { put("sessionId", it) }
-            summary?.let { put("summary", it) }
-            put("updateCount", updateCount)
-            message?.let { put("message", it) }
-        }
+    private fun AcpDelegationTaskService.TaskSnapshot.toToolResult(): Map<String, Any> =
+        mapOf(
+            "delegationId" to delegationId,
+            "status" to status.name.lowercase(),
+            "agent" to mapOf("id" to agent.id, "name" to agent.name, "version" to agent.version),
+            "task" to taskTitle,
+            "message" to "ACP delegation is queued in the background. Continue independent work and check its status later.",
+        )
 
     private fun error(message: String): Map<String, Any> = mapOf("status" to "error", "message" to message)
 
