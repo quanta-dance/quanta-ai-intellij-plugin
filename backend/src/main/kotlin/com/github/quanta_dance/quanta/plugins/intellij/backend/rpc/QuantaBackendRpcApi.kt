@@ -5,13 +5,16 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.rpc
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AIVoiceService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AcpAgentDiscoveryService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentManagerService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentRosterService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SessionPlanService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SpeechToTextService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.OpenFileInEditorTool
 import com.github.quanta_dance.quanta.plugins.intellij.models.Suggestion
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaBackendApi
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AcpAgentDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ApplyRefactorSuggestionResultDto
@@ -63,6 +66,11 @@ class QuantaBackendRpcApi : QuantaBackendApi {
         val backendProject = findBackendProject(projectPath) ?: return ChatPlanStatusDto()
         return backendProject.service<SessionPlanService>().getCurrentPlanStatus()
     }
+
+    override suspend fun discoverAcpAgents(): List<AcpAgentDto> =
+        AcpAgentDiscoveryService(
+            manualAgents = BackendRuntimeSettingsService.instance.settings.manualAcpAgents,
+        ).discover()
 
     override suspend fun getCurrentAgents(projectPath: String): List<AgentInfoDto> {
         val backendProject = findBackendProject(projectPath) ?: return emptyList()

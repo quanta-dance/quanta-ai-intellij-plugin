@@ -63,6 +63,7 @@ class BackendSettingsRpcApi : QuantaSettingsApi {
                 followEnabled = true,
                 actionConfigsJson = "",
                 mcpServersJson = runtimeSettings.mcpServersJson,
+                manualAcpAgents = runtimeSettings.manualAcpAgents,
             )
         }
 

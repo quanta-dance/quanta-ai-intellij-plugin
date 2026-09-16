@@ -5,6 +5,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.frontend.settings
 
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.logging.FrontendBackendLogBridge
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.rpc.FrontendSettingsRpcService
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AcpManualAgentDto
 import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.service
@@ -65,6 +66,7 @@ class FrontendQuantaPluginConfigurable : Configurable {
                 maxMessageWidth != settings.maxMessageWidth ||
                 terminalToolEnabled != (settings.terminalToolEnabled ?: false) ||
                 terminalAllowedCommandsCsv != settings.terminalAllowedCommandsCsv ||
+                manualAcpAgents != settings.manualAcpAgents ||
                 extraInstructionsValue != (settings.extraInstructions ?: "") ||
                 actionConfigsValue != settings.actionConfigsJson
         }
@@ -72,6 +74,7 @@ class FrontendQuantaPluginConfigurable : Configurable {
 
     override fun apply() {
         settingsComponent.validateMaxMessageWidth()
+
         val settings = FrontendQuantaSettingsState.instance.state
         settingsComponent.run {
             settings.openAiUrl = hostValue
@@ -87,6 +90,7 @@ class FrontendQuantaPluginConfigurable : Configurable {
             settings.maxMessageWidth = maxMessageWidth
             settings.terminalToolEnabled = terminalToolEnabled
             settings.terminalAllowedCommandsCsv = terminalAllowedCommandsCsv
+            settings.manualAcpAgents = manualAcpAgents
             settings.extraInstructions = extraInstructionsValue.ifBlank { null }
             settings.followEnabled = followEnabled
             settings.actionConfigsJson =
@@ -113,6 +117,7 @@ class FrontendQuantaPluginConfigurable : Configurable {
             maxMessageWidth = settings.maxMessageWidth
             terminalToolEnabled = settings.terminalToolEnabled ?: false
             terminalAllowedCommandsCsv = settings.terminalAllowedCommandsCsv
+            manualAcpAgents = settings.manualAcpAgents
             extraInstructionsValue = settings.extraInstructions ?: ""
             actionConfigsValue = settings.actionConfigsJson
             followEnabled = settings.followEnabled
@@ -192,6 +197,26 @@ private class FrontendQuantaSettingsComponent {
             toolTipText = "These lines will be appended to the system instructions for every request."
         }
     private val extraInstructionsScroll = JScrollPane(extraInstructionsArea)
+    private val acpAgentsSummaryLabel =
+        JBLabel().apply {
+            toolTipText =
+                "Manually configured ACP applications and TCP endpoints. Each entry is handshake-verified during discovery."
+        }
+    private val editAcpAgentsButton =
+        JButton("Configure ACP Agents…").apply {
+            toolTipText = "Add, edit, or remove manually configured ACP applications and TCP endpoints"
+            addActionListener {
+                val dialog = FrontendAcpAgentEditorDialog(manualAcpAgents)
+                if (dialog.showAndGet()) {
+                    manualAcpAgents = dialog.getAgents()
+                }
+            }
+        }
+    private val acpAgentsPanel =
+        JPanel(FlowLayout(FlowLayout.LEFT, 8, 0)).apply {
+            add(editAcpAgentsButton)
+            add(acpAgentsSummaryLabel)
+        }
     private val actionConfigsArea =
         JBTextArea(10, 60).apply {
             lineWrap = true
@@ -277,6 +302,8 @@ private class FrontendQuantaSettingsComponent {
             .addLabeledComponent(JBLabel("Max message width (dp): "), maxMessageWidthField, 1, false)
             .addComponent(terminalToolEnabledField)
             .addLabeledComponent(JBLabel("Terminal allowed commands: "), terminalAllowedCommandsCsvField, 1, false)
+            .addSeparator()
+            .addLabeledComponent(JBLabel("Manual ACP agents: "), acpAgentsPanel, 1, false)
             .addSeparator()
             .addLabeledComponent(JBLabel("Custom instructions: "), extraInstructionsScroll, 1, false)
             .addComponent(actionEditorButton)
@@ -412,6 +439,32 @@ private class FrontendQuantaSettingsComponent {
         set(value) {
             terminalAllowedCommandsCsvField.text = value
         }
+
+    var manualAcpAgents: List<AcpManualAgentDto> = emptyList()
+        set(value) {
+            field = value
+            updateAcpAgentsSummary()
+        }
+
+    private fun updateAcpAgentsSummary() {
+        val applications = manualAcpAgents.count { it.executable != null }
+        val endpoints = manualAcpAgents.count { it.host != null && it.port != null }
+        acpAgentsSummaryLabel.text =
+            when {
+                applications == 0 && endpoints == 0 -> {
+                    "No manual agents configured"
+                }
+
+                else -> {
+                    buildString {
+                        append("$applications application")
+                        if (applications != 1) append('s')
+                        append(", $endpoints TCP endpoint")
+                        if (endpoints != 1) append('s')
+                    }
+                }
+            }
+    }
 
     var dynamicModelEnabled: Boolean
         get() = dynamicModelEnabledField.isSelected

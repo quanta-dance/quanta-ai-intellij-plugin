@@ -4,6 +4,7 @@
 package com.github.quanta_dance.quanta.plugins.intellij.shared.rpc
 
 import com.github.quanta_dance.quanta.plugins.intellij.models.Suggestion
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AcpAgentDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ApplyRefactorSuggestionResultDto
@@ -38,6 +39,9 @@ interface QuantaBackendApi : RemoteApi<Unit> {
     )
 
     suspend fun getCurrentPlanStatus(projectPath: String): ChatPlanStatusDto
+
+    /** Returns locally installed commands that complete the ACP initialize handshake. */
+    suspend fun discoverAcpAgents(): List<AcpAgentDto>
 
     suspend fun getCurrentAgents(projectPath: String): List<AgentInfoDto>
 

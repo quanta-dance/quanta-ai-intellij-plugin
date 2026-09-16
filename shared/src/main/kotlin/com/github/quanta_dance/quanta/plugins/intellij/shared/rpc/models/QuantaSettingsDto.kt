@@ -34,4 +34,5 @@ data class QuantaSettingsDto(
     val terminalAllowedCommandsCsv: String,
     val actionConfigsJson: String,
     val mcpServersJson: String = "",
+    val manualAcpAgents: List<AcpManualAgentDto> = emptyList(),
 )
