@@ -28,7 +28,9 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 /** Implements OAuth 2.1 Authorization Code with PKCE for protected remote MCP servers. */
-internal class McpOAuthService {
+internal class McpOAuthService(
+    private val onInteractiveAuthorizationRequired: (String) -> Unit = {},
+) {
     private val log = Logger.getInstance(McpOAuthService::class.java)
     private val mapper = jacksonObjectMapper()
     private val httpClient = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build()
@@ -107,14 +109,11 @@ internal class McpOAuthService {
         val protectedResource = discoverProtectedResource(resource, challenge.metadataUri)
         QDLog.info(log) { "MCP OAuth: discovering authorization-server metadata for '$serverName'" }
         val metadata = discoverAuthorizationServer(protectedResource.authorizationServer)
-        val clientId =
-            configuredClientId?.takeIf { it.isNotBlank() }
-                ?: loadClientId(serverName, resource)
-                ?: registerClient(metadata, resource).also { saveClientId(serverName, resource, it) }
+        val reusableClientId = configuredClientId?.takeIf { it.isNotBlank() } ?: loadClientId(serverName, resource)
         val token =
-            if (stored?.refreshToken != null) {
+            if (stored?.refreshToken != null && reusableClientId != null) {
                 log.info("MCP OAuth: refreshing stored token for '$serverName'")
-                runCatching { refresh(metadata, clientId, stored.refreshToken, resource) }
+                runCatching { refresh(metadata, reusableClientId, stored.refreshToken, resource) }
                     .onFailure {
                         log.info(
                             "MCP OAuth refresh failed for '$serverName'; starting interactive login: ${it.message}",
@@ -123,11 +122,12 @@ internal class McpOAuthService {
             } else {
                 null
             } ?: authorize(
-                serverName,
-                metadata,
-                challenge.scopes.ifEmpty { protectedResource.scopes },
-                clientId,
-                resource,
+                serverName = serverName,
+                metadata = metadata,
+                scopes = challenge.scopes.ifEmpty { protectedResource.scopes },
+                configuredClientId = configuredClientId,
+                savedClientId = reusableClientId,
+                resource = resource,
             )
         saveToken(serverName, resource, token)
         QDLog.info(log) {
@@ -214,12 +214,12 @@ internal class McpOAuthService {
     private fun registerClient(
         metadata: AuthorizationServerMetadata,
         resource: URI,
+        redirectUri: String,
     ): String {
         val endpoint =
             metadata.registrationEndpoint
                 ?: error("OAuth server does not provide a registration endpoint; configure a registered client before connecting")
         log.info("MCP OAuth: registering public client for resource '$resource'")
-        val redirectUri = loopbackRedirectUri()
         val response =
             postJson(
                 endpoint,
@@ -239,12 +239,19 @@ internal class McpOAuthService {
         serverName: String,
         metadata: AuthorizationServerMetadata,
         scopes: List<String>,
-        clientId: String,
+        configuredClientId: String?,
+        savedClientId: String?,
         resource: URI,
     ): OAuthToken {
-        val callback = HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), CALLBACK_PORT), 0)
+        // Bind an ephemeral loopback port before constructing the redirect URI. Multiple MCP servers can
+        // require interactive OAuth simultaneously, so a shared fixed port would make the second login fail.
+        val callback = HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0)
         try {
             val redirectUri = "http://127.0.0.1:${callback.address.port}/oauth/callback"
+            val clientId =
+                configuredClientId?.takeIf { it.isNotBlank() }
+                    ?: savedClientId
+                    ?: registerClient(metadata, resource, redirectUri).also { saveClientId(serverName, resource, it) }
             val state = randomUrlSafe()
             val verifier = randomUrlSafe(64)
             val challenge = base64Url(MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray()))
@@ -254,20 +261,21 @@ internal class McpOAuthService {
                 val code = query["code"]
                 val error = query["error"]
                 val valid = query["state"] == state && !code.isNullOrBlank() && error == null
-                val message =
+                val page =
                     if (valid) {
-                        "Authorization received for MCP server '$serverName'. Return to IntelliJ; it is completing the connection."
+                        successCallbackPage(serverName)
                     } else {
-                        "Authorization for MCP server '$serverName' failed. Return to IntelliJ to see the error, then close this page."
+                        failureCallbackPage(serverName, error ?: "OAuth callback state validation failed")
                     }
-                exchange.sendResponseHeaders(if (valid) 200 else 400, message.toByteArray().size.toLong())
-                exchange.responseBody.use { it.write(message.toByteArray()) }
+                exchange.responseHeaders.set("Content-Type", "text/html; charset=utf-8")
+                exchange.sendResponseHeaders(if (valid) 200 else 400, page.toByteArray(Charsets.UTF_8).size.toLong())
+                exchange.responseBody.use { it.write(page.toByteArray(Charsets.UTF_8)) }
                 if (valid) {
-                    log.info("MCP OAuth: received valid browser callback")
+                    log.info("MCP OAuth: received valid browser callback for '$serverName'")
                     future.complete(code)
                 } else {
                     val failure = error ?: "OAuth callback state validation failed"
-                    log.warn("MCP OAuth: rejected browser callback: $failure")
+                    log.warn("MCP OAuth: rejected browser callback for '$serverName': $failure")
                     future.completeExceptionally(IllegalStateException(failure))
                 }
             }
@@ -286,7 +294,11 @@ internal class McpOAuthService {
                         "scope" to requestedScopes,
                     ),
                 )
-            QDLog.info(log) { "MCP OAuth: opening browser login for '$clientId'; waiting up to 3 minutes for callback" }
+            QDLog.info(log) {
+                "MCP OAuth: opening the default browser to authorize MCP server '$serverName' " +
+                    "with client '$clientId'; waiting up to 3 minutes for callback"
+            }
+            onInteractiveAuthorizationRequired(serverName)
             BrowserUtil.browse(authorizationUri)
             val code = future.get(3, TimeUnit.MINUTES)
             log.info("MCP OAuth: exchanging authorization code for token")
@@ -490,7 +502,67 @@ internal class McpOAuthService {
                 }
             }.toMap()
 
-    private fun loopbackRedirectUri(): String = "http://127.0.0.1:$CALLBACK_PORT/oauth/callback"
+    private fun successCallbackPage(serverName: String): String {
+        val displayName = escapeHtml(serverName)
+        return """
+            <!doctype html>
+            <html lang="en">
+              <head>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <title>MCP authorization complete</title>
+                <style>
+                  :root { color-scheme: light dark; }
+                  body { align-items: center; background: #f6f8fa; color: #24292f; display: flex; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; justify-content: center; margin: 0; min-height: 100vh; }
+                  main { background: #fff; border: 1px solid #d0d7de; border-radius: 16px; box-shadow: 0 8px 28px rgb(140 149 159 / 20%); max-width: 440px; padding: 32px; text-align: center; }
+                  .icon { align-items: center; background: #dafbe1; border-radius: 50%; color: #1a7f37; display: inline-flex; font-size: 28px; height: 56px; justify-content: center; width: 56px; }
+                  h1 { font-size: 22px; margin: 20px 0 12px; }
+                  p { color: #57606a; line-height: 1.5; margin: 8px 0; }
+                  .server { color: #24292f; font-weight: 600; }
+
+                  @media (prefers-color-scheme: dark) { body { background: #0d1117; color: #f0f6fc; } main { background: #161b22; border-color: #30363d; box-shadow: none; } .server { color: #f0f6fc; } p { color: #8b949e; } }
+                </style>
+              </head>
+              <body>
+                <main>
+                  <div class="icon" aria-hidden="true">✓</div>
+                  <h1>Authorization received</h1>
+                  <p><span class="server">$displayName</span> is authorized. Return to IntelliJ while it completes the MCP connection. You may close this tab when convenient.</p>
+                </main>
+              </body>
+            </html>
+            """.trimIndent()
+    }
+
+    private fun failureCallbackPage(
+        serverName: String,
+        error: String,
+    ): String {
+        val displayName = escapeHtml(serverName)
+        val failure = escapeHtml(error)
+        return """
+            <!doctype html>
+            <html lang="en">
+              <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>MCP authorization failed</title></head>
+              <body style="align-items:center;background:#f6f8fa;color:#24292f;display:flex;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;justify-content:center;margin:0;min-height:100vh">
+                <main style="background:#fff;border:1px solid #d0d7de;border-radius:16px;box-shadow:0 8px 28px rgb(140 149 159 / 20%);max-width:440px;padding:32px;text-align:center">
+                  <div style="align-items:center;background:#ffebe9;border-radius:50%;color:#cf222e;display:inline-flex;font-size:28px;height:56px;justify-content:center;width:56px">!</div>
+                  <h1 style="font-size:22px;margin:20px 0 12px">Authorization was not completed</h1>
+                  <p style="color:#57606a;line-height:1.5"><strong>$displayName</strong> was not authorized. Return to IntelliJ for details, then close this tab.</p>
+                  <p style="color:#57606a;font-size:13px;line-height:1.5">$failure</p>
+                </main>
+              </body>
+            </html>
+            """.trimIndent()
+    }
+
+    private fun escapeHtml(value: String): String =
+        value
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\"", "&quot;")
+            .replace("'", "&#39;")
 
     private fun safeTokenDescription(token: String): String =
         "accessTokenLength=${token.length}, accessTokenSha256Prefix=${oauthTokenFingerprint(token)}"
@@ -502,7 +574,6 @@ internal class McpOAuthService {
     private fun encode(value: String): String = URLEncoder.encode(value, Charsets.UTF_8)
 
     private companion object {
-        const val CALLBACK_PORT = 53145
         const val AUTHORIZATION_RETRY_COOLDOWN_SECONDS = 300L
         const val INITIALIZE_REQUEST =
             "{\"jsonrpc\":\"2.0\",\"id\":\"oauth-discovery\",\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"Quanta AI IntelliJ\",\"version\":\"1.0\"}}}"

@@ -147,6 +147,9 @@ tasks {
                             // target unrelated application frameworks (Jetty, Hibernate, servlet APIs, etc.).
                             // Reactor's scheduler metrics bridge additionally requires this class; restore it below.
                             exclude("io/micrometer/core/instrument/binder/**")
+                            // Micrometer's OkHttp sender is an optional HTTP registry transport. The backend
+                            // uses the JDK HTTP client and does not package OkHttp or Okio.
+                            exclude("io/micrometer/core/ipc/http/OkHttpSender*")
                             exclude("io/micrometer/core/instrument/dropwizard/**")
                             // Micrometer AOP integrations require AspectJ, which is not used by the MCP client.
                             exclude("io/micrometer/core/aop/**")
