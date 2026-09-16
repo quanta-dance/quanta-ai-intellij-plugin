@@ -42,7 +42,16 @@ class McpClientService(
 ) : Disposable {
     private val log = Logger.getInstance(McpClientService::class.java)
     private val executionContexts = project.getService(BackendExecutionContextsService::class.java)
-    private val oauth = McpOAuthService()
+    private val oauth =
+        McpOAuthService { serverName ->
+            notifyRuntimeConfigIssue(
+                title = "Authorize MCP server",
+                content =
+                    "Opening your default browser to authorize MCP server '$serverName'. " +
+                        "Complete sign-in there, then return to IntelliJ.",
+                type = NotificationType.INFORMATION,
+            )
+        }
 
     data class ServerStatus(
         val connected: Boolean,
@@ -88,6 +97,10 @@ class McpClientService(
         type: NotificationType,
     ) {
         val group = NotificationGroupManager.getInstance().getNotificationGroup("Plugin Notifications")
+        if (group == null) {
+            QDLog.info(log) { "$title: $content" }
+            return
+        }
         group.createNotification(title, content, type).notify(project)
     }
 
