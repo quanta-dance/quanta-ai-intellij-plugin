@@ -8,7 +8,7 @@ The backend module owns server-side IntelliJ Platform logic for Quanta AI.
 - OpenAI orchestration and request execution
 - File, terminal, embedding, and indexing implementations
 - Backend settings, listeners, and persistence
-- ACP agent discovery: known PATH candidates and user-configured applications/TCP endpoints are verified with a bounded ACP `initialize` handshake
+- ACP agent discovery and read-only delegation: known PATH candidates and user-configured applications/TCP endpoints are verified with a bounded ACP `initialize` handshake, then can receive a bounded ACP session task from the main AI
 
 ## ACP configuration
 
@@ -18,6 +18,12 @@ In **Settings → Tools → Quanta AI**, use **Configure ACP Agents…** to add 
 - **TCP endpoint:** a hostname/IP address and a port from `1` through `65535`. TCP uses newline-delimited ACP JSON-RPC.
 
 Duplicate application targets and duplicate TCP host/port pairs are rejected. Configured targets are still returned only after a successful bounded `initialize` handshake.
+
+## ACP delegation
+
+The main AI can call `DiscoverAcpAgentsTool`, then use `DelegateToAcpAgentTool` with a returned agent ID and a focused task. Delegation creates a fresh stdio or TCP connection, completes `initialize`, creates an ACP session, sends `session/prompt`, collects streamed `session/update` text, and closes the session transport after the final response.
+
+The initial integration is deliberately bounded and advisory: it adds a read-only instruction to every delegated task and returns the external agent's findings for the main AI to verify. It does not expose ACP agent edits, permissions, credentials, or a reusable interactive session yet. Transport failures and cleanup are handled automatically; the request timeout is configurable from 1 to 120 seconds per tool call.
 
 ## Key packages
 - `project/` — project and PSI helpers

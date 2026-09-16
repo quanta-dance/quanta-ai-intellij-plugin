@@ -5,8 +5,8 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
-import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AcpAgentDelegationService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AcpAgentDiscoveryService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AcpDelegationService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.intellij.openapi.project.Project
@@ -19,8 +19,8 @@ import com.intellij.openapi.project.Project
  */
 @JsonClassDescription(
     "Delegate one bounded, read-only investigation to a discovered ACP agent. Call DiscoverAcpAgentsTool first " +
-            "and pass one returned agent ID. The external agent's findings are returned for you to verify and act on; " +
-            "do not use this tool for editing, commands that mutate state, credentials, or destructive work.",
+        "and pass one returned agent ID. The external agent's findings are returned for you to verify and act on; " +
+        "do not use this tool for editing, commands that mutate state, credentials, or destructive work.",
 )
 class DelegateToAcpAgentTool : ToolInterface<Map<String, Any>> {
     @field:JsonPropertyDescription("ID of an ACP agent returned by DiscoverAcpAgentsTool")
@@ -30,7 +30,7 @@ class DelegateToAcpAgentTool : ToolInterface<Map<String, Any>> {
     var task: String = ""
 
     @field:JsonPropertyDescription("Maximum time to wait for the delegation in milliseconds, from 1,000 to 120,000. Default: 60,000.")
-    var timeoutMillis: Long = AcpAgentDelegationService.DEFAULT_TIMEOUT_MILLIS
+    var timeoutMillis: Long = AcpDelegationService.DEFAULT_TIMEOUT_MILLIS
 
     override fun execute(project: Project): Map<String, Any> {
         if (agentId.isBlank()) return error("agentId is required. Call DiscoverAcpAgentsTool first.")
@@ -42,10 +42,11 @@ class DelegateToAcpAgentTool : ToolInterface<Map<String, Any>> {
             AcpAgentDiscoveryService(
                 manualAgents = BackendRuntimeSettingsService.instance.settings.manualAcpAgents,
             ).discover()
-        val agent = agents.firstOrNull { it.id == agentId }
-            ?: return error("Unknown or unavailable ACP agent ID '$agentId'. Refresh discovery and try again.")
+        val agent =
+            agents.firstOrNull { it.id == agentId }
+                ?: return error("Unknown or unavailable ACP agent ID '$agentId'. Refresh discovery and try again.")
         return runCatching {
-            AcpAgentDelegationService()
+            AcpDelegationService()
                 .delegate(agent, task, project.basePath, timeoutMillis)
                 .toToolResult()
         }.getOrElse { error ->
@@ -53,7 +54,7 @@ class DelegateToAcpAgentTool : ToolInterface<Map<String, Any>> {
         }
     }
 
-    private fun AcpAgentDelegationService.AcpDelegationResult.toToolResult(): Map<String, Any> =
+    private fun AcpDelegationService.AcpDelegationResult.toToolResult(): Map<String, Any> =
         buildMap {
             put("status", status)
             put("agent", mapOf("id" to agent.id, "name" to agent.name, "version" to agent.version))

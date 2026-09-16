@@ -49,8 +49,9 @@ class AcpDelegationService(
                     SESSION_NEW_REQUEST_ID,
                     timeoutMillis,
                 )
-            val sessionId = session.path("sessionId").asText().takeIf(String::isNotBlank)
-                ?: return failure(agent, "ACP agent did not return a session ID.")
+            val sessionId =
+                session.path("sessionId").asText().takeIf(String::isNotBlank)
+                    ?: return failure(agent, "ACP agent did not return a session ID.")
             val updates = mutableListOf<String>()
             val promptResult =
                 transport.request(
@@ -63,7 +64,7 @@ class AcpDelegationService(
             val summary = updates.joinToString(separator = "").trim().ifBlank { promptResult.toString() }
             QDLog.debug(logger) {
                 "ACP delegation completed for ${agent.name} (${agent.id}), session $sessionId, " +
-                        "${updates.size} text update(s)"
+                    "${updates.size} text update(s)"
             }
             return AcpDelegationResult(
                 agent = agent,
@@ -82,8 +83,9 @@ class AcpDelegationService(
         if (agent.executablePath.startsWith(TCP_PREFIX)) {
             val address = agent.executablePath.removePrefix(TCP_PREFIX)
             val host = address.substringBeforeLast(':')
-            val port = address.substringAfterLast(':').toIntOrNull()
-                ?: error("Invalid ACP TCP endpoint: ${agent.executablePath}")
+            val port =
+                address.substringAfterLast(':').toIntOrNull()
+                    ?: error("Invalid ACP TCP endpoint: ${agent.executablePath}")
             val socket = socketFactory()
             socket.connect(InetSocketAddress(host, port), timeoutMillis.toInt())
             socket.soTimeout = timeoutMillis.toInt()
@@ -116,9 +118,10 @@ class AcpDelegationService(
         )
 
     private fun sessionNewParams(workspacePath: String?): Map<String, Any> =
-        buildMap {
-            workspacePath?.takeIf(String::isNotBlank)?.let { put("cwd", it) }
-        }
+        mapOf(
+            "cwd" to requireNotNull(workspacePath?.takeIf(String::isNotBlank)) { "ACP delegation requires a project workspace path." },
+            "mcpServers" to emptyList<Any>(),
+        )
 
     private fun promptParams(
         sessionId: String,
@@ -127,12 +130,12 @@ class AcpDelegationService(
         mapOf(
             "sessionId" to sessionId,
             "prompt" to
-                    listOf(
-                        mapOf(
-                            "type" to "text",
-                            "text" to "$READ_ONLY_INSTRUCTION\n\nDelegated task:\n$task",
-                        ),
+                listOf(
+                    mapOf(
+                        "type" to "text",
+                        "text" to "$READ_ONLY_INSTRUCTION\n\nDelegated task:\n$task",
                     ),
+                ),
         )
 
     private fun extractTextUpdate(notification: JsonNode): String? {
@@ -181,9 +184,9 @@ class AcpDelegationService(
                         "jsonrpc" to "2.0",
                         "id" to requestId,
                         "method" to method,
-                        "params" to params
-                    )
-                )
+                        "params" to params,
+                    ),
+                ),
             )
             writer.newLine()
             writer.flush()
@@ -237,7 +240,7 @@ class AcpDelegationService(
         private const val SESSION_PROMPT_REQUEST_ID = 3
         private const val READ_ONLY_INSTRUCTION =
             "This is a read-only delegated investigation. Do not modify files, run commands that mutate state, " +
-                    "or access credentials. Return findings and actionable recommendations to the delegating agent."
+                "or access credentials. Return findings and actionable recommendations to the delegating agent."
 
         private fun startProcess(command: List<String>): Process =
             ProcessBuilder(command)

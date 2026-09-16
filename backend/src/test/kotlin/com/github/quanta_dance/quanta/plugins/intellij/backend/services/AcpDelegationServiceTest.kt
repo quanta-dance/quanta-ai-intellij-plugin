@@ -22,7 +22,10 @@ class AcpDelegationServiceTest {
                         writer.write("{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":1}}")
                         writer.newLine()
                         writer.flush()
-                        assertTrue(reader.readLine().contains("\"method\":\"session/new\""))
+                        val sessionRequest = reader.readLine()
+                        assertTrue(sessionRequest.contains("\"method\":\"session/new\""))
+                        assertTrue(sessionRequest.contains("\"cwd\":\"/workspace\""))
+                        assertTrue(sessionRequest.contains("\"mcpServers\":[]"))
                         writer.write("{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"sessionId\":\"session-1\"}}")
                         writer.newLine()
                         writer.flush()
@@ -78,7 +81,7 @@ class AcpDelegationServiceTest {
                 AcpDelegationService().delegate(
                     agent = tcpAgent(server.localPort),
                     task = "Inspect the authentication flow.",
-                    workspacePath = null,
+                    workspacePath = "/workspace",
                     timeoutMillis = 2_000,
                 )
 
