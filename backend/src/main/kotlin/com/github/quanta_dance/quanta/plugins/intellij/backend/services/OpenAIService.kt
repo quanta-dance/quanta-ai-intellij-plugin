@@ -205,6 +205,7 @@ class OpenAIService(
         usageTag: String = "main",
         reportUsageToUi: Boolean = true,
     ): Pair<StructuredResponse<OpenAIResponse>, String?> {
+        val requestStartedAtNanos = System.nanoTime()
         QDLog.debug(thisLogger()) {
             "OpenAIService.createResponse: inputs=${inputs.size}, previousId=${previousId ?: "<none>"}, includeMcp=$includeMcp, " +
                 "allowedBuiltInNames=${allowedBuiltInNames?.size ?: "all"}, allowedMcpNames=${allowedMcpNames?.size ?: "all"}"
@@ -222,14 +223,25 @@ class OpenAIService(
             )
         val client = requireClientReady()
         QDLog.debug(thisLogger()) { "OpenAIService.createResponse: request built, sending to OpenAI" }
-        val structResponse = client.responses().create(createParams)
+        val structResponse =
+            try {
+                client.responses().create(createParams)
+            } catch (throwable: Throwable) {
+                QDLog.warn(thisLogger(), {
+                    "OpenAIService.createResponse: request failed after ${
+                        java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - requestStartedAtNanos)
+                    }ms: ${throwable::class.java.simpleName}: ${throwable.message}"
+                }, throwable)
+                throw throwable
+            }
         QDLog.info(thisLogger()) {
             val responseId = runCatching { structResponse.id() }.getOrNull()
             val outputSize = runCatching { structResponse.output().size }.getOrDefault(-1)
             val usage = runCatching { structResponse.usage().orElse(null) }.getOrNull()
             val usageSummary =
                 usage?.let { " input=${it.inputTokens()} output=${it.outputTokens()} total=${it.totalTokens()}" } ?: ""
-            "OpenAIService.createResponse: response received id=$responseId outputSize=$outputSize$usageSummary"
+            "OpenAIService.createResponse: response received id=$responseId outputSize=$outputSize$usageSummary " +
+                "totalMs=${java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - requestStartedAtNanos)}"
         }
 
         try {

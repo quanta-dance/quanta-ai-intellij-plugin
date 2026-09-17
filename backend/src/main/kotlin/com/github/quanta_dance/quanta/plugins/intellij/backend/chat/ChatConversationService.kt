@@ -24,6 +24,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.toChatM
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.openai.models.responses.EasyInputMessage
 import com.openai.models.responses.ResponseInputItem
@@ -37,6 +38,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.beans.PropertyChangeListener
+import java.net.SocketTimeoutException
+import java.net.http.HttpTimeoutException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
@@ -247,16 +250,12 @@ class ChatConversationService(
                     clearThinkingMessages()
                     throw e
                 }
-                val errorText =
-                    buildString {
-                        append("Backend error: ")
-                        append(e::class.java.simpleName)
-                        val message = e.message?.trim().orEmpty()
-                        if (message.isNotEmpty()) {
-                            append(" - ").append(message)
-                        }
-                        append(e.stackTrace.joinToString("\n"))
-                    }
+                val errorText = userFacingErrorText(e)
+                QDLog.warn(
+                    Logger.getInstance(ChatConversationService::class.java),
+                    { "ChatConversationService.sendUserMessage failed: ${e::class.java.simpleName}: ${e.message}" },
+                    e,
+                )
                 clearThinkingMessages()
                 appendAiMessage(errorText)
             } finally {
@@ -267,6 +266,18 @@ class ChatConversationService(
     }
 
     private fun buildRequestInputs(): MutableList<ResponseInputItem> = buildInputsFromTurns(buildHistory())
+
+    private fun userFacingErrorText(error: Throwable): String =
+        if (error.causeSequence().any { it is SocketTimeoutException || it is HttpTimeoutException }) {
+            "The AI service did not respond in time, so this request was stopped. " +
+                "Please retry; if this keeps happening, check the configured AI gateway connection."
+        } else {
+            "The AI service could not complete this request. Please retry. " +
+                "Technical details were recorded in the IDE log."
+        }
+
+    private fun Throwable.causeSequence(): Sequence<Throwable> =
+        generateSequence(this) { cause -> cause.cause?.takeUnless { it === cause } }
 
     private fun buildCompactedRetryInputs(
         brief: String,
