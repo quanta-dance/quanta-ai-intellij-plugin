@@ -316,11 +316,61 @@ fun promptInput(
                         )
                     }
 
-                    OutlinedButton(
-                        modifier = Modifier.padding(horizontal = 4.dp),
-                        onClick = onToggleAgenticMode,
-                    ) {
-                        Text(if (agenticEnabled) "Agentic On" else "Agentic Mode")
+                    var showAgenticModeTooltip by remember { mutableStateOf(false) }
+                    Box {
+                        IconButton(
+                            modifier =
+                                Modifier
+                                    .background(
+                                        if (agenticEnabled) {
+                                            ChatAppColors.MessageBubble.myBackground.copy(alpha = 0.45f)
+                                        } else {
+                                            Color.Transparent
+                                        },
+                                        RoundedCornerShape(6.dp),
+                                    ).padding(2.dp)
+                                    .onPointerEvent(PointerEventType.Enter) {
+                                        showAgenticModeTooltip = true
+                                    }.onPointerEvent(PointerEventType.Exit) {
+                                        showAgenticModeTooltip = false
+                                    },
+                            onClick = onToggleAgenticMode,
+                        ) {
+                            Icon(
+                                key = ChatAppIcons.Header.agenticTeam,
+                                contentDescription =
+                                    if (agenticEnabled) {
+                                        "Agentic team mode enabled"
+                                    } else {
+                                        "Agentic team mode disabled"
+                                    },
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+
+                        if (showAgenticModeTooltip) {
+                            Popup(
+                                alignment = Alignment.TopCenter,
+                                offset = IntOffset(0, -36),
+                                properties = PopupProperties(focusable = false),
+                            ) {
+                                Text(
+                                    text =
+                                        if (agenticEnabled) {
+                                            "Agentic team mode: On"
+                                        } else {
+                                            "Enable agentic team mode"
+                                        },
+                                    modifier =
+                                        Modifier
+                                            .background(
+                                                ChatAppColors.MessageBubble.othersBackground,
+                                                RoundedCornerShape(4.dp),
+                                            ).padding(horizontal = 8.dp, vertical = 4.dp),
+                                    style = JewelTheme.defaultTextStyle.copy(fontSize = 11.sp),
+                                )
+                            }
+                        }
                     }
                 }
             }
