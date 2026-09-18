@@ -28,7 +28,9 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import reactor.core.publisher.Hooks
 import reactor.util.context.ReactorContextAccessor
+import java.io.IOException
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -54,6 +56,20 @@ private fun requireSupportedMcpUrl(url: String): URI =
             "MCP server URL must use HTTPS, except for localhost, 127.0.0.1, or ::1 loopback endpoints"
         }
     }
+
+/**
+ * Reactor reports exceptions emitted after a subscriber has already been cancelled through its global
+ * `onErrorDropped` hook. The MCP SDK's stdio transport can legitimately produce this specific error
+ * while it is shutting down its outbound writer after a child process or client has closed the pipe.
+ *
+ * It is not an MCP request failure; the owning client operation reports that outcome separately. Do
+ * not suppress other dropped errors: they still need a visible backend log for diagnosis.
+ */
+internal fun isExpectedStdioTransportShutdownError(error: Throwable): Boolean =
+    generateSequence(error) { it.cause }
+        .any { cause -> cause is IOException && cause.message.equals("Stream closed", ignoreCase = true) }
+
+private val reactorDroppedErrorHookInstalled = AtomicBoolean(false)
 
 @Service(Service.Level.PROJECT)
 class McpClientService(
@@ -100,8 +116,24 @@ class McpClientService(
     private var configLoadError: String? = null
 
     init {
+        installReactorDroppedErrorHandler()
         // Do not schedule refresh here; perform initial refresh from ProjectActivity when project is open
         QDLog.debug(log) { "McpClientService init: awaiting startup activity for initial refresh" }
+    }
+
+    /**
+     * The Reactor hook is process-wide because Reactor does not offer a per-transport dropped-error
+     * handler. Install it exactly once and narrowly suppress only the expected stdio pipe-close race.
+     */
+    private fun installReactorDroppedErrorHandler() {
+        if (!reactorDroppedErrorHookInstalled.compareAndSet(false, true)) return
+        Hooks.onErrorDropped { error ->
+            if (isExpectedStdioTransportShutdownError(error)) {
+                QDLog.debug(log) { "MCP stdio outbound writer stopped after its stream closed" }
+            } else {
+                QDLog.error(log, { "Unexpected dropped Reactor error in MCP runtime" }, error)
+            }
+        }
     }
 
     override fun dispose() {

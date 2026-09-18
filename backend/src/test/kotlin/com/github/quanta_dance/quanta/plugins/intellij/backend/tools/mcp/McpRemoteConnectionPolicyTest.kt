@@ -3,6 +3,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp
 
+import java.io.IOException
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -25,5 +26,12 @@ class McpRemoteConnectionPolicyTest {
     @Test
     fun doesNotDeferLocalStdioServerDiscovery() {
         assertFalse(requiresInteractiveMcpConnection(McpServerConfig(command = "local-mcp-server")))
+    }
+
+    @Test
+    fun recognizesOnlyTheExpectedStdioShutdownPipeError() {
+        assertTrue(isExpectedStdioTransportShutdownError(RuntimeException(IOException("Stream closed"))))
+        assertFalse(isExpectedStdioTransportShutdownError(IOException("Connection reset")))
+        assertFalse(isExpectedStdioTransportShutdownError(IllegalStateException("Stream closed")))
     }
 }
