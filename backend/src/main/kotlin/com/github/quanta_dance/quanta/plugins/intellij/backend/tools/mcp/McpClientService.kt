@@ -73,6 +73,7 @@ class McpClientService(
     // It is cleared only by a configuration change/removal or a successful connection.
     private val failedUrlConnections = ConcurrentHashMap<String, String>()
     private val initialized = AtomicBoolean(false)
+    private val refreshScheduled = AtomicBoolean(false)
 
     @Volatile
     private var lastLoadedConfigHash: Int? = null
@@ -107,7 +108,35 @@ class McpClientService(
         group.createNotification(title, content, type).notify(project)
     }
 
+    /**
+     * Queues configuration reconciliation on the MCP lifecycle executor and returns immediately.
+     *
+     * Connection setup, OAuth, server shutdown, and tool discovery must never block settings sync,
+     * chat publication, or agent orchestration. A single queued refresh coalesces rapid settings edits;
+     * if settings change while it runs, one additional pass reconciles the latest snapshot.
+     */
     fun refresh() {
+        if (!refreshScheduled.compareAndSet(false, true)) {
+            QDLog.debug(log) { "McpClientService refresh: reload already queued or running" }
+            return
+        }
+        executionContexts.mcpLifecycleScope.launch {
+            try {
+                refreshNow()
+            } finally {
+                refreshScheduled.set(false)
+                val currentHash =
+                    BackendRuntimeSettingsService.instance.settings.mcpServersJson
+                        .hashCode()
+                if (currentHash != lastLoadedConfigHash) {
+                    QDLog.debug(log) { "McpClientService refresh: settings changed during reload; queuing another pass" }
+                    refresh()
+                }
+            }
+        }
+    }
+
+    private fun refreshNow() {
         val firstRun = initialized.compareAndSet(false, true)
         if (firstRun) {
             QDLog.info(log) { "McpClientService refresh: loading config and starting servers" }
@@ -325,14 +354,21 @@ class McpClientService(
      *
      * A URL server can require interactive OAuth. Waiting for its browser callback here would make callers
      * such as response construction block for up to the OAuth timeout when the user declines to open the
-     * browser. Local stdio servers retain the synchronous behavior because no user interaction is needed.
+     * browser. Once remote discovery has completed, including with an empty tool list, reuse that result
+     * until configuration reconciliation invalidates it. Re-listing tools for every model turn needlessly
+     * adds remote work and repeatedly rebuilds identical OpenAI tool definitions.
+     * Local stdio servers retain the synchronous behavior because no user interaction is needed.
      */
     fun getTools(server: String): List<Tool> {
         refreshIfConfigChanged()
         val configuredServer = serversConfig.mcpServers[server]
         if (requiresInteractiveMcpConnection(configuredServer)) {
+            toolCache[server]?.let { cached ->
+                QDLog.debug(log) { "getTools[$server]: using cached remote tool list (${cached.size} tool(s))" }
+                return cached
+            }
             discoverToolsAsync(server)
-            return toolCache[server] ?: emptyList()
+            return emptyList()
         }
         toolCache[server]?.let { cached ->
             if (cached.isNotEmpty()) return cached
@@ -461,6 +497,7 @@ class McpClientService(
     }
 
     private fun discoverTools(server: String): List<Tool> {
+        val startedAtNanos = System.nanoTime()
         QDLog.info(log) { "discoverTools[$server]: starting discovery" }
         val client =
             clients[server] ?: run {
@@ -479,7 +516,11 @@ class McpClientService(
                 withTimeout(30_000) { client.listTools().tools() }
             }
         toolCache[server] = tools
-        QDLog.info(log) { "discoverTools[$server]: discovered ${tools.size} tool(s): ${tools.joinToString { it.name() }}" }
+        val elapsedMs = (System.nanoTime() - startedAtNanos) / 1_000_000
+        QDLog.info(log) {
+            "discoverTools[$server]: discovered ${tools.size} tool(s) in ${elapsedMs}ms: " +
+                tools.joinToString { it.name() }
+        }
         return tools
     }
 
@@ -496,7 +537,7 @@ class McpClientService(
             QDLog.debug(log) { "MCP connection/discovery for '$server' is already in progress" }
             return
         }
-        executionContexts.mcpScope.launch {
+        executionContexts.mcpLifecycleScope.launch {
             try {
                 if (cfg.url != null) ensureClientUrl(server, cfg) else ensureClient(server, cfg)
                 clients[server]?.let { discoverTools(server) }
