@@ -5,6 +5,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
+import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.ChatConversationStateService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AcpDelegationTaskService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.intellij.openapi.components.service
@@ -27,8 +28,19 @@ class SendAcpDelegationMessageTool : ToolInterface<Map<String, Any>> {
         val id = delegationId.trim()
         if (id.isBlank()) return error("delegationId is required.")
         if (message.isBlank()) return error("message is required.")
+        val taskService = project.service<AcpDelegationTaskService>()
+        val existing = taskService.get(id) ?: return error("Unknown ACP delegation ID '$id'.")
+        val chatState = project.service<ChatConversationStateService>()
+        val activeSessionId = chatState.getActiveSessionId()
+        if (existing.chatSessionId != activeSessionId || !chatState.isAcpAgentAllowed(activeSessionId, existing.agent.id)) {
+            return mapOf(
+                "status" to "authorization_required",
+                "agentId" to existing.agent.id,
+                "message" to "This ACP agent is not enabled for the current chat.",
+            )
+        }
         val task =
-            runCatching { project.service<AcpDelegationTaskService>().sendMessage(id, message) }
+            runCatching { taskService.sendMessage(id, message) }
                 .getOrElse { error -> return error(error.message ?: "Could not send ACP follow-up.") }
                 ?: return error("Unknown ACP delegation ID '$id'.")
         return mapOf(

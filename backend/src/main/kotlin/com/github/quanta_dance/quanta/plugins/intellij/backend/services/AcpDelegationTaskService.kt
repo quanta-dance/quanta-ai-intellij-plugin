@@ -189,6 +189,24 @@ class AcpDelegationTaskService(
 
     fun list(): List<TaskSnapshot> = tasks.values.map { it.snapshot }.sortedByDescending { it.createdAtMillis }
 
+    fun cancelForSessionAgent(
+        chatSessionId: String,
+        agentId: String,
+    ): Int {
+        val matching =
+            tasks.values
+                .map { it.snapshot }
+                .filter { it.chatSessionId == chatSessionId && it.agent.id == agentId && it.status in ACTIVE_STATUSES }
+        matching.forEach { cancel(it.delegationId) }
+        return matching.size
+    }
+
+    fun cancelForSession(chatSessionId: String): Int {
+        val matching = tasks.values.map { it.snapshot }.filter { it.chatSessionId == chatSessionId && it.status in ACTIVE_STATUSES }
+        matching.forEach { cancel(it.delegationId) }
+        return matching.size
+    }
+
     fun cancel(delegationId: String): TaskSnapshot? {
         val record = tasks[delegationId] ?: return null
         synchronized(record) {

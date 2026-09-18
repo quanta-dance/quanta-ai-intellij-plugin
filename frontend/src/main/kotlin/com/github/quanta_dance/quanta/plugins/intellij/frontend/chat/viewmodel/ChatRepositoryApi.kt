@@ -4,6 +4,7 @@
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel
 
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AcpAgentDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
@@ -16,6 +17,8 @@ interface ChatRepositoryApi {
     val sessionsFlow: StateFlow<List<ChatSessionDto>>
     val planStatusFlow: StateFlow<ChatPlanStatusDto>
     val agentsFlow: StateFlow<List<AgentInfoDto>>
+    val acpAgentsFlow: StateFlow<List<AcpAgentDto>>
+    val allowedAcpAgentIdsFlow: StateFlow<Set<String>>
     val delegatedTasksFlow: StateFlow<List<DelegatedTaskDto>>
     val channelEventsFlow: StateFlow<List<AgentChannelEventDto>>
 
@@ -28,6 +31,13 @@ interface ChatRepositoryApi {
     suspend fun deleteSession(sessionId: String)
 
     suspend fun setAgenticMode(enabled: Boolean)
+
+    suspend fun refreshAcpAgents()
+
+    suspend fun setAcpAgentAllowed(
+        agentId: String,
+        allowed: Boolean,
+    )
 
     suspend fun createDefaultAgentTeam()
 

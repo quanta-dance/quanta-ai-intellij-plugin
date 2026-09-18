@@ -11,6 +11,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.toDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.ChatRepositoryRpcApi
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaBackendApi
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AcpAgentDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
@@ -58,6 +59,12 @@ class FrontendChatRepositoryModel(
     private val _agentsFlow = MutableStateFlow<List<AgentInfoDto>>(emptyList())
     override val agentsFlow: StateFlow<List<AgentInfoDto>> = _agentsFlow.asStateFlow()
 
+    private val _acpAgentsFlow = MutableStateFlow<List<AcpAgentDto>>(emptyList())
+    override val acpAgentsFlow: StateFlow<List<AcpAgentDto>> = _acpAgentsFlow.asStateFlow()
+
+    private val _allowedAcpAgentIdsFlow = MutableStateFlow<Set<String>>(emptySet())
+    override val allowedAcpAgentIdsFlow: StateFlow<Set<String>> = _allowedAcpAgentIdsFlow.asStateFlow()
+
     private val _delegatedTasksFlow = MutableStateFlow<List<DelegatedTaskDto>>(emptyList())
     override val delegatedTasksFlow: StateFlow<List<DelegatedTaskDto>> = _delegatedTasksFlow.asStateFlow()
 
@@ -90,6 +97,7 @@ class FrontendChatRepositoryModel(
         }
         runCatching {
             _sessionsFlow.value = chatApi.getCurrentSessions(projectPath)
+            _allowedAcpAgentIdsFlow.value = chatApi.getAllowedAcpAgentIds(projectPath).toSet()
         }.onFailure { error ->
             logger.warn("Failed to refresh current sessions from backend", error)
         }
@@ -148,6 +156,23 @@ class FrontendChatRepositoryModel(
     override suspend fun setAgenticMode(enabled: Boolean) {
         FrontendQuantaSettingsState.instance.state.agenticEnabled = enabled
         syncSettingsToBackend()
+        refreshCurrentState()
+    }
+
+    override suspend fun refreshAcpAgents() {
+        syncSettingsToBackend()
+        _acpAgentsFlow.value = QuantaBackendApi.getInstance().discoverAcpAgents()
+        _allowedAcpAgentIdsFlow.value =
+            ChatRepositoryRpcApi.getInstance().getAllowedAcpAgentIds(project.rpcProjectPath()).toSet()
+    }
+
+    override suspend fun setAcpAgentAllowed(
+        agentId: String,
+        allowed: Boolean,
+    ) {
+        ChatRepositoryRpcApi.getInstance().setAcpAgentAllowed(project.rpcProjectPath(), agentId, allowed)
+        _allowedAcpAgentIdsFlow.value =
+            ChatRepositoryRpcApi.getInstance().getAllowedAcpAgentIds(project.rpcProjectPath()).toSet()
         refreshCurrentState()
     }
 

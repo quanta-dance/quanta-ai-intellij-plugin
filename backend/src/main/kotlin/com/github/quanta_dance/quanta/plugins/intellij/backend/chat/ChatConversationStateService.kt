@@ -110,6 +110,7 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
         var delegatedTasks: MutableList<PersistedDelegatedTask> = mutableListOf(),
         var channelEvents: MutableList<PersistedChannelEvent> = mutableListOf(),
         var agents: MutableList<PersistedAgentProfile> = mutableListOf(),
+        var allowedAcpAgentIds: MutableList<String> = mutableListOf(),
     )
 
     data class State(
@@ -222,6 +223,35 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
         }
 
     fun getActiveLastResponseId(): String? = getActiveSession()?.lastResponseId
+
+    fun getAllowedAcpAgentIds(sessionId: String = getActiveSessionId()): Set<String> =
+        state.sessions
+            .firstOrNull { it.id == sessionId }
+            ?.allowedAcpAgentIds
+            .orEmpty()
+            .toSet()
+
+    fun isAcpAgentAllowed(
+        sessionId: String,
+        agentId: String,
+    ): Boolean = agentId in getAllowedAcpAgentIds(sessionId)
+
+    fun setAcpAgentAllowed(
+        sessionId: String,
+        agentId: String,
+        allowed: Boolean,
+    ): Boolean {
+        require(agentId.isNotBlank()) { "ACP agent ID must not be blank." }
+        val session = state.sessions.firstOrNull { it.id == sessionId } ?: return false
+        val changed =
+            if (allowed) {
+                if (agentId in session.allowedAcpAgentIds) false else session.allowedAcpAgentIds.add(agentId)
+            } else {
+                session.allowedAcpAgentIds.remove(agentId)
+            }
+        if (changed) session.updatedAtEpochMs = System.currentTimeMillis()
+        return changed
+    }
 
     fun loadActiveAgents(): List<QuantaAISessionState.AgentProfile> =
         getActiveSession()?.agents.orEmpty().map { saved ->

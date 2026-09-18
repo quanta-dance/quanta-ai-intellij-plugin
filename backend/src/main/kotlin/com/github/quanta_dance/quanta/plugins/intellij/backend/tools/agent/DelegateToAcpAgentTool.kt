@@ -5,6 +5,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
+import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.ChatConversationStateService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AcpAgentDiscoveryService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AcpDelegationService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AcpDelegationTaskService
@@ -22,10 +23,10 @@ import com.intellij.openapi.project.Project
  * [CancelAcpDelegationTool] to stop it.
  */
 @JsonClassDescription(
-    "Start an independent background task with a discovered ACP agent. Call DiscoverAcpAgentsTool first and " +
-        "pass one returned agent ID. This returns a delegationId immediately; continue independent work and use " +
-        "SendAcpDelegationMessageTool to share useful findings or redirect the live ACP teammate. Do not wait or " +
-        "repeatedly poll in this agent turn.",
+    "Start an independent background task with an ACP agent that the user explicitly enabled for the current chat. " +
+        "Call DiscoverAcpAgentsTool to inspect availability, but do not assume discovery grants access. If the agent is not " +
+        "enabled, ask the user to add it from the Agentic team roster. This returns a delegationId immediately; continue " +
+        "independent work and use SendAcpDelegationMessageTool to coordinate the live ACP teammate.",
 )
 class DelegateToAcpAgentTool : ToolInterface<Map<String, Any>> {
     @field:JsonPropertyDescription("ID of an ACP agent returned by DiscoverAcpAgentsTool")
@@ -42,6 +43,22 @@ class DelegateToAcpAgentTool : ToolInterface<Map<String, Any>> {
         if (task.isBlank()) return error("task is required.")
         if (timeoutMillis !in MIN_TIMEOUT_MILLIS..MAX_TIMEOUT_MILLIS) {
             return error("timeoutMillis must be between $MIN_TIMEOUT_MILLIS and $MAX_TIMEOUT_MILLIS.")
+        }
+        if (BackendRuntimeSettingsService.instance.settings.agenticEnabled != true) {
+            return mapOf(
+                "status" to "agentic_mode_required",
+                "message" to "ACP teammates can only be used while agentic team mode is enabled.",
+            )
+        }
+        val chatState = project.service<ChatConversationStateService>()
+        val sessionId = chatState.getActiveSessionId()
+        if (!chatState.isAcpAgentAllowed(sessionId, agentId)) {
+            return mapOf(
+                "status" to "authorization_required",
+                "agentId" to agentId,
+                "message" to
+                    "This external ACP agent is not enabled for the current chat. Ask the user to add it in the Agentic team roster.",
+            )
         }
         val agents =
             AcpAgentDiscoveryService(

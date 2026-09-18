@@ -340,9 +340,9 @@ fun promptInput(
                                 key = ChatAppIcons.Header.agenticTeam,
                                 contentDescription =
                                     if (agenticEnabled) {
-                                        "Agentic team mode enabled"
+                                        "Manage agentic team, currently enabled"
                                     } else {
-                                        "Agentic team mode disabled"
+                                        "Manage agentic team, currently disabled"
                                     },
                                 modifier = Modifier.size(16.dp),
                             )
@@ -357,9 +357,9 @@ fun promptInput(
                                 Text(
                                     text =
                                         if (agenticEnabled) {
-                                            "Agentic team mode: On"
+                                            "Manage agentic team"
                                         } else {
-                                            "Enable agentic team mode"
+                                            "Set up agentic team"
                                         },
                                     modifier =
                                         Modifier

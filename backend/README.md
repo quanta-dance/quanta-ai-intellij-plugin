@@ -21,7 +21,9 @@ Duplicate application targets and duplicate TCP host/port pairs are rejected. Co
 
 ## ACP delegation
 
-The main AI calls `DiscoverAcpAgentsTool`, then uses `DelegateToAcpAgentTool` with a returned agent ID and a focused task. The delegate tool queues work and returns a `delegationId` immediately, so the main agent and internal team can continue independent work. `SendAcpDelegationMessageTool` sends focused follow-ups to that delegation's retained ACP session; `GetAcpDelegationStatusTool` reads its current state or final findings; `CancelAcpDelegationTool` closes the live transport and stops work.
+Discovery is **availability only**. It starts a bounded probe, verifies `initialize`, and closes the probe connection; it never authorizes an ACP agent for work. In agentic mode, the user opens the **Agentic team** roster, refreshes discovery, and explicitly adds an external agent to the current chat. That chat-scoped allowlist is persisted with the chat session. It can be revoked at any time; revocation cancels active work for that agent and closes its live ACP transport.
+
+The main AI calls `DiscoverAcpAgentsTool` to inspect availability, then may use `DelegateToAcpAgentTool` only with an agent the user enabled for the current chat. The backend enforces both agentic-mode activation and the chat allowlist; discovery alone never grants a delegation capability. The delegate tool queues work and returns a `delegationId` immediately, so the main agent and internal team can continue independent work. `SendAcpDelegationMessageTool` sends focused follow-ups to that delegation's retained ACP session; `GetAcpDelegationStatusTool` reads its current state or final findings; `CancelAcpDelegationTool` closes the live transport and stops work.
 
 The background worker creates a fresh stdio or TCP connection, completes `initialize`, creates an ACP session, and sends `session/prompt`. After a prompt returns, the transport and session remain available for serialized follow-up prompts until cancellation, a transport failure, project disposal, or future idle cleanup. Delegations are session-scoped in memory and capped at two concurrent active prompts per project.
 

@@ -137,6 +137,20 @@ class ChatConversationService(
 
     fun currentSessions(): List<ChatSessionDto> = _sessions.value
 
+    fun getAllowedAcpAgentIds(): Set<String> = persistence.getAllowedAcpAgentIds()
+
+    fun setAcpAgentAllowed(
+        agentId: String,
+        allowed: Boolean,
+    ) {
+        onChatPublicationThread {
+            val sessionId = persistence.getActiveSessionId()
+            if (!allowed) acpDelegations.cancelForSessionAgent(sessionId, agentId)
+            persistence.setAcpAgentAllowed(sessionId, agentId, allowed)
+            _sessions.value = persistence.listSessions()
+        }
+    }
+
     override fun dispose() {
         agentManager.removePropertyChangeListener(agentTaskListener)
         acpDelegations.removePropertyChangeListener(acpDelegationListener)
@@ -177,6 +191,7 @@ class ChatConversationService(
     fun deleteSession(sessionId: String) {
         onChatPublicationThread {
             persistence.saveActiveAgents(agentManager.getPersistedAgentProfiles())
+            acpDelegations.cancelForSession(sessionId)
             val nextSessionId = persistence.deleteSession(sessionId)
             _messages.value = persistence.loadActiveMessages()
             _sessions.value = persistence.listSessions()

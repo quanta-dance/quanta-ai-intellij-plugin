@@ -45,6 +45,20 @@ class BackendChatRepositoryRpcApi : ChatRepositoryRpcApi {
         BackendChatRepositoryModel.getInstance(backendProject).deleteSession(sessionId)
     }
 
+    override suspend fun getAllowedAcpAgentIds(projectPath: String): List<String> {
+        val backendProject = findBackendProject(projectPath) ?: return emptyList()
+        return BackendChatRepositoryModel.getInstance(backendProject).getAllowedAcpAgentIds()
+    }
+
+    override suspend fun setAcpAgentAllowed(
+        projectPath: String,
+        agentId: String,
+        allowed: Boolean,
+    ) {
+        val backendProject = findBackendProject(projectPath) ?: return
+        BackendChatRepositoryModel.getInstance(backendProject).setAcpAgentAllowed(agentId, allowed)
+    }
+
     override suspend fun sendMessage(
         projectPath: String,
         messageContent: String,

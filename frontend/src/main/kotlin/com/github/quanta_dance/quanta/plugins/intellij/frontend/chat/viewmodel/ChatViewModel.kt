@@ -4,6 +4,7 @@
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel
 
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AcpAgentDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
@@ -25,6 +26,8 @@ interface ChatViewModelApi : Disposable {
     val sessionsFlow: StateFlow<List<ChatSessionDto>>
     val planStatusFlow: StateFlow<ChatPlanStatusDto>
     val agentsFlow: StateFlow<List<AgentInfoDto>>
+    val acpAgentsFlow: StateFlow<List<AcpAgentDto>>
+    val allowedAcpAgentIdsFlow: StateFlow<Set<String>>
     val delegatedTasksFlow: StateFlow<List<DelegatedTaskDto>>
     val channelEventsFlow: StateFlow<List<AgentChannelEventDto>>
 
@@ -43,6 +46,14 @@ interface ChatViewModelApi : Disposable {
     fun onDeleteSession(sessionId: String)
 
     fun onSetAgenticMode(enabled: Boolean)
+
+    fun onRefreshAcpAgents()
+
+    fun onSetAcpAgentAllowed(
+        agentId: String,
+        allowed: Boolean,
+        enableAgenticMode: Boolean,
+    )
 
     fun onCreateDefaultAgentTeam()
 
@@ -63,6 +74,8 @@ class ChatViewModel(
 
     override val planStatusFlow: StateFlow<ChatPlanStatusDto> = repository.planStatusFlow
     override val agentsFlow: StateFlow<List<AgentInfoDto>> = repository.agentsFlow
+    override val acpAgentsFlow: StateFlow<List<AcpAgentDto>> = repository.acpAgentsFlow
+    override val allowedAcpAgentIdsFlow: StateFlow<Set<String>> = repository.allowedAcpAgentIdsFlow
     override val delegatedTasksFlow: StateFlow<List<DelegatedTaskDto>> = repository.delegatedTasksFlow
     override val channelEventsFlow: StateFlow<List<AgentChannelEventDto>> = repository.channelEventsFlow
 
@@ -165,6 +178,23 @@ class ChatViewModel(
     override fun onSetAgenticMode(enabled: Boolean) {
         coroutineScope.launch {
             repository.setAgenticMode(enabled)
+        }
+    }
+
+    override fun onRefreshAcpAgents() {
+        coroutineScope.launch { repository.refreshAcpAgents() }
+    }
+
+    override fun onSetAcpAgentAllowed(
+        agentId: String,
+        allowed: Boolean,
+        enableAgenticMode: Boolean,
+    ) {
+        coroutineScope.launch {
+            if (allowed && enableAgenticMode) {
+                repository.setAgenticMode(true)
+            }
+            repository.setAcpAgentAllowed(agentId, allowed)
         }
     }
 

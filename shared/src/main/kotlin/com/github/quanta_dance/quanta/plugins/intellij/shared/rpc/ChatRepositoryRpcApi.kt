@@ -38,6 +38,14 @@ interface ChatRepositoryRpcApi : RemoteApi<Unit> {
         sessionId: String,
     )
 
+    suspend fun getAllowedAcpAgentIds(projectPath: String): List<String>
+
+    suspend fun setAcpAgentAllowed(
+        projectPath: String,
+        agentId: String,
+        allowed: Boolean,
+    )
+
     /**
      * Sends a message with the provided content.
      *

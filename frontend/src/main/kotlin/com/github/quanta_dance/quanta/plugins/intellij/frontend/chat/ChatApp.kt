@@ -73,6 +73,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.frontend.ui.totalResults
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.voice.FrontendAIVoiceService
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.voice.FrontendMicrophoneService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AcpAgentDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelAuthorTypeDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
@@ -122,6 +123,8 @@ fun chatApp(
     }
     val planStatus by viewModel.planStatusFlow.collectAsState(ChatPlanStatusDto())
     val agents by viewModel.agentsFlow.collectAsState(emptyList())
+    val acpAgents by viewModel.acpAgentsFlow.collectAsState(emptyList())
+    val allowedAcpAgentIds by viewModel.allowedAcpAgentIdsFlow.collectAsState(emptySet())
     val delegatedTasks by viewModel.delegatedTasksFlow.collectAsState(emptyList())
     val channelEvents by viewModel.channelEventsFlow.collectAsState(emptyList())
     val hasRunningAgentWork = delegatedTasks.any { it.status == DelegatedTaskStatusDto.RUNNING }
@@ -132,6 +135,7 @@ fun chatApp(
     val listState = rememberLazyListState()
     val textFieldState = rememberTextFieldState()
     var lastSpokenMessageId by remember { mutableStateOf<String?>(null) }
+    var showAgenticTeamDialog by remember { mutableStateOf(false) }
 
     val lastMessageScrollKey =
         remember(chatMessages) {
@@ -297,10 +301,8 @@ fun chatApp(
                 },
                 onToggleMic = { microphoneService.toggleListening() },
                 onToggleAgenticMode = {
-                    val updated = !agenticEnabled
-                    agenticEnabled = updated
-                    FrontendQuantaSettingsState.instance.state.agenticEnabled = updated
-                    viewModel.onSetAgenticMode(updated)
+                    showAgenticTeamDialog = true
+                    viewModel.onRefreshAcpAgents()
                 },
                 onToggleVoiceFeedback = {
                     voiceEnabled = !voiceEnabled
@@ -317,9 +319,165 @@ fun chatApp(
                 onStopAgents = { viewModel.onStopAllAgents() },
                 onSync = { scope.launch { settingsSyncService.retryNow() } },
             )
+
+            if (showAgenticTeamDialog) {
+                agenticTeamDialog(
+                    agenticEnabled = agenticEnabled,
+                    internalAgents = agents,
+                    acpAgents = acpAgents,
+                    allowedAcpAgentIds = allowedAcpAgentIds,
+                    onSetAgenticEnabled = { enabled ->
+                        agenticEnabled = enabled
+                        FrontendQuantaSettingsState.instance.state.agenticEnabled = enabled
+                        viewModel.onSetAgenticMode(enabled)
+                    },
+                    onRefresh = { viewModel.onRefreshAcpAgents() },
+                    onSetAcpAllowed = { agent, allowed ->
+                        val action = if (allowed) "Add" else "Remove"
+                        val message =
+                            if (allowed) {
+                                "Add ${agent.name} to this chat and turn on agentic team mode?\n\n" +
+                                    "This independent external ACP agent may receive task context and access this project " +
+                                    "using its own tools.\n\n${agent.transportDescription()}"
+                            } else {
+                                "Remove ${agent.name} from this chat? Any active work for this agent will be stopped."
+                            }
+                        val approved =
+                            Messages.showYesNoDialog(
+                                project,
+                                message,
+                                "$action External Agent",
+                                action,
+                                "Cancel",
+                                Messages.getQuestionIcon(),
+                            ) == Messages.YES
+                        if (approved) {
+                            val enableAgenticMode = allowed && !agenticEnabled
+                            if (enableAgenticMode) {
+                                agenticEnabled = true
+                                FrontendQuantaSettingsState.instance.state.agenticEnabled = true
+                            }
+                            viewModel.onSetAcpAgentAllowed(agent.id, allowed, enableAgenticMode)
+                        }
+                    },
+                    onDismiss = { showAgenticTeamDialog = false },
+                )
+            }
         },
     )
 }
+
+@Composable
+private fun agenticTeamDialog(
+    agenticEnabled: Boolean,
+    internalAgents: List<AgentInfoDto>,
+    acpAgents: List<AcpAgentDto>,
+    allowedAcpAgentIds: Set<String>,
+    onSetAgenticEnabled: (Boolean) -> Unit,
+    onRefresh: () -> Unit,
+    onSetAcpAllowed: (AcpAgentDto, Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier =
+                Modifier
+                    .widthIn(min = 460.dp, max = 620.dp)
+                    .background(ChatAppColors.Panel.background, RoundedCornerShape(12.dp))
+                    .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("Agentic team", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                    Text(
+                        "Choose which teammates this chat may use.",
+                        style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
+                    )
+                }
+                OutlinedButton(onClick = { onSetAgenticEnabled(!agenticEnabled) }) {
+                    Text(if (agenticEnabled) "Turn off" else "Turn on")
+                }
+            }
+
+            Divider(orientation = Orientation.Horizontal)
+            Text("Quanta teammates", fontWeight = FontWeight.SemiBold)
+            Text(
+                if (internalAgents.isEmpty()) "No internal teammates active." else "${internalAgents.size} internal teammate(s) active.",
+                style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("External ACP agents", fontWeight = FontWeight.SemiBold)
+                OutlinedButton(onClick = onRefresh) { Text("Refresh") }
+            }
+            if (acpAgents.isEmpty()) {
+                Text(
+                    "No available ACP agents found. Refresh after installing or configuring an agent.",
+                    style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
+                )
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    acpAgents.forEach { agent ->
+                        val allowed = agent.id in allowedAcpAgentIds
+                        Row(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .background(Color.White.copy(alpha = 0.04f), RoundedCornerShape(8.dp))
+                                    .padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(agent.name, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    agent.transportDescription(),
+                                    style = JewelTheme.defaultTextStyle.copy(fontSize = 11.sp, color = Color.Gray),
+                                )
+                                Text(
+                                    if (allowed) "Allowed for this chat" else "Available · Not allowed",
+                                    style =
+                                        JewelTheme.defaultTextStyle.copy(
+                                            fontSize = 11.sp,
+                                            color = if (allowed) Color(0xFF67C587) else Color(0xFFE0B86A),
+                                        ),
+                                )
+                            }
+                            OutlinedButton(onClick = { onSetAcpAllowed(agent, !allowed) }) {
+                                Text(if (allowed) "Remove" else "Add to chat")
+                            }
+                        }
+                    }
+                }
+            }
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                DefaultButton(onClick = onDismiss) { Text("Done") }
+            }
+        }
+    }
+}
+
+private fun AcpAgentDto.transportDescription(): String =
+    if (executablePath.startsWith("tcp://")) {
+        val endpoint = executablePath.removePrefix("tcp://")
+        if (endpoint.startsWith("localhost:") || endpoint.startsWith("127.0.0.1:") || endpoint.startsWith("[::1]:")) {
+            "External · Local TCP · $endpoint"
+        } else {
+            "External · Remote TCP · $endpoint"
+        }
+    } else {
+        "External · Local application · $executablePath"
+    }
 
 @Composable
 private fun channelActivityPanel(
