@@ -38,6 +38,23 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 internal fun requiresInteractiveMcpConnection(config: McpServerConfig?): Boolean = config?.url != null
 
+/** HTTP is permitted only for a literal loopback MCP endpoint; remote MCP servers must use HTTPS. */
+internal fun isLoopbackMcpUrl(url: String?): Boolean =
+    runCatching {
+        val uri = URI(url)
+        uri.scheme.equals("http", ignoreCase = true) &&
+            uri.host?.removeSurrounding("[", "]")?.lowercase() in setOf("localhost", "127.0.0.1", "::1")
+    }.getOrDefault(false)
+
+private fun requireSupportedMcpUrl(url: String): URI =
+    URI(url).also { uri ->
+        val scheme = uri.scheme?.lowercase()
+        require(!uri.host.isNullOrBlank()) { "MCP server URL must be absolute" }
+        require(scheme == "https" || isLoopbackMcpUrl(url)) {
+            "MCP server URL must use HTTPS, except for localhost, 127.0.0.1, or ::1 loopback endpoints"
+        }
+    }
+
 @Service(Service.Level.PROJECT)
 class McpClientService(
     private val project: Project,
@@ -394,8 +411,8 @@ class McpClientService(
         scheme: String?,
         requestBuilder: HttpRequest.Builder,
     ): McpClientTransport {
-        require(scheme == "http" || scheme == "https") { "MCP server URL must use http:// or https://" }
-        val endpointUri = URI(url)
+        val endpointUri = requireSupportedMcpUrl(url)
+        require(endpointUri.scheme.equals(scheme, ignoreCase = true)) { "MCP server URL scheme changed unexpectedly" }
         val baseUri = "${endpointUri.scheme}://${endpointUri.rawAuthority}"
         val endpoint = endpointUri.rawPath.ifBlank { "/" } + endpointUri.rawQuery?.let { "?$it" }.orEmpty()
         return HttpClientStreamableHttpTransport
@@ -418,22 +435,23 @@ class McpClientService(
         }
         val url = cfg.url ?: return null
         return try {
-            val scheme = URI(url).scheme?.lowercase()
-            require(scheme == "http" || scheme == "https") { "MCP server URL must use http:// or https://" }
+            val endpointUri = requireSupportedMcpUrl(url)
+            val scheme = endpointUri.scheme.lowercase()
             val hasStaticAuthorization =
                 cfg.headers?.keys?.any { it.equals("Authorization", ignoreCase = true) } == true
             QDLog.info(log) {
                 "ensureClient(url): effective config for '$name': transport=streamable-http, " +
-                    "oauth=challenge-driven, staticAuthorization=$hasStaticAuthorization"
+                    "oauth=${if (scheme == "https") "challenge-driven" else "disabled-for-loopback-http"}, " +
+                    "staticAuthorization=$hasStaticAuthorization"
             }
 
             try {
                 QDLog.info(log) { "ensureClient(url): connecting '$name' to $url via Streamable HTTP" }
                 val requestBuilder = HttpRequest.newBuilder()
                 cfg.headers?.forEach { (header, value) -> requestBuilder.header(header, value) }
-                // MCP OAuth discovery is challenge-driven: an unauthenticated Streamable HTTP initialize
-                // obtains the resource_metadata URL from WWW-Authenticate before browser login begins.
-                if (!hasStaticAuthorization) {
+                // OAuth metadata and tokens are required to use HTTPS. Local HTTP endpoints can instead use
+                // explicit static Authorization headers when needed.
+                if (!hasStaticAuthorization && scheme == "https") {
                     oauth.discoverAuthorizationChallenge(url, cfg.headers)?.let { challenge ->
                         val accessToken = oauth.accessToken(name, url, challenge, cfg.oauthClientId)
                         QDLog.info(log) {

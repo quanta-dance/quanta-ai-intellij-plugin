@@ -14,6 +14,15 @@ class McpRemoteConnectionPolicyTest {
     }
 
     @Test
+    fun permitsHttpOnlyForLiteralLoopbackMcpEndpoints() {
+        assertTrue(isLoopbackMcpUrl("http://localhost:3000/mcp"))
+        assertTrue(isLoopbackMcpUrl("http://127.0.0.1:3000/mcp"))
+        assertTrue(isLoopbackMcpUrl("http://[::1]:3000/mcp"))
+        assertFalse(isLoopbackMcpUrl("http://example.test/mcp"))
+        assertFalse(isLoopbackMcpUrl("https://localhost:3000/mcp"))
+    }
+
+    @Test
     fun doesNotDeferLocalStdioServerDiscovery() {
         assertFalse(requiresInteractiveMcpConnection(McpServerConfig(command = "local-mcp-server")))
     }
