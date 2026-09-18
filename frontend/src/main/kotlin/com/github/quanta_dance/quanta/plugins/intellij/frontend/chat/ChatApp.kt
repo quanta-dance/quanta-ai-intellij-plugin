@@ -80,6 +80,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentIn
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskStatusDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServerStatusDto
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
@@ -125,6 +126,7 @@ fun chatApp(
     val agents by viewModel.agentsFlow.collectAsState(emptyList())
     val acpAgents by viewModel.acpAgentsFlow.collectAsState(emptyList())
     val allowedAcpAgentIds by viewModel.allowedAcpAgentIdsFlow.collectAsState(emptySet())
+    val mcpServers by viewModel.mcpServersFlow.collectAsState(emptyList())
     val delegatedTasks by viewModel.delegatedTasksFlow.collectAsState(emptyList())
     val channelEvents by viewModel.channelEventsFlow.collectAsState(emptyList())
     val hasRunningAgentWork = delegatedTasks.any { it.status == DelegatedTaskStatusDto.RUNNING }
@@ -136,6 +138,7 @@ fun chatApp(
     val textFieldState = rememberTextFieldState()
     var lastSpokenMessageId by remember { mutableStateOf<String?>(null) }
     var showAgenticTeamDialog by remember { mutableStateOf(false) }
+    var showMcpToolsDialog by remember { mutableStateOf(false) }
 
     val lastMessageScrollKey =
         remember(chatMessages) {
@@ -304,6 +307,7 @@ fun chatApp(
                     showAgenticTeamDialog = true
                     viewModel.onRefreshAcpAgents()
                 },
+                onToggleMcpTools = { showMcpToolsDialog = true },
                 onToggleVoiceFeedback = {
                     voiceEnabled = !voiceEnabled
                     FrontendQuantaSettingsState.instance.state.voiceEnabled = voiceEnabled
@@ -363,9 +367,111 @@ fun chatApp(
                     onDismiss = { showAgenticTeamDialog = false },
                 )
             }
+
+            if (showMcpToolsDialog) {
+                mcpToolsDialog(
+                    servers = mcpServers,
+                    onSetEnabled = viewModel::onSetMcpServerEnabled,
+                    onAuthorize = viewModel::onRetryMcpServerConnection,
+                    onDismiss = { showMcpToolsDialog = false },
+                )
+            }
         },
     )
 }
+
+@Composable
+private fun mcpToolsDialog(
+    servers: List<McpServerStatusDto>,
+    onSetEnabled: (String, Boolean) -> Unit,
+    onAuthorize: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier =
+                Modifier
+                    .widthIn(min = 460.dp, max = 620.dp)
+                    .background(ChatAppColors.Panel.background, RoundedCornerShape(12.dp))
+                    .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text("MCP tools", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+            Text(
+                "Enable only the MCP servers this chat should expose to AI. These choices apply only to this chat.",
+                style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
+            )
+            Divider(orientation = Orientation.Horizontal)
+
+            if (servers.isEmpty()) {
+                Text(
+                    "No MCP servers are configured. Configure servers in Settings to make tools available here.",
+                    style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
+                )
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    servers.forEach { server ->
+                        Row(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .background(Color.White.copy(alpha = 0.04f), RoundedCornerShape(8.dp))
+                                    .padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                            ) {
+                                Text(server.name, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    server.connectionDescription(),
+                                    style = JewelTheme.defaultTextStyle.copy(fontSize = 11.sp, color = Color.Gray),
+                                )
+                                server.error?.let { error ->
+                                    Text(
+                                        error,
+                                        style =
+                                            JewelTheme.defaultTextStyle.copy(
+                                                fontSize = 11.sp,
+                                                color = Color(0xFFE0B86A),
+                                            ),
+                                    )
+                                }
+                            }
+                            Column(
+                                horizontalAlignment = Alignment.End,
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                OutlinedButton(onClick = { onSetEnabled(server.name, !server.enabledForCurrentChat) }) {
+                                    Text(if (server.enabledForCurrentChat) "Disable" else "Enable")
+                                }
+                                if (server.requiresAuthorization) {
+                                    OutlinedButton(onClick = { onAuthorize(server.name) }) {
+                                        Text(if (server.connecting) "Authorizing…" else "Authorize")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                DefaultButton(onClick = onDismiss) { Text("Done") }
+            }
+        }
+    }
+}
+
+private fun McpServerStatusDto.connectionDescription(): String =
+    when {
+        connected -> "Connected · $toolCount tool${if (toolCount == 1) "" else "s"}"
+        connecting -> "Connecting or waiting for authorization"
+        enabledForCurrentChat -> "Enabled for this chat · Not connected"
+        else -> "Disabled for this chat"
+    }
 
 @Composable
 private fun agenticTeamDialog(

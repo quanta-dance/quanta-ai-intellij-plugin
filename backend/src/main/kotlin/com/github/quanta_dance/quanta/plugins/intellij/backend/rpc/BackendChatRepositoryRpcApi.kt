@@ -59,6 +59,20 @@ class BackendChatRepositoryRpcApi : ChatRepositoryRpcApi {
         BackendChatRepositoryModel.getInstance(backendProject).setAcpAgentAllowed(agentId, allowed)
     }
 
+    override suspend fun getDisabledMcpServerNames(projectPath: String): List<String> {
+        val backendProject = findBackendProject(projectPath) ?: return emptyList()
+        return BackendChatRepositoryModel.getInstance(backendProject).getDisabledMcpServerNames()
+    }
+
+    override suspend fun setMcpServerEnabled(
+        projectPath: String,
+        serverName: String,
+        enabled: Boolean,
+    ) {
+        val backendProject = findBackendProject(projectPath) ?: return
+        BackendChatRepositoryModel.getInstance(backendProject).setMcpServerEnabled(serverName, enabled)
+    }
+
     override suspend fun sendMessage(
         projectPath: String,
         messageContent: String,

@@ -47,7 +47,14 @@ object DynamicMcpToolProvider {
                 val method = t.name()
                 val fnName = buildName(server, method)
                 val dottedName = "$server.$method"
-                if (normalizedAllowedNames != null && fnName !in normalizedAllowedNames && dottedName !in normalizedAllowedNames) continue
+                if (
+                    normalizedAllowedNames != null &&
+                    server !in normalizedAllowedNames &&
+                    fnName !in normalizedAllowedNames &&
+                    dottedName !in normalizedAllowedNames
+                ) {
+                    continue
+                }
                 nameMap[fnName] = server to method
 
                 val description =

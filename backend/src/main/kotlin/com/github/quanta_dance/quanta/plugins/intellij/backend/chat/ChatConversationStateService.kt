@@ -111,6 +111,7 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
         var channelEvents: MutableList<PersistedChannelEvent> = mutableListOf(),
         var agents: MutableList<PersistedAgentProfile> = mutableListOf(),
         var allowedAcpAgentIds: MutableList<String> = mutableListOf(),
+        var disabledMcpServerNames: MutableList<String> = mutableListOf(),
     )
 
     data class State(
@@ -248,6 +249,43 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
                 if (agentId in session.allowedAcpAgentIds) false else session.allowedAcpAgentIds.add(agentId)
             } else {
                 session.allowedAcpAgentIds.remove(agentId)
+            }
+        if (changed) session.updatedAtEpochMs = System.currentTimeMillis()
+        return changed
+    }
+
+    /** New sessions enable configured MCP servers by default; this list records explicit opt-outs only. */
+    fun isMcpServerEnabled(
+        sessionId: String,
+        serverName: String,
+    ): Boolean =
+        serverName !in
+            state.sessions
+                .firstOrNull { it.id == sessionId }
+                ?.disabledMcpServerNames
+                .orEmpty()
+
+    fun getDisabledMcpServerNames(sessionId: String = getActiveSessionId()): Set<String> =
+        state.sessions
+            .firstOrNull { it.id == sessionId }
+            ?.disabledMcpServerNames
+            .orEmpty()
+            .toSet()
+
+    fun setMcpServerEnabled(
+        sessionId: String,
+        serverName: String,
+        enabled: Boolean,
+    ): Boolean {
+        require(serverName.isNotBlank()) { "MCP server name must not be blank." }
+        val session = state.sessions.firstOrNull { it.id == sessionId } ?: return false
+        val changed =
+            if (enabled) {
+                session.disabledMcpServerNames.remove(serverName)
+            } else if (serverName in session.disabledMcpServerNames) {
+                false
+            } else {
+                session.disabledMcpServerNames.add(serverName)
             }
         if (changed) session.updatedAtEpochMs = System.currentTimeMillis()
         return changed

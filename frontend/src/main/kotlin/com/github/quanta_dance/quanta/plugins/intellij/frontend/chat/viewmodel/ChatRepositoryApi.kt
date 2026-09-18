@@ -10,6 +10,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentIn
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServerStatusDto
 import kotlinx.coroutines.flow.StateFlow
 
 interface ChatRepositoryApi {
@@ -19,6 +20,7 @@ interface ChatRepositoryApi {
     val agentsFlow: StateFlow<List<AgentInfoDto>>
     val acpAgentsFlow: StateFlow<List<AcpAgentDto>>
     val allowedAcpAgentIdsFlow: StateFlow<Set<String>>
+    val mcpServersFlow: StateFlow<List<McpServerStatusDto>>
     val delegatedTasksFlow: StateFlow<List<DelegatedTaskDto>>
     val channelEventsFlow: StateFlow<List<AgentChannelEventDto>>
 
@@ -38,6 +40,13 @@ interface ChatRepositoryApi {
         agentId: String,
         allowed: Boolean,
     )
+
+    suspend fun setMcpServerEnabled(
+        serverName: String,
+        enabled: Boolean,
+    )
+
+    suspend fun retryMcpServerConnection(serverName: String)
 
     suspend fun createDefaultAgentTeam()
 

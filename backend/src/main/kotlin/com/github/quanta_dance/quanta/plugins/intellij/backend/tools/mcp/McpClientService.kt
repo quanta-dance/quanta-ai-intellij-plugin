@@ -85,6 +85,7 @@ class McpClientService(
     private val toolCache = ConcurrentHashMap<String, List<Tool>>()
     private val serverErrors = ConcurrentHashMap<String, String>()
     private val connectingServers = ConcurrentHashMap.newKeySet<String>()
+    private val authorizationRequestedServers = ConcurrentHashMap.newKeySet<String>()
 
     // A failed remote endpoint must not repeatedly trigger OAuth or connection attempts during tool polling.
     // It is cleared only by a configuration change/removal or a successful connection.
@@ -206,11 +207,17 @@ class McpClientService(
             throw t
         }
 
-        // URL servers can require an interactive browser OAuth flow. Never make the settings-sync RPC
-        // wait for that flow; discovery continues in the MCP background scope instead.
-        serversConfig.mcpServers.keys.forEach { name ->
-            QDLog.info(log) { "McpClientService refresh: scheduling tool discovery for configured server '$name'" }
-            discoverToolsAsync(name)
+        // A server using HTTPS without static credentials might trigger browser OAuth after a 401 challenge.
+        // Do not start that interaction from configuration reload: the user explicitly authorizes it from
+        // the chat's MCP tools roster. Stdio, local HTTP, and statically authorized remote servers remain
+        // eligible for background discovery.
+        serversConfig.mcpServers.forEach { (name, config) ->
+            if (requiresExplicitAuthorization(config)) {
+                QDLog.debug(log) { "McpClientService refresh: waiting for user authorization of '$name'" }
+            } else {
+                QDLog.info(log) { "McpClientService refresh: scheduling tool discovery for configured server '$name'" }
+                discoverToolsAsync(name)
+            }
         }
     }
 
@@ -287,6 +294,7 @@ class McpClientService(
         toolCache.remove(name)
         serverErrors.remove(name)
         failedUrlConnections.remove(name)
+        authorizationRequestedServers.remove(name)
     }
 
     private fun startServer(
@@ -434,6 +442,11 @@ class McpClientService(
             return null
         }
         val url = cfg.url ?: return null
+        if (requiresExplicitAuthorization(cfg) && name !in authorizationRequestedServers) {
+            serverErrors[name] = "Authorization required. Use the MCP tools button to authorize this server."
+            QDLog.debug(log) { "ensureClient(url): waiting for explicit authorization of '$name'" }
+            return null
+        }
         return try {
             val endpointUri = requireSupportedMcpUrl(url)
             val scheme = endpointUri.scheme.lowercase()
@@ -578,6 +591,28 @@ class McpClientService(
         val toolCount = toolCache[name]?.size ?: 0
         val error = serverErrors[name]
         return ServerStatus(connected, connecting, toolCount, error)
+    }
+
+    /** Whether this remote server requires an explicit user action before OAuth-capable connection setup. */
+    fun requiresAuthorization(name: String): Boolean {
+        val config = serversConfig.mcpServers[name] ?: return false
+        return requiresExplicitAuthorization(config) && !clients.containsKey(name)
+    }
+
+    /** Explicit user-requested retry; clears the paused failure marker before scheduling connection work. */
+    fun retryConnection(name: String): Boolean {
+        val config = serversConfig.mcpServers[name] ?: return false
+        authorizationRequestedServers.add(name)
+        failedUrlConnections.remove(name)
+        serverErrors.remove(name)
+        connectAndDiscoverAsync(name, config)
+        return true
+    }
+
+    private fun requiresExplicitAuthorization(config: McpServerConfig): Boolean {
+        val usesStaticAuthorization =
+            config.headers?.keys?.any { it.equals("Authorization", ignoreCase = true) } == true
+        return config.url?.startsWith("https://", ignoreCase = true) == true && !usesStaticAuthorization
     }
 
     fun getConfigLoadError(): String? = configLoadError

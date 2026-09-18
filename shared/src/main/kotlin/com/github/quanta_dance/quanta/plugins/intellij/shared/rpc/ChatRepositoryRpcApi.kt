@@ -19,7 +19,8 @@ import fleet.rpc.remoteApiDescriptor
 @Rpc
 interface ChatRepositoryRpcApi : RemoteApi<Unit> {
     companion object {
-        suspend fun getInstance(): ChatRepositoryRpcApi = RemoteApiProviderService.resolve(remoteApiDescriptor<ChatRepositoryRpcApi>())
+        suspend fun getInstance(): ChatRepositoryRpcApi =
+            RemoteApiProviderService.resolve(remoteApiDescriptor<ChatRepositoryRpcApi>())
     }
 
     suspend fun getCurrentMessages(projectPath: String): List<ChatMessageDto>
@@ -44,6 +45,15 @@ interface ChatRepositoryRpcApi : RemoteApi<Unit> {
         projectPath: String,
         agentId: String,
         allowed: Boolean,
+    )
+
+    /** Returns MCP server names explicitly disabled for the active chat; all other configured servers are enabled. */
+    suspend fun getDisabledMcpServerNames(projectPath: String): List<String>
+
+    suspend fun setMcpServerEnabled(
+        projectPath: String,
+        serverName: String,
+        enabled: Boolean,
     )
 
     /**

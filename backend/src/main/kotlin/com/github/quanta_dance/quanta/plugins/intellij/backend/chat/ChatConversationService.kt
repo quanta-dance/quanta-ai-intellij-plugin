@@ -151,6 +151,18 @@ class ChatConversationService(
         }
     }
 
+    fun getDisabledMcpServerNames(): Set<String> = persistence.getDisabledMcpServerNames()
+
+    fun setMcpServerEnabled(
+        serverName: String,
+        enabled: Boolean,
+    ) {
+        onChatPublicationThread {
+            persistence.setMcpServerEnabled(persistence.getActiveSessionId(), serverName, enabled)
+            _sessions.value = persistence.listSessions()
+        }
+    }
+
     override fun dispose() {
         agentManager.removePropertyChangeListener(agentTaskListener)
         acpDelegations.removePropertyChangeListener(acpDelegationListener)
@@ -644,6 +656,7 @@ class ChatConversationService(
                             inputs = inputs,
                             previousId = null,
                             agentLabel = "AI Manager",
+                            allowedMcpNames = enabledMcpServerNames(),
                         )
                     }
                 replaceMessage(
@@ -711,6 +724,13 @@ class ChatConversationService(
                 )
             }
 
+    private fun enabledMcpServerNames(): Set<String> =
+        project
+            .service<com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.McpClientService>()
+            .listServers()
+            .filter { serverName -> persistence.isMcpServerEnabled(persistence.getActiveSessionId(), serverName) }
+            .toSet()
+
     private suspend fun awaitManagerTurn(
         inputs: MutableList<ResponseInputItem>,
         thinkingMessageIdProvider: () -> String,
@@ -724,6 +744,7 @@ class ChatConversationService(
                 inputs = inputs,
                 previousId = null,
                 agentLabel = "AI Manager",
+                allowedMcpNames = enabledMcpServerNames(),
                 onAssistantMessage = { assistantMessage ->
                     val visibleContent =
                         if (assistantMessage.isReasoning) {

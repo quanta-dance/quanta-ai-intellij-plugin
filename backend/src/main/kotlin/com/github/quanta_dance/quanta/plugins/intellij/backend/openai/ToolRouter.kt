@@ -5,6 +5,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.openai
 
 import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.ChatConversationStateService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.DynamicMcpToolProvider
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.McpClientService
@@ -28,25 +29,31 @@ class ToolRouter(
         } catch (_: Throwable) {
         }
 
-        // Try dynamic MCP resolution (name is the tool id as exposed to OpenAI)
+        // Try dynamic MCP resolution (name is the tool id as exposed to OpenAI).
         DynamicMcpToolProvider.resolve(name)?.let { (server, method) ->
-            val argsJson = functionCall.arguments()
-            val argsMap: Map<String, Any?> = parseArgs(argsJson)
-            val out = project.service<McpClientService>().invokeTool(server, method, argsMap, null)
-            return mapOf("output" to out)
+            return invokeMcpTool(server, method, functionCall.arguments())
         }
-        // Fallback: dotted name server.method
+        // Fallback: dotted name server.method.
         if (name.contains('.')) {
-            val idx = name.indexOf('.')
-            val server = name.substring(0, idx)
-            val method = name.substring(idx + 1)
-            val argsJson = functionCall.arguments()
-            val argsMap: Map<String, Any?> = parseArgs(argsJson)
-            val out = project.service<McpClientService>().invokeTool(server, method, argsMap, null)
-            return mapOf("output" to out)
+            val index = name.indexOf('.')
+            return invokeMcpTool(name.substring(0, index), name.substring(index + 1), functionCall.arguments())
         }
         // Built-in tool route
         return call(functionCall)
+    }
+
+    private fun invokeMcpTool(
+        server: String,
+        method: String,
+        arguments: String,
+    ): Map<String, String> {
+        val sessions = project.service<ChatConversationStateService>()
+        val activeSessionId = sessions.getActiveSessionId()
+        if (!sessions.isMcpServerEnabled(activeSessionId, server)) {
+            return mapOf("output" to "MCP server '$server' is disabled for the current chat.")
+        }
+        val output = project.service<McpClientService>().invokeTool(server, method, parseArgs(arguments), null)
+        return mapOf("output" to output)
     }
 
     private fun call(functionCall: ResponseFunctionToolCall): Any {
