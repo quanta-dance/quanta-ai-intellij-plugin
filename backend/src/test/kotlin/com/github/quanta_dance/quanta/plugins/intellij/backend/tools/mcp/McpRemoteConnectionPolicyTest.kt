@@ -29,8 +29,9 @@ class McpRemoteConnectionPolicyTest {
     }
 
     @Test
-    fun recognizesOnlyTheExpectedStdioShutdownPipeError() {
+    fun recognizesExpectedStdioShutdownPipeErrorsOnly() {
         assertTrue(isExpectedStdioTransportShutdownError(RuntimeException(IOException("Stream closed"))))
+        assertTrue(isExpectedStdioTransportShutdownError(RuntimeException(IOException("Broken pipe"))))
         assertFalse(isExpectedStdioTransportShutdownError(IOException("Connection reset")))
         assertFalse(isExpectedStdioTransportShutdownError(IllegalStateException("Stream closed")))
     }

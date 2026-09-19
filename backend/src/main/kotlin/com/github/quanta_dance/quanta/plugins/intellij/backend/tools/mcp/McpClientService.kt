@@ -59,15 +59,18 @@ private fun requireSupportedMcpUrl(url: String): URI =
 
 /**
  * Reactor reports exceptions emitted after a subscriber has already been cancelled through its global
- * `onErrorDropped` hook. The MCP SDK's stdio transport can legitimately produce this specific error
- * while it is shutting down its outbound writer after a child process or client has closed the pipe.
+ * `onErrorDropped` hook. The MCP SDK's stdio transport can legitimately produce either of these
+ * specific pipe-write errors while it is shutting down its outbound writer after a child process or
+ * client has closed the pipe.
  *
  * It is not an MCP request failure; the owning client operation reports that outcome separately. Do
  * not suppress other dropped errors: they still need a visible backend log for diagnosis.
  */
 internal fun isExpectedStdioTransportShutdownError(error: Throwable): Boolean =
     generateSequence(error) { it.cause }
-        .any { cause -> cause is IOException && cause.message.equals("Stream closed", ignoreCase = true) }
+        .any { cause ->
+            cause is IOException && cause.message?.trim()?.lowercase() in setOf("stream closed", "broken pipe")
+        }
 
 private val reactorDroppedErrorHookInstalled = AtomicBoolean(false)
 
@@ -129,7 +132,7 @@ class McpClientService(
         if (!reactorDroppedErrorHookInstalled.compareAndSet(false, true)) return
         Hooks.onErrorDropped { error ->
             if (isExpectedStdioTransportShutdownError(error)) {
-                QDLog.debug(log) { "MCP stdio outbound writer stopped after its stream closed" }
+                QDLog.debug(log) { "MCP stdio outbound writer stopped after its pipe closed" }
             } else {
                 QDLog.error(log, { "Unexpected dropped Reactor error in MCP runtime" }, error)
             }
