@@ -14,15 +14,9 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExec
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolExecutionPresentation
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolPresentationProvider
-import com.intellij.execution.filters.TextConsoleBuilderFactory
-import com.intellij.execution.ui.ConsoleView
-import com.intellij.execution.ui.ConsoleViewContentType
-import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.wm.ToolWindowManager
-import com.intellij.ui.content.ContentFactory
 
 /**
  * Tool for running terminal commands within the IDE.
@@ -63,9 +57,6 @@ class TerminalCommandTool :
     var envVars: MutableList<EnvVarEntry> = mutableListOf()
 
     companion object {
-        @Volatile
-        private var consoleView: ConsoleView? = null
-
         private val logger = Logger.getInstance(TerminalCommandTool::class.java)
         private const val DEFAULT_AUTO_WAIT_SECONDS = 4
         private const val DEFAULT_FOREGROUND_WAIT_SECONDS = 15
@@ -121,13 +112,13 @@ class TerminalCommandTool :
                 .filter { it.name.isNotBlank() }
                 .associate { it.name to (it.value ?: "") }
 
-        QDLog.info(logger) { "Executing managed terminal command: $cmd" }
-        ensureConsole(project)
-        appendToConsole("> $cmd\n", isError = false)
+        QDLog.info(logger) { "Executing managed terminal command for project=${project.name}: $cmd" }
+        project.service<TerminalCommandConsoleService>().show()
+        appendToConsole(project, "> $cmd\n", isError = false)
 
         val snapshot =
             manager.startCommand(cmd, envMap) { text, isError ->
-                appendToConsole(text, isError)
+                appendToConsole(project, text, isError)
             }
         val executionMode = parseMode(mode)
         val waitSeconds =
@@ -438,42 +429,12 @@ class TerminalCommandTool :
         return default.javaClass.enumConstants?.firstOrNull { it.name == normalized } ?: default
     }
 
-    private fun ensureConsole(project: Project) {
-        ApplicationManager.getApplication().invokeAndWait {
-            val terminalToolWindow = ToolWindowManager.getInstance(project).getToolWindow("Terminal")
-            terminalToolWindow?.show()
-            val contentManager = terminalToolWindow?.contentManager ?: return@invokeAndWait
-            val existingContent = contentManager.findContent("Quanta AI")
-            if (existingContent == null || consoleView == null) {
-                val contentFactory = ContentFactory.getInstance()
-                consoleView =
-                    TextConsoleBuilderFactory
-                        .getInstance()
-                        .createBuilder(project)
-                        .apply { setViewer(true) }
-                        .console
-                val content = contentFactory.createContent(consoleView?.component, "Quanta AI", false)
-                contentManager.addContent(content)
-                contentManager.setSelectedContent(content)
-            } else {
-                contentManager.setSelectedContent(existingContent)
-            }
-        }
-    }
-
     private fun appendToConsole(
+        project: Project,
         text: String,
         isError: Boolean,
     ) {
-        val contentType =
-            if (isError) {
-                ConsoleViewContentType.ERROR_OUTPUT
-            } else {
-                ConsoleViewContentType.NORMAL_OUTPUT
-            }
-        ApplicationManager.getApplication().invokeLater {
-            consoleView?.print(text, contentType)
-        }
+        project.service<TerminalCommandConsoleService>().append(text, isError)
     }
 }
 

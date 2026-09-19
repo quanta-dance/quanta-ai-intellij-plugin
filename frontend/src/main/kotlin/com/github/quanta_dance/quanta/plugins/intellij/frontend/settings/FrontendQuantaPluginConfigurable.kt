@@ -125,21 +125,73 @@ class FrontendQuantaPluginConfigurable : Configurable {
     }
 
     private fun syncSettingsToBackend(settings: FrontendQuantaSettingsState.State) {
-        val project = ProjectManager.getInstance().openProjects.firstOrNull() ?: return
+        val projects = ProjectManager.getInstance().openProjects.filterNot(Project::isDisposed)
+        if (projects.isEmpty()) return
+
         ApplicationManager.getApplication().executeOnPooledThread {
-            runCatching {
-                val rpc = FrontendSettingsRpcService.getInstance(project)
-                val mcpServersJson = project.service<FrontendMcpConfigService>().readForSync()
-                val log = project.service<FrontendBackendLogBridge>()
-                if (mcpServersJson == null) {
-                    log.warn("Skipping settings apply sync because MCP config is empty or unreadable for project=${project.name}")
-                    return@executeOnPooledThread
+            val configPayloads =
+                projects.mapNotNull { project ->
+                    project.service<FrontendMcpConfigService>().readForSync()?.let { config -> project to config }
                 }
-                log.info("Settings apply sync sending MCP config to backend for project=${project.name}, chars=${mcpServersJson.length}")
-                runBlocking { rpc.updateSettings(settings.toDto(project, mcpServersJson)) }
+            val distinctConfigs = configPayloads.map { it.second }.distinct()
+            if (configPayloads.size != projects.size || distinctConfigs.size != 1) {
+                projects.forEach { project ->
+                    project
+                        .service<FrontendBackendLogBridge>()
+                        .warn("Skipping settings apply sync because the shared MCP config could not be read consistently")
+                }
+                return@executeOnPooledThread
+            }
+
+            val mcpServersJson = distinctConfigs.single()
+            projects.forEach { project ->
+                runCatching {
+                    val rpc = FrontendSettingsRpcService.getInstance(project)
+                    val log = project.service<FrontendBackendLogBridge>()
+                    log.info(
+                        "Settings apply sync sending MCP config to backend for project=${project.name}, chars=${mcpServersJson.length}",
+                    )
+                    runBlocking { rpc.updateSettings(settings.toDto(project, mcpServersJson)) }
+                }.onFailure { error ->
+                    project
+                        .service<FrontendBackendLogBridge>()
+                        .warn("Settings apply sync failed for project=${project.name}: ${error.message}")
+                }
             }
         }
     }
+}
+
+private fun selectProjectForMcpEditor(): Project? {
+    val projects = ProjectManager.getInstance().openProjects.filterNot(Project::isDisposed)
+    when (projects.size) {
+        0 -> {
+            Messages.showWarningDialog(
+                "No open project found. Open a project to edit its MCP servers file.",
+                "QuantaDance",
+            )
+            return null
+        }
+
+        1 -> {
+            return projects.single()
+        }
+    }
+
+    val choices =
+        projects.mapIndexed { index, project ->
+            val path = project.basePath?.takeIf(String::isNotBlank) ?: "no project path"
+            "${project.name} — $path (#${index + 1})"
+        }
+    val selectedIndex =
+        Messages.showChooseDialog(
+            "MCP configuration is shared, but the file must open in a selected project window.",
+            "Choose Project for MCP Configuration",
+            choices.toTypedArray(),
+            choices.first(),
+            Messages.getQuestionIcon(),
+        )
+    return projects.getOrNull(selectedIndex)
 }
 
 private class FrontendQuantaSettingsComponent {
@@ -148,6 +200,7 @@ private class FrontendQuantaSettingsComponent {
             emptyText.text = FrontendQuantaSettingsState.DEFAULT_OPENAI_URL
             toolTipText = "Default host is ${FrontendQuantaSettingsState.DEFAULT_OPENAI_URL}"
         }
+
     private val tokenField =
         JBPasswordField().apply {
             columns = 30
@@ -221,7 +274,8 @@ private class FrontendQuantaSettingsComponent {
         JBTextArea(10, 60).apply {
             lineWrap = true
             wrapStyleWord = true
-            toolTipText = "JSON array of actions. Each item needs id, label, and instruction. Label max is 20 chars."
+            toolTipText =
+                "JSON array of actions. Each item needs id, label, and instruction. Label max is 20 chars."
         }
     private val actionConfigsScroll = JScrollPane(actionConfigsArea)
 
@@ -229,7 +283,8 @@ private class FrontendQuantaSettingsComponent {
         JButton("Edit Actions…").apply {
             toolTipText = "Open the action list editor"
             addActionListener {
-                val dialog = FrontendActionEditorDialog(FrontendQuantaSettingsState.instance.state.actionConfigsJson)
+                val dialog =
+                    FrontendActionEditorDialog(FrontendQuantaSettingsState.instance.state.actionConfigsJson)
                 if (dialog.showAndGet()) {
                     actionConfigsValue = dialog.getActionsJson()
                 }
@@ -240,14 +295,7 @@ private class FrontendQuantaSettingsComponent {
         JButton("Edit MCP Servers…").apply {
             toolTipText = "Open or create .quantadance/mcp-servers.json in the current project"
             addActionListener {
-                val project: Project? = ProjectManager.getInstance().openProjects.firstOrNull()
-                if (project == null) {
-                    Messages.showWarningDialog(
-                        "No open project found. Open a project to edit its MCP servers file.",
-                        "QuantaDance",
-                    )
-                    return@addActionListener
-                }
+                val project = selectProjectForMcpEditor() ?: return@addActionListener
                 val file = project.service<FrontendMcpConfigService>().ensureExists()
                 project
                     .service<FrontendBackendLogBridge>()
@@ -258,7 +306,11 @@ private class FrontendQuantaSettingsComponent {
                             FileEditorManager.getInstance(project).openFile(vFile, true)
                         }
                     } ?: run {
-                        Messages.showErrorDialog(project, "Failed to open mcp-servers.json in editor.", "QuantaDance")
+                        Messages.showErrorDialog(
+                            project,
+                            "Failed to open mcp-servers.json in editor.",
+                            "QuantaDance",
+                        )
                     }
                 } catch (e: Exception) {
                     Messages.showErrorDialog(
