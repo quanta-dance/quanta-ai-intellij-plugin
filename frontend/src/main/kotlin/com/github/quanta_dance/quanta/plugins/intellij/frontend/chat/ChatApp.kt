@@ -127,6 +127,8 @@ fun chatApp(
     val acpAgents by viewModel.acpAgentsFlow.collectAsState(emptyList())
     val allowedAcpAgentIds by viewModel.allowedAcpAgentIdsFlow.collectAsState(emptySet())
     val mcpServers by viewModel.mcpServersFlow.collectAsState(emptyList())
+    val mcpConfigurationLoading by viewModel.mcpConfigurationLoadingFlow.collectAsState(true)
+    val mcpConfigurationError by viewModel.mcpConfigurationErrorFlow.collectAsState(null)
     val delegatedTasks by viewModel.delegatedTasksFlow.collectAsState(emptyList())
     val channelEvents by viewModel.channelEventsFlow.collectAsState(emptyList())
     val hasRunningAgentWork = delegatedTasks.any { it.status == DelegatedTaskStatusDto.RUNNING }
@@ -371,6 +373,8 @@ fun chatApp(
             if (showMcpToolsDialog) {
                 mcpToolsDialog(
                     servers = mcpServers,
+                    configurationLoading = mcpConfigurationLoading,
+                    configurationError = mcpConfigurationError,
                     onSetEnabled = viewModel::onSetMcpServerEnabled,
                     onAuthorize = viewModel::onRetryMcpServerConnection,
                     onDismiss = { showMcpToolsDialog = false },
@@ -383,6 +387,8 @@ fun chatApp(
 @Composable
 private fun mcpToolsDialog(
     servers: List<McpServerStatusDto>,
+    configurationLoading: Boolean,
+    configurationError: String?,
     onSetEnabled: (String, Boolean) -> Unit,
     onAuthorize: (String) -> Unit,
     onDismiss: () -> Unit,
@@ -403,53 +409,76 @@ private fun mcpToolsDialog(
             )
             Divider(orientation = Orientation.Horizontal)
 
-            if (servers.isEmpty()) {
-                Text(
-                    "No MCP servers are configured. Configure servers in Settings to make tools available here.",
-                    style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
-                )
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    servers.forEach { server ->
-                        Row(
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .background(Color.White.copy(alpha = 0.04f), RoundedCornerShape(8.dp))
-                                    .padding(10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            Column(
-                                modifier = Modifier.weight(1f),
-                                verticalArrangement = Arrangement.spacedBy(2.dp),
+            when {
+                configurationLoading -> {
+                    Text(
+                        "Syncing MCP configuration and discovering available tools…",
+                        style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
+                    )
+                }
+
+                configurationError != null -> {
+                    Text(
+                        "MCP configuration could not be loaded: $configurationError",
+                        style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color(0xFFE0B86A)),
+                    )
+                }
+
+                servers.isEmpty() -> {
+                    Text(
+                        "No MCP servers are configured. Configure servers in Settings to make tools available here.",
+                        style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
+                    )
+                }
+
+                else -> {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        servers.forEach { server ->
+                            Row(
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .background(Color.White.copy(alpha = 0.04f), RoundedCornerShape(8.dp))
+                                        .padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
                             ) {
-                                Text(server.name, fontWeight = FontWeight.SemiBold)
-                                Text(
-                                    server.connectionDescription(),
-                                    style = JewelTheme.defaultTextStyle.copy(fontSize = 11.sp, color = Color.Gray),
-                                )
-                                server.error?.let { error ->
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                                ) {
+                                    Text(server.name, fontWeight = FontWeight.SemiBold)
                                     Text(
-                                        error,
-                                        style =
-                                            JewelTheme.defaultTextStyle.copy(
-                                                fontSize = 11.sp,
-                                                color = Color(0xFFE0B86A),
-                                            ),
+                                        server.connectionDescription(),
+                                        style = JewelTheme.defaultTextStyle.copy(fontSize = 11.sp, color = Color.Gray),
                                     )
+                                    server.error?.let { error ->
+                                        Text(
+                                            error,
+                                            style =
+                                                JewelTheme.defaultTextStyle.copy(
+                                                    fontSize = 11.sp,
+                                                    color = Color(0xFFE0B86A),
+                                                ),
+                                        )
+                                    }
                                 }
-                            }
-                            Column(
-                                horizontalAlignment = Alignment.End,
-                                verticalArrangement = Arrangement.spacedBy(6.dp),
-                            ) {
-                                OutlinedButton(onClick = { onSetEnabled(server.name, !server.enabledForCurrentChat) }) {
-                                    Text(if (server.enabledForCurrentChat) "Disable" else "Enable")
-                                }
-                                if (server.requiresAuthorization) {
-                                    OutlinedButton(onClick = { onAuthorize(server.name) }) {
-                                        Text(if (server.connecting) "Authorizing…" else "Authorize")
+                                Column(
+                                    horizontalAlignment = Alignment.End,
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    OutlinedButton(onClick = {
+                                        onSetEnabled(
+                                            server.name,
+                                            !server.enabledForCurrentChat,
+                                        )
+                                    }) {
+                                        Text(if (server.enabledForCurrentChat) "Disable" else "Enable")
+                                    }
+                                    if (server.requiresAuthorization) {
+                                        OutlinedButton(onClick = { onAuthorize(server.name) }) {
+                                            Text(if (server.connecting) "Authorizing…" else "Authorize")
+                                        }
                                     }
                                 }
                             }
@@ -619,7 +648,11 @@ private fun channelActivityPanel(
                 Text(task.title, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                 Text(task.status.name.lowercase(), fontSize = 11.sp, color = ChatAppColors.Text.disabled)
                 if (task.assignedRoles.isNotEmpty()) {
-                    Text(task.assignedRoles.joinToString(", "), fontSize = 11.sp, color = ChatAppColors.Text.disabled)
+                    Text(
+                        task.assignedRoles.joinToString(", "),
+                        fontSize = 11.sp,
+                        color = ChatAppColors.Text.disabled,
+                    )
                 }
             }
         }
@@ -1020,7 +1053,9 @@ private fun agentThread(
                             FrontendQuantaSettingsState.MESSAGE_WIDTH_RANGE,
                         ),
                     modifier = Modifier.fillMaxWidth(),
-                    isMatchingSearch = searchState.searchQuery?.let { query -> threadMessage.matches(query) } ?: false,
+                    isMatchingSearch =
+                        searchState.searchQuery?.let { query -> threadMessage.matches(query) }
+                            ?: false,
                     isHighlightedInSearch = threadMessage.id == searchState.currentSelectedSearchResultId,
                 )
             }

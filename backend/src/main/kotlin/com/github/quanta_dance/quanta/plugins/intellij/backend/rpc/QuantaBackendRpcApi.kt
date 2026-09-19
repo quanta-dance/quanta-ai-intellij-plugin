@@ -24,6 +24,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.Delegat
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.FrontendLogDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.FrontendLogLevel
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServerStatusDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServerStatusesDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.MicrophoneTranscriptionResultDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.SpeechChunkDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.SynthesizedSpeechDto
@@ -74,25 +75,33 @@ class QuantaBackendRpcApi : QuantaBackendApi {
             manualAgents = BackendRuntimeSettingsService.instance.settings.manualAcpAgents,
         ).discover()
 
-    override suspend fun getMcpServerStatuses(projectPath: String): List<McpServerStatusDto> {
-        val backendProject = findBackendProject(projectPath) ?: return emptyList()
+    override suspend fun getMcpServerStatuses(projectPath: String): McpServerStatusesDto {
+        val backendProject =
+            findBackendProject(projectPath)
+                ?: return McpServerStatusesDto(configurationLoading = true)
         val mcp = backendProject.service<McpClientService>()
         val disabled =
             backendProject
                 .service<com.github.quanta_dance.quanta.plugins.intellij.backend.chat.ChatConversationService>()
                 .getDisabledMcpServerNames()
-        return mcp.listServers().map { name ->
-            val status = mcp.getServerStatus(name)
-            McpServerStatusDto(
-                name = name,
-                enabledForCurrentChat = name !in disabled,
-                connected = status.connected,
-                connecting = status.connecting,
-                toolCount = status.toolCount,
-                requiresAuthorization = mcp.requiresAuthorization(name) && !status.connected,
-                error = status.error,
-            )
-        }
+        val servers =
+            mcp.listServers().map { name ->
+                val status = mcp.getServerStatus(name)
+                McpServerStatusDto(
+                    name = name,
+                    enabledForCurrentChat = name !in disabled,
+                    connected = status.connected,
+                    connecting = status.connecting,
+                    toolCount = status.toolCount,
+                    requiresAuthorization = mcp.requiresAuthorization(name) && !status.connected,
+                    error = status.error,
+                )
+            }
+        return McpServerStatusesDto(
+            servers = servers,
+            configurationLoading = mcp.isConfigurationLoading(),
+            configurationError = mcp.getConfigLoadError(),
+        )
     }
 
     override suspend fun retryMcpServerConnection(

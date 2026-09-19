@@ -647,6 +647,9 @@ class McpClientService(
 
     fun getConfigLoadError(): String? = configLoadError
 
+    /** True while the latest frontend-synced configuration has not been reconciled yet. */
+    fun isConfigurationLoading(): Boolean = !initialized.get() || refreshScheduled.get()
+
     fun getConfiguredCount(): Int = serversConfig.mcpServers.size
 
     private fun extractFirstNumber(text: String): Number? {

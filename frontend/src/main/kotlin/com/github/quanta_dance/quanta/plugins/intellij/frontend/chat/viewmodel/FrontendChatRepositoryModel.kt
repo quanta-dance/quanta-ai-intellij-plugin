@@ -69,6 +69,12 @@ class FrontendChatRepositoryModel(
     private val _mcpServersFlow = MutableStateFlow<List<McpServerStatusDto>>(emptyList())
     override val mcpServersFlow: StateFlow<List<McpServerStatusDto>> = _mcpServersFlow.asStateFlow()
 
+    private val _mcpConfigurationLoadingFlow = MutableStateFlow(true)
+    override val mcpConfigurationLoadingFlow: StateFlow<Boolean> = _mcpConfigurationLoadingFlow.asStateFlow()
+
+    private val _mcpConfigurationErrorFlow = MutableStateFlow<String?>(null)
+    override val mcpConfigurationErrorFlow: StateFlow<String?> = _mcpConfigurationErrorFlow.asStateFlow()
+
     private val _delegatedTasksFlow = MutableStateFlow<List<DelegatedTaskDto>>(emptyList())
     override val delegatedTasksFlow: StateFlow<List<DelegatedTaskDto>> = _delegatedTasksFlow.asStateFlow()
 
@@ -106,8 +112,12 @@ class FrontendChatRepositoryModel(
             logger.warn("Failed to refresh current sessions from backend", error)
         }
         runCatching {
-            _mcpServersFlow.value = backendApi.getMcpServerStatuses(projectPath)
+            val mcpStatuses = backendApi.getMcpServerStatuses(projectPath)
+            _mcpServersFlow.value = mcpStatuses.servers
+            _mcpConfigurationLoadingFlow.value = mcpStatuses.configurationLoading
+            _mcpConfigurationErrorFlow.value = mcpStatuses.configurationError
         }.onFailure { error ->
+            _mcpConfigurationLoadingFlow.value = true
             logger.warn("Failed to refresh MCP server statuses from backend", error)
         }
         runCatching {
