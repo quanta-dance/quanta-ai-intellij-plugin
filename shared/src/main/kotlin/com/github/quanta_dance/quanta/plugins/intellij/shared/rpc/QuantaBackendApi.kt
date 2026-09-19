@@ -29,8 +29,7 @@ import fleet.rpc.remoteApiDescriptor
 @Rpc
 interface QuantaBackendApi : RemoteApi<Unit> {
     companion object {
-        suspend fun getInstance(): QuantaBackendApi =
-            RemoteApiProviderService.resolve(remoteApiDescriptor<QuantaBackendApi>())
+        suspend fun getInstance(): QuantaBackendApi = RemoteApiProviderService.resolve(remoteApiDescriptor<QuantaBackendApi>())
     }
 
     suspend fun ping(): String
