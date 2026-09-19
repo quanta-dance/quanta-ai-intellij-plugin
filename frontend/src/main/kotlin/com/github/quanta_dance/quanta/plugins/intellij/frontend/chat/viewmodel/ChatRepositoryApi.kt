@@ -19,6 +19,7 @@ interface ChatRepositoryApi {
     val planStatusFlow: StateFlow<ChatPlanStatusDto>
     val agentsFlow: StateFlow<List<AgentInfoDto>>
     val acpAgentsFlow: StateFlow<List<AcpAgentDto>>
+    val acpDiscoveryLoadingFlow: StateFlow<Boolean>
     val allowedAcpAgentIdsFlow: StateFlow<Set<String>>
     val mcpServersFlow: StateFlow<List<McpServerStatusDto>>
     val mcpConfigurationLoadingFlow: StateFlow<Boolean>

@@ -28,6 +28,7 @@ interface ChatViewModelApi : Disposable {
     val planStatusFlow: StateFlow<ChatPlanStatusDto>
     val agentsFlow: StateFlow<List<AgentInfoDto>>
     val acpAgentsFlow: StateFlow<List<AcpAgentDto>>
+    val acpDiscoveryLoadingFlow: StateFlow<Boolean>
     val allowedAcpAgentIdsFlow: StateFlow<Set<String>>
     val mcpServersFlow: StateFlow<List<McpServerStatusDto>>
     val mcpConfigurationLoadingFlow: StateFlow<Boolean>
@@ -86,6 +87,7 @@ class ChatViewModel(
     override val planStatusFlow: StateFlow<ChatPlanStatusDto> = repository.planStatusFlow
     override val agentsFlow: StateFlow<List<AgentInfoDto>> = repository.agentsFlow
     override val acpAgentsFlow: StateFlow<List<AcpAgentDto>> = repository.acpAgentsFlow
+    override val acpDiscoveryLoadingFlow: StateFlow<Boolean> = repository.acpDiscoveryLoadingFlow
     override val allowedAcpAgentIdsFlow: StateFlow<Set<String>> = repository.allowedAcpAgentIdsFlow
     override val mcpServersFlow: StateFlow<List<McpServerStatusDto>> = repository.mcpServersFlow
     override val mcpConfigurationLoadingFlow: StateFlow<Boolean> = repository.mcpConfigurationLoadingFlow

@@ -63,6 +63,9 @@ class FrontendChatRepositoryModel(
     private val _acpAgentsFlow = MutableStateFlow<List<AcpAgentDto>>(emptyList())
     override val acpAgentsFlow: StateFlow<List<AcpAgentDto>> = _acpAgentsFlow.asStateFlow()
 
+    private val _acpDiscoveryLoadingFlow = MutableStateFlow(false)
+    override val acpDiscoveryLoadingFlow: StateFlow<Boolean> = _acpDiscoveryLoadingFlow.asStateFlow()
+
     private val _allowedAcpAgentIdsFlow = MutableStateFlow<Set<String>>(emptySet())
     override val allowedAcpAgentIdsFlow: StateFlow<Set<String>> = _allowedAcpAgentIdsFlow.asStateFlow()
 
@@ -179,10 +182,17 @@ class FrontendChatRepositoryModel(
     }
 
     override suspend fun refreshAcpAgents() {
-        syncSettingsToBackend()
-        _acpAgentsFlow.value = QuantaBackendApi.getInstance().discoverAcpAgents()
-        _allowedAcpAgentIdsFlow.value =
-            ChatRepositoryRpcApi.getInstance().getAllowedAcpAgentIds(project.rpcProjectPath()).toSet()
+        _acpDiscoveryLoadingFlow.value = true
+        try {
+            syncSettingsToBackend()
+            _acpAgentsFlow.value = QuantaBackendApi.getInstance().discoverAcpAgents()
+            _allowedAcpAgentIdsFlow.value =
+                ChatRepositoryRpcApi.getInstance().getAllowedAcpAgentIds(project.rpcProjectPath()).toSet()
+        } catch (error: Exception) {
+            logger.warn("Failed to discover ACP agents", error)
+        } finally {
+            _acpDiscoveryLoadingFlow.value = false
+        }
     }
 
     override suspend fun setAcpAgentAllowed(

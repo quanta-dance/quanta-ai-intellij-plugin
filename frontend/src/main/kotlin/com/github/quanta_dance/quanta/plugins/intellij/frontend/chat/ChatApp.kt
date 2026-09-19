@@ -133,6 +133,7 @@ fun chatApp(
     val planStatus by viewModel.planStatusFlow.collectAsState(ChatPlanStatusDto())
     val agents by viewModel.agentsFlow.collectAsState(emptyList())
     val acpAgents by viewModel.acpAgentsFlow.collectAsState(emptyList())
+    val acpDiscoveryLoading by viewModel.acpDiscoveryLoadingFlow.collectAsState(false)
     val allowedAcpAgentIds by viewModel.allowedAcpAgentIdsFlow.collectAsState(emptySet())
     val mcpServers by viewModel.mcpServersFlow.collectAsState(emptyList())
     val mcpConfigurationLoading by viewModel.mcpConfigurationLoadingFlow.collectAsState(true)
@@ -339,6 +340,7 @@ fun chatApp(
                     agenticEnabled = agenticEnabled,
                     internalAgents = agents,
                     acpAgents = acpAgents,
+                    acpDiscoveryLoading = acpDiscoveryLoading,
                     allowedAcpAgentIds = allowedAcpAgentIds,
                     onSetAgenticEnabled = { enabled ->
                         agenticEnabled = enabled
@@ -423,7 +425,7 @@ private fun mcpToolsDialog(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        mcpLoadingIndicator()
+                        loadingIndicator()
                         Text(
                             "Syncing MCP configuration and discovering available tools…",
                             style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
@@ -509,15 +511,15 @@ private fun mcpToolsDialog(
 }
 
 @Composable
-private fun mcpLoadingIndicator() {
+private fun loadingIndicator() {
     val color = JewelTheme.defaultTextStyle.color
-    val transition = rememberInfiniteTransition(label = "mcp_tools_loading")
+    val transition = rememberInfiniteTransition(label = "loading_indicator")
     val rotation =
         transition.animateFloat(
             initialValue = 0f,
             targetValue = 360f,
             animationSpec = infiniteRepeatable(tween(durationMillis = 900, easing = LinearEasing)),
-            label = "mcp_tools_loading_rotation",
+            label = "loading_indicator_rotation",
         )
 
     Canvas(
@@ -549,6 +551,7 @@ private fun agenticTeamDialog(
     agenticEnabled: Boolean,
     internalAgents: List<AgentInfoDto>,
     acpAgents: List<AcpAgentDto>,
+    acpDiscoveryLoading: Boolean,
     allowedAcpAgentIds: Set<String>,
     onSetAgenticEnabled: (Boolean) -> Unit,
     onRefresh: () -> Unit,
@@ -594,46 +597,65 @@ private fun agenticTeamDialog(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text("External ACP agents", fontWeight = FontWeight.SemiBold)
-                OutlinedButton(onClick = onRefresh) { Text("Refresh") }
+                OutlinedButton(onClick = onRefresh, enabled = !acpDiscoveryLoading) {
+                    Text(if (acpDiscoveryLoading) "Discovering…" else "Refresh")
+                }
             }
-            if (acpAgents.isEmpty()) {
-                Text(
-                    "No available ACP agents found. Refresh after installing or configuring an agent.",
-                    style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
-                )
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    acpAgents.forEach { agent ->
-                        val allowed = agent.id in allowedAcpAgentIds
-                        Row(
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .background(Color.White.copy(alpha = 0.04f), RoundedCornerShape(8.dp))
-                                    .padding(10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            Column(
-                                modifier = Modifier.weight(1f),
-                                verticalArrangement = Arrangement.spacedBy(2.dp),
+            when {
+                acpDiscoveryLoading -> {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        loadingIndicator()
+                        Text(
+                            "Discovering available ACP agents…",
+                            style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
+                        )
+                    }
+                }
+
+                acpAgents.isEmpty() -> {
+                    Text(
+                        "No available ACP agents found. Refresh after installing or configuring an agent.",
+                        style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
+                    )
+                }
+
+                else -> {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        acpAgents.forEach { agent ->
+                            val allowed = agent.id in allowedAcpAgentIds
+                            Row(
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .background(Color.White.copy(alpha = 0.04f), RoundedCornerShape(8.dp))
+                                        .padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
                             ) {
-                                Text(agent.name, fontWeight = FontWeight.SemiBold)
-                                Text(
-                                    agent.transportDescription(),
-                                    style = JewelTheme.defaultTextStyle.copy(fontSize = 11.sp, color = Color.Gray),
-                                )
-                                Text(
-                                    if (allowed) "Allowed for this chat" else "Available · Not allowed",
-                                    style =
-                                        JewelTheme.defaultTextStyle.copy(
-                                            fontSize = 11.sp,
-                                            color = if (allowed) Color(0xFF67C587) else Color(0xFFE0B86A),
-                                        ),
-                                )
-                            }
-                            OutlinedButton(onClick = { onSetAcpAllowed(agent, !allowed) }) {
-                                Text(if (allowed) "Remove" else "Add to chat")
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                                ) {
+                                    Text(agent.name, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        agent.transportDescription(),
+                                        style = JewelTheme.defaultTextStyle.copy(fontSize = 11.sp, color = Color.Gray),
+                                    )
+                                    Text(
+                                        if (allowed) "Allowed for this chat" else "Available · Not allowed",
+                                        style =
+                                            JewelTheme.defaultTextStyle.copy(
+                                                fontSize = 11.sp,
+                                                color = if (allowed) Color(0xFF67C587) else Color(0xFFE0B86A),
+                                            ),
+                                    )
+                                }
+                                OutlinedButton(onClick = { onSetAcpAllowed(agent, !allowed) }) {
+                                    Text(if (allowed) "Remove" else "Add to chat")
+                                }
                             }
                         }
                     }
