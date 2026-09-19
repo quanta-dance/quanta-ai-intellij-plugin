@@ -19,6 +19,7 @@ import com.openai.client.OpenAIClient
 import com.openai.models.responses.ResponseInputItem
 import com.openai.models.responses.StructuredResponse
 import java.beans.PropertyChangeSupport
+import java.util.concurrent.TimeUnit
 
 @Service(Service.Level.PROJECT)
 class OpenAIService(
@@ -39,6 +40,7 @@ class OpenAIService(
 
     private val mapper = ObjectMapper()
     private val responseBuilder = ResponseBuilder(project)
+    private val requestRetryStatusListener = ThreadLocal<((RequestRetryStatus) -> Unit)?>()
     private val contextInjector = AgentContextInjector(project, ::systemMessage)
     private val toolExecutionPresenter = ToolExecutionPresenter(project, mapper)
     private val usageTracker =
@@ -193,6 +195,11 @@ class OpenAIService(
      * Supports per-request instruction/model overrides and tool exposure controls before the higher-
      * level `agentTurn(...)` loop layers continuation and callback behavior on top.
      */
+    data class RequestRetryStatus(
+        val retryNumber: Int,
+        val secondsRemaining: Int,
+    )
+
     fun createResponse(
         inputs: MutableList<ResponseInputItem>,
         previousId: String?,
@@ -223,17 +230,35 @@ class OpenAIService(
             )
         val client = requireClientReady()
         QDLog.debug(thisLogger()) { "OpenAIService.createResponse: request built, sending to OpenAI" }
-        val structResponse =
+        var retryNumber = 1
+        var backoffSpentMillis = 0L
+        lateinit var structResponse: StructuredResponse<OpenAIResponse>
+        while (true) {
             try {
-                client.responses().create(createParams)
+                structResponse = client.responses().create(createParams)
+                break
             } catch (throwable: Throwable) {
-                QDLog.warn(thisLogger(), {
-                    "OpenAIService.createResponse: request failed after ${
-                        java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - requestStartedAtNanos)
-                    }ms: ${throwable::class.java.simpleName}: ${throwable.message}"
-                }, throwable)
-                throw throwable
+                val retryPlan =
+                    OpenAIRequestRetryPolicy
+                        .takeIf { it.isRetryable(throwable) }
+                        ?.nextRetry(retryNumber, backoffSpentMillis)
+                if (retryPlan == null) {
+                    QDLog.warn(thisLogger(), {
+                        "OpenAIService.createResponse: request failed after ${
+                            TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - requestStartedAtNanos)
+                        }ms: ${throwable::class.java.simpleName}: ${throwable.message}"
+                    }, throwable)
+                    throw throwable
+                }
+                QDLog.warn(thisLogger()) {
+                    "OpenAIService.createResponse: transient request failure; retry=${retryPlan.retryNumber}, " +
+                        "backoffMs=${retryPlan.delayMillis}: ${throwable::class.java.simpleName}: ${throwable.message}"
+                }
+                waitBeforeRetry(retryPlan)
+                backoffSpentMillis += retryPlan.delayMillis
+                retryNumber += 1
             }
+        }
         QDLog.info(thisLogger()) {
             val responseId = runCatching { structResponse.id() }.getOrNull()
             val outputSize = runCatching { structResponse.output().size }.getOrDefault(-1)
@@ -241,7 +266,7 @@ class OpenAIService(
             val usageSummary =
                 usage?.let { " input=${it.inputTokens()} output=${it.outputTokens()} total=${it.totalTokens()}" } ?: ""
             "OpenAIService.createResponse: response received id=$responseId outputSize=$outputSize$usageSummary " +
-                "totalMs=${java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - requestStartedAtNanos)}"
+                "totalMs=${TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - requestStartedAtNanos)}"
         }
 
         try {
@@ -259,6 +284,25 @@ class OpenAIService(
                 null
             }
         return structResponse to id
+    }
+
+    private fun waitBeforeRetry(retryPlan: OpenAIRequestRetryPolicy.RetryPlan) {
+        var remainingMillis = retryPlan.delayMillis
+        while (remainingMillis > 0) {
+            requestRetryStatusListener.get()?.invoke(
+                RequestRetryStatus(
+                    retryNumber = retryPlan.retryNumber,
+                    secondsRemaining = ((remainingMillis + 999L) / 1_000L).toInt(),
+                ),
+            )
+            try {
+                Thread.sleep(minOf(1_000L, remainingMillis))
+            } catch (interrupted: InterruptedException) {
+                Thread.currentThread().interrupt()
+                throw kotlinx.coroutines.CancellationException("OpenAI retry was cancelled", interrupted)
+            }
+            remainingMillis -= 1_000L
+        }
     }
 
     data class AssistantTurnMessage(
@@ -290,18 +334,26 @@ class OpenAIService(
         allowedMcpNames: Set<String>? = null,
         onAssistantMessage: ((AssistantTurnMessage) -> Unit)? = null,
         onToolUpdate: ((ToolTurnUpdate) -> Unit)? = null,
-    ): Pair<String, String?> =
-        agentTurnOrchestrator.run(
-            inputs = inputs,
-            previousId = previousId,
-            overrideInstructions = overrideInstructions,
-            overrideModel = overrideModel,
-            allowedToolClassFilter = allowedToolClassFilter,
-            includeMcp = includeMcp,
-            agentLabel = agentLabel,
-            allowedBuiltInNames = allowedBuiltInNames,
-            allowedMcpNames = allowedMcpNames,
-            onAssistantMessage = onAssistantMessage,
-            onToolUpdate = onToolUpdate,
-        )
+        onRequestRetry: ((RequestRetryStatus) -> Unit)? = null,
+    ): Pair<String, String?> {
+        val previousListener = requestRetryStatusListener.get()
+        requestRetryStatusListener.set(onRequestRetry)
+        return try {
+            agentTurnOrchestrator.run(
+                inputs = inputs,
+                previousId = previousId,
+                overrideInstructions = overrideInstructions,
+                overrideModel = overrideModel,
+                allowedToolClassFilter = allowedToolClassFilter,
+                includeMcp = includeMcp,
+                agentLabel = agentLabel,
+                allowedBuiltInNames = allowedBuiltInNames,
+                allowedMcpNames = allowedMcpNames,
+                onAssistantMessage = onAssistantMessage,
+                onToolUpdate = onToolUpdate,
+            )
+        } finally {
+            requestRetryStatusListener.set(previousListener)
+        }
+    }
 }

@@ -296,10 +296,10 @@ class ChatConversationService(
 
     private fun userFacingErrorText(error: Throwable): String =
         if (error.causeSequence().any { it is SocketTimeoutException || it is HttpTimeoutException }) {
-            "The AI service did not respond in time, so this request was stopped. " +
-                "Please retry; if this keeps happening, check the configured AI gateway connection."
+            "The AI service remained unavailable after automatic retries. Please retry; if this keeps happening, " +
+                "check the configured AI gateway connection."
         } else {
-            "The AI service could not complete this request. Please retry. " +
+            "The AI service could not complete this request after automatic retries. Please retry. " +
                 "Technical details were recorded in the IDE log."
         }
 
@@ -638,6 +638,19 @@ class ChatConversationService(
         }
     }
 
+    private fun updateThinkingMessage(
+        messageId: String,
+        content: String,
+    ) {
+        onChatPublicationThread {
+            _messages.value =
+                _messages.value.map { message ->
+                    if (message.id == messageId && message.type == AI_THINKING) message.copy(content = content) else message
+                }
+            persistMessages()
+        }
+    }
+
     private fun clearThinkingMessages() {
         onChatPublicationThread {
             _messages.value = _messages.value.filterNot { it.type == AI_THINKING }
@@ -762,6 +775,13 @@ class ChatConversationService(
                     activeToolMessageId = null
                     onFirstAssistantMessageShown()
                     onThinkingMessageIdChanged(appendAiThinkingMessage())
+                },
+                onRequestRetry = { retryStatus ->
+                    updateThinkingMessage(
+                        thinkingMessageIdProvider(),
+                        "We're having trouble reaching the AI service. Retrying automatically in " +
+                            "${retryStatus.secondsRemaining}s (retry ${retryStatus.retryNumber}).",
+                    )
                 },
                 onToolUpdate = { update ->
                     if (isAcpCardOwnedTool(update.item.toolName)) return@agentTurn
