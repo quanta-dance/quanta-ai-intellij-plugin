@@ -121,10 +121,9 @@ class CreateOrUpdateFile :
         try {
             var attempts = 0
             while (attempts < 3) {
-                try {
-                    FileDocumentManager.getInstance().saveAllDocuments()
-                } catch (_: Throwable) {
-                }
+                target
+                    ?.let(FileDocumentManager.getInstance()::getDocument)
+                    ?.let(FileDocumentManager.getInstance()::saveDocument)
                 try {
                     PsiDocumentManager.getInstance(project).commitAllDocuments()
                 } catch (_: Throwable) {

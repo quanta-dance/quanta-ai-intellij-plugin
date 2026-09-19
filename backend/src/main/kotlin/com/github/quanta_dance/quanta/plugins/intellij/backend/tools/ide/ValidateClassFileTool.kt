@@ -95,10 +95,10 @@ class ValidateClassFileTool : ToolInterface<List<String>> {
 
     override fun execute(project: Project): List<String> {
         if (filePath.isNullOrEmpty()) return listOf("Class file path is not specified.")
-        try {
-            FileDocumentManager.getInstance().saveAllDocuments()
-        } catch (_: Throwable) {
-        }
+        PathUtils
+            .resolveVirtualFileWithinProject(project, filePath)
+            ?.let(FileDocumentManager.getInstance()::getDocument)
+            ?.let(FileDocumentManager.getInstance()::saveDocument)
         try {
             PsiDocumentManager.getInstance(project).commitAllDocuments()
         } catch (_: Throwable) {

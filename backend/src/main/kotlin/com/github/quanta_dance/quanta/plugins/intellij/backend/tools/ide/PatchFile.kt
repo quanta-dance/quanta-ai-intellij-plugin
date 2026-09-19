@@ -588,9 +588,12 @@ class PatchFile :
         }
 
         try {
-            FileDocumentManager.getInstance().saveAllDocuments()
             val vFile = PathUtils.resolveVirtualFileWithinProject(project, relToBase)
             if (vFile != null) {
+                FileDocumentManager
+                    .getInstance()
+                    .getDocument(vFile)
+                    ?.let(FileDocumentManager.getInstance()::saveDocument)
                 VfsUtil.markDirtyAndRefresh(true, true, true, vFile)
                 try {
                     PsiDocumentManager.getInstance(project).commitAllDocuments()
