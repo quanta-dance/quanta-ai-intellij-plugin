@@ -18,16 +18,21 @@ import com.openai.core.http.HttpResponse
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.FilterInputStream
+import java.io.IOException
 import java.io.InputStream
 import java.net.SocketTimeoutException
 import java.net.URI
+import java.net.http.HttpConnectTimeoutException
+import java.net.http.HttpTimeoutException
 import java.time.Duration
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import java.net.http.HttpClient as JdkHttpClient
 import java.net.http.HttpRequest as JdkHttpRequest
 import java.net.http.HttpResponse as JdkHttpResponse
@@ -56,17 +61,72 @@ class OpenAIJdkHttpClient internal constructor(
 
     private val log = Logger.getInstance(OpenAIJdkHttpClient::class.java)
 
-    private val jdkClient =
-        JdkHttpClient
-            .newBuilder()
-            .connectTimeout(timeouts.connect)
-            .followRedirects(JdkHttpClient.Redirect.NORMAL)
-            // Prefer HTTP/1.1 — HTTP/2 multiplexing can cause 502s with some proxies/gateways
-            .version(JdkHttpClient.Version.HTTP_1_1)
-            .build()
+    /**
+     * The JDK client owns the HTTP/1.1 keep-alive connection pool. Share it across SDK clients so
+     * chat, image, and video requests reuse connections to the same gateway instead of each
+     * provider-created OpenAI client starting with a cold pool. JDK pools remain origin-scoped.
+     *
+     * A pre-header connection failure can indicate a stale keep-alive connection after a VPN or
+     * network transition. In that case the pool generation is retired once; the SDK's single retry
+     * obtains a fresh transport generation without disrupting requests already in progress.
+     */
+    private fun currentTransport(): SharedTransport = sharedTransport(timeouts.connect)
 
     companion object {
+        private val sharedTransports = ConcurrentHashMap<Duration, AtomicReference<SharedTransport>>()
+        private val transportSequence = AtomicLong()
+
         fun builder() = Builder()
+
+        internal fun currentTransportGenerationForTesting(connectTimeout: Duration): Long = sharedTransport(connectTimeout).generation
+
+        internal fun isPreHeaderConnectionFailure(throwable: Throwable): Boolean =
+            when (val cause = unwrapCompletionFailure(throwable)) {
+                is HttpConnectTimeoutException -> true
+                is HttpTimeoutException -> false
+                is IOException -> true
+                else -> false
+            }
+
+        private fun sharedTransport(connectTimeout: Duration): SharedTransport =
+            sharedTransports
+                .computeIfAbsent(connectTimeout) {
+                    AtomicReference(newSharedTransport(connectTimeout))
+                }.get()
+
+        private fun retireTransport(
+            connectTimeout: Duration,
+            failedTransport: SharedTransport,
+        ): Boolean {
+            val reference = requireNotNull(sharedTransports[connectTimeout])
+            return reference.compareAndSet(failedTransport, newSharedTransport(connectTimeout))
+        }
+
+        private fun newSharedTransport(connectTimeout: Duration): SharedTransport =
+            SharedTransport(
+                client =
+                    JdkHttpClient
+                        .newBuilder()
+                        .connectTimeout(connectTimeout)
+                        .followRedirects(JdkHttpClient.Redirect.NORMAL)
+                        // Prefer HTTP/1.1 — HTTP/2 multiplexing can cause 502s with some proxies/gateways
+                        .version(JdkHttpClient.Version.HTTP_1_1)
+                        .build(),
+                generation = transportSequence.incrementAndGet(),
+            )
+
+        private fun unwrapCompletionFailure(throwable: Throwable): Throwable {
+            var current = throwable
+            while (
+                (
+                    current is java.util.concurrent.CompletionException ||
+                        current is java.util.concurrent.ExecutionException
+                ) && current.cause != null
+            ) {
+                current = requireNotNull(current.cause)
+            }
+            return current
+        }
     }
 
     class Builder internal constructor() {
@@ -97,17 +157,19 @@ class OpenAIJdkHttpClient internal constructor(
         requestOptions: RequestOptions,
     ): HttpResponse {
         val lifecycle = RequestLifecycle(request)
+        val transport = currentTransport()
         return try {
             val preparedRequest = request.toJdkRequest(timeouts.responseHeaders)
-            lifecycle.logStarted(preparedRequest.bodyBytes)
-            val response = jdkClient.send(preparedRequest.request, JdkHttpResponse.BodyHandlers.ofInputStream())
+            lifecycle.logStarted(preparedRequest.bodyBytes, transport.generation)
+            val response = transport.client.send(preparedRequest.request, JdkHttpResponse.BodyHandlers.ofInputStream())
             lifecycle.logHeaders(response.statusCode())
             val openAiResponse = response.toOpenAiResponse(lifecycle, timeouts)
             logResponse(request, response.statusCode(), openAiResponse.errorBodySnippet())
             openAiResponse
-        } catch (t: Throwable) {
-            lifecycle.logFailure(t)
-            throw t
+        } catch (throwable: Throwable) {
+            retireStaleTransportIfNeeded(transport, throwable, lifecycle)
+            lifecycle.logFailure(throwable)
+            throw throwable
         }
     }
 
@@ -116,10 +178,11 @@ class OpenAIJdkHttpClient internal constructor(
         requestOptions: RequestOptions,
     ): CompletableFuture<HttpResponse> {
         val lifecycle = RequestLifecycle(request)
+        val transport = currentTransport()
         return try {
             val preparedRequest = request.toJdkRequest(timeouts.responseHeaders)
-            lifecycle.logStarted(preparedRequest.bodyBytes)
-            jdkClient
+            lifecycle.logStarted(preparedRequest.bodyBytes, transport.generation)
+            transport.client
                 .sendAsync(preparedRequest.request, JdkHttpResponse.BodyHandlers.ofInputStream())
                 .thenApply<HttpResponse> { response ->
                     lifecycle.logHeaders(response.statusCode())
@@ -127,15 +190,35 @@ class OpenAIJdkHttpClient internal constructor(
                     logResponse(request, response.statusCode(), openAiResponse.errorBodySnippet())
                     openAiResponse
                 }.whenComplete { _, throwable ->
-                    throwable?.let { lifecycle.logFailure(it.cause ?: it) }
+                    throwable?.let {
+                        retireStaleTransportIfNeeded(transport, it, lifecycle)
+                        lifecycle.logFailure(it.cause ?: it)
+                    }
                 }
-        } catch (t: Throwable) {
-            lifecycle.logFailure(t)
-            CompletableFuture.failedFuture(t)
+        } catch (throwable: Throwable) {
+            retireStaleTransportIfNeeded(transport, throwable, lifecycle)
+            lifecycle.logFailure(throwable)
+            CompletableFuture.failedFuture(throwable)
         }
     }
 
     override fun close() = Unit
+
+    private fun retireStaleTransportIfNeeded(
+        transport: SharedTransport,
+        throwable: Throwable,
+        lifecycle: RequestLifecycle,
+    ) {
+        if (!lifecycle.hasReceivedHeaders && isPreHeaderConnectionFailure(throwable)) {
+            val retired = retireTransport(timeouts.connect, transport)
+            if (retired) {
+                QDLog.info(log) {
+                    "OpenAI transport generation=${transport.generation} retired after pre-header " +
+                        "connection failure; the next retry will use a fresh pool"
+                }
+            }
+        }
+    }
 
     private fun logResponse(
         request: HttpRequest,
@@ -152,6 +235,11 @@ class OpenAIJdkHttpClient internal constructor(
         }
     }
 }
+
+private data class SharedTransport(
+    val client: JdkHttpClient,
+    val generation: Long,
+)
 
 private data class PreparedJdkRequest(
     val request: JdkHttpRequest,
@@ -233,13 +321,22 @@ private class RequestLifecycle(
     val startedAtNanos = System.nanoTime()
     private val log = Logger.getInstance(OpenAIJdkHttpClient::class.java)
 
-    fun logStarted(bodyBytes: Int) {
+    @Volatile
+    var hasReceivedHeaders = false
+        private set
+
+    fun logStarted(
+        bodyBytes: Int,
+        transportGeneration: Long,
+    ) {
         QDLog.debug(log) {
-            "OpenAI request id=$requestId ${request.method.name} ${request.url()} started; bodyBytes=$bodyBytes"
+            "OpenAI request id=$requestId transportGeneration=$transportGeneration " +
+                "${request.method.name} ${request.url()} started; bodyBytes=$bodyBytes"
         }
     }
 
     fun logHeaders(statusCode: Int) {
+        hasReceivedHeaders = true
         QDLog.info(log) {
             "OpenAI request id=$requestId headers received; status=$statusCode; elapsedMs=${elapsedMillis()}"
         }

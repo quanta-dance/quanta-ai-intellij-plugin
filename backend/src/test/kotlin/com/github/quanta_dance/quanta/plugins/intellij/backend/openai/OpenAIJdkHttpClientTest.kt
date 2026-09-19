@@ -9,7 +9,9 @@ import com.openai.core.http.HttpRequest
 import com.openai.core.http.HttpRequestBody
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
+import java.io.IOException
 import java.net.InetSocketAddress
+import java.net.ServerSocket
 import java.net.SocketTimeoutException
 import java.net.http.HttpTimeoutException
 import java.nio.charset.StandardCharsets
@@ -123,6 +125,34 @@ class OpenAIJdkHttpClientTest {
                 it.body().readBytes()
             }
         }
+    }
+
+    @Test
+    fun `pre-header connection failures retire the shared transport generation`() {
+        val unavailablePort = ServerSocket(0).use { it.localPort }
+        val connectTimeout = Duration.ofMillis(750)
+        val timeouts =
+            OpenAIJdkHttpClient.Timeouts(
+                connect = connectTimeout,
+                responseHeaders = Duration.ofSeconds(1),
+                responseIdle = Duration.ofSeconds(1),
+                responseTotal = Duration.ofSeconds(1),
+            )
+        val before = OpenAIJdkHttpClient.currentTransportGenerationForTesting(connectTimeout)
+        val request =
+            HttpRequest
+                .builder()
+                .method(HttpMethod.GET)
+                .baseUrl("http://127.0.0.1:$unavailablePort")
+                .addPathSegment("responses")
+                .build()
+
+        assertFailsWith<IOException> {
+            OpenAIJdkHttpClient(timeouts).execute(request, RequestOptions.none())
+        }
+
+        val after = OpenAIJdkHttpClient.currentTransportGenerationForTesting(connectTimeout)
+        assertTrue(after > before)
     }
 
     private fun shortTimeouts() =
