@@ -5,6 +5,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp
 
 import java.io.IOException
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -34,5 +35,42 @@ class McpRemoteConnectionPolicyTest {
         assertTrue(isExpectedStdioTransportShutdownError(RuntimeException(IOException("Broken pipe"))))
         assertFalse(isExpectedStdioTransportShutdownError(IOException("Connection reset")))
         assertFalse(isExpectedStdioTransportShutdownError(IllegalStateException("Stream closed")))
+    }
+
+    @Test
+    fun schedulesRefreshBeforeTokenExpiryAndNeverUsesNegativeDelay() {
+        assertEquals(240_000, oauthRefreshDelayMillis(expiresAtSeconds = 1_000, nowSeconds = 700, leewaySeconds = 60))
+        assertEquals(0, oauthRefreshDelayMillis(expiresAtSeconds = 750, nowSeconds = 700, leewaySeconds = 60))
+    }
+
+    @Test
+    fun retriesRefreshOnlyWhileTheCurrentTokenCanStillCoverTheRetryDelay() {
+        assertTrue(
+            shouldRetryOAuthRefresh(
+                attempts = 1,
+                expiresAtSeconds = 1_000,
+                nowSeconds = 900,
+                maxAttempts = 3,
+                retrySeconds = 30,
+            ),
+        )
+        assertFalse(
+            shouldRetryOAuthRefresh(
+                attempts = 3,
+                expiresAtSeconds = 1_000,
+                nowSeconds = 900,
+                maxAttempts = 3,
+                retrySeconds = 30,
+            ),
+        )
+        assertFalse(
+            shouldRetryOAuthRefresh(
+                attempts = 1,
+                expiresAtSeconds = 930,
+                nowSeconds = 900,
+                maxAttempts = 3,
+                retrySeconds = 30,
+            ),
+        )
     }
 }

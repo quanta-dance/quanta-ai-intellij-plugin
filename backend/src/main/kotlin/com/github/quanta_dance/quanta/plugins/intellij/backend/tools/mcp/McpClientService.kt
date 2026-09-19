@@ -24,7 +24,9 @@ import io.modelcontextprotocol.spec.McpClientTransport
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest
 import io.modelcontextprotocol.spec.McpSchema.TextContent
 import io.modelcontextprotocol.spec.McpSchema.Tool
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -56,6 +58,20 @@ private fun requireSupportedMcpUrl(url: String): URI =
             "MCP server URL must use HTTPS, except for localhost, 127.0.0.1, or ::1 loopback endpoints"
         }
     }
+
+internal fun oauthRefreshDelayMillis(
+    expiresAtSeconds: Long,
+    nowSeconds: Long,
+    leewaySeconds: Long,
+): Long = ((expiresAtSeconds - nowSeconds - leewaySeconds).coerceAtLeast(0L)) * 1_000
+
+internal fun shouldRetryOAuthRefresh(
+    attempts: Int,
+    expiresAtSeconds: Long,
+    nowSeconds: Long,
+    maxAttempts: Int,
+    retrySeconds: Long,
+): Boolean = attempts < maxAttempts && expiresAtSeconds - nowSeconds > retrySeconds
 
 /**
  * Reactor reports exceptions emitted after a subscriber has already been cancelled through its global
@@ -106,6 +122,9 @@ class McpClientService(
     private val connectingServers = ConcurrentHashMap.newKeySet<String>()
     private val authorizationRequestedServers = ConcurrentHashMap.newKeySet<String>()
     private val authorizationRequiredServers = ConcurrentHashMap.newKeySet<String>()
+    private val oauthChallenges = ConcurrentHashMap<String, McpOAuthService.AuthorizationChallenge>()
+    private val oauthRefreshJobs = ConcurrentHashMap<String, Job>()
+    private val oauthRefreshFailures = ConcurrentHashMap<String, Int>()
 
     // A failed remote endpoint must not repeatedly trigger OAuth or connection attempts during tool polling.
     // It is cleared only by a configuration change/removal or a successful connection.
@@ -142,6 +161,8 @@ class McpClientService(
 
     override fun dispose() {
         QDLog.debug(log) { "McpClientService dispose: shutting down ${clients.size} MCP servers" }
+        oauthRefreshJobs.values.forEach(Job::cancel)
+        oauthRefreshJobs.clear()
         (clients.keys + toolCache.keys).toSet().forEach { name ->
             shutdownServer(name)
         }
@@ -318,6 +339,9 @@ class McpClientService(
 
     private fun shutdownServer(name: String) {
         QDLog.info(log) { "Shutting down MCP server '$name'" }
+        oauthRefreshJobs.remove(name)?.cancel()
+        oauthChallenges.remove(name)
+        oauthRefreshFailures.remove(name)
         clients.remove(name)?.let { client ->
             runCatching { client.close() }
         }
@@ -484,6 +508,7 @@ class McpClientService(
             try {
                 QDLog.info(log) { "ensureClient(url): connecting '$name' to $url via Streamable HTTP" }
                 val requestBuilder = HttpRequest.newBuilder()
+                var oauthTokenAttached = false
                 cfg.headers?.forEach { (header, value) -> requestBuilder.header(header, value) }
                 // Always test the configured headers first. An HTTP 401—not an inferred credential-header
                 // name—is the only condition that exposes the roster's Authorize action.
@@ -491,18 +516,19 @@ class McpClientService(
                     val probe = oauth.probeAuthorization(url, cfg.headers)
                     if (probe.statusCode == 401) {
                         authorizationRequiredServers.add(name)
-                        if (name !in authorizationRequestedServers) {
-                            serverErrors[name] =
-                                "Authorization required. Use the MCP tools button to authorize this server."
-                            QDLog.info(log) { "ensureClient(url): initial probe for '$name' was unauthorized" }
-                            return null
-                        }
                         val challenge =
                             probe.challenge
                                 ?: error(
                                     "MCP server '$name' rejected the configured headers with HTTP 401 but did not " +
                                         "advertise an OAuth authorization challenge",
                                 )
+                        oauthChallenges[name] = challenge
+                        if (name !in authorizationRequestedServers) {
+                            serverErrors[name] =
+                                "Authorization required. Use the MCP tools button to authorize this server."
+                            QDLog.info(log) { "ensureClient(url): initial probe for '$name' was unauthorized" }
+                            return null
+                        }
                         val accessToken = oauth.accessToken(name, url, challenge, cfg.oauthClientId)
                         QDLog.info(log) {
                             "ensureClient(url): adding OAuth bearer token for '$name' " +
@@ -510,6 +536,7 @@ class McpClientService(
                                 "accessTokenSha256Prefix=${oauthTokenFingerprint(accessToken)})"
                         }
                         requestBuilder.header("Authorization", "Bearer $accessToken")
+                        oauthTokenAttached = true
                     }
                 }
                 val transport = buildUrlTransport(url, scheme, requestBuilder)
@@ -523,6 +550,12 @@ class McpClientService(
                 failedUrlConnections.remove(name)
                 authorizationRequiredServers.remove(name)
                 authorizationRequestedServers.remove(name)
+                oauthRefreshFailures.remove(name)
+                if (oauthTokenAttached) {
+                    oauth.storedTokenExpiresAt(name, url)?.let { expiresAt ->
+                        scheduleOAuthRefresh(name, cfg, expiresAt)
+                    }
+                }
                 return client
             } catch (_: TimeoutCancellationException) {
                 serverErrors[name] = "timed out connecting via Streamable HTTP"
@@ -564,6 +597,111 @@ class McpClientService(
             QDLog.error(log, { "ensureClient(url) failed for '$name'" }, e)
             null
         }
+    }
+
+    /** Schedules a silent OAuth refresh before expiry; only a terminal failure changes the visible server state. */
+    private fun scheduleOAuthRefresh(
+        name: String,
+        cfg: McpServerConfig,
+        expiresAt: Long,
+    ) {
+        val delayMillis =
+            oauthRefreshDelayMillis(
+                expiresAtSeconds = expiresAt,
+                nowSeconds =
+                    java.time.Instant
+                        .now()
+                        .epochSecond,
+                leewaySeconds = OAUTH_REFRESH_LEEWAY_SECONDS,
+            )
+        scheduleOAuthRefreshAttempt(name, cfg, delayMillis)
+    }
+
+    private fun scheduleOAuthRefreshAttempt(
+        name: String,
+        cfg: McpServerConfig,
+        delayMillis: Long,
+    ) {
+        val job =
+            executionContexts.mcpLifecycleScope.launch {
+                delay(delayMillis)
+                refreshOAuthToken(name, cfg)
+            }
+        oauthRefreshJobs.put(name, job)?.cancel()
+        QDLog.debug(log) { "MCP OAuth: scheduled token refresh for '$name' in ${delayMillis}ms" }
+    }
+
+    private fun refreshOAuthToken(
+        name: String,
+        cfg: McpServerConfig,
+    ) {
+        val url = cfg.url ?: return
+        val challenge =
+            oauthChallenges[name]
+                ?: oauth.probeAuthorization(url, cfg.headers).challenge
+                ?: run {
+                    markOAuthRefreshFailure(name, url, "The MCP server no longer advertises an OAuth challenge")
+                    return
+                }
+        oauthChallenges[name] = challenge
+        when (val refresh = oauth.refreshStoredToken(name, url, challenge, cfg.oauthClientId)) {
+            is McpOAuthService.TokenRefreshResult.Success -> {
+                QDLog.info(log) { "MCP OAuth: token refresh succeeded for '$name'; reconnecting with the refreshed token" }
+                oauthRefreshFailures.remove(name)
+                clients.remove(name)?.let { client -> runCatching { client.close() } }
+                toolCache.remove(name)
+                serverErrors.remove(name)
+                failedUrlConnections.remove(name)
+                authorizationRequestedServers.add(name)
+                connectAndDiscoverAsync(name, cfg)
+            }
+
+            is McpOAuthService.TokenRefreshResult.Failure -> {
+                val expiresAt = oauth.storedTokenExpiresAt(name, url) ?: 0L
+                val attempts = oauthRefreshFailures.merge(name, 1, Int::plus) ?: 1
+                if (
+                    shouldRetryOAuthRefresh(
+                        attempts = attempts,
+                        expiresAtSeconds = expiresAt,
+                        nowSeconds =
+                            java.time.Instant
+                                .now()
+                                .epochSecond,
+                        maxAttempts = MAX_OAUTH_REFRESH_ATTEMPTS,
+                        retrySeconds = OAUTH_REFRESH_RETRY_SECONDS,
+                    )
+                ) {
+                    QDLog.warn(log) {
+                        "MCP OAuth: refresh attempt $attempts for '$name' failed before expiry; retrying in " +
+                            "$OAUTH_REFRESH_RETRY_SECONDS seconds: ${refresh.message}"
+                    }
+                    scheduleOAuthRefreshAttempt(name, cfg, OAUTH_REFRESH_RETRY_SECONDS * 1_000)
+                } else {
+                    markOAuthRefreshFailure(name, url, refresh.message)
+                }
+            }
+        }
+    }
+
+    private fun markOAuthRefreshFailure(
+        name: String,
+        url: String,
+        reason: String,
+    ) {
+        oauthRefreshJobs.remove(name)?.cancel()
+        clients.remove(name)?.let { client -> runCatching { client.close() } }
+        toolCache.remove(name)
+        oauth.clearStoredToken(name, url)
+        authorizationRequestedServers.remove(name)
+        authorizationRequiredServers.add(name)
+        failedUrlConnections.remove(name)
+        serverErrors[name] = "OAuth session could not be refreshed. Select Authorize to sign in again."
+        notifyRuntimeConfigIssue(
+            title = "MCP authorization expired",
+            content = "Authorization for MCP server '$name' could not be refreshed. Use the MCP tools button to authorize it again.",
+            type = NotificationType.WARNING,
+        )
+        QDLog.warn(log) { "MCP OAuth: refresh failed permanently for '$name': $reason" }
     }
 
     private fun discoverTools(server: String): List<Tool> {
@@ -651,6 +789,12 @@ class McpClientService(
     fun isConfigurationLoading(): Boolean = !initialized.get() || refreshScheduled.get()
 
     fun getConfiguredCount(): Int = serversConfig.mcpServers.size
+
+    private companion object {
+        const val OAUTH_REFRESH_LEEWAY_SECONDS = 60L
+        const val OAUTH_REFRESH_RETRY_SECONDS = 30L
+        const val MAX_OAUTH_REFRESH_ATTEMPTS = 3
+    }
 
     private fun extractFirstNumber(text: String): Number? {
         val m = Regex("[-+]?\\d+(?:\\.\\d+)?").find(text)

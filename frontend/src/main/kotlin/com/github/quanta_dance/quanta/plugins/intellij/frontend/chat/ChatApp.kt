@@ -3,6 +3,12 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.chat
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -40,9 +46,11 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isShiftPressed
@@ -411,10 +419,16 @@ private fun mcpToolsDialog(
 
             when {
                 configurationLoading -> {
-                    Text(
-                        "Syncing MCP configuration and discovering available tools…",
-                        style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        mcpLoadingIndicator()
+                        Text(
+                            "Syncing MCP configuration and discovering available tools…",
+                            style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
+                        )
+                    }
                 }
 
                 configurationError != null -> {
@@ -491,6 +505,34 @@ private fun mcpToolsDialog(
                 DefaultButton(onClick = onDismiss) { Text("Done") }
             }
         }
+    }
+}
+
+@Composable
+private fun mcpLoadingIndicator() {
+    val color = JewelTheme.defaultTextStyle.color
+    val transition = rememberInfiniteTransition(label = "mcp_tools_loading")
+    val rotation =
+        transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(tween(durationMillis = 900, easing = LinearEasing)),
+            label = "mcp_tools_loading_rotation",
+        )
+
+    Canvas(
+        modifier =
+            Modifier
+                .size(16.dp)
+                .rotate(rotation.value),
+    ) {
+        drawArc(
+            color = color,
+            startAngle = 20f,
+            sweepAngle = 290f,
+            useCenter = false,
+            style = Stroke(width = 2.dp.toPx()),
+        )
     }
 }
 
