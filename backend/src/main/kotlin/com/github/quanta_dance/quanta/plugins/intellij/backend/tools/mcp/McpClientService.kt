@@ -105,6 +105,7 @@ class McpClientService(
     private val serverErrors = ConcurrentHashMap<String, String>()
     private val connectingServers = ConcurrentHashMap.newKeySet<String>()
     private val authorizationRequestedServers = ConcurrentHashMap.newKeySet<String>()
+    private val authorizationRequiredServers = ConcurrentHashMap.newKeySet<String>()
 
     // A failed remote endpoint must not repeatedly trigger OAuth or connection attempts during tool polling.
     // It is cleared only by a configuration change/removal or a successful connection.
@@ -242,17 +243,11 @@ class McpClientService(
             throw t
         }
 
-        // A server using HTTPS without static credentials might trigger browser OAuth after a 401 challenge.
-        // Do not start that interaction from configuration reload: the user explicitly authorizes it from
-        // the chat's MCP tools roster. Stdio, local HTTP, and statically authorized remote servers remain
-        // eligible for background discovery.
+        // Probe every configured transport with the configured headers. Browser OAuth is requested only
+        // after that probe receives an actual HTTP 401 response, never by guessing header names.
         serversConfig.mcpServers.forEach { (name, config) ->
-            if (requiresExplicitAuthorization(config)) {
-                QDLog.debug(log) { "McpClientService refresh: waiting for user authorization of '$name'" }
-            } else {
-                QDLog.info(log) { "McpClientService refresh: scheduling tool discovery for configured server '$name'" }
-                discoverToolsAsync(name)
-            }
+            QDLog.info(log) { "McpClientService refresh: scheduling tool discovery for configured server '$name'" }
+            discoverToolsAsync(name)
         }
     }
 
@@ -330,6 +325,7 @@ class McpClientService(
         serverErrors.remove(name)
         failedUrlConnections.remove(name)
         authorizationRequestedServers.remove(name)
+        authorizationRequiredServers.remove(name)
     }
 
     private fun startServer(
@@ -477,30 +473,36 @@ class McpClientService(
             return null
         }
         val url = cfg.url ?: return null
-        if (requiresExplicitAuthorization(cfg) && name !in authorizationRequestedServers) {
-            serverErrors[name] = "Authorization required. Use the MCP tools button to authorize this server."
-            QDLog.debug(log) { "ensureClient(url): waiting for explicit authorization of '$name'" }
-            return null
-        }
         return try {
             val endpointUri = requireSupportedMcpUrl(url)
             val scheme = endpointUri.scheme.lowercase()
-            val hasStaticAuthorization =
-                cfg.headers?.keys?.any { it.equals("Authorization", ignoreCase = true) } == true
             QDLog.info(log) {
                 "ensureClient(url): effective config for '$name': transport=streamable-http, " +
-                    "oauth=${if (scheme == "https") "challenge-driven" else "disabled-for-loopback-http"}, " +
-                    "staticAuthorization=$hasStaticAuthorization"
+                    "oauth=${if (scheme == "https") "probe-on-401" else "disabled-for-loopback-http"}"
             }
 
             try {
                 QDLog.info(log) { "ensureClient(url): connecting '$name' to $url via Streamable HTTP" }
                 val requestBuilder = HttpRequest.newBuilder()
                 cfg.headers?.forEach { (header, value) -> requestBuilder.header(header, value) }
-                // OAuth metadata and tokens are required to use HTTPS. Local HTTP endpoints can instead use
-                // explicit static Authorization headers when needed.
-                if (!hasStaticAuthorization && scheme == "https") {
-                    oauth.discoverAuthorizationChallenge(url, cfg.headers)?.let { challenge ->
+                // Always test the configured headers first. An HTTP 401—not an inferred credential-header
+                // name—is the only condition that exposes the roster's Authorize action.
+                if (scheme == "https") {
+                    val probe = oauth.probeAuthorization(url, cfg.headers)
+                    if (probe.statusCode == 401) {
+                        authorizationRequiredServers.add(name)
+                        if (name !in authorizationRequestedServers) {
+                            serverErrors[name] =
+                                "Authorization required. Use the MCP tools button to authorize this server."
+                            QDLog.info(log) { "ensureClient(url): initial probe for '$name' was unauthorized" }
+                            return null
+                        }
+                        val challenge =
+                            probe.challenge
+                                ?: error(
+                                    "MCP server '$name' rejected the configured headers with HTTP 401 but did not " +
+                                        "advertise an OAuth authorization challenge",
+                                )
                         val accessToken = oauth.accessToken(name, url, challenge, cfg.oauthClientId)
                         QDLog.info(log) {
                             "ensureClient(url): adding OAuth bearer token for '$name' " +
@@ -519,6 +521,8 @@ class McpClientService(
                 clients[name] = client
                 serverErrors.remove(name)
                 failedUrlConnections.remove(name)
+                authorizationRequiredServers.remove(name)
+                authorizationRequestedServers.remove(name)
                 return client
             } catch (_: TimeoutCancellationException) {
                 serverErrors[name] = "timed out connecting via Streamable HTTP"
@@ -628,13 +632,10 @@ class McpClientService(
         return ServerStatus(connected, connecting, toolCount, error)
     }
 
-    /** Whether this remote server requires an explicit user action before OAuth-capable connection setup. */
-    fun requiresAuthorization(name: String): Boolean {
-        val config = serversConfig.mcpServers[name] ?: return false
-        return requiresExplicitAuthorization(config) && !clients.containsKey(name)
-    }
+    /** Whether the last configured-header probe received HTTP 401 for this server. */
+    fun requiresAuthorization(name: String): Boolean = name in authorizationRequiredServers && !clients.containsKey(name)
 
-    /** Explicit user-requested retry; clears the paused failure marker before scheduling connection work. */
+    /** Explicit user-requested authorization/retry after an actual HTTP 401 probe. */
     fun retryConnection(name: String): Boolean {
         val config = serversConfig.mcpServers[name] ?: return false
         authorizationRequestedServers.add(name)
@@ -642,12 +643,6 @@ class McpClientService(
         serverErrors.remove(name)
         connectAndDiscoverAsync(name, config)
         return true
-    }
-
-    private fun requiresExplicitAuthorization(config: McpServerConfig): Boolean {
-        val usesStaticAuthorization =
-            config.headers?.keys?.any { it.equals("Authorization", ignoreCase = true) } == true
-        return config.url?.startsWith("https://", ignoreCase = true) == true && !usesStaticAuthorization
     }
 
     fun getConfigLoadError(): String? = configLoadError
