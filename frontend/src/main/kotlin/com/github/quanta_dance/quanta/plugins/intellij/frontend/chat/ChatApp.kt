@@ -386,7 +386,7 @@ fun chatApp(
                     configurationLoading = mcpConfigurationLoading,
                     configurationError = mcpConfigurationError,
                     onSetEnabled = viewModel::onSetMcpServerEnabled,
-                    onAuthorize = viewModel::onRetryMcpServerConnection,
+                    onReconnect = viewModel::onRetryMcpServerConnection,
                     onDismiss = { showMcpToolsDialog = false },
                 )
             }
@@ -400,7 +400,7 @@ private fun mcpToolsDialog(
     configurationLoading: Boolean,
     configurationError: String?,
     onSetEnabled: (String, Boolean) -> Unit,
-    onAuthorize: (String) -> Unit,
+    onReconnect: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     Dialog(onDismissRequest = onDismiss) {
@@ -492,8 +492,18 @@ private fun mcpToolsDialog(
                                         Text(if (server.enabledForCurrentChat) "Disable" else "Enable")
                                     }
                                     if (server.requiresAuthorization) {
-                                        OutlinedButton(onClick = { onAuthorize(server.name) }) {
+                                        OutlinedButton(
+                                            enabled = !server.connecting,
+                                            onClick = { onReconnect(server.name) },
+                                        ) {
                                             Text(if (server.connecting) "Authorizing…" else "Authorize")
+                                        }
+                                    } else if (server.error != null && !server.connected) {
+                                        OutlinedButton(
+                                            enabled = !server.connecting,
+                                            onClick = { onReconnect(server.name) },
+                                        ) {
+                                            Text(if (server.connecting) "Retrying…" else "Retry")
                                         }
                                     }
                                 }

@@ -73,6 +73,18 @@ internal fun shouldRetryOAuthRefresh(
     retrySeconds: Long,
 ): Boolean = attempts < maxAttempts && expiresAtSeconds - nowSeconds > retrySeconds
 
+/** Produces concise recoverable MCP connection copy while retaining full failures in the IDE log. */
+internal fun mcpConnectionErrorMessage(error: Throwable): String =
+    when {
+        generateSequence(error) { it.cause }.any { it is java.util.concurrent.TimeoutException || it is TimeoutCancellationException } -> {
+            "MCP initialization did not finish within 30 seconds. Check the server configuration, then select Retry."
+        }
+
+        else -> {
+            error.message ?: error.javaClass.simpleName
+        }
+    }
+
 /**
  * Reactor reports exceptions emitted after a subscriber has already been cancelled through its global
  * `onErrorDropped` hook. The MCP SDK's stdio transport can legitimately produce either of these
@@ -423,7 +435,7 @@ class McpClientService(
             serverErrors.remove(name)
             client
         } catch (e: Exception) {
-            serverErrors[name] = e.message ?: e.javaClass.simpleName
+            serverErrors[name] = mcpConnectionErrorMessage(e)
             QDLog.error(log, { "ensureClient failed for '$name'" }, e)
             null
         }
@@ -576,14 +588,12 @@ class McpClientService(
             failedUrlConnections[name] = failure
             notifyRuntimeConfigIssue(
                 title = "MCP server unavailable",
-                content =
-                    "Could not connect to MCP server '$name': $failure. " +
-                        "Automatic retries are paused; update its configuration or restart the IDE to try again.",
+                content = "Could not connect to MCP server '$name': $failure. Use Retry in MCP tools to try again.",
                 type = NotificationType.WARNING,
             )
             QDLog.warn(log) {
                 "ensureClient(url): pausing automatic retries for configured server '$name' at $url " +
-                    "after connection failure: $failure. Change its MCP configuration or restart the IDE before retrying."
+                    "after connection failure: $failure. Use explicit Retry or update its configuration."
             }
             null
         } catch (e: Exception) {
@@ -773,12 +783,19 @@ class McpClientService(
     /** Whether the last configured-header probe received HTTP 401 for this server. */
     fun requiresAuthorization(name: String): Boolean = name in authorizationRequiredServers && !clients.containsKey(name)
 
-    /** Explicit user-requested authorization/retry after an actual HTTP 401 probe. */
+    /** Explicit user-requested reconnection. OAuth starts only when the server previously returned HTTP 401. */
     fun retryConnection(name: String): Boolean {
         val config = serversConfig.mcpServers[name] ?: return false
-        authorizationRequestedServers.add(name)
-        failedUrlConnections.remove(name)
+        if (name in connectingServers) return true
+        clients.remove(name)?.let { client -> runCatching { client.close() } }
+        toolCache.remove(name)
         serverErrors.remove(name)
+        failedUrlConnections.remove(name)
+        if (name in authorizationRequiredServers) {
+            authorizationRequestedServers.add(name)
+        } else {
+            authorizationRequestedServers.remove(name)
+        }
         connectAndDiscoverAsync(name, config)
         return true
     }

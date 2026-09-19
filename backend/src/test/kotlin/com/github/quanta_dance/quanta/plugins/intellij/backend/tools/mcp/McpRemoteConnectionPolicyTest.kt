@@ -4,6 +4,7 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp
 
 import java.io.IOException
+import java.util.concurrent.TimeoutException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -71,6 +72,16 @@ class McpRemoteConnectionPolicyTest {
                 maxAttempts = 3,
                 retrySeconds = 30,
             ),
+        )
+    }
+
+    @Test
+    fun summarizesInitializationTimeoutAsRetryableGuidance() {
+        val error = RuntimeException(TimeoutException("MCP initialize timed out"))
+
+        assertEquals(
+            "MCP initialization did not finish within 30 seconds. Check the server configuration, then select Retry.",
+            mcpConnectionErrorMessage(error),
         )
     }
 }
