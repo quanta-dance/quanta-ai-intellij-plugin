@@ -3,6 +3,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.settings
 
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AcpManualAgentDto
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.PersistentStateComponent
 import com.intellij.openapi.components.Service
@@ -37,6 +38,7 @@ class FrontendQuantaSettingsState : PersistentStateComponent<FrontendQuantaSetti
         var terminalAllowedCommandsCsv: String = "git status,git diff,git add,git commit",
         var maxMessageWidth: Int = DEFAULT_MAX_MESSAGE_WIDTH,
         var actionConfigsJson: String = FrontendActionCatalog.encode(FrontendActionCatalog.defaultActions),
+        var manualAcpAgents: List<AcpManualAgentDto> = emptyList(),
     )
 
     companion object {

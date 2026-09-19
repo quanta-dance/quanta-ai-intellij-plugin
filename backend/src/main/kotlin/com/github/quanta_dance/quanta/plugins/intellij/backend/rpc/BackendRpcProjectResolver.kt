@@ -13,7 +13,7 @@ private val resolverLogger = Logger.getInstance("BackendRpcProjectResolver")
 private val fallbackPathsLogged = ConcurrentHashMap.newKeySet<String>()
 
 internal fun findBackendProject(projectPath: String): Project? {
-    val openProjects = ProjectManager.getInstance().openProjects
+    val openProjects = ProjectManager.getInstance().openProjects.filterNot(Project::isDisposed)
     val normalizedInput = normalizeProjectPath(projectPath)
 
     if (normalizedInput != null) {

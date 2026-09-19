@@ -89,62 +89,38 @@ data class OpenFileInEditorTool(
         val wantSelection = selStartLine0 != null && selEndLine0 != null && selStartCol0 != null && selEndCol0 != null
 
         return try {
-            var opened = false
-            ApplicationManager.getApplication().invokeAndWait {
-                val descriptor =
-                    if (!wantSelection && targetLine != null && targetColumn != null) {
-                        OpenFileDescriptor(project, vFile, targetLine, targetColumn)
-                    } else if (!wantSelection && targetLine != null) {
-                        OpenFileDescriptor(project, vFile, targetLine, 0)
-                    } else {
-                        OpenFileDescriptor(project, vFile, 0)
+            ApplicationManager.getApplication().invokeLater {
+                runCatching {
+                    val descriptor =
+                        if (!wantSelection && targetLine != null && targetColumn != null) {
+                            OpenFileDescriptor(project, vFile, targetLine, targetColumn)
+                        } else if (!wantSelection && targetLine != null) {
+                            OpenFileDescriptor(project, vFile, targetLine, 0)
+                        } else {
+                            OpenFileDescriptor(project, vFile, 0)
+                        }
+                    val editor = FileEditorManager.getInstance(project).openTextEditor(descriptor, focus)
+
+                    if (editor != null && wantSelection) {
+                        val startPos = LogicalPosition(selStartLine0!!, selStartCol0!!)
+                        val endPos = LogicalPosition(selEndLine0!!, selEndCol0!!)
+                        val startOffset = editor.logicalPositionToOffset(startPos)
+                        val endOffset = editor.logicalPositionToOffset(endPos)
+                        val caret = editor.caretModel.currentCaret
+                        caret.moveToOffset(startOffset)
+                        caret.setSelection(startOffset, endOffset)
+                    } else if (editor != null && targetLine != null) {
+                        val caret = editor.caretModel.currentCaret
+                        val pos = LogicalPosition(targetLine, targetColumn ?: 0)
+                        caret.removeSelection()
+                        caret.moveToLogicalPosition(pos)
                     }
-                val editor = FileEditorManager.getInstance(project).openTextEditor(descriptor, focus)
-
-                opened = editor != null
-
-                if (editor != null && wantSelection) {
-                    val startPos = LogicalPosition(selStartLine0!!, selStartCol0!!)
-                    val endPos = LogicalPosition(selEndLine0!!, selEndCol0!!)
-                    val startOffset = editor.logicalPositionToOffset(startPos)
-                    val endOffset = editor.logicalPositionToOffset(endPos)
-                    val caret = editor.caretModel.currentCaret
-                    caret.moveToOffset(startOffset)
-                    caret.setSelection(startOffset, endOffset)
-                } else if (editor != null && targetLine != null) {
-                    val caret = editor.caretModel.currentCaret
-                    val pos = LogicalPosition(targetLine, targetColumn ?: 0)
-                    caret.removeSelection()
-                    caret.moveToLogicalPosition(pos)
                 }
             }
-
-            val details =
-                buildString {
-                    append(relToBase)
-                    if (wantSelection) {
-                        append(" @ selection=")
-                        append("[")
-                        append((selectionStartLine ?: 0))
-                        append(":")
-                        append((selectionStartColumn ?: 0))
-                        append(" -> ")
-                        append((selectionEndLine ?: 0))
-                        append(":")
-                        append((selectionEndColumn ?: 0))
-                        append("]")
-                    } else if (targetLine != null) {
-                        append(" @ line=")
-                        append(targetLine + 1)
-                        append(", col=")
-                        append(targetColumn ?: 0)
-                    }
-                }
-            if (opened) "Opened $relToBase" else "Opened (no editor) $relToBase"
+            "Opening $relToBase"
         } catch (e: Throwable) {
             if (e is ProcessCanceledException) throw e
-            val msg = e.message ?: "Failed to open file"
-            msg
+            e.message ?: "Failed to schedule opening file"
         }
     }
 }

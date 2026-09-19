@@ -20,6 +20,8 @@ object ChatAppIcons {
         val micOff = AllIconsKeys.CodeWithMe.CwmMicOff
         val speakerOn = PathIconKey("/icons/speakerOn.svg", ChatAppIcons::class.java)
         val speakerOff = PathIconKey("/icons/speakerOff.svg", ChatAppIcons::class.java)
+        val agenticTeam = PathIconKey("/icons/agentic.svg", ChatAppIcons::class.java)
+        val mcpTools = PathIconKey("/icons/tools.svg", ChatAppIcons::class.java)
     }
 
     object Prompt {

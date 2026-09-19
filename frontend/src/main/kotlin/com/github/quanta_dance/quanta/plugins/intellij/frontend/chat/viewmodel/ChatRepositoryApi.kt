@@ -4,11 +4,13 @@
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel
 
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AcpAgentDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServerStatusDto
 import kotlinx.coroutines.flow.StateFlow
 
 interface ChatRepositoryApi {
@@ -16,6 +18,12 @@ interface ChatRepositoryApi {
     val sessionsFlow: StateFlow<List<ChatSessionDto>>
     val planStatusFlow: StateFlow<ChatPlanStatusDto>
     val agentsFlow: StateFlow<List<AgentInfoDto>>
+    val acpAgentsFlow: StateFlow<List<AcpAgentDto>>
+    val acpDiscoveryLoadingFlow: StateFlow<Boolean>
+    val allowedAcpAgentIdsFlow: StateFlow<Set<String>>
+    val mcpServersFlow: StateFlow<List<McpServerStatusDto>>
+    val mcpConfigurationLoadingFlow: StateFlow<Boolean>
+    val mcpConfigurationErrorFlow: StateFlow<String?>
     val delegatedTasksFlow: StateFlow<List<DelegatedTaskDto>>
     val channelEventsFlow: StateFlow<List<AgentChannelEventDto>>
 
@@ -28,6 +36,20 @@ interface ChatRepositoryApi {
     suspend fun deleteSession(sessionId: String)
 
     suspend fun setAgenticMode(enabled: Boolean)
+
+    suspend fun refreshAcpAgents()
+
+    suspend fun setAcpAgentAllowed(
+        agentId: String,
+        allowed: Boolean,
+    )
+
+    suspend fun setMcpServerEnabled(
+        serverName: String,
+        enabled: Boolean,
+    )
+
+    suspend fun retryMcpServerConnection(serverName: String)
 
     suspend fun createDefaultAgentTeam()
 

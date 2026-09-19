@@ -31,6 +31,7 @@ fun FrontendQuantaSettingsState.State.toDto(
         terminalAllowedCommandsCsv = terminalAllowedCommandsCsv,
         actionConfigsJson = actionConfigsJson,
         mcpServersJson = mcpServersJson,
+        manualAcpAgents = manualAcpAgents,
     )
 
 fun QuantaSettingsDto.toFrontendState(
@@ -57,4 +58,5 @@ fun QuantaSettingsDto.toFrontendState(
         terminalAllowedCommandsCsv = terminalAllowedCommandsCsv,
         maxMessageWidth = maxMessageWidth,
         actionConfigsJson = actionConfigsJson,
+        manualAcpAgents = manualAcpAgents,
     )

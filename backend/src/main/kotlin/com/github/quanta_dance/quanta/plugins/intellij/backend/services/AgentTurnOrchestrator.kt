@@ -54,6 +54,7 @@ class AgentTurnOrchestrator(
 
     private data class TurnGuardrailState(
         var guardrailSkips: Int = 0,
+        var acpStatusChecks: Int = 0,
         val touchedFiles: MutableSet<String> = linkedSetOf(),
         val toolNames: MutableList<String> = mutableListOf(),
     ) {
@@ -64,6 +65,7 @@ class AgentTurnOrchestrator(
             isRead: Boolean,
         ) {
             toolNames += toolName
+            if (toolName == ACP_STATUS_TOOL) acpStatusChecks += 1
             filePath?.let { touchedFiles += it }
         }
     }
@@ -96,7 +98,12 @@ class AgentTurnOrchestrator(
     private fun evaluateGuardrails(
         state: TurnGuardrailState,
         functionCall: ResponseFunctionToolCall,
-    ): GuardrailDecision = GuardrailDecision(true)
+    ): GuardrailDecision {
+        if (functionCall.name() == ACP_STATUS_TOOL && state.acpStatusChecks >= MAX_ACP_STATUS_CHECKS_PER_TURN) {
+            return GuardrailDecision(false, "acp_status_check_limit_reached_continue_without_waiting")
+        }
+        return GuardrailDecision(true)
+    }
 
     private fun guardrailToolResult(
         functionCall: ResponseFunctionToolCall,
@@ -230,16 +237,18 @@ class AgentTurnOrchestrator(
         QDLog.info(thisLogger()) {
             "OpenAIService.agentTurn: executed tool call name=${functionCall.name()} callId=${outcome.plan.callId} file=${outcome.plan.filePath ?: "<none>"} executionMode=${outcome.executionMode} parallelBatchSize=${outcome.parallelBatchSize} guardrail=${outcome.plan.decision.reason ?: "none"}"
         }
-        val completedItem =
-            toolExecutionPresenter.buildToolExecutionItem(
-                functionCall,
-                if (toolResult.succeeded) ToolExecutionStatus.SUCCEEDED else ToolExecutionStatus.FAILED,
-                displaySummary = toolResult.displaySummary,
-                errorText = toolResult.errorText,
-                detailText = toolResult.detailText,
-                filePathOverride = toolResult.filePath,
-            )
-        onToolUpdate?.invoke(OpenAIService.ToolTurnUpdate(completedItem, responseId))
+        if (outcome.plan.decision.allowExecution) {
+            val completedItem =
+                toolExecutionPresenter.buildToolExecutionItem(
+                    functionCall,
+                    if (toolResult.succeeded) ToolExecutionStatus.SUCCEEDED else ToolExecutionStatus.FAILED,
+                    displaySummary = toolResult.displaySummary,
+                    errorText = toolResult.errorText,
+                    detailText = toolResult.detailText,
+                    filePathOverride = toolResult.filePath,
+                )
+            onToolUpdate?.invoke(OpenAIService.ToolTurnUpdate(completedItem, responseId))
+        }
         pendingToolOutputs.add(ResponseInputItem.ofFunctionCallOutput(toolResult.toolOutput))
     }
 
@@ -520,5 +529,10 @@ class AgentTurnOrchestrator(
         }
         logTurnSummary(guardrailState, agentLabel, localPrevId)
         return aggregated.toString().trim() to localPrevId
+    }
+
+    companion object {
+        private const val ACP_STATUS_TOOL = "GetAcpDelegationStatusTool"
+        private const val MAX_ACP_STATUS_CHECKS_PER_TURN = 1
     }
 }

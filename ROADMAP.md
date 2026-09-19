@@ -34,24 +34,61 @@ Near-term work should strengthen the trust, reliability, and usability around th
 - [x] Migrate remote MCP connectivity to the Java MCP SDK with challenge-driven OAuth, PKCE, Password Safe token storage, and safe diagnostics.
 - [x] Publish an MCP server configuration and OAuth troubleshooting guide.
 
-### Recent reliability and UX work
+### Recent reliability, integration, and UX work
 
 - [x] Synchronize current frontend settings, including the selected model, before sending a chat message.
 - [x] Avoid unsafe lazy initialization of the legacy agent registry during concurrent agent publication.
 - [x] Improve microphone voice detection, first-word capture, and ordered audio delivery.
 - [x] Add validated message-width settings and copy controls for fenced Markdown code blocks.
 - [x] Remove the binary-incompatible Compose `SwingPanel` dependency from syntax-highlighted refactoring previews.
+- [x] Add bounded OpenAI request/connect/body deadlines, request lifecycle timing, transport-pool recovery after pre-header connection failures, and long-lived automatic retry for transient gateway/network failures.
+- [x] Make terminal output, document saving, settings synchronization, and shared MCP-file editing choose the originating project instead of an arbitrary open IDE project.
+
+### ACP external-agent collaboration
+
+- [x] Discover known and manually configured ACP applications or TCP endpoints through a bounded ACP `initialize` probe.
+- [x] Expose discovered ACP agents to the main AI and support independent background delegation, cancellation, live task cards, progress updates, and curated findings.
+- [x] Retain live ACP sessions for follow-up messages and coordinate meaningful ACP findings with the main agent without forwarding routine progress noise.
+- [x] Add chat-scoped authorization for ACP teammates: discovered does not imply allowed, allowed does not imply active, and removing an agent cancels its active work.
+- [x] Add an agentic-team roster with explicit external-agent approval, loading feedback, local/remote transport labels, and per-chat membership.
+
+### MCP control and resilience
+
+- [x] Add per-chat MCP server enablement so disabled servers are neither attached to model requests nor callable through stale tool definitions.
+- [x] Add an MCP tools panel with connection state, configured tool count, explicit OAuth authorization, asynchronous configuration/discovery feedback, and retry for non-OAuth failures.
+- [x] Reload MCP configuration asynchronously on an isolated lifecycle executor and cache remote tool discovery results.
+- [x] Support secure loopback HTTP MCP endpoints while preserving HTTPS-only remote transport policy.
+- [x] Probe configured MCP headers before presenting OAuth, refresh OAuth credentials before expiry, and expose explicit re-authorization after terminal refresh failure.
+- [x] Suppress expected Reactor stdio shutdown races (`Stream closed` and `Broken pipe`) without hiding genuine MCP failures.
+
+### Next integration milestones
+
+1. **MCP local-server diagnostics and recovery**
+   - Retain bounded, redacted stdio stderr per server and surface it in expandable MCP-panel details.
+   - Add a per-server **Test connection** action with initialize and tool-list timings.
+   - Add an optional, validated per-server startup timeout (default 30 seconds; range 5–120 seconds) for known slow stdio servers.
+
+2. **ACP real-time protocol completion**
+   - Replace prompt-bound ACP reading with an always-listening session pump: one serialized writer, one reader coroutine, request-ID correlation, and deterministic lifecycle cleanup.
+   - Route structured ACP permission and user-input requests through native IntelliJ dialogs and send the selected response through the live session.
+   - Keep external-agent authentication external: show actionable sign-in guidance, but never collect or store another agent's credentials.
+   - Add user-facing ACP-card actions for follow-up, redirect, stop, copy summary, and activity/details; expire idle retained sessions predictably.
+
+3. **Context, tool, and diagnostics efficiency**
+   - Cache converted OpenAI function schemas by MCP server generation; later offer optional per-tool filtering for large MCP servers.
+   - Measure request preparation, history/context tokens, enabled tool-schema tokens, and attached tool counts; compact conversation history within a documented budget.
+   - Add a redacted integrations diagnostics surface covering AI-gateway transport/retries, MCP lifecycle/OAuth state, and ACP discovery/session state.
 
 ## Priority 1 — Release reliability and structured failures
 
-- [ ] Replace raw backend stack traces in chat with concise, actionable, structured errors.
+- [x] Replace raw backend stack traces in chat with concise retry/recovery states for OpenAI request failures.
 - [ ] Preserve plain-text and non-standard error bodies returned by OpenAI-compatible gateways.
 - [ ] Map authentication, unsupported model, rate limit, context limit, timeout, cancellation, RPC disconnect, and tool failures to distinct UI states.
 - [ ] Add a **Copy diagnostics** action while keeping full exception details in IDE logs.
 - [ ] Remove or migrate the obsolete `AgentRegistryService` and retain one authoritative owner for active agent state.
 - [ ] Audit persisted collections and service initialization for concurrent mutation and lifecycle races.
 - [ ] Add stress coverage for simultaneous agent completion, wake-up, cancellation, publication, and project disposal.
-- [ ] Verify that child agents, terminal jobs, coroutines, and streams terminate on cancellation, project close, and plugin unload.
+- [x] Verify that terminal jobs and MCP/ACP transports terminate or close on cancellation, project close, and plugin unload; complete broader stream/child-agent coverage.
 
 ## Priority 2 — Provider and model capability management
 
@@ -77,12 +114,12 @@ Near-term work should strengthen the trust, reliability, and usability around th
 ## Priority 4 — Remote-workspace resilience
 
 - [ ] Add a visible frontend/backend connection and synchronization status indicator.
-- [ ] Introduce explicit backend readiness/settings-synchronized signaling instead of relying only on startup retries.
+- [x] Introduce explicit MCP configuration-loading and asynchronous reconciliation status instead of presenting an empty tool list during startup.
 - [ ] Recover cleanly from temporary network loss, frontend reconnect, and backend restart.
 - [ ] Detect incompatible frontend/backend RPC contract versions and provide an actionable upgrade message.
 - [ ] Propagate cancellation and progress reliably across RPC boundaries.
 - [ ] Restore conversations and in-progress task state where safe after reconnect or IDE restart.
-- [ ] Exercise high-latency links, large streamed responses, multiple remote projects, and project switching in tests.
+- [x] Exercise multiple open projects safely for terminal output, document operations, shared MCP configuration editing, and backend project resolution; add broader remote-workspace coverage.
 - [ ] Publish a verified compatibility matrix for local IDEs and supported JetBrains remote-development modes.
 
 ## Priority 5 — Context transparency and privacy

@@ -4,12 +4,14 @@
 package com.github.quanta_dance.quanta.plugins.intellij.shared.rpc
 
 import com.github.quanta_dance.quanta.plugins.intellij.models.Suggestion
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AcpAgentDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ApplyRefactorSuggestionResultDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.FrontendLogDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServerStatusesDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.MicrophoneTranscriptionResultDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.SpeechChunkDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.SynthesizedSpeechDto
@@ -38,6 +40,18 @@ interface QuantaBackendApi : RemoteApi<Unit> {
     )
 
     suspend fun getCurrentPlanStatus(projectPath: String): ChatPlanStatusDto
+
+    /** Returns locally installed commands that complete the ACP initialize handshake. */
+    suspend fun discoverAcpAgents(): List<AcpAgentDto>
+
+    /** Returns configured MCP servers and whether their synced configuration is still being applied. */
+    suspend fun getMcpServerStatuses(projectPath: String): McpServerStatusesDto
+
+    /** Retries the selected MCP server's connection/authentication flow without blocking the caller. */
+    suspend fun retryMcpServerConnection(
+        projectPath: String,
+        serverName: String,
+    ): Boolean
 
     suspend fun getCurrentAgents(projectPath: String): List<AgentInfoDto>
 

@@ -38,6 +38,23 @@ interface ChatRepositoryRpcApi : RemoteApi<Unit> {
         sessionId: String,
     )
 
+    suspend fun getAllowedAcpAgentIds(projectPath: String): List<String>
+
+    suspend fun setAcpAgentAllowed(
+        projectPath: String,
+        agentId: String,
+        allowed: Boolean,
+    )
+
+    /** Returns MCP server names explicitly disabled for the active chat; all other configured servers are enabled. */
+    suspend fun getDisabledMcpServerNames(projectPath: String): List<String>
+
+    suspend fun setMcpServerEnabled(
+        projectPath: String,
+        serverName: String,
+        enabled: Boolean,
+    )
+
     /**
      * Sends a message with the provided content.
      *

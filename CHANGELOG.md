@@ -2,6 +2,60 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2026.09.20]
+
+This release delivers controlled external-agent collaboration, per-chat MCP management, and stronger reliability for AI, MCP, and multi-project workflows.
+
+### Added
+- Agentic team roster for discovering ACP-compatible agents and explicitly allowing external ACP teammates only for the current chat.
+- Live ACP collaboration cards with discovery progress, streaming activity, meaningful findings, retained-session follow-ups, cancellation, and clear external sign-in guidance.
+- MCP Tools control beside the agentic-team control, with per-chat server enablement, server status, tool counts, explicit authorization, discovery progress, and per-server retry.
+- Proactive MCP OAuth token refresh with secure Password Safe storage, asynchronous reconnect, bounded retry before expiry, and explicit re-authorization after terminal refresh failure.
+- OpenAI request lifecycle diagnostics, bounded connection/header/body deadlines, stale-pool recovery for failed pre-header connections, and automatic transient retries for up to 15 minutes with exponential backoff capped at 60 seconds.
+
+### Improved
+- ACP discovery is availability-only: discovery never authorizes, connects, or shares context with an external agent until the user adds it to the active chat.
+- ACP agents are independent external collaborators; routine activity remains in a stable task card while meaningful findings can coordinate the main agent and other teammates.
+- MCP configuration reload, OAuth handling, discovery, and connection recovery run asynchronously on isolated lifecycle work and do not block chat or the OpenAI request path.
+- Configured MCP headers are included in authorization probes, and browser OAuth is offered only after a real HTTP 401 response, supporting GitLab and other custom header-based authentication.
+- Loopback HTTP MCP endpoints (`localhost`, `127.0.0.1`, and `[::1]`) are supported while non-loopback MCP endpoints remain HTTPS-only.
+- Terminal output, file/document operations, MCP configuration editing, and settings synchronization remain scoped to the intended IntelliJ project when multiple projects are open.
+
+### Fixed
+- Added recovery actions for failed local and remote MCP connections without requiring an IDE restart.
+- Suppressed expected MCP stdio shutdown races (`Stream closed` and `Broken pipe`) without hiding unexpected transport failures.
+- Prevented chat from blocking on browser OAuth or remote MCP discovery.
+- Deferred chat-triggered editor navigation to avoid Compose/Swing redraw re-entry failures.
+- Guarded PatchFile document lookup with an IntelliJ read action when agent tools run on background threads.
+
+## [2026.09.17.05]
+
+This release adds explicit, chat-scoped controls for external ACP teammates and MCP tools, hardens MCP/OAuth lifecycle recovery, and improves OpenAI transport resilience and diagnostics.
+
+### Added
+- Agentic-team roster for discovering ACP-compatible agents, showing discovery progress, and explicitly adding or removing external ACP agents for the current chat.
+- Live ACP collaboration cards with background status, streamed activity, meaningful findings, action-required states, cancellation, and retained-session follow-up messaging.
+- Per-chat MCP server enablement, an MCP Tools toolbar button, connection/tool-count status, explicit OAuth authorization, configuration/discovery loading feedback, and per-server retry controls.
+- OAuth refresh scheduling for MCP access tokens with secure Password Safe persistence, asynchronous reconnect on refresh, retry before expiry, and explicit re-authorization after terminal refresh failure.
+- OpenAI request timing and transport-generation diagnostics, bounded connection/header/body deadlines, stale-pool recovery after pre-header connection failures, and automatic transient-request retry for up to 15 minutes with exponential backoff capped at 60 seconds.
+
+### Improved
+- ACP discovery is availability-only; external agents must be explicitly approved per chat before the main agent can share context, delegate work, or send follow-ups.
+- ACP agents are presented as independent external collaborators rather than read-only workers; routine progress remains on the task card while curated findings can coordinate the main agent and other teammates.
+- MCP configuration reload and initial discovery now run asynchronously on an isolated lifecycle executor, and cached remote tool lists avoid repeated `tools/list` discovery before every model turn.
+- Configured MCP headers are sent on the authorization probe; OAuth is offered only after an actual HTTP 401 response, supporting GitLab and custom header-based authentication without hard-coded header names.
+- Loopback HTTP MCP endpoints (`localhost`, `127.0.0.1`, and `[::1]`) are supported while remote MCP endpoints remain HTTPS-only.
+- Terminal output, targeted document saves, settings synchronization, and shared MCP configuration editing now remain scoped to the originating IntelliJ project when multiple projects are open.
+- The prompt toolbar now uses compact, discoverable AI/team and MCP tools controls with accessible descriptions and tooltips.
+
+### Fixed
+- Prevented chat from blocking on browser OAuth or remote MCP discovery; failed OAuth now leaves the affected server recoverable from the MCP Tools panel.
+- Suppressed expected Reactor dropped errors caused by normal MCP stdio shutdown races (`Stream closed` and `Broken pipe`) without suppressing unexpected transport failures.
+- Added recovery for local and remote MCP connection failures without requiring an IDE restart.
+- Fixed incorrect cross-project terminal console output and arbitrary first-project selection in MCP configuration editing/settings synchronization.
+- Deferred chat-triggered editor navigation to avoid Compose/Swing redraw re-entry failures.
+- Replaced raw OpenAI timeout stack traces in chat with an in-place, user-facing automatic retry status and countdown.
+
 ## [2026.09.16]
 
 This hotfix corrects packaging and Reactor context propagation for remote MCP connections.

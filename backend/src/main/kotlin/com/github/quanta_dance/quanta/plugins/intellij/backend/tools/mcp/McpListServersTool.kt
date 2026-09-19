@@ -49,15 +49,26 @@ class McpListServersTool : ToolInterface<Map<String, Any>> {
         result["servers"] =
             servers.map { name ->
                 val status = mcp.getServerStatus(name)
-                val entry = linkedMapOf<String, Any?>("name" to name, "connected" to status.connected)
+                val entry =
+                    linkedMapOf<String, Any?>(
+                        "name" to name,
+                        "connected" to status.connected,
+                        "connecting" to status.connecting,
+                    )
                 if (status.connected) entry["toolCount"] = status.toolCount
                 if (status.error != null) entry["error"] = status.error
                 entry
             }
         val onlineServerCount = servers.count { mcp.getServerStatus(it).connected }
+        val connectingServerCount = servers.count { mcp.getServerStatus(it).connecting }
         result["message"] =
             "Configured MCP servers: $configuredCount; attached MCP servers: ${servers.size}; " +
-            "online tool-capable servers: $onlineServerCount"
+            "online tool-capable servers: $onlineServerCount" +
+            if (connectingServerCount > 0) {
+                "; connecting or awaiting authorization: $connectingServerCount"
+            } else {
+                ""
+            }
 
         return result
     }

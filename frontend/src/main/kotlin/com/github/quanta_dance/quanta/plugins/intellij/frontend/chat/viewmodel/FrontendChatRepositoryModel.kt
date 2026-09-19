@@ -11,11 +11,13 @@ import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.toDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.ChatRepositoryRpcApi
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaBackendApi
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AcpAgentDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServerStatusDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.toChatMessage
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.Service.Level
@@ -58,6 +60,24 @@ class FrontendChatRepositoryModel(
     private val _agentsFlow = MutableStateFlow<List<AgentInfoDto>>(emptyList())
     override val agentsFlow: StateFlow<List<AgentInfoDto>> = _agentsFlow.asStateFlow()
 
+    private val _acpAgentsFlow = MutableStateFlow<List<AcpAgentDto>>(emptyList())
+    override val acpAgentsFlow: StateFlow<List<AcpAgentDto>> = _acpAgentsFlow.asStateFlow()
+
+    private val _acpDiscoveryLoadingFlow = MutableStateFlow(false)
+    override val acpDiscoveryLoadingFlow: StateFlow<Boolean> = _acpDiscoveryLoadingFlow.asStateFlow()
+
+    private val _allowedAcpAgentIdsFlow = MutableStateFlow<Set<String>>(emptySet())
+    override val allowedAcpAgentIdsFlow: StateFlow<Set<String>> = _allowedAcpAgentIdsFlow.asStateFlow()
+
+    private val _mcpServersFlow = MutableStateFlow<List<McpServerStatusDto>>(emptyList())
+    override val mcpServersFlow: StateFlow<List<McpServerStatusDto>> = _mcpServersFlow.asStateFlow()
+
+    private val _mcpConfigurationLoadingFlow = MutableStateFlow(true)
+    override val mcpConfigurationLoadingFlow: StateFlow<Boolean> = _mcpConfigurationLoadingFlow.asStateFlow()
+
+    private val _mcpConfigurationErrorFlow = MutableStateFlow<String?>(null)
+    override val mcpConfigurationErrorFlow: StateFlow<String?> = _mcpConfigurationErrorFlow.asStateFlow()
+
     private val _delegatedTasksFlow = MutableStateFlow<List<DelegatedTaskDto>>(emptyList())
     override val delegatedTasksFlow: StateFlow<List<DelegatedTaskDto>> = _delegatedTasksFlow.asStateFlow()
 
@@ -90,8 +110,18 @@ class FrontendChatRepositoryModel(
         }
         runCatching {
             _sessionsFlow.value = chatApi.getCurrentSessions(projectPath)
+            _allowedAcpAgentIdsFlow.value = chatApi.getAllowedAcpAgentIds(projectPath).toSet()
         }.onFailure { error ->
             logger.warn("Failed to refresh current sessions from backend", error)
+        }
+        runCatching {
+            val mcpStatuses = backendApi.getMcpServerStatuses(projectPath)
+            _mcpServersFlow.value = mcpStatuses.servers
+            _mcpConfigurationLoadingFlow.value = mcpStatuses.configurationLoading
+            _mcpConfigurationErrorFlow.value = mcpStatuses.configurationError
+        }.onFailure { error ->
+            _mcpConfigurationLoadingFlow.value = true
+            logger.warn("Failed to refresh MCP server statuses from backend", error)
         }
         runCatching {
             _planStatusFlow.value = backendApi.getCurrentPlanStatus(projectPath)
@@ -148,6 +178,43 @@ class FrontendChatRepositoryModel(
     override suspend fun setAgenticMode(enabled: Boolean) {
         FrontendQuantaSettingsState.instance.state.agenticEnabled = enabled
         syncSettingsToBackend()
+        refreshCurrentState()
+    }
+
+    override suspend fun refreshAcpAgents() {
+        _acpDiscoveryLoadingFlow.value = true
+        try {
+            syncSettingsToBackend()
+            _acpAgentsFlow.value = QuantaBackendApi.getInstance().discoverAcpAgents()
+            _allowedAcpAgentIdsFlow.value =
+                ChatRepositoryRpcApi.getInstance().getAllowedAcpAgentIds(project.rpcProjectPath()).toSet()
+        } catch (error: Exception) {
+            logger.warn("Failed to discover ACP agents", error)
+        } finally {
+            _acpDiscoveryLoadingFlow.value = false
+        }
+    }
+
+    override suspend fun setAcpAgentAllowed(
+        agentId: String,
+        allowed: Boolean,
+    ) {
+        ChatRepositoryRpcApi.getInstance().setAcpAgentAllowed(project.rpcProjectPath(), agentId, allowed)
+        _allowedAcpAgentIdsFlow.value =
+            ChatRepositoryRpcApi.getInstance().getAllowedAcpAgentIds(project.rpcProjectPath()).toSet()
+        refreshCurrentState()
+    }
+
+    override suspend fun setMcpServerEnabled(
+        serverName: String,
+        enabled: Boolean,
+    ) {
+        ChatRepositoryRpcApi.getInstance().setMcpServerEnabled(project.rpcProjectPath(), serverName, enabled)
+        refreshCurrentState()
+    }
+
+    override suspend fun retryMcpServerConnection(serverName: String) {
+        QuantaBackendApi.getInstance().retryMcpServerConnection(project.rpcProjectPath(), serverName)
         refreshCurrentState()
     }
 

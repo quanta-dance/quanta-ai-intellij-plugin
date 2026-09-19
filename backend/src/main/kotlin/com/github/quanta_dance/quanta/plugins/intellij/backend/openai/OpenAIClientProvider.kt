@@ -27,7 +27,8 @@ object OpenAIClientProvider {
             .builder()
             .apiKey(state.openAiToken)
             .baseUrl(state.openAiUrl)
-            .maxRetries(2)
+            // Interactive chat retries once for transient failures; further hidden retries make failures feel hung.
+            .maxRetries(1)
             .build()
     }
 }

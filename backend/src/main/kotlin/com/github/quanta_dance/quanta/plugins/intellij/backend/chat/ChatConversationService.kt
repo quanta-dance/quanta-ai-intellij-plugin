@@ -6,6 +6,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.chat
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.project.CurrentFileContextProvider
 import com.github.quanta_dance.quanta.plugins.intellij.backend.repository.ChatMessageFactory
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AcpDelegationTaskService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentManagerService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AiInputSanitizer
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.BackendExecutionContextsService
@@ -23,6 +24,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.toChatM
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.openai.models.responses.EasyInputMessage
 import com.openai.models.responses.ResponseInputItem
@@ -32,9 +34,15 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.beans.PropertyChangeListener
+import java.net.SocketTimeoutException
+import java.net.http.HttpTimeoutException
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
@@ -55,12 +63,19 @@ class ChatConversationService(
     private val agentManager: AgentManagerService get() = project.service()
     private val persistence: ChatConversationStateService get() = project.service()
     private val executionContexts: BackendExecutionContextsService get() = project.service()
+    private val acpDelegations: AcpDelegationTaskService get() = project.service()
 
     @Suppress("ktlint:standard:backing-property-naming")
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
 
     @Suppress("ktlint:standard:backing-property-naming")
     private val _sessions = MutableStateFlow<List<ChatSessionDto>>(emptyList())
+
+    private val mainAgentTurnRunning = AtomicBoolean(false)
+    private val acpContinuationRunning = AtomicBoolean(false)
+    private val acpEventInboxes =
+        ConcurrentHashMap<String, ConcurrentLinkedQueue<AcpDelegationTaskService.MeaningfulEvent>>()
+    private val acpContinuationScheduled = ConcurrentHashMap<String, AtomicBoolean>()
 
     private val agentTaskListener =
         PropertyChangeListener { event ->
@@ -84,6 +99,23 @@ class ChatConversationService(
             }
         }
 
+    private val acpDelegationListener =
+        PropertyChangeListener { event ->
+            when (event.propertyName) {
+                "acp_delegation" -> {
+                    val task = event.newValue as? AcpDelegationTaskService.TaskSnapshot ?: return@PropertyChangeListener
+                    if (task.chatSessionId == persistence.getActiveSessionId()) upsertAcpDelegationCard(task)
+                }
+
+                "acp_delegation_meaningful_event" -> {
+                    val meaningfulEvent =
+                        event.newValue as? AcpDelegationTaskService.MeaningfulEvent
+                            ?: return@PropertyChangeListener
+                    enqueueAcpCoordinationEvent(meaningfulEvent)
+                }
+            }
+        }
+
     init {
         persistence.ensureSessionExists()
         _messages.value = persistence.loadActiveMessages()
@@ -91,6 +123,7 @@ class ChatConversationService(
         openAIService.switchToSession(persistence.getActiveSessionId(), persistence.getActiveLastResponseId())
         agentManager.reloadAgentsFromSession()
         agentManager.addPropertyChangeListener(agentTaskListener)
+        acpDelegations.addPropertyChangeListener(acpDelegationListener)
     }
 
     fun messagesFlow(): Flow<List<ChatMessageDto>> =
@@ -104,8 +137,35 @@ class ChatConversationService(
 
     fun currentSessions(): List<ChatSessionDto> = _sessions.value
 
+    fun getAllowedAcpAgentIds(): Set<String> = persistence.getAllowedAcpAgentIds()
+
+    fun setAcpAgentAllowed(
+        agentId: String,
+        allowed: Boolean,
+    ) {
+        onChatPublicationThread {
+            val sessionId = persistence.getActiveSessionId()
+            if (!allowed) acpDelegations.cancelForSessionAgent(sessionId, agentId)
+            persistence.setAcpAgentAllowed(sessionId, agentId, allowed)
+            _sessions.value = persistence.listSessions()
+        }
+    }
+
+    fun getDisabledMcpServerNames(): Set<String> = persistence.getDisabledMcpServerNames()
+
+    fun setMcpServerEnabled(
+        serverName: String,
+        enabled: Boolean,
+    ) {
+        onChatPublicationThread {
+            persistence.setMcpServerEnabled(persistence.getActiveSessionId(), serverName, enabled)
+            _sessions.value = persistence.listSessions()
+        }
+    }
+
     override fun dispose() {
         agentManager.removePropertyChangeListener(agentTaskListener)
+        acpDelegations.removePropertyChangeListener(acpDelegationListener)
     }
 
     private fun <T> onChatPublicationThread(action: () -> T): T = runBlocking(executionContexts.chatPublicationDispatcher) { action() }
@@ -143,6 +203,7 @@ class ChatConversationService(
     fun deleteSession(sessionId: String) {
         onChatPublicationThread {
             persistence.saveActiveAgents(agentManager.getPersistedAgentProfiles())
+            acpDelegations.cancelForSession(sessionId)
             val nextSessionId = persistence.deleteSession(sessionId)
             _messages.value = persistence.loadActiveMessages()
             _sessions.value = persistence.listSessions()
@@ -154,6 +215,7 @@ class ChatConversationService(
 
     suspend fun sendUserMessage(messageContent: String) {
         withContext(Dispatchers.IO) {
+            mainAgentTurnRunning.set(true)
             var thinkingMessageId: String
             var firstAssistantMessageShown = false
             try {
@@ -215,23 +277,34 @@ class ChatConversationService(
                     clearThinkingMessages()
                     throw e
                 }
-                val errorText =
-                    buildString {
-                        append("Backend error: ")
-                        append(e::class.java.simpleName)
-                        val message = e.message?.trim().orEmpty()
-                        if (message.isNotEmpty()) {
-                            append(" - ").append(message)
-                        }
-                        append(e.stackTrace.joinToString("\n"))
-                    }
+                val errorText = userFacingErrorText(e)
+                QDLog.warn(
+                    Logger.getInstance(ChatConversationService::class.java),
+                    { "ChatConversationService.sendUserMessage failed: ${e::class.java.simpleName}: ${e.message}" },
+                    e,
+                )
                 clearThinkingMessages()
                 appendAiMessage(errorText)
+            } finally {
+                mainAgentTurnRunning.set(false)
+                scheduleAcpCoordinationTurn(persistence.getActiveSessionId())
             }
         }
     }
 
     private fun buildRequestInputs(): MutableList<ResponseInputItem> = buildInputsFromTurns(buildHistory())
+
+    private fun userFacingErrorText(error: Throwable): String =
+        if (error.causeSequence().any { it is SocketTimeoutException || it is HttpTimeoutException }) {
+            "The AI service remained unavailable after automatic retries. Please retry; if this keeps happening, " +
+                "check the configured AI gateway connection."
+        } else {
+            "The AI service could not complete this request after automatic retries. Please retry. " +
+                "Technical details were recorded in the IDE log."
+        }
+
+    private fun Throwable.causeSequence(): Sequence<Throwable> =
+        generateSequence(this) { cause -> cause.cause?.takeUnless { it === cause } }
 
     private fun buildCompactedRetryInputs(
         brief: String,
@@ -309,12 +382,186 @@ class ChatConversationService(
         }
     }
 
+    private fun upsertAcpDelegationCard(task: AcpDelegationTaskService.TaskSnapshot) {
+        onChatPublicationThread {
+            val cardId =
+                task.chatMessageId
+                    ?: _messages.value
+                        .firstOrNull { message ->
+                            message.toolItems.any { it.callId == task.delegationId }
+                        }?.id
+                    ?: insertAcpDelegationCard(task)
+            if (task.chatMessageId == null) {
+                acpDelegations.attachChatMessage(task.delegationId, cardId)
+            }
+            val updatedCard = chatMessageFactory.createAIToolMessage(listOf(acpDelegationToolItem(task)))
+            _messages.value =
+                _messages.value.map { message ->
+                    if (message.id == cardId) updatedCard.copy(id = cardId) else message
+                }
+            persistMessages()
+        }
+    }
+
+    private fun insertAcpDelegationCard(task: AcpDelegationTaskService.TaskSnapshot): String {
+        val message = chatMessageFactory.createAIToolMessage(listOf(acpDelegationToolItem(task)))
+        val thinkingIndex = _messages.value.indexOfLast { it.type == AI_THINKING }
+        _messages.value =
+            if (thinkingIndex < 0) {
+                _messages.value + message
+            } else {
+                _messages.value.toMutableList().apply { add(thinkingIndex, message) }
+            }
+        persistMessages()
+        return message.id
+    }
+
+    private fun acpDelegationToolItem(task: AcpDelegationTaskService.TaskSnapshot): ToolExecutionItem {
+        val status =
+            when (task.status) {
+                AcpDelegationTaskService.Status.QUEUED,
+                AcpDelegationTaskService.Status.RUNNING,
+                AcpDelegationTaskService.Status.WAITING_FOR_AUTHENTICATION,
+                AcpDelegationTaskService.Status.WAITING_FOR_PERMISSION,
+                AcpDelegationTaskService.Status.WAITING_FOR_USER_INPUT,
+                -> ToolExecutionStatus.EXECUTING
+
+                AcpDelegationTaskService.Status.COMPLETED -> ToolExecutionStatus.SUCCEEDED
+
+                AcpDelegationTaskService.Status.FAILED,
+                AcpDelegationTaskService.Status.CANCELLED,
+                -> ToolExecutionStatus.FAILED
+            }
+        val state =
+            when (task.status) {
+                AcpDelegationTaskService.Status.WAITING_FOR_AUTHENTICATION -> {
+                    "Needs sign-in"
+                }
+
+                AcpDelegationTaskService.Status.WAITING_FOR_PERMISSION -> {
+                    "Needs approval"
+                }
+
+                AcpDelegationTaskService.Status.WAITING_FOR_USER_INPUT -> {
+                    "Needs input"
+                }
+
+                else -> {
+                    task.status.name
+                        .lowercase()
+                        .replaceFirstChar(Char::titlecase)
+                }
+            }
+        val detail =
+            buildString {
+                append("Independent external ACP agent\nTask: ").append(task.taskTitle)
+                append("\nStatus: ").append(state)
+                task.sessionId?.let { append("\nLive session: ").append(it) }
+                task.activity.lastOrNull()?.let { append("\nLatest activity: ").append(it) }
+                task.activity.takeIf { it.isNotEmpty() }?.let { activity ->
+                    append("\n\nActivity\n")
+                    activity.forEach { update -> append("• ").append(update).append('\n') }
+                }
+                task.summary?.takeIf(String::isNotBlank)?.let { append("\nLatest result\n").append(it) }
+                task.message?.takeIf(String::isNotBlank)?.let { append("\nWhat you need to do\n").append(it) }
+            }
+        return ToolExecutionItem(
+            callId = task.delegationId,
+            toolName = "AcpDelegationCard",
+            displayText = "${task.agent.name} · Live collaboration",
+            status = status,
+            errorText = task.message.takeIf { status == ToolExecutionStatus.FAILED },
+            detailText = detail,
+        )
+    }
+
+    private fun restoreAcpDelegationCards(sessionId: String) {
+        acpDelegations.list().filter { it.chatSessionId == sessionId }.forEach(::upsertAcpDelegationCard)
+    }
+
     private fun appendAiMessage(messageContent: String) {
         onChatPublicationThread {
             _messages.value += chatMessageFactory.createAIMessage(messageContent)
             persistMessages()
         }
     }
+
+    private fun enqueueAcpCoordinationEvent(event: AcpDelegationTaskService.MeaningfulEvent) {
+        val sessionId = event.chatSessionId ?: return
+        acpEventInboxes.computeIfAbsent(sessionId) { ConcurrentLinkedQueue() }.add(event)
+        scheduleAcpCoordinationTurn(sessionId)
+    }
+
+    private fun scheduleAcpCoordinationTurn(sessionId: String) {
+        if (sessionId != persistence.getActiveSessionId()) return
+        val scheduled = acpContinuationScheduled.computeIfAbsent(sessionId) { AtomicBoolean() }
+        if (!scheduled.compareAndSet(false, true)) return
+        executionContexts.agentOrchestrationScope.launch {
+            try {
+                runAcpCoordinationTurn(sessionId)
+            } finally {
+                scheduled.set(false)
+                if (acpEventInboxes[sessionId]?.isNotEmpty() == true) scheduleAcpCoordinationTurn(sessionId)
+            }
+        }
+    }
+
+    private suspend fun runAcpCoordinationTurn(sessionId: String) {
+        if (sessionId != persistence.getActiveSessionId() || !acpContinuationRunning.compareAndSet(false, true)) return
+        if (!mainAgentTurnRunning.compareAndSet(false, true)) {
+            acpContinuationRunning.set(false)
+            return
+        }
+        try {
+            val events = mutableListOf<AcpDelegationTaskService.MeaningfulEvent>()
+            val inbox = acpEventInboxes[sessionId] ?: return
+            repeat(MAX_ACP_EVENTS_PER_CONTINUATION) {
+                inbox.poll()?.let(events::add) ?: return@repeat
+            }
+            if (events.isEmpty()) return
+            withContext(Dispatchers.IO) {
+                var thinkingMessageId = appendAiThinkingMessage()
+                var firstAssistantMessageShown = false
+                val (responseText, _) =
+                    awaitManagerTurn(
+                        inputs = buildAcpCoordinationInputs(events),
+                        thinkingMessageIdProvider = { thinkingMessageId },
+                        onThinkingMessageIdChanged = { thinkingMessageId = it },
+                        onFirstAssistantMessageShown = { firstAssistantMessageShown = true },
+                    )
+                if (!firstAssistantMessageShown) {
+                    replaceMessage(thinkingMessageId, chatMessageFactory.createAIMessage(responseText))
+                } else {
+                    clearThinkingMessages()
+                }
+                persistMessages()
+            }
+        } finally {
+            acpContinuationRunning.set(false)
+            mainAgentTurnRunning.set(false)
+        }
+    }
+
+    private fun buildAcpCoordinationInputs(events: List<AcpDelegationTaskService.MeaningfulEvent>): MutableList<ResponseInputItem> =
+        buildRequestInputs().apply {
+            val eventSummary =
+                events.joinToString("\n") { event ->
+                    "- ${event.agentName} (${event.type.name.lowercase()}): ${event.text}"
+                }
+            add(
+                ResponseInputItem.ofEasyInputMessage(
+                    EasyInputMessage
+                        .builder()
+                        .role(EasyInputMessage.Role.SYSTEM)
+                        .content(
+                            "Background ACP-worker events are ready for review. These are curated findings or " +
+                                "terminal/blocking states, not raw progress. Assess them against the project, continue useful " +
+                                "work if appropriate, and give the user a concise update. Do not claim an external finding is " +
+                                "verified unless you verify it.\n$eventSummary",
+                        ).build(),
+                ),
+            )
+        }
 
     fun appendAiToolMessage(
         toolItems: List<com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem>,
@@ -391,6 +638,19 @@ class ChatConversationService(
         }
     }
 
+    private fun updateThinkingMessage(
+        messageId: String,
+        content: String,
+    ) {
+        onChatPublicationThread {
+            _messages.value =
+                _messages.value.map { message ->
+                    if (message.id == messageId && message.type == AI_THINKING) message.copy(content = content) else message
+                }
+            persistMessages()
+        }
+    }
+
     private fun clearThinkingMessages() {
         onChatPublicationThread {
             _messages.value = _messages.value.filterNot { it.type == AI_THINKING }
@@ -409,6 +669,7 @@ class ChatConversationService(
                             inputs = inputs,
                             previousId = null,
                             agentLabel = "AI Manager",
+                            allowedMcpNames = enabledMcpServerNames(),
                         )
                     }
                 replaceMessage(
@@ -476,6 +737,13 @@ class ChatConversationService(
                 )
             }
 
+    private fun enabledMcpServerNames(): Set<String> =
+        project
+            .service<com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.McpClientService>()
+            .listServers()
+            .filter { serverName -> persistence.isMcpServerEnabled(persistence.getActiveSessionId(), serverName) }
+            .toSet()
+
     private suspend fun awaitManagerTurn(
         inputs: MutableList<ResponseInputItem>,
         thinkingMessageIdProvider: () -> String,
@@ -489,6 +757,7 @@ class ChatConversationService(
                 inputs = inputs,
                 previousId = null,
                 agentLabel = "AI Manager",
+                allowedMcpNames = enabledMcpServerNames(),
                 onAssistantMessage = { assistantMessage ->
                     val visibleContent =
                         if (assistantMessage.isReasoning) {
@@ -507,7 +776,15 @@ class ChatConversationService(
                     onFirstAssistantMessageShown()
                     onThinkingMessageIdChanged(appendAiThinkingMessage())
                 },
+                onRequestRetry = { retryStatus ->
+                    updateThinkingMessage(
+                        thinkingMessageIdProvider(),
+                        "We're having trouble reaching the AI service. Retrying automatically in " +
+                            "${retryStatus.secondsRemaining}s (retry ${retryStatus.retryNumber}).",
+                    )
+                },
                 onToolUpdate = { update ->
+                    if (isAcpCardOwnedTool(update.item.toolName)) return@agentTurn
                     val targetId =
                         activeToolMessageId
                             ?: appendAiToolMessage(
@@ -522,6 +799,12 @@ class ChatConversationService(
                 },
             )
         }
+    }
+
+    private fun isAcpCardOwnedTool(toolName: String): Boolean = toolName in setOf("DelegateToAcpAgentTool", "SendAcpDelegationMessageTool")
+
+    companion object {
+        private const val MAX_ACP_EVENTS_PER_CONTINUATION = 4
     }
 
     private fun isContextWindowError(t: Throwable): Boolean {

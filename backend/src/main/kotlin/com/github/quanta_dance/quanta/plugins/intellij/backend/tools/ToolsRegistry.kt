@@ -4,6 +4,11 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.tools
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent.CancelAcpDelegationTool
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent.DelegateToAcpAgentTool
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent.DiscoverAcpAgentsTool
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent.GetAcpDelegationStatusTool
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent.SendAcpDelegationMessageTool
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.catalog.ListToolsCatalogTool
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.CopyFileOrDirectoryTool
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.CreateOrUpdateFile
@@ -109,6 +114,11 @@ object ToolsRegistry {
                 ToolEntry(RequestModelSwitch::class.java, Group.GENERIC),
                 ToolEntry(McpListServersTool::class.java, Group.GENERIC),
                 ToolEntry(McpListServerToolsTool::class.java, Group.GENERIC),
+                ToolEntry(DiscoverAcpAgentsTool::class.java, Group.GENERIC),
+                ToolEntry(DelegateToAcpAgentTool::class.java, Group.GENERIC),
+                ToolEntry(GetAcpDelegationStatusTool::class.java, Group.GENERIC),
+                ToolEntry(CancelAcpDelegationTool::class.java, Group.GENERIC),
+                ToolEntry(SendAcpDelegationMessageTool::class.java, Group.GENERIC),
                 ToolEntry(SessionPlanTool::class.java, Group.GENERIC),
                 ToolEntry(ScheduleTaskTool::class.java, Group.GENERIC),
                 ToolEntry(

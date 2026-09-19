@@ -5,13 +5,17 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.rpc
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AIVoiceService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AcpAgentDiscoveryService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentManagerService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentRosterService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SessionPlanService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SpeechToTextService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.OpenFileInEditorTool
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.McpClientService
 import com.github.quanta_dance.quanta.plugins.intellij.models.Suggestion
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaBackendApi
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AcpAgentDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ApplyRefactorSuggestionResultDto
@@ -19,6 +23,8 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPla
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.FrontendLogDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.FrontendLogLevel
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServerStatusDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServerStatusesDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.MicrophoneTranscriptionResultDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.SpeechChunkDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.SynthesizedSpeechDto
@@ -62,6 +68,48 @@ class QuantaBackendRpcApi : QuantaBackendApi {
     override suspend fun getCurrentPlanStatus(projectPath: String): ChatPlanStatusDto {
         val backendProject = findBackendProject(projectPath) ?: return ChatPlanStatusDto()
         return backendProject.service<SessionPlanService>().getCurrentPlanStatus()
+    }
+
+    override suspend fun discoverAcpAgents(): List<AcpAgentDto> =
+        AcpAgentDiscoveryService(
+            manualAgents = BackendRuntimeSettingsService.instance.settings.manualAcpAgents,
+        ).discover()
+
+    override suspend fun getMcpServerStatuses(projectPath: String): McpServerStatusesDto {
+        val backendProject =
+            findBackendProject(projectPath)
+                ?: return McpServerStatusesDto(configurationLoading = true)
+        val mcp = backendProject.service<McpClientService>()
+        val disabled =
+            backendProject
+                .service<com.github.quanta_dance.quanta.plugins.intellij.backend.chat.ChatConversationService>()
+                .getDisabledMcpServerNames()
+        val servers =
+            mcp.listServers().map { name ->
+                val status = mcp.getServerStatus(name)
+                McpServerStatusDto(
+                    name = name,
+                    enabledForCurrentChat = name !in disabled,
+                    connected = status.connected,
+                    connecting = status.connecting,
+                    toolCount = status.toolCount,
+                    requiresAuthorization = mcp.requiresAuthorization(name) && !status.connected,
+                    error = status.error,
+                )
+            }
+        return McpServerStatusesDto(
+            servers = servers,
+            configurationLoading = mcp.isConfigurationLoading(),
+            configurationError = mcp.getConfigLoadError(),
+        )
+    }
+
+    override suspend fun retryMcpServerConnection(
+        projectPath: String,
+        serverName: String,
+    ): Boolean {
+        val backendProject = findBackendProject(projectPath) ?: return false
+        return backendProject.service<McpClientService>().retryConnection(serverName)
     }
 
     override suspend fun getCurrentAgents(projectPath: String): List<AgentInfoDto> {
