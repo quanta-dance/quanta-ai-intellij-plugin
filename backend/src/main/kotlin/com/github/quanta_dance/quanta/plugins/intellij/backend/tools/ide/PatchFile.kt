@@ -588,18 +588,18 @@ class PatchFile :
         }
 
         try {
-            val vFile = PathUtils.resolveVirtualFileWithinProject(project, relToBase)
-            if (vFile != null) {
-                val fileDocumentManager = FileDocumentManager.getInstance()
-                val document =
-                    ApplicationManager.getApplication().runReadAction<Document?> {
-                        fileDocumentManager.getDocument(vFile)
+            ApplicationManager.getApplication().invokeAndWait {
+                ApplicationManager.getApplication().runWriteAction {
+                    val vFile = PathUtils.resolveVirtualFileWithinProject(project, relToBase)
+                    if (vFile != null) {
+                        val fileDocumentManager = FileDocumentManager.getInstance()
+                        fileDocumentManager.getDocument(vFile)?.let(fileDocumentManager::saveDocument)
+                        VfsUtil.markDirtyAndRefresh(true, true, true, vFile)
+                        try {
+                            PsiDocumentManager.getInstance(project).commitAllDocuments()
+                        } catch (_: Throwable) {
+                        }
                     }
-                document?.let(fileDocumentManager::saveDocument)
-                VfsUtil.markDirtyAndRefresh(true, true, true, vFile)
-                try {
-                    PsiDocumentManager.getInstance(project).commitAllDocuments()
-                } catch (_: Throwable) {
                 }
             }
         } catch (_: Throwable) {

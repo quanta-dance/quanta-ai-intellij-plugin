@@ -119,27 +119,26 @@ class CreateOrUpdateFile :
         target: VirtualFile?,
     ) {
         try {
-            var attempts = 0
-            while (attempts < 3) {
-                target
-                    ?.let(FileDocumentManager.getInstance()::getDocument)
-                    ?.let(FileDocumentManager.getInstance()::saveDocument)
-                try {
+            val application = ApplicationManager.getApplication()
+            val fileDocumentManager = FileDocumentManager.getInstance()
+            val targetDocument =
+                target?.let { virtualFile ->
+                    application.runReadAction<com.intellij.openapi.editor.Document?> {
+                        fileDocumentManager.getDocument(virtualFile)
+                    }
+                }
+            application.invokeAndWait {
+                WriteCommandAction.runWriteCommandAction(project) {
+                    var attempts = 0
+                    while (attempts < 3) {
+                        targetDocument?.let(fileDocumentManager::saveDocument)
+                        PsiDocumentManager.getInstance(project).commitAllDocuments()
+                        if (!PsiDocumentManager.getInstance(project).hasUncommitedDocuments()) break
+                        attempts++
+                    }
+                    target?.let { VfsUtil.markDirtyAndRefresh(true, false, false, it) }
                     PsiDocumentManager.getInstance(project).commitAllDocuments()
-                } catch (_: Throwable) {
                 }
-                if (!PsiDocumentManager.getInstance(project).hasUncommitedDocuments()) break
-                attempts++
-            }
-            if (target != null) {
-                try {
-                    VfsUtil.markDirtyAndRefresh(true, false, false, target)
-                } catch (_: Throwable) {
-                }
-            }
-            try {
-                PsiDocumentManager.getInstance(project).commitAllDocuments()
-            } catch (_: Throwable) {
             }
         } catch (_: Throwable) {
         }
@@ -256,26 +255,10 @@ class CreateOrUpdateFile :
         }
 
         try {
-            if (validateBuildAfterUpdate) {
-                flushPsiAndVfs(project, updatedVirtualFile)
-            } else {
-                PsiDocumentManager.getInstance(project).commitAllDocuments()
-                FileDocumentManager
-                    .getInstance()
-                    .saveAllDocuments()
-                val vFile = updatedVirtualFile ?: PathUtils.resolveVirtualFileWithinProject(project, relToBase)
-                if (vFile != null) {
-                    try {
-                        VfsUtil.markDirtyAndRefresh(true, true, true, vFile)
-                    } catch (_: Throwable) {
-                    }
-                    updatedVirtualFile = vFile
-                    try {
-                        PsiDocumentManager.getInstance(project).commitAllDocuments()
-                    } catch (_: Throwable) {
-                    }
-                }
-            }
+            flushPsiAndVfs(
+                project,
+                updatedVirtualFile ?: PathUtils.resolveVirtualFileWithinProject(project, relToBase),
+            )
         } catch (e: Throwable) {
             QDLog.debug(logger) { "Post-write sync failed: ${e.message}" }
         }
