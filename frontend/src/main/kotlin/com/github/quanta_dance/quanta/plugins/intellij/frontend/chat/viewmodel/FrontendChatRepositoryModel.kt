@@ -30,6 +30,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Frontend-side view model adapter over the split-mode RPC layer.
@@ -84,8 +86,26 @@ class FrontendChatRepositoryModel(
     private val _channelEventsFlow = MutableStateFlow<List<AgentChannelEventDto>>(emptyList())
     override val channelEventsFlow: StateFlow<List<AgentChannelEventDto>> = _channelEventsFlow.asStateFlow()
 
+    private val acpDiscoveryMutex = Mutex()
+
     init {
-        coroutineScope.launch { pollCurrentState() }
+        coroutineScope.launch {
+            initializeCurrentChat()
+            launch { refreshAllowedAcpAgentsIfNeeded() }
+            pollCurrentState()
+        }
+    }
+
+    /** Synchronizes the backend and restores the active chat's persisted state after IDE startup. */
+    private suspend fun initializeCurrentChat() {
+        runCatching { syncSettingsToBackend() }
+            .onFailure { error ->
+                logger.warn(
+                    "Failed to synchronize settings before restoring ACP availability",
+                    error,
+                )
+            }
+        refreshCurrentState()
     }
 
     private suspend fun refreshCurrentState() {
@@ -168,6 +188,7 @@ class FrontendChatRepositoryModel(
     override suspend fun activateSession(sessionId: String) {
         ChatRepositoryRpcApi.getInstance().activateSession(project.rpcProjectPath(), sessionId)
         refreshCurrentState()
+        refreshAllowedAcpAgentsIfNeeded()
     }
 
     override suspend fun deleteSession(sessionId: String) {
@@ -179,21 +200,37 @@ class FrontendChatRepositoryModel(
         FrontendQuantaSettingsState.instance.state.agenticEnabled = enabled
         syncSettingsToBackend()
         refreshCurrentState()
+        if (enabled) refreshAllowedAcpAgentsIfNeeded()
     }
 
     override suspend fun refreshAcpAgents() {
-        _acpDiscoveryLoadingFlow.value = true
-        try {
-            syncSettingsToBackend()
-            _acpAgentsFlow.value = QuantaBackendApi.getInstance().discoverAcpAgents()
-            _allowedAcpAgentIdsFlow.value =
-                ChatRepositoryRpcApi.getInstance().getAllowedAcpAgentIds(project.rpcProjectPath()).toSet()
-        } catch (error: Exception) {
-            logger.warn("Failed to discover ACP agents", error)
-        } finally {
-            _acpDiscoveryLoadingFlow.value = false
-        }
+        discoverAcpAgents()
     }
+
+    private suspend fun refreshAllowedAcpAgentsIfNeeded() {
+        if (FrontendQuantaSettingsState.instance.state.agenticEnabled == false) return
+
+        val allowedAgentIds = _allowedAcpAgentIdsFlow.value
+        val discoveredAgentIds = _acpAgentsFlow.value.mapTo(mutableSetOf(), AcpAgentDto::id)
+        if (allowedAgentIds.isEmpty() || allowedAgentIds.all(discoveredAgentIds::contains)) return
+
+        discoverAcpAgents()
+    }
+
+    private suspend fun discoverAcpAgents() =
+        acpDiscoveryMutex.withLock {
+            _acpDiscoveryLoadingFlow.value = true
+            try {
+                syncSettingsToBackend()
+                _acpAgentsFlow.value = QuantaBackendApi.getInstance().discoverAcpAgents()
+                _allowedAcpAgentIdsFlow.value =
+                    ChatRepositoryRpcApi.getInstance().getAllowedAcpAgentIds(project.rpcProjectPath()).toSet()
+            } catch (error: Exception) {
+                logger.warn("Failed to discover ACP agents", error)
+            } finally {
+                _acpDiscoveryLoadingFlow.value = false
+            }
+        }
 
     override suspend fun setAcpAgentAllowed(
         agentId: String,

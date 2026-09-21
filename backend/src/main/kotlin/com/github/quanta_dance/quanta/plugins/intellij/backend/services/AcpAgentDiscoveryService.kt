@@ -66,11 +66,12 @@ class AcpAgentDiscoveryService(
                     }
                 }.getOrNull() ?: return null
         return try {
-            process.outputStream.bufferedWriter().use { writer ->
-                writer.write(INITIALIZE_REQUEST)
-                writer.newLine()
-                writer.flush()
-            }
+            // ACP is a bidirectional stdio protocol. Keep stdin open until the probe finishes: some
+            // adapters (including Node-based ones) treat an early EOF as session cancellation.
+            val writer = process.outputStream.bufferedWriter()
+            writer.write(INITIALIZE_REQUEST)
+            writer.newLine()
+            writer.flush()
             val response =
                 readProcessLineWithTimeout(process, timeoutMillis) ?: run {
                     QDLog.debug(logger) {
