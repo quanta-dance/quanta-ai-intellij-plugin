@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.AtomicReference
  * prompts on the same ACP session until it is cancelled or explicitly closed.
  */
 class AcpDelegationService(
-    private val processFactory: (List<String>) -> Process = ::startProcess,
+    private val processFactory: (List<String>, Map<String, String>) -> Process = ::startProcess,
     private val socketFactory: () -> Socket = ::Socket,
     private val mapper: ObjectMapper = ObjectMapper(),
 ) {
@@ -152,7 +152,7 @@ class AcpDelegationService(
         }
         val executable = File(agent.executablePath)
         require(executable.isFile && executable.canExecute()) { "ACP executable is unavailable: ${agent.executablePath}" }
-        val process = processFactory(listOf(executable.absolutePath) + agent.command.drop(1))
+        val process = processFactory(listOf(executable.absolutePath) + agent.command.drop(1), agent.environment)
         return AcpTransport(
             reader = process.inputStream.bufferedReader(),
             writer = process.outputStream.bufferedWriter(),
@@ -402,8 +402,12 @@ class AcpDelegationService(
         private const val SESSION_NEW_REQUEST_ID = 2
         private const val SESSION_PROMPT_REQUEST_ID = 3
 
-        private fun startProcess(command: List<String>): Process =
+        private fun startProcess(
+            command: List<String>,
+            environment: Map<String, String>,
+        ): Process =
             ProcessBuilder(command)
+                .apply { this.environment().putAll(environment) }
                 .redirectError(ProcessBuilder.Redirect.PIPE)
                 .start()
     }

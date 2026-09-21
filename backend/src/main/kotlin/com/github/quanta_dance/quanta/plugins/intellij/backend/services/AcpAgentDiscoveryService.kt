@@ -23,19 +23,25 @@ import java.util.concurrent.TimeUnit
 class AcpAgentDiscoveryService(
     private val environment: Map<String, String> = System.getenv(),
     private val manualAgents: List<AcpManualAgentDto> = emptyList(),
-    private val processFactory: (List<String>) -> Process = ::startProcess,
+    private val jetBrainsConfigService: JetBrainsAcpConfigService = JetBrainsAcpConfigService(),
+    private val processFactory: (List<String>, Map<String, String>) -> Process = ::startProcess,
     private val socketFactory: () -> Socket = ::Socket,
 ) {
     fun discover(timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS): List<AcpAgentDto> {
-        val applicationCandidates = defaultApplicationCandidates() + manualApplicationCandidates()
+        val applicationCandidates =
+            defaultApplicationCandidates() +
+                manualApplicationCandidates() +
+                jetBrainsConfigService.loadApplicationCandidates().map { configured ->
+                    ApplicationCandidate(configured.command, configured.name, configured.environment)
+                }
         QDLog.debug(logger) {
             "ACP discovery started for ${applicationCandidates.size} application and " +
                 "${manualTcpCandidates().size} TCP candidate(s)"
         }
         return (
-            applicationCandidates.mapNotNull { command -> discoverApplication(command, timeoutMillis) } +
+            applicationCandidates.mapNotNull { candidate -> discoverApplication(candidate, timeoutMillis) } +
                 manualTcpCandidates().mapNotNull { endpoint -> discoverTcp(endpoint, timeoutMillis) }
-        ).distinctBy { it.executablePath }
+        ).distinctBy { it.id }
             .also { agents ->
                 QDLog.debug(logger) {
                     "ACP discovery completed: ${agents.size} compatible agent(s) found" +
@@ -47,9 +53,10 @@ class AcpAgentDiscoveryService(
     }
 
     private fun discoverApplication(
-        command: List<String>,
+        candidate: ApplicationCandidate,
         timeoutMillis: Long,
     ): AcpAgentDto? {
+        val command = candidate.command
         val executablePath =
             resolveExecutable(command.first()) ?: run {
                 QDLog.debug(logger) { "ACP candidate not found on PATH: ${command.joinToString(" ")}" }
@@ -59,7 +66,7 @@ class AcpAgentDiscoveryService(
             "ACP candidate found: ${command.joinToString(" ")} (resolved to $executablePath); starting handshake"
         }
         val process =
-            runCatching { processFactory(listOf(executablePath) + command.drop(1)) }
+            runCatching { processFactory(listOf(executablePath) + command.drop(1), candidate.environment) }
                 .onFailure { error ->
                     QDLog.debug(logger) {
                         "ACP handshake could not start for ${command.joinToString(" ")}: ${error.message}"
@@ -79,7 +86,7 @@ class AcpAgentDiscoveryService(
                     }
                     return null
                 }
-            agentFromResponse(response, command, executablePath)
+            agentFromResponse(response, command, executablePath, candidate.name, candidate.environment)
         } catch (error: Exception) {
             QDLog.debug(logger) { "ACP handshake failed for ${command.joinToString(" ")}: ${error.message}" }
             null
@@ -118,6 +125,7 @@ class AcpAgentDiscoveryService(
         command: List<String>,
         endpointPath: String,
         configuredName: String? = null,
+        environment: Map<String, String> = emptyMap(),
     ): AcpAgentDto? {
         val protocolVersion =
             PROTOCOL_VERSION
@@ -130,10 +138,11 @@ class AcpAgentDiscoveryService(
             return null
         }
         return AcpAgentDto(
-            id = UUID.nameUUIDFromBytes((endpointPath + command).toByteArray()).toString(),
+            id = UUID.nameUUIDFromBytes((endpointPath + command + environment.toSortedMap()).toByteArray()).toString(),
             name = AGENT_NAME.find(response)?.groupValues?.get(1) ?: configuredName ?: command.first(),
             command = command,
             executablePath = endpointPath,
+            environment = environment,
             version = AGENT_VERSION.find(response)?.groupValues?.get(1),
             protocolVersion = protocolVersion,
         ).also { agent ->
@@ -162,12 +171,12 @@ class AcpAgentDiscoveryService(
         return output.toString().takeIf { it.isNotBlank() }
     }
 
-    private fun manualApplicationCandidates(): List<List<String>> =
+    private fun manualApplicationCandidates(): List<ApplicationCandidate> =
         manualAgents.mapNotNull { endpoint ->
             endpoint.executable
                 ?.trim()
                 ?.takeIf(String::isNotBlank)
-                ?.let(::listOf)
+                ?.let { executable -> ApplicationCandidate(command = listOf(executable), name = endpoint.name) }
         }
 
     private fun manualTcpCandidates(): List<AcpManualAgentDto> =
@@ -194,6 +203,12 @@ class AcpAgentDiscoveryService(
             ?.absolutePath
     }
 
+    private data class ApplicationCandidate(
+        val command: List<String>,
+        val name: String? = null,
+        val environment: Map<String, String> = emptyMap(),
+    )
+
     companion object {
         private val logger = Logger.getInstance(AcpAgentDiscoveryService::class.java)
 
@@ -207,18 +222,22 @@ class AcpAgentDiscoveryService(
         private val AGENT_NAME = Regex("\\\"name\\\"\\s*:\\s*\\\"([^\"]+)")
         private val AGENT_VERSION = Regex("\\\"version\\\"\\s*:\\s*\\\"([^\"]+)")
 
-        private fun defaultApplicationCandidates(): List<List<String>> =
+        private fun defaultApplicationCandidates(): List<ApplicationCandidate> =
             listOf(
-                listOf("claude-agent-acp"),
-                listOf("codex-acp"),
-                listOf("gemini-acp"),
-                listOf("goose", "acp"),
-                listOf("opencode", "acp"),
-                listOf("kiro-cli", "acp"),
+                ApplicationCandidate(listOf("claude-agent-acp")),
+                ApplicationCandidate(listOf("codex-acp")),
+                ApplicationCandidate(listOf("gemini-acp")),
+                ApplicationCandidate(listOf("goose", "acp")),
+                ApplicationCandidate(listOf("opencode", "acp")),
+                ApplicationCandidate(listOf("kiro-cli", "acp")),
             )
 
-        private fun startProcess(command: List<String>): Process =
+        private fun startProcess(
+            command: List<String>,
+            environment: Map<String, String>,
+        ): Process =
             ProcessBuilder(command)
+                .apply { this.environment().putAll(environment) }
                 .redirectError(ProcessBuilder.Redirect.PIPE)
                 .start()
     }

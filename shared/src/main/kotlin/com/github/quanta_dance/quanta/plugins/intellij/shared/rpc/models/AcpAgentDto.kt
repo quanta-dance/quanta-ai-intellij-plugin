@@ -12,6 +12,8 @@ data class AcpAgentDto(
     val name: String,
     val command: List<String>,
     val executablePath: String,
+    /** Environment overrides applied only when launching this local ACP application. */
+    val environment: Map<String, String> = emptyMap(),
     val version: String? = null,
     val protocolVersion: Int,
 )

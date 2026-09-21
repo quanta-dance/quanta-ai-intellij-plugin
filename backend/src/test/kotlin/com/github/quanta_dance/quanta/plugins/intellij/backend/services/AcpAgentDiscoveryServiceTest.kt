@@ -28,6 +28,7 @@ class AcpAgentDiscoveryServiceTest {
         val agents =
             AcpAgentDiscoveryService(
                 environment = mapOf("PATH" to directory.toString()),
+                jetBrainsConfigService = absentJetBrainsConfig(),
             ).discover()
 
         assertEquals(1, agents.size)
@@ -55,6 +56,7 @@ class AcpAgentDiscoveryServiceTest {
         val agents =
             AcpAgentDiscoveryService(
                 environment = mapOf("PATH" to directory.toString()),
+                jetBrainsConfigService = absentJetBrainsConfig(),
             ).discover()
 
         assertEquals("Slow ACP", agents.single().name)
@@ -77,6 +79,7 @@ class AcpAgentDiscoveryServiceTest {
         val agents =
             AcpAgentDiscoveryService(
                 environment = mapOf("PATH" to directory.toString()),
+                jetBrainsConfigService = absentJetBrainsConfig(),
             ).discover()
 
         assertTrue(agents.isEmpty())
@@ -99,11 +102,53 @@ class AcpAgentDiscoveryServiceTest {
             AcpAgentDiscoveryService(
                 environment = emptyMap(),
                 manualAgents = listOf(AcpManualAgentDto(name = "Configured agent", executable = script.toString())),
+                jetBrainsConfigService = absentJetBrainsConfig(),
             ).discover()
 
         assertEquals(1, agents.size)
         assertEquals("Manual ACP", agents.single().name)
         assertEquals(script.toFile().absolutePath, agents.single().executablePath)
+    }
+
+    @Test
+    fun `discovers JetBrains configured ACP application with arguments and environment`() {
+        val script = Files.createTempFile("jetbrains-acp-agent", ".sh")
+        Files.writeString(
+            script,
+            """
+            #!/bin/sh
+            [ "${'$'}ACP_CONFIG_TEST" = "configured" ] || exit 1
+            [ "${'$'}1" = "rig" ] || exit 1
+            read request
+            echo '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentInfo":{"name":"Configured ACP"}}}'
+            """.trimIndent(),
+        )
+        assertTrue(script.toFile().setExecutable(true))
+        val config = Files.createTempFile("jetbrains-acp", ".json")
+        Files.writeString(
+            config,
+            """
+            {
+              "agent_servers": {
+                "Codemaster": {
+                  "command": "$script",
+                  "args": ["rig"],
+                  "env": {"ACP_CONFIG_TEST": "configured"}
+                }
+              }
+            }
+            """.trimIndent(),
+        )
+
+        val agents =
+            AcpAgentDiscoveryService(
+                environment = emptyMap(),
+                jetBrainsConfigService = JetBrainsAcpConfigService(config.toFile()),
+            ).discover()
+
+        assertEquals(1, agents.size)
+        assertEquals(listOf(script.toString(), "rig"), agents.single().command)
+        assertEquals(mapOf("ACP_CONFIG_TEST" to "configured"), agents.single().environment)
     }
 
     @Test
@@ -133,6 +178,7 @@ class AcpAgentDiscoveryServiceTest {
                                 port = server.localPort,
                             ),
                         ),
+                    jetBrainsConfigService = absentJetBrainsConfig(),
                 ).discover()
 
             responder.join(1_000)
@@ -141,4 +187,7 @@ class AcpAgentDiscoveryServiceTest {
             assertEquals("tcp://127.0.0.1:${server.localPort}", agents.single().executablePath)
         }
     }
+
+    private fun absentJetBrainsConfig(): JetBrainsAcpConfigService =
+        JetBrainsAcpConfigService(Files.createTempDirectory("absent-jetbrains-acp").resolve("acp.json").toFile())
 }
