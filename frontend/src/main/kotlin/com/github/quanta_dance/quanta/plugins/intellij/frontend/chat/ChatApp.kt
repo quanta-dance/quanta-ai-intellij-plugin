@@ -63,11 +63,16 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.ModularPluginFrontendBundle
@@ -936,10 +941,50 @@ private fun agentPresenceStrip(
     }
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun agentPresenceAvatar(presence: AgentPresence) {
-    var profileOpen by remember(presence.id) { mutableStateOf(false) }
+    var isAvatarHovered by remember(presence.id) { mutableStateOf(false) }
+    var isPopupHovered by remember(presence.id) { mutableStateOf(false) }
+    var showStatusPopup by remember(presence.id) { mutableStateOf(false) }
     var showProfileDialog by remember(presence.id) { mutableStateOf(false) }
+    val popupGapPx = with(LocalDensity.current) { 8.dp.roundToPx() }
+    val popupPositionProvider =
+        remember(popupGapPx) {
+            object : PopupPositionProvider {
+                override fun calculatePosition(
+                    anchorBounds: androidx.compose.ui.unit.IntRect,
+                    windowSize: IntSize,
+                    layoutDirection: LayoutDirection,
+                    popupContentSize: IntSize,
+                ): IntOffset {
+                    val maxX = (windowSize.width - popupContentSize.width).coerceAtLeast(0)
+                    val centeredX = anchorBounds.left + (anchorBounds.width - popupContentSize.width) / 2
+                    val x = centeredX.coerceIn(0, maxX)
+                    val aboveY = anchorBounds.top - popupContentSize.height - popupGapPx
+                    val maxY = (windowSize.height - popupContentSize.height).coerceAtLeast(0)
+                    val y =
+                        if (aboveY >= 0) {
+                            aboveY
+                        } else {
+                            (anchorBounds.bottom + popupGapPx).coerceAtMost(maxY)
+                        }
+                    return IntOffset(x, y)
+                }
+            }
+        }
+
+    LaunchedEffect(isAvatarHovered, isPopupHovered) {
+        if (isAvatarHovered || isPopupHovered) {
+            showStatusPopup = true
+        } else {
+            delay(150)
+            if (!isAvatarHovered && !isPopupHovered) {
+                showStatusPopup = false
+            }
+        }
+    }
+
     val isWorking = presence.state == AgentPresenceState.WORKING
     val activityTransition = rememberInfiniteTransition(label = "agentPresenceActivity")
     val activityPulse by
@@ -960,7 +1005,12 @@ private fun agentPresenceAvatar(presence: AgentPresence) {
     // This fixed-size surface reserves space for the activity ring even while it is invisible.
     // It keeps the strip height stable and prevents the ring stroke from being clipped.
     Box(
-        modifier = Modifier.size(42.dp),
+        modifier =
+            Modifier
+                .size(42.dp)
+                .pointerHoverIcon(PointerIcon.Hand)
+                .onPointerEvent(PointerEventType.Enter) { isAvatarHovered = true }
+                .onPointerEvent(PointerEventType.Exit) { isAvatarHovered = false },
         contentAlignment = Alignment.Center,
     ) {
         Canvas(
@@ -976,14 +1026,17 @@ private fun agentPresenceAvatar(presence: AgentPresence) {
                 style = Stroke(width = strokeWidth),
             )
         }
-        if (profileOpen) {
+        if (showStatusPopup) {
+            val hoverSummary =
+                presence.details
+                    .lineSequence()
+                    .map(String::trim)
+                    .firstOrNull(String::isNotBlank)
+                    ?.take(120)
+                    ?: "No current activity."
             Popup(
-                alignment = Alignment.BottomCenter,
-                offset =
-                    androidx.compose.ui.unit
-                        .IntOffset(0, -8),
-                onDismissRequest = { profileOpen = false },
-                properties = PopupProperties(focusable = true),
+                popupPositionProvider = popupPositionProvider,
+                properties = PopupProperties(focusable = false),
             ) {
                 Column(
                     modifier =
@@ -991,7 +1044,10 @@ private fun agentPresenceAvatar(presence: AgentPresence) {
                             .zIndex(2f)
                             .widthIn(min = 210.dp, max = 300.dp)
                             .background(ChatAppColors.Panel.background, RoundedCornerShape(8.dp))
-                            .padding(10.dp),
+                            .border(1.dp, presence.state.color.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                            .padding(10.dp)
+                            .onPointerEvent(PointerEventType.Enter) { isPopupHovered = true }
+                            .onPointerEvent(PointerEventType.Exit) { isPopupHovered = false },
                     verticalArrangement = Arrangement.spacedBy(5.dp),
                 ) {
                     Text(presence.name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
@@ -1000,15 +1056,12 @@ private fun agentPresenceAvatar(presence: AgentPresence) {
                         fontSize = 10.sp,
                         color = presence.state.color,
                     )
-                    Text(presence.details, fontSize = 11.sp, color = ChatAppColors.Text.disabled)
-                    OutlinedButton(
-                        onClick = {
-                            profileOpen = false
-                            showProfileDialog = true
-                        },
-                    ) {
-                        Text("View profile")
-                    }
+                    Text(hoverSummary, fontSize = 11.sp, color = ChatAppColors.Text.disabled)
+                    Text(
+                        "Click avatar to view profile",
+                        fontSize = 10.sp,
+                        color = ChatAppColors.Text.disabled,
+                    )
                 }
             }
         }
@@ -1016,7 +1069,6 @@ private fun agentPresenceAvatar(presence: AgentPresence) {
             modifier =
                 Modifier
                     .size(30.dp)
-                    .pointerHoverIcon(PointerIcon.Hand)
                     .background(
                         presence.color.copy(alpha = if (isWorking) 1f else 0.68f),
                         RoundedCornerShape(999.dp),
@@ -1024,13 +1076,13 @@ private fun agentPresenceAvatar(presence: AgentPresence) {
                         width = if (isWorking) 2.dp else 1.dp,
                         color = if (isWorking) presence.state.color else Color.Transparent,
                         shape = RoundedCornerShape(999.dp),
-                    ).clickable { profileOpen = !profileOpen },
+                    ).clickable { showProfileDialog = true },
             contentAlignment = Alignment.Center,
         ) {
             if (presence.external || presence.id == "main-agent") {
                 Icon(
                     key = ChatAppIcons.Header.agenticTeam,
-                    contentDescription = "${presence.name}, ${presence.state.label}. Click to view profile.",
+                    contentDescription = "${presence.name}, ${presence.state.label}. Hover for status, click to view profile.",
                     modifier = Modifier.size(16.dp),
                     tint = Color.White,
                 )
@@ -1076,7 +1128,17 @@ private fun agentProfileDialog(
             )
             Divider(orientation = Orientation.Horizontal)
             Text("Current status", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-            Text(presence.details, fontSize = 12.sp, color = ChatAppColors.Text.disabled)
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 160.dp)
+                        .verticalScroll(rememberScrollState())
+                        .background(ChatAppColors.MessageBubble.othersBackground, RoundedCornerShape(8.dp))
+                        .padding(10.dp),
+            ) {
+                Text(presence.details, fontSize = 12.sp)
+            }
             Text("Instructions", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
             Box(
                 modifier =
