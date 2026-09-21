@@ -11,4 +11,6 @@ data class AgentInfoDto(
     val role: String,
     val model: String? = null,
     val instructions: String? = null,
+    /** True while this teammate has one or more active delegated turns. */
+    val isWorking: Boolean = false,
 )
