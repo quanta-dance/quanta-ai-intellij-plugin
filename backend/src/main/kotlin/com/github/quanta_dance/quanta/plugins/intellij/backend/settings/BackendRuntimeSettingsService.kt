@@ -3,6 +3,7 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.backend.settings
 
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AcpManualAgentDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.QuantaSettingsDto
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
@@ -35,6 +36,7 @@ class BackendRuntimeSettingsService {
         var terminalToolEnabled: Boolean? = false,
         var terminalAllowedCommandsCsv: String = "git status,git diff,git add,git commit",
         var mcpServersJson: String = "",
+        var manualAcpAgents: List<AcpManualAgentDto> = emptyList(),
     )
 
     data class Snapshot(
@@ -86,6 +88,7 @@ class BackendRuntimeSettingsService {
                 terminalToolEnabled = settings.terminalToolEnabled,
                 terminalAllowedCommandsCsv = settings.terminalAllowedCommandsCsv,
                 mcpServersJson = settings.mcpServersJson,
+                manualAcpAgents = settings.manualAcpAgents,
             )
         hasFrontendSync = true
     }

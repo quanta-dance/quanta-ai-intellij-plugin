@@ -48,6 +48,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 @Service(Service.Level.PROJECT)
 class AgentManagerService(
@@ -76,6 +77,7 @@ class AgentManagerService(
         val role: String,
         val instructions: String?,
         val model: String?,
+        val isWorking: Boolean,
     )
 
     data class AgentTaskResult(
@@ -90,6 +92,7 @@ class AgentManagerService(
     private val agents = ConcurrentHashMap<String, AgentSession>()
     private val pcs = PropertyChangeSupport(this)
     private val executors = ConcurrentHashMap<String, ExecutorService>()
+    private val activeTurnCounts = ConcurrentHashMap<String, AtomicInteger>()
 
     // Proactive summarization throttle
     private val agentSummaryLastRunAtMs = ConcurrentHashMap<String, Long>()
@@ -137,7 +140,15 @@ class AgentManagerService(
 
     fun getAgentsSnapshot(): List<AgentSnapshot> {
         ensureAgentsLoadedFromSession()
-        return agents.values.map { AgentSnapshot(it.id, it.config.role, it.config.instructions, it.config.model) }
+        return agents.values.map {
+            AgentSnapshot(
+                id = it.id,
+                role = it.config.role,
+                instructions = it.config.instructions,
+                model = it.config.model,
+                isWorking = activeTurnCounts[it.id]?.get()?.let { count -> count > 0 } == true,
+            )
+        }
     }
 
     fun getPersistedAgentProfiles(): List<QuantaAISessionState.AgentProfile> {
@@ -917,6 +928,8 @@ class AgentManagerService(
         )
 
         val fut = CompletableFuture<AgentTaskResult>()
+        markAgentTurnStarted(agentId)
+        fut.whenComplete { _, _ -> markAgentTurnFinished(agentId) }
         ensureExecutor(agentId).submit {
             try {
                 val openAI = project.service<OpenAIService>()
@@ -1173,6 +1186,20 @@ class AgentManagerService(
         return fut
     }
 
+    private fun markAgentTurnStarted(agentId: String) {
+        activeTurnCounts.computeIfAbsent(agentId) { AtomicInteger() }.incrementAndGet()
+        pcs.firePropertyChange("agents", null, getAgentsSnapshot())
+    }
+
+    private fun markAgentTurnFinished(agentId: String) {
+        activeTurnCounts[agentId]?.let { count ->
+            if (count.decrementAndGet() <= 0) {
+                activeTurnCounts.remove(agentId, count)
+            }
+        }
+        pcs.firePropertyChange("agents", null, getAgentsSnapshot())
+    }
+
     fun sendMessage(
         agentId: String,
         message: String,
@@ -1182,6 +1209,7 @@ class AgentManagerService(
         val session = agents[agentId] ?: return "Agent not found: $agentId"
         val requestId = UUID.randomUUID().toString()
         pcs.firePropertyChange("agent_task_started", null, mapOf("requestId" to requestId, "agentId" to agentId))
+        markAgentTurnStarted(agentId)
         return try {
             val openAI = project.service<OpenAIService>()
             val inputs = mutableListOf<ResponseInputItem>()
@@ -1380,6 +1408,8 @@ class AgentManagerService(
             val err = t.message ?: t.javaClass.simpleName
             pcs.firePropertyChange("agent_task_finished", null, AgentTaskResult(requestId, agentId, false, null, err))
             "Agent error: $err"
+        } finally {
+            markAgentTurnFinished(agentId)
         }
     }
 

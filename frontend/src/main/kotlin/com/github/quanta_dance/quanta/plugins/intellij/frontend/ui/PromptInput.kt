@@ -91,6 +91,7 @@ fun promptInput(
     onModelSelected: (String) -> Unit = {},
     onToggleMic: () -> Unit = {},
     onToggleAgenticMode: () -> Unit = {},
+    onToggleMcpTools: () -> Unit = {},
     onToggleVoiceFeedback: () -> Unit = {},
     settingsSyncState: FrontendSettingsSyncStateService.State = FrontendSettingsSyncStateService.State(),
     hasActiveAgentWork: Boolean = false,
@@ -316,11 +317,97 @@ fun promptInput(
                         )
                     }
 
-                    OutlinedButton(
-                        modifier = Modifier.padding(horizontal = 4.dp),
-                        onClick = onToggleAgenticMode,
-                    ) {
-                        Text(if (agenticEnabled) "Agentic On" else "Agentic Mode")
+                    var showAgenticModeTooltip by remember { mutableStateOf(false) }
+                    Box {
+                        IconButton(
+                            modifier =
+                                Modifier
+                                    .background(
+                                        if (agenticEnabled) {
+                                            ChatAppColors.MessageBubble.myBackground.copy(alpha = 0.45f)
+                                        } else {
+                                            Color.Transparent
+                                        },
+                                        RoundedCornerShape(6.dp),
+                                    ).padding(2.dp)
+                                    .onPointerEvent(PointerEventType.Enter) {
+                                        showAgenticModeTooltip = true
+                                    }.onPointerEvent(PointerEventType.Exit) {
+                                        showAgenticModeTooltip = false
+                                    },
+                            onClick = onToggleAgenticMode,
+                        ) {
+                            Icon(
+                                key = ChatAppIcons.Header.agenticTeam,
+                                contentDescription =
+                                    if (agenticEnabled) {
+                                        "Manage agentic team, currently enabled"
+                                    } else {
+                                        "Manage agentic team, currently disabled"
+                                    },
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+
+                        if (showAgenticModeTooltip) {
+                            Popup(
+                                alignment = Alignment.TopCenter,
+                                offset = IntOffset(0, -36),
+                                properties = PopupProperties(focusable = false),
+                            ) {
+                                Text(
+                                    text =
+                                        if (agenticEnabled) {
+                                            "Manage agentic team"
+                                        } else {
+                                            "Set up agentic team"
+                                        },
+                                    modifier =
+                                        Modifier
+                                            .background(
+                                                ChatAppColors.MessageBubble.othersBackground,
+                                                RoundedCornerShape(4.dp),
+                                            ).padding(horizontal = 8.dp, vertical = 4.dp),
+                                    style = JewelTheme.defaultTextStyle.copy(fontSize = 11.sp),
+                                )
+                            }
+                        }
+                    }
+
+                    Box {
+                        var showMcpToolsTooltip by remember { mutableStateOf(false) }
+                        IconButton(
+                            modifier =
+                                Modifier
+                                    .padding(2.dp)
+                                    .onPointerEvent(PointerEventType.Enter) { showMcpToolsTooltip = true }
+                                    .onPointerEvent(PointerEventType.Exit) { showMcpToolsTooltip = false },
+                            onClick = onToggleMcpTools,
+                        ) {
+                            Icon(
+                                key = ChatAppIcons.Header.mcpTools,
+                                contentDescription = "Manage MCP tools for this chat",
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                        if (showMcpToolsTooltip) {
+                            Popup(
+                                alignment = Alignment.TopCenter,
+                                offset = IntOffset(0, -36),
+                                properties = PopupProperties(focusable = false),
+                            ) {
+                                Text(
+                                    text = "Manage MCP tools for this chat",
+                                    modifier =
+                                        Modifier
+                                            .background(
+                                                ChatAppColors.MessageBubble.othersBackground,
+                                                RoundedCornerShape(4.dp),
+                                            ).padding(horizontal = 8.dp, vertical = 4.dp),
+                                    style = JewelTheme.defaultTextStyle.copy(fontSize = 11.sp),
+                                )
+                            }
+                        }
                     }
                 }
             }

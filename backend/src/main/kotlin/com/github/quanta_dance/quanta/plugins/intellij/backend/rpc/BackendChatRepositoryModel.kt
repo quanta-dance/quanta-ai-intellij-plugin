@@ -40,6 +40,20 @@ class BackendChatRepositoryModel(
 
     fun deleteSession(sessionId: String) = conversationService.deleteSession(sessionId)
 
+    fun getAllowedAcpAgentIds(): List<String> = conversationService.getAllowedAcpAgentIds().sorted()
+
+    fun setAcpAgentAllowed(
+        agentId: String,
+        allowed: Boolean,
+    ) = conversationService.setAcpAgentAllowed(agentId, allowed)
+
+    fun getDisabledMcpServerNames(): List<String> = conversationService.getDisabledMcpServerNames().sorted()
+
+    fun setMcpServerEnabled(
+        serverName: String,
+        enabled: Boolean,
+    ) = conversationService.setMcpServerEnabled(serverName, enabled)
+
     suspend fun sendMessage(messageContent: String) = conversationService.sendUserMessage(messageContent)
 
     suspend fun sendScheduledReminder(reminderContext: String) = conversationService.sendScheduledReminder(reminderContext)

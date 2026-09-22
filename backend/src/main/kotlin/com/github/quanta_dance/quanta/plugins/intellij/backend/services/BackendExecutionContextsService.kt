@@ -36,16 +36,19 @@ class BackendExecutionContextsService : Disposable {
         }
 
     private val mcpExecutor = namedFixedPool(size = 4, prefix = "qd-mcp")
+    private val mcpLifecycleExecutor = namedSinglePool(prefix = "qd-mcp-lifecycle")
     private val agentOrchestrationExecutor = namedFixedPool(size = 4, prefix = "qd-agent-orch")
     private val chatPublicationExecutor = namedSinglePool(prefix = "qd-chat-pub")
     private val voiceStreamingExecutor = namedSinglePool(prefix = "qd-voice-stream")
 
     val mcpDispatcher: ExecutorCoroutineDispatcher = mcpExecutor.asCoroutineDispatcher()
+    val mcpLifecycleDispatcher: ExecutorCoroutineDispatcher = mcpLifecycleExecutor.asCoroutineDispatcher()
     val agentOrchestrationDispatcher: ExecutorCoroutineDispatcher = agentOrchestrationExecutor.asCoroutineDispatcher()
     val chatPublicationDispatcher: ExecutorCoroutineDispatcher = chatPublicationExecutor.asCoroutineDispatcher()
     val voiceStreamingDispatcher: ExecutorCoroutineDispatcher = voiceStreamingExecutor.asCoroutineDispatcher()
 
     val mcpScope: CoroutineScope = CoroutineScope(SupervisorJob() + mcpDispatcher)
+    val mcpLifecycleScope: CoroutineScope = CoroutineScope(SupervisorJob() + mcpLifecycleDispatcher)
     val agentOrchestrationScope: CoroutineScope = CoroutineScope(SupervisorJob() + agentOrchestrationDispatcher)
     val chatPublicationScope: CoroutineScope = CoroutineScope(SupervisorJob() + chatPublicationDispatcher)
     val voiceStreamingScope: CoroutineScope = CoroutineScope(SupervisorJob() + voiceStreamingDispatcher)
@@ -53,6 +56,7 @@ class BackendExecutionContextsService : Disposable {
     override fun dispose() {
         listOf(
             mcpScope,
+            mcpLifecycleScope,
             agentOrchestrationScope,
             chatPublicationScope,
             voiceStreamingScope,
@@ -61,6 +65,7 @@ class BackendExecutionContextsService : Disposable {
         }
         listOf(
             mcpDispatcher,
+            mcpLifecycleDispatcher,
             agentOrchestrationDispatcher,
             chatPublicationDispatcher,
             voiceStreamingDispatcher,

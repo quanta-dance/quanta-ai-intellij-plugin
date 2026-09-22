@@ -5,6 +5,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.frontend.settings
 
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.logging.FrontendBackendLogBridge
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.rpc.FrontendSettingsRpcService
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AcpManualAgentDto
 import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.service
@@ -65,6 +66,7 @@ class FrontendQuantaPluginConfigurable : Configurable {
                 maxMessageWidth != settings.maxMessageWidth ||
                 terminalToolEnabled != (settings.terminalToolEnabled ?: false) ||
                 terminalAllowedCommandsCsv != settings.terminalAllowedCommandsCsv ||
+                manualAcpAgents != settings.manualAcpAgents ||
                 extraInstructionsValue != (settings.extraInstructions ?: "") ||
                 actionConfigsValue != settings.actionConfigsJson
         }
@@ -72,6 +74,7 @@ class FrontendQuantaPluginConfigurable : Configurable {
 
     override fun apply() {
         settingsComponent.validateMaxMessageWidth()
+
         val settings = FrontendQuantaSettingsState.instance.state
         settingsComponent.run {
             settings.openAiUrl = hostValue
@@ -87,6 +90,7 @@ class FrontendQuantaPluginConfigurable : Configurable {
             settings.maxMessageWidth = maxMessageWidth
             settings.terminalToolEnabled = terminalToolEnabled
             settings.terminalAllowedCommandsCsv = terminalAllowedCommandsCsv
+            settings.manualAcpAgents = manualAcpAgents
             settings.extraInstructions = extraInstructionsValue.ifBlank { null }
             settings.followEnabled = followEnabled
             settings.actionConfigsJson =
@@ -113,6 +117,7 @@ class FrontendQuantaPluginConfigurable : Configurable {
             maxMessageWidth = settings.maxMessageWidth
             terminalToolEnabled = settings.terminalToolEnabled ?: false
             terminalAllowedCommandsCsv = settings.terminalAllowedCommandsCsv
+            manualAcpAgents = settings.manualAcpAgents
             extraInstructionsValue = settings.extraInstructions ?: ""
             actionConfigsValue = settings.actionConfigsJson
             followEnabled = settings.followEnabled
@@ -120,21 +125,73 @@ class FrontendQuantaPluginConfigurable : Configurable {
     }
 
     private fun syncSettingsToBackend(settings: FrontendQuantaSettingsState.State) {
-        val project = ProjectManager.getInstance().openProjects.firstOrNull() ?: return
+        val projects = ProjectManager.getInstance().openProjects.filterNot(Project::isDisposed)
+        if (projects.isEmpty()) return
+
         ApplicationManager.getApplication().executeOnPooledThread {
-            runCatching {
-                val rpc = FrontendSettingsRpcService.getInstance(project)
-                val mcpServersJson = project.service<FrontendMcpConfigService>().readForSync()
-                val log = project.service<FrontendBackendLogBridge>()
-                if (mcpServersJson == null) {
-                    log.warn("Skipping settings apply sync because MCP config is empty or unreadable for project=${project.name}")
-                    return@executeOnPooledThread
+            val configPayloads =
+                projects.mapNotNull { project ->
+                    project.service<FrontendMcpConfigService>().readForSync()?.let { config -> project to config }
                 }
-                log.info("Settings apply sync sending MCP config to backend for project=${project.name}, chars=${mcpServersJson.length}")
-                runBlocking { rpc.updateSettings(settings.toDto(project, mcpServersJson)) }
+            val distinctConfigs = configPayloads.map { it.second }.distinct()
+            if (configPayloads.size != projects.size || distinctConfigs.size != 1) {
+                projects.forEach { project ->
+                    project
+                        .service<FrontendBackendLogBridge>()
+                        .warn("Skipping settings apply sync because the shared MCP config could not be read consistently")
+                }
+                return@executeOnPooledThread
+            }
+
+            val mcpServersJson = distinctConfigs.single()
+            projects.forEach { project ->
+                runCatching {
+                    val rpc = FrontendSettingsRpcService.getInstance(project)
+                    val log = project.service<FrontendBackendLogBridge>()
+                    log.info(
+                        "Settings apply sync sending MCP config to backend for project=${project.name}, chars=${mcpServersJson.length}",
+                    )
+                    runBlocking { rpc.updateSettings(settings.toDto(project, mcpServersJson)) }
+                }.onFailure { error ->
+                    project
+                        .service<FrontendBackendLogBridge>()
+                        .warn("Settings apply sync failed for project=${project.name}: ${error.message}")
+                }
             }
         }
     }
+}
+
+private fun selectProjectForMcpEditor(): Project? {
+    val projects = ProjectManager.getInstance().openProjects.filterNot(Project::isDisposed)
+    when (projects.size) {
+        0 -> {
+            Messages.showWarningDialog(
+                "No open project found. Open a project to edit its MCP servers file.",
+                "QuantaDance",
+            )
+            return null
+        }
+
+        1 -> {
+            return projects.single()
+        }
+    }
+
+    val choices =
+        projects.mapIndexed { index, project ->
+            val path = project.basePath?.takeIf(String::isNotBlank) ?: "no project path"
+            "${project.name} — $path (#${index + 1})"
+        }
+    val selectedIndex =
+        Messages.showChooseDialog(
+            "MCP configuration is shared, but the file must open in a selected project window.",
+            "Choose Project for MCP Configuration",
+            choices.toTypedArray(),
+            choices.first(),
+            Messages.getQuestionIcon(),
+        )
+    return projects.getOrNull(selectedIndex)
 }
 
 private class FrontendQuantaSettingsComponent {
@@ -143,6 +200,7 @@ private class FrontendQuantaSettingsComponent {
             emptyText.text = FrontendQuantaSettingsState.DEFAULT_OPENAI_URL
             toolTipText = "Default host is ${FrontendQuantaSettingsState.DEFAULT_OPENAI_URL}"
         }
+
     private val tokenField =
         JBPasswordField().apply {
             columns = 30
@@ -192,11 +250,32 @@ private class FrontendQuantaSettingsComponent {
             toolTipText = "These lines will be appended to the system instructions for every request."
         }
     private val extraInstructionsScroll = JScrollPane(extraInstructionsArea)
+    private val acpAgentsSummaryLabel =
+        JBLabel().apply {
+            toolTipText =
+                "Manually configured ACP applications and TCP endpoints. Each entry is handshake-verified during discovery."
+        }
+    private val editAcpAgentsButton =
+        JButton("Configure ACP Agents…").apply {
+            toolTipText = "Add, edit, or remove manually configured ACP applications and TCP endpoints"
+            addActionListener {
+                val dialog = FrontendAcpAgentEditorDialog(manualAcpAgents)
+                if (dialog.showAndGet()) {
+                    manualAcpAgents = dialog.getAgents()
+                }
+            }
+        }
+    private val acpAgentsPanel =
+        JPanel(FlowLayout(FlowLayout.LEFT, 8, 0)).apply {
+            add(editAcpAgentsButton)
+            add(acpAgentsSummaryLabel)
+        }
     private val actionConfigsArea =
         JBTextArea(10, 60).apply {
             lineWrap = true
             wrapStyleWord = true
-            toolTipText = "JSON array of actions. Each item needs id, label, and instruction. Label max is 20 chars."
+            toolTipText =
+                "JSON array of actions. Each item needs id, label, and instruction. Label max is 20 chars."
         }
     private val actionConfigsScroll = JScrollPane(actionConfigsArea)
 
@@ -204,7 +283,8 @@ private class FrontendQuantaSettingsComponent {
         JButton("Edit Actions…").apply {
             toolTipText = "Open the action list editor"
             addActionListener {
-                val dialog = FrontendActionEditorDialog(FrontendQuantaSettingsState.instance.state.actionConfigsJson)
+                val dialog =
+                    FrontendActionEditorDialog(FrontendQuantaSettingsState.instance.state.actionConfigsJson)
                 if (dialog.showAndGet()) {
                     actionConfigsValue = dialog.getActionsJson()
                 }
@@ -215,14 +295,7 @@ private class FrontendQuantaSettingsComponent {
         JButton("Edit MCP Servers…").apply {
             toolTipText = "Open or create .quantadance/mcp-servers.json in the current project"
             addActionListener {
-                val project: Project? = ProjectManager.getInstance().openProjects.firstOrNull()
-                if (project == null) {
-                    Messages.showWarningDialog(
-                        "No open project found. Open a project to edit its MCP servers file.",
-                        "QuantaDance",
-                    )
-                    return@addActionListener
-                }
+                val project = selectProjectForMcpEditor() ?: return@addActionListener
                 val file = project.service<FrontendMcpConfigService>().ensureExists()
                 project
                     .service<FrontendBackendLogBridge>()
@@ -233,7 +306,11 @@ private class FrontendQuantaSettingsComponent {
                             FileEditorManager.getInstance(project).openFile(vFile, true)
                         }
                     } ?: run {
-                        Messages.showErrorDialog(project, "Failed to open mcp-servers.json in editor.", "QuantaDance")
+                        Messages.showErrorDialog(
+                            project,
+                            "Failed to open mcp-servers.json in editor.",
+                            "QuantaDance",
+                        )
                     }
                 } catch (e: Exception) {
                     Messages.showErrorDialog(
@@ -277,6 +354,8 @@ private class FrontendQuantaSettingsComponent {
             .addLabeledComponent(JBLabel("Max message width (dp): "), maxMessageWidthField, 1, false)
             .addComponent(terminalToolEnabledField)
             .addLabeledComponent(JBLabel("Terminal allowed commands: "), terminalAllowedCommandsCsvField, 1, false)
+            .addSeparator()
+            .addLabeledComponent(JBLabel("Manual ACP agents: "), acpAgentsPanel, 1, false)
             .addSeparator()
             .addLabeledComponent(JBLabel("Custom instructions: "), extraInstructionsScroll, 1, false)
             .addComponent(actionEditorButton)
@@ -412,6 +491,32 @@ private class FrontendQuantaSettingsComponent {
         set(value) {
             terminalAllowedCommandsCsvField.text = value
         }
+
+    var manualAcpAgents: List<AcpManualAgentDto> = emptyList()
+        set(value) {
+            field = value
+            updateAcpAgentsSummary()
+        }
+
+    private fun updateAcpAgentsSummary() {
+        val applications = manualAcpAgents.count { it.executable != null }
+        val endpoints = manualAcpAgents.count { it.host != null && it.port != null }
+        acpAgentsSummaryLabel.text =
+            when {
+                applications == 0 && endpoints == 0 -> {
+                    "No manual agents configured"
+                }
+
+                else -> {
+                    buildString {
+                        append("$applications application")
+                        if (applications != 1) append('s')
+                        append(", $endpoints TCP endpoint")
+                        if (endpoints != 1) append('s')
+                    }
+                }
+            }
+    }
 
     var dynamicModelEnabled: Boolean
         get() = dynamicModelEnabledField.isSelected

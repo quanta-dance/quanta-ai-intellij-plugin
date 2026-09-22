@@ -138,13 +138,57 @@ internal class McpOAuthService(
     }
 
     /**
-     * Discovers MCP OAuth only from the resource server's `WWW-Authenticate` challenge. This avoids
-     * guessing a well-known URL and permits path/host-specific metadata routing by a gateway.
+     * Refreshes a previously authorized token without opening a browser. The caller decides how to surface a
+     * terminal failure; automatic refresh must never unexpectedly start interactive OAuth.
      */
-    fun discoverAuthorizationChallenge(
+    fun refreshStoredToken(
+        serverName: String,
+        resourceUrl: String,
+        challenge: AuthorizationChallenge,
+        configuredClientId: String? = null,
+    ): TokenRefreshResult {
+        val resource = requireHttps(resourceUrl, "MCP resource URL")
+        val stored =
+            loadToken(serverName, resource)
+                ?: return TokenRefreshResult.Failure("No stored OAuth token is available")
+        val refreshToken =
+            stored.refreshToken
+                ?: return TokenRefreshResult.Failure("The stored OAuth token does not include a refresh token")
+        val clientId =
+            configuredClientId?.takeIf { it.isNotBlank() } ?: loadClientId(serverName, resource)
+                ?: return TokenRefreshResult.Failure("No OAuth client ID is available for token refresh")
+
+        return runCatching {
+            val protectedResource = discoverProtectedResource(resource, challenge.metadataUri)
+            val metadata = discoverAuthorizationServer(protectedResource.authorizationServer)
+            val refreshed = refresh(metadata, clientId, refreshToken, resource)
+            saveToken(serverName, resource, refreshed)
+            QDLog.info(log) {
+                "MCP OAuth: refreshed stored token for '$serverName' " +
+                    "(${safeTokenDescription(refreshed.accessToken)}, refreshTokenPresent=${refreshed.refreshToken != null})"
+            }
+            TokenRefreshResult.Success(refreshed.expiresAt)
+        }.getOrElse { error ->
+            val message = error.message ?: error.javaClass.simpleName
+            log.warn("MCP OAuth: background token refresh failed for '$serverName': $message")
+            TokenRefreshResult.Failure(message)
+        }
+    }
+
+    fun storedTokenExpiresAt(
+        serverName: String,
+        resourceUrl: String,
+    ): Long? = loadToken(serverName, requireHttps(resourceUrl, "MCP resource URL"))?.expiresAt
+
+    /**
+     * Probes a resource with the same configured headers that the MCP transport will use. A 401 is the
+     * only signal that makes a server require user authorization; headers such as GitLab tokens are never
+     * inferred from a hard-coded header-name list.
+     */
+    fun probeAuthorization(
         resourceUrl: String,
         headers: Map<String, String>?,
-    ): AuthorizationChallenge? {
+    ): AuthorizationProbe {
         val resource = requireHttps(resourceUrl, "MCP resource URL")
         val request =
             HttpRequest
@@ -157,22 +201,36 @@ internal class McpOAuthService(
                 request.POST(HttpRequest.BodyPublishers.ofString(INITIALIZE_REQUEST)).build(),
                 HttpResponse.BodyHandlers.ofString(),
             )
-        if (response.statusCode() != 401) return null
+        if (response.statusCode() != 401) return AuthorizationProbe(response.statusCode())
         val challenge =
-            response.headers().allValues("WWW-Authenticate").firstOrNull { it.contains("Bearer", true) }
-                ?: return null
-        val metadataUrl =
-            CHALLENGE_PARAMETER.find(challenge)?.groupValues?.get(1)
-                ?: error("MCP resource $resource returned OAuth 401 without bearer resource_metadata")
-        val scopes =
-            SCOPE_PARAMETER
-                .find(challenge)
-                ?.groupValues
-                ?.get(1)
-                ?.split(' ')
-                ?.filter { it.isNotBlank() } ?: emptyList()
-        return AuthorizationChallenge(requireHttps(metadataUrl, "OAuth protected-resource metadata"), scopes)
+            response
+                .headers()
+                .allValues("WWW-Authenticate")
+                .firstOrNull { it.contains("Bearer", true) }
+                ?.let { bearerChallenge ->
+                    val metadataUrl =
+                        CHALLENGE_PARAMETER.find(bearerChallenge)?.groupValues?.get(1)
+                            ?: error("MCP resource $resource returned OAuth 401 without bearer resource_metadata")
+                    val scopes =
+                        SCOPE_PARAMETER
+                            .find(bearerChallenge)
+                            ?.groupValues
+                            ?.get(1)
+                            ?.split(' ')
+                            ?.filter { it.isNotBlank() } ?: emptyList()
+                    AuthorizationChallenge(requireHttps(metadataUrl, "OAuth protected-resource metadata"), scopes)
+                }
+        return AuthorizationProbe(response.statusCode(), challenge)
     }
+
+    /**
+     * Discovers MCP OAuth only from the resource server's `WWW-Authenticate` challenge. This avoids
+     * guessing a well-known URL and permits path/host-specific metadata routing by a gateway.
+     */
+    fun discoverAuthorizationChallenge(
+        resourceUrl: String,
+        headers: Map<String, String>?,
+    ): AuthorizationChallenge? = probeAuthorization(resourceUrl, headers).challenge
 
     private fun discoverProtectedResource(
         resource: URI,
@@ -416,6 +474,17 @@ internal class McpOAuthService(
                 }
             }
 
+    fun clearStoredToken(
+        serverName: String,
+        resourceUrl: String,
+    ) {
+        val resource = requireHttps(resourceUrl, "MCP resource URL")
+        PasswordSafe.instance.set(
+            CredentialAttributes("Quanta AI MCP OAuth token", "$serverName|$resource"),
+            null,
+        )
+    }
+
     private fun saveToken(
         serverName: String,
         resource: URI,
@@ -586,9 +655,24 @@ internal class McpOAuthService(
         val message: String,
     )
 
+    internal sealed interface TokenRefreshResult {
+        data class Success(
+            val expiresAt: Long,
+        ) : TokenRefreshResult
+
+        data class Failure(
+            val message: String,
+        ) : TokenRefreshResult
+    }
+
     internal data class AuthorizationChallenge(
         val metadataUri: URI,
         val scopes: List<String>,
+    )
+
+    internal data class AuthorizationProbe(
+        val statusCode: Int,
+        val challenge: AuthorizationChallenge? = null,
     )
 
     private data class ProtectedResourceMetadata(

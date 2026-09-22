@@ -63,6 +63,7 @@ class BackendSettingsRpcApi : QuantaSettingsApi {
                 followEnabled = true,
                 actionConfigsJson = "",
                 mcpServersJson = runtimeSettings.mcpServersJson,
+                manualAcpAgents = runtimeSettings.manualAcpAgents,
             )
         }
 
@@ -75,7 +76,7 @@ class BackendSettingsRpcApi : QuantaSettingsApi {
                 log.info(
                     "Backend settings sync: MCP config changed (chars=${settings.mcpServersJson.length}), refreshing MCP runtime",
                 )
-                ProjectManager.getInstance().openProjects.forEach { project ->
+                ProjectManager.getInstance().openProjects.filterNot { it.isDisposed }.forEach { project ->
                     runCatching {
                         project.service<McpClientService>().refresh()
                     }.onFailure { error ->

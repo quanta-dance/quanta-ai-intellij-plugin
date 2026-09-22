@@ -13,7 +13,9 @@ models to assist developers with code modifications, reviews, and refactoring di
     - Code Commenting: Generate AI-enhanced documentation
     - Custom Prompts: Execute user-defined AI prompts
 
-- **Agentic Mode:** Enable AI agents to autonomously perform complex development tasks
+- **Agentic Team Mode:** Coordinate Quanta-managed teammates and explicitly approved external ACP agents in the current chat.
+    - External ACP agents are discovered separately from authorization; add an agent to a chat before it can receive project context or tasks.
+    - Live ACP task cards show progress, findings, sign-in guidance, and cancellation while the main agent continues coordinating work.
 
 - **Voice Interaction:** Speak to AI via microphone and receive voice feedback (with optional local TTS)
 
@@ -25,7 +27,7 @@ models to assist developers with code modifications, reviews, and refactoring di
     - Custom terminal command execution (with security allowlist)
 
 - **Advanced Features:**
-    - MCP (Model Context Protocol) support for tool integration
+    - MCP (Model Context Protocol) support with per-chat server enablement, explicit OAuth authorization, and retryable connection management
     - Session scheduling for automated tasks
     - Tool catalog with customizable scopes
     - Dynamic model switching (start with GPT-5-MINI, upgrade as needed)

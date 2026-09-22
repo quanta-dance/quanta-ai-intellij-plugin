@@ -17,10 +17,22 @@ import com.openai.core.http.HttpRequestBody
 import com.openai.core.http.HttpResponse
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.FilterInputStream
+import java.io.IOException
 import java.io.InputStream
+import java.net.SocketTimeoutException
 import java.net.URI
+import java.net.http.HttpConnectTimeoutException
+import java.net.http.HttpTimeoutException
 import java.time.Duration
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import java.net.http.HttpClient as JdkHttpClient
 import java.net.http.HttpRequest as JdkHttpRequest
 import java.net.http.HttpResponse as JdkHttpResponse
@@ -30,26 +42,97 @@ import java.net.http.HttpResponse as JdkHttpResponse
  * Uses java.net.http.HttpClient to avoid bundling okhttp, and streams the response body
  * directly so SSE events are delivered incrementally rather than buffered.
  */
-class OpenAIJdkHttpClient : HttpClient {
+class OpenAIJdkHttpClient internal constructor(
+    private val timeouts: Timeouts = Timeouts(),
+) : HttpClient {
+    data class Timeouts(
+        val connect: Duration = Duration.ofSeconds(10),
+        val responseHeaders: Duration = Duration.ofSeconds(60),
+        val responseIdle: Duration = Duration.ofSeconds(45),
+        val responseTotal: Duration = Duration.ofSeconds(120),
+    ) {
+        init {
+            require(!connect.isNegative && !connect.isZero) { "connect timeout must be positive" }
+            require(!responseHeaders.isNegative && !responseHeaders.isZero) { "responseHeaders timeout must be positive" }
+            require(!responseIdle.isNegative && !responseIdle.isZero) { "responseIdle timeout must be positive" }
+            require(!responseTotal.isNegative && !responseTotal.isZero) { "responseTotal timeout must be positive" }
+        }
+    }
+
     private val log = Logger.getInstance(OpenAIJdkHttpClient::class.java)
 
-    private val jdkClient =
-        JdkHttpClient
-            .newBuilder()
-            .connectTimeout(Duration.ofSeconds(30))
-            .followRedirects(JdkHttpClient.Redirect.NORMAL)
-            // Prefer HTTP/1.1 — HTTP/2 multiplexing can cause 502s with some proxies/gateways
-            .version(JdkHttpClient.Version.HTTP_1_1)
-            .build()
+    /**
+     * The JDK client owns the HTTP/1.1 keep-alive connection pool. Share it across SDK clients so
+     * chat, image, and video requests reuse connections to the same gateway instead of each
+     * provider-created OpenAI client starting with a cold pool. JDK pools remain origin-scoped.
+     *
+     * A pre-header connection failure can indicate a stale keep-alive connection after a VPN or
+     * network transition. In that case the pool generation is retired once; the SDK's single retry
+     * obtains a fresh transport generation without disrupting requests already in progress.
+     */
+    private fun currentTransport(): SharedTransport = sharedTransport(timeouts.connect)
 
     companion object {
+        private val sharedTransports = ConcurrentHashMap<Duration, AtomicReference<SharedTransport>>()
+        private val transportSequence = AtomicLong()
+
         fun builder() = Builder()
+
+        internal fun currentTransportGenerationForTesting(connectTimeout: Duration): Long = sharedTransport(connectTimeout).generation
+
+        internal fun isPreHeaderConnectionFailure(throwable: Throwable): Boolean =
+            when (val cause = unwrapCompletionFailure(throwable)) {
+                is HttpConnectTimeoutException -> true
+                is HttpTimeoutException -> false
+                is IOException -> true
+                else -> false
+            }
+
+        private fun sharedTransport(connectTimeout: Duration): SharedTransport =
+            sharedTransports
+                .computeIfAbsent(connectTimeout) {
+                    AtomicReference(newSharedTransport(connectTimeout))
+                }.get()
+
+        private fun retireTransport(
+            connectTimeout: Duration,
+            failedTransport: SharedTransport,
+        ): Boolean {
+            val reference = requireNotNull(sharedTransports[connectTimeout])
+            return reference.compareAndSet(failedTransport, newSharedTransport(connectTimeout))
+        }
+
+        private fun newSharedTransport(connectTimeout: Duration): SharedTransport =
+            SharedTransport(
+                client =
+                    JdkHttpClient
+                        .newBuilder()
+                        .connectTimeout(connectTimeout)
+                        .followRedirects(JdkHttpClient.Redirect.NORMAL)
+                        // Prefer HTTP/1.1 — HTTP/2 multiplexing can cause 502s with some proxies/gateways
+                        .version(JdkHttpClient.Version.HTTP_1_1)
+                        .build(),
+                generation = transportSequence.incrementAndGet(),
+            )
+
+        private fun unwrapCompletionFailure(throwable: Throwable): Throwable {
+            var current = throwable
+            while (
+                (
+                    current is java.util.concurrent.CompletionException ||
+                        current is java.util.concurrent.ExecutionException
+                ) && current.cause != null
+            ) {
+                current = requireNotNull(current.cause)
+            }
+            return current
+        }
     }
 
     class Builder internal constructor() {
         private var apiKey: String = ""
         private var baseUrl: String? = null
-        private var maxRetries: Int = 2
+        private var maxRetries: Int = 1
 
         fun apiKey(apiKey: String) = apply { this.apiKey = apiKey }
 
@@ -72,37 +155,70 @@ class OpenAIJdkHttpClient : HttpClient {
     override fun execute(
         request: HttpRequest,
         requestOptions: RequestOptions,
-    ): HttpResponse =
-        try {
-            val jdkRequest = request.toJdkRequest()
-            val response = jdkClient.send(jdkRequest, JdkHttpResponse.BodyHandlers.ofInputStream())
-            val openAiResponse = response.toOpenAiResponse()
+    ): HttpResponse {
+        val lifecycle = RequestLifecycle(request)
+        val transport = currentTransport()
+        return try {
+            val preparedRequest = request.toJdkRequest(timeouts.responseHeaders)
+            lifecycle.logStarted(preparedRequest.bodyBytes, transport.generation)
+            val response = transport.client.send(preparedRequest.request, JdkHttpResponse.BodyHandlers.ofInputStream())
+            lifecycle.logHeaders(response.statusCode())
+            val openAiResponse = response.toOpenAiResponse(lifecycle, timeouts)
             logResponse(request, response.statusCode(), openAiResponse.errorBodySnippet())
             openAiResponse
-        } catch (t: Throwable) {
-            logFailure(request, t)
-            throw t
+        } catch (throwable: Throwable) {
+            retireStaleTransportIfNeeded(transport, throwable, lifecycle)
+            lifecycle.logFailure(throwable)
+            throw throwable
         }
+    }
 
     override fun executeAsync(
         request: HttpRequest,
         requestOptions: RequestOptions,
-    ): CompletableFuture<HttpResponse> =
-        try {
-            val jdkRequest = request.toJdkRequest()
-            jdkClient
-                .sendAsync(jdkRequest, JdkHttpResponse.BodyHandlers.ofInputStream())
-                .thenApply { response ->
-                    val openAiResponse = response.toOpenAiResponse()
+    ): CompletableFuture<HttpResponse> {
+        val lifecycle = RequestLifecycle(request)
+        val transport = currentTransport()
+        return try {
+            val preparedRequest = request.toJdkRequest(timeouts.responseHeaders)
+            lifecycle.logStarted(preparedRequest.bodyBytes, transport.generation)
+            transport.client
+                .sendAsync(preparedRequest.request, JdkHttpResponse.BodyHandlers.ofInputStream())
+                .thenApply<HttpResponse> { response ->
+                    lifecycle.logHeaders(response.statusCode())
+                    val openAiResponse = response.toOpenAiResponse(lifecycle, timeouts)
                     logResponse(request, response.statusCode(), openAiResponse.errorBodySnippet())
                     openAiResponse
+                }.whenComplete { _, throwable ->
+                    throwable?.let {
+                        retireStaleTransportIfNeeded(transport, it, lifecycle)
+                        lifecycle.logFailure(it.cause ?: it)
+                    }
                 }
-        } catch (t: Throwable) {
-            logFailure(request, t)
-            CompletableFuture.failedFuture(t)
+        } catch (throwable: Throwable) {
+            retireStaleTransportIfNeeded(transport, throwable, lifecycle)
+            lifecycle.logFailure(throwable)
+            CompletableFuture.failedFuture(throwable)
         }
+    }
 
     override fun close() = Unit
+
+    private fun retireStaleTransportIfNeeded(
+        transport: SharedTransport,
+        throwable: Throwable,
+        lifecycle: RequestLifecycle,
+    ) {
+        if (!lifecycle.hasReceivedHeaders && isPreHeaderConnectionFailure(throwable)) {
+            val retired = retireTransport(timeouts.connect, transport)
+            if (retired) {
+                QDLog.info(log) {
+                    "OpenAI transport generation=${transport.generation} retired after pre-header " +
+                        "connection failure; the next retry will use a fresh pool"
+                }
+            }
+        }
+    }
 
     private fun logResponse(
         request: HttpRequest,
@@ -118,20 +234,19 @@ class OpenAIJdkHttpClient : HttpClient {
             QDLog.info(log) { "OpenAI ${request.method.name} ${request.url()} → $statusCode" }
         }
     }
-
-    private fun logFailure(
-        request: HttpRequest,
-        t: Throwable,
-    ) {
-        QDLog.warn(
-            log,
-            { "OpenAI ${request.method.name} ${request.url()} failed: ${t::class.java.simpleName}: ${t.message}" },
-            t,
-        )
-    }
 }
 
-private fun HttpRequest.toJdkRequest(): JdkHttpRequest {
+private data class SharedTransport(
+    val client: JdkHttpClient,
+    val generation: Long,
+)
+
+private data class PreparedJdkRequest(
+    val request: JdkHttpRequest,
+    val bodyBytes: Int,
+)
+
+private fun HttpRequest.toJdkRequest(responseHeadersTimeout: Duration): PreparedJdkRequest {
     val bodyBytes = body.readBytesAndClose()
     val contentType = body?.contentType() ?: "application/json"
     val hasBody = bodyBytes.isNotEmpty() || requiresBody(method)
@@ -140,6 +255,7 @@ private fun HttpRequest.toJdkRequest(): JdkHttpRequest {
         JdkHttpRequest
             .newBuilder()
             .uri(URI.create(url()))
+            .timeout(responseHeadersTimeout)
             .method(
                 method.name.uppercase(),
                 if (hasBody) {
@@ -159,7 +275,7 @@ private fun HttpRequest.toJdkRequest(): JdkHttpRequest {
         builder.header("Content-Type", contentType)
     }
 
-    return builder.build()
+    return PreparedJdkRequest(builder.build(), bodyBytes.size)
 }
 
 private class OpenAiHttpResponse(
@@ -180,17 +296,178 @@ private class OpenAiHttpResponse(
     fun errorBodySnippet(): String? = errorBytes?.decodeToString()?.take(500)
 }
 
-private fun JdkHttpResponse<InputStream>.toOpenAiResponse(): OpenAiHttpResponse {
+private fun JdkHttpResponse<InputStream>.toOpenAiResponse(
+    lifecycle: RequestLifecycle,
+    timeouts: OpenAIJdkHttpClient.Timeouts,
+): OpenAiHttpResponse {
     val code = statusCode()
     val hdrs = headers().map().toOpenAiHeaders()
+    val monitoredBody = DeadlineInputStream(body(), lifecycle, timeouts)
     // Error responses are buffered so the SDK's ErrorHandler can read the body reliably
     // and so we can log what OpenAI actually returned.
     // Success responses stream directly so SSE events are delivered incrementally.
     return if (code >= 400) {
-        val bytes = body().use { it.readBytes() }
+        val bytes = monitoredBody.use { it.readBytes() }
         OpenAiHttpResponse(code, hdrs, ByteArrayInputStream(bytes), bytes)
     } else {
-        OpenAiHttpResponse(code, hdrs, body(), null)
+        OpenAiHttpResponse(code, hdrs, monitoredBody, null)
+    }
+}
+
+private class RequestLifecycle(
+    private val request: HttpRequest,
+) {
+    private val requestId = "oai-${requestSequence.incrementAndGet()}"
+    val startedAtNanos = System.nanoTime()
+    private val log = Logger.getInstance(OpenAIJdkHttpClient::class.java)
+
+    @Volatile
+    var hasReceivedHeaders = false
+        private set
+
+    fun logStarted(
+        bodyBytes: Int,
+        transportGeneration: Long,
+    ) {
+        QDLog.debug(log) {
+            "OpenAI request id=$requestId transportGeneration=$transportGeneration " +
+                "${request.method.name} ${request.url()} started; bodyBytes=$bodyBytes"
+        }
+    }
+
+    fun logHeaders(statusCode: Int) {
+        hasReceivedHeaders = true
+        QDLog.info(log) {
+            "OpenAI request id=$requestId headers received; status=$statusCode; elapsedMs=${elapsedMillis()}"
+        }
+    }
+
+    fun logBodyClosed(bytesRead: Long) {
+        QDLog.debug(log) {
+            "OpenAI request id=$requestId response body closed; bytesRead=$bytesRead; totalMs=${elapsedMillis()}"
+        }
+    }
+
+    fun logFailure(throwable: Throwable) {
+        QDLog.warn(
+            log,
+            {
+                "OpenAI request id=$requestId ${request.method.name} ${request.url()} failed after " +
+                    "${elapsedMillis()}ms: ${throwable::class.java.simpleName}: ${throwable.message}"
+            },
+            throwable,
+        )
+    }
+
+    fun elapsedMillis(): Long = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAtNanos)
+
+    companion object {
+        private val requestSequence = AtomicLong()
+    }
+}
+
+private class DeadlineInputStream(
+    delegate: InputStream,
+    private val lifecycle: RequestLifecycle,
+    timeouts: OpenAIJdkHttpClient.Timeouts,
+) : FilterInputStream(delegate) {
+    private val closed = AtomicBoolean()
+    private val startedAtNanos = lifecycle.startedAtNanos
+    private val idleTimeoutNanos = timeouts.responseIdle.toNanos()
+    private val totalTimeoutNanos = timeouts.responseTotal.toNanos()
+    private val bytesRead = AtomicLong()
+
+    @Volatile
+    private var lastProgressAtNanos = startedAtNanos
+
+    @Volatile
+    private var timeout: SocketTimeoutException? = null
+
+    private val watchdog: ScheduledFuture<*> =
+        watchdogExecutor.scheduleAtFixedRate(
+            ::closeOnExpiredDeadline,
+            watchdogPeriodMillis(timeouts.responseIdle),
+            watchdogPeriodMillis(timeouts.responseIdle),
+            TimeUnit.MILLISECONDS,
+        )
+
+    override fun read(): Int = recordRead { super.read() }
+
+    override fun read(
+        buffer: ByteArray,
+        offset: Int,
+        length: Int,
+    ): Int = recordRead { super.read(buffer, offset, length) }
+
+    override fun close() {
+        if (closed.compareAndSet(false, true)) {
+            watchdog.cancel(false)
+            try {
+                super.close()
+            } finally {
+                lifecycle.logBodyClosed(bytesRead.get())
+            }
+        }
+    }
+
+    private fun recordRead(read: () -> Int): Int {
+        timeout?.let { throw it }
+        return try {
+            val count = read()
+            if (count > 0) {
+                bytesRead.addAndGet(count.toLong())
+                lastProgressAtNanos = System.nanoTime()
+            } else if (count == -1) {
+                close()
+            }
+            timeout?.let { throw it }
+            count
+        } catch (exception: java.io.IOException) {
+            timeout?.let { throw it }
+            throw exception
+        }
+    }
+
+    private fun closeOnExpiredDeadline() {
+        if (closed.get()) return
+        val now = System.nanoTime()
+        val totalElapsed = now - startedAtNanos
+        val idleElapsed = now - lastProgressAtNanos
+        val reason =
+            when {
+                totalElapsed >= totalTimeoutNanos -> {
+                    "response exceeded the ${
+                        TimeUnit.NANOSECONDS.toSeconds(
+                            totalTimeoutNanos,
+                        )
+                    }s total deadline"
+                }
+
+                idleElapsed >= idleTimeoutNanos -> {
+                    "response was idle for ${
+                        TimeUnit.NANOSECONDS.toSeconds(
+                            idleTimeoutNanos,
+                        )
+                    }s"
+                }
+
+                else -> {
+                    return
+                }
+            }
+        val deadlineException = SocketTimeoutException("OpenAI $reason")
+        timeout = deadlineException
+        lifecycle.logFailure(deadlineException)
+        close()
+    }
+
+    private fun watchdogPeriodMillis(idleTimeout: Duration): Long = (idleTimeout.toMillis() / 4).coerceIn(10, 1_000)
+
+    companion object {
+        private val watchdogExecutor =
+            Executors.newSingleThreadScheduledExecutor { runnable ->
+                Thread(runnable, "quanta-openai-response-watchdog").apply { isDaemon = true }
+            }
     }
 }
 

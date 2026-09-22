@@ -3,7 +3,14 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.chat
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -40,9 +47,12 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isShiftPressed
@@ -50,11 +60,20 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.ModularPluginFrontendBundle
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel.ChatViewModel
@@ -73,12 +92,14 @@ import com.github.quanta_dance.quanta.plugins.intellij.frontend.ui.totalResults
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.voice.FrontendAIVoiceService
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.voice.FrontendMicrophoneService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AcpAgentDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelAuthorTypeDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskStatusDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServerStatusDto
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
@@ -122,6 +143,12 @@ fun chatApp(
     }
     val planStatus by viewModel.planStatusFlow.collectAsState(ChatPlanStatusDto())
     val agents by viewModel.agentsFlow.collectAsState(emptyList())
+    val acpAgents by viewModel.acpAgentsFlow.collectAsState(emptyList())
+    val acpDiscoveryLoading by viewModel.acpDiscoveryLoadingFlow.collectAsState(false)
+    val allowedAcpAgentIds by viewModel.allowedAcpAgentIdsFlow.collectAsState(emptySet())
+    val mcpServers by viewModel.mcpServersFlow.collectAsState(emptyList())
+    val mcpConfigurationLoading by viewModel.mcpConfigurationLoadingFlow.collectAsState(true)
+    val mcpConfigurationError by viewModel.mcpConfigurationErrorFlow.collectAsState(null)
     val delegatedTasks by viewModel.delegatedTasksFlow.collectAsState(emptyList())
     val channelEvents by viewModel.channelEventsFlow.collectAsState(emptyList())
     val hasRunningAgentWork = delegatedTasks.any { it.status == DelegatedTaskStatusDto.RUNNING }
@@ -132,6 +159,8 @@ fun chatApp(
     val listState = rememberLazyListState()
     val textFieldState = rememberTextFieldState()
     var lastSpokenMessageId by remember { mutableStateOf<String?>(null) }
+    var showAgenticTeamDialog by remember { mutableStateOf(false) }
+    var showMcpToolsDialog by remember { mutableStateOf(false) }
 
     val lastMessageScrollKey =
         remember(chatMessages) {
@@ -269,10 +298,13 @@ fun chatApp(
             )
 
             if (agenticEnabled) {
-                agentsPanel(
+                agentPresenceStrip(
                     modifier = Modifier.fillMaxWidth(),
-                    agents = agents,
-                    onCreateDefaultTeam = { viewModel.onCreateDefaultAgentTeam() },
+                    internalAgents = agents,
+                    allowedAcpAgents = acpAgents.filter { it.id in allowedAcpAgentIds },
+                    delegatedTasks = delegatedTasks,
+                    chatMessages = chatMessages,
+                    managerBusy = messageInputState is MessageInputState.Sending,
                 )
             }
 
@@ -297,11 +329,10 @@ fun chatApp(
                 },
                 onToggleMic = { microphoneService.toggleListening() },
                 onToggleAgenticMode = {
-                    val updated = !agenticEnabled
-                    agenticEnabled = updated
-                    FrontendQuantaSettingsState.instance.state.agenticEnabled = updated
-                    viewModel.onSetAgenticMode(updated)
+                    showAgenticTeamDialog = true
+                    viewModel.onRefreshAcpAgents()
                 },
+                onToggleMcpTools = { showMcpToolsDialog = true },
                 onToggleVoiceFeedback = {
                     voiceEnabled = !voiceEnabled
                     FrontendQuantaSettingsState.instance.state.voiceEnabled = voiceEnabled
@@ -317,9 +348,362 @@ fun chatApp(
                 onStopAgents = { viewModel.onStopAllAgents() },
                 onSync = { scope.launch { settingsSyncService.retryNow() } },
             )
+
+            if (showAgenticTeamDialog) {
+                agenticTeamDialog(
+                    agenticEnabled = agenticEnabled,
+                    internalAgents = agents,
+                    acpAgents = acpAgents,
+                    acpDiscoveryLoading = acpDiscoveryLoading,
+                    allowedAcpAgentIds = allowedAcpAgentIds,
+                    onSetAgenticEnabled = { enabled ->
+                        agenticEnabled = enabled
+                        FrontendQuantaSettingsState.instance.state.agenticEnabled = enabled
+                        viewModel.onSetAgenticMode(enabled)
+                    },
+                    onRefresh = { viewModel.onRefreshAcpAgents() },
+                    onSetAcpAllowed = { agent, allowed ->
+                        val action = if (allowed) "Add" else "Remove"
+                        val message =
+                            if (allowed) {
+                                "Add ${agent.name} to this chat and turn on agentic team mode?\n\n" +
+                                    "This independent external ACP agent may receive task context and access this project " +
+                                    "using its own tools.\n\n${agent.transportDescription()}"
+                            } else {
+                                "Remove ${agent.name} from this chat? Any active work for this agent will be stopped."
+                            }
+                        val approved =
+                            Messages.showYesNoDialog(
+                                project,
+                                message,
+                                "$action External Agent",
+                                action,
+                                "Cancel",
+                                Messages.getQuestionIcon(),
+                            ) == Messages.YES
+                        if (approved) {
+                            val enableAgenticMode = allowed && !agenticEnabled
+                            if (enableAgenticMode) {
+                                agenticEnabled = true
+                                FrontendQuantaSettingsState.instance.state.agenticEnabled = true
+                            }
+                            viewModel.onSetAcpAgentAllowed(agent.id, allowed, enableAgenticMode)
+                        }
+                    },
+                    onDismiss = { showAgenticTeamDialog = false },
+                )
+            }
+
+            if (showMcpToolsDialog) {
+                mcpToolsDialog(
+                    servers = mcpServers,
+                    configurationLoading = mcpConfigurationLoading,
+                    configurationError = mcpConfigurationError,
+                    onSetEnabled = viewModel::onSetMcpServerEnabled,
+                    onReconnect = viewModel::onRetryMcpServerConnection,
+                    onDismiss = { showMcpToolsDialog = false },
+                )
+            }
         },
     )
 }
+
+@Composable
+private fun mcpToolsDialog(
+    servers: List<McpServerStatusDto>,
+    configurationLoading: Boolean,
+    configurationError: String?,
+    onSetEnabled: (String, Boolean) -> Unit,
+    onReconnect: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier =
+                Modifier
+                    .widthIn(min = 460.dp, max = 620.dp)
+                    .background(ChatAppColors.Panel.background, RoundedCornerShape(12.dp))
+                    .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text("MCP tools", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+            Text(
+                "Enable only the MCP servers this chat should expose to AI. These choices apply only to this chat.",
+                style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
+            )
+            Divider(orientation = Orientation.Horizontal)
+
+            when {
+                configurationLoading -> {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        loadingIndicator()
+                        Text(
+                            "Syncing MCP configuration and discovering available tools…",
+                            style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
+                        )
+                    }
+                }
+
+                configurationError != null -> {
+                    Text(
+                        "MCP configuration could not be loaded: $configurationError",
+                        style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color(0xFFE0B86A)),
+                    )
+                }
+
+                servers.isEmpty() -> {
+                    Text(
+                        "No MCP servers are configured. Configure servers in Settings to make tools available here.",
+                        style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
+                    )
+                }
+
+                else -> {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        servers.forEach { server ->
+                            Row(
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .background(Color.White.copy(alpha = 0.04f), RoundedCornerShape(8.dp))
+                                        .padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                                ) {
+                                    Text(server.name, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        server.connectionDescription(),
+                                        style = JewelTheme.defaultTextStyle.copy(fontSize = 11.sp, color = Color.Gray),
+                                    )
+                                    server.error?.let { error ->
+                                        Text(
+                                            error,
+                                            style =
+                                                JewelTheme.defaultTextStyle.copy(
+                                                    fontSize = 11.sp,
+                                                    color = Color(0xFFE0B86A),
+                                                ),
+                                        )
+                                    }
+                                }
+                                Column(
+                                    horizontalAlignment = Alignment.End,
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    OutlinedButton(onClick = {
+                                        onSetEnabled(
+                                            server.name,
+                                            !server.enabledForCurrentChat,
+                                        )
+                                    }) {
+                                        Text(if (server.enabledForCurrentChat) "Disable" else "Enable")
+                                    }
+                                    if (server.requiresAuthorization) {
+                                        OutlinedButton(
+                                            enabled = !server.connecting,
+                                            onClick = { onReconnect(server.name) },
+                                        ) {
+                                            Text(if (server.connecting) "Authorizing…" else "Authorize")
+                                        }
+                                    } else if (server.error != null && !server.connected) {
+                                        OutlinedButton(
+                                            enabled = !server.connecting,
+                                            onClick = { onReconnect(server.name) },
+                                        ) {
+                                            Text(if (server.connecting) "Retrying…" else "Retry")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                DefaultButton(onClick = onDismiss) { Text("Done") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun loadingIndicator() {
+    val color = JewelTheme.defaultTextStyle.color
+    val transition = rememberInfiniteTransition(label = "loading_indicator")
+    val rotation =
+        transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(tween(durationMillis = 900, easing = LinearEasing)),
+            label = "loading_indicator_rotation",
+        )
+
+    Canvas(
+        modifier =
+            Modifier
+                .size(16.dp)
+                .rotate(rotation.value),
+    ) {
+        drawArc(
+            color = color,
+            startAngle = 20f,
+            sweepAngle = 290f,
+            useCenter = false,
+            style = Stroke(width = 2.dp.toPx()),
+        )
+    }
+}
+
+private fun McpServerStatusDto.connectionDescription(): String =
+    when {
+        connected -> "Connected · $toolCount tool${if (toolCount == 1) "" else "s"}"
+        connecting -> "Connecting or waiting for authorization"
+        enabledForCurrentChat -> "Enabled for this chat · Not connected"
+        else -> "Disabled for this chat"
+    }
+
+@Composable
+private fun agenticTeamDialog(
+    agenticEnabled: Boolean,
+    internalAgents: List<AgentInfoDto>,
+    acpAgents: List<AcpAgentDto>,
+    acpDiscoveryLoading: Boolean,
+    allowedAcpAgentIds: Set<String>,
+    onSetAgenticEnabled: (Boolean) -> Unit,
+    onRefresh: () -> Unit,
+    onSetAcpAllowed: (AcpAgentDto, Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier =
+                Modifier
+                    .widthIn(min = 460.dp, max = 620.dp)
+                    .background(ChatAppColors.Panel.background, RoundedCornerShape(12.dp))
+                    .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("Agentic team", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                    Text(
+                        "Choose which teammates this chat may use.",
+                        style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
+                    )
+                }
+                OutlinedButton(onClick = { onSetAgenticEnabled(!agenticEnabled) }) {
+                    Text(if (agenticEnabled) "Turn off" else "Turn on")
+                }
+            }
+
+            Divider(orientation = Orientation.Horizontal)
+            Text("Quanta teammates", fontWeight = FontWeight.SemiBold)
+            Text(
+                if (internalAgents.isEmpty()) "No internal teammates active." else "${internalAgents.size} internal teammate(s) active.",
+                style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("External ACP agents", fontWeight = FontWeight.SemiBold)
+                OutlinedButton(onClick = onRefresh, enabled = !acpDiscoveryLoading) {
+                    Text(if (acpDiscoveryLoading) "Discovering…" else "Refresh")
+                }
+            }
+            when {
+                acpDiscoveryLoading -> {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        loadingIndicator()
+                        Text(
+                            "Discovering available ACP agents…",
+                            style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
+                        )
+                    }
+                }
+
+                acpAgents.isEmpty() -> {
+                    Text(
+                        "No available ACP agents found. Refresh after installing or configuring an agent.",
+                        style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
+                    )
+                }
+
+                else -> {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        acpAgents.forEach { agent ->
+                            val allowed = agent.id in allowedAcpAgentIds
+                            Row(
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .background(Color.White.copy(alpha = 0.04f), RoundedCornerShape(8.dp))
+                                        .padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                                ) {
+                                    Text(agent.name, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        agent.transportDescription(),
+                                        style = JewelTheme.defaultTextStyle.copy(fontSize = 11.sp, color = Color.Gray),
+                                    )
+                                    Text(
+                                        if (allowed) "Allowed for this chat" else "Available · Not allowed",
+                                        style =
+                                            JewelTheme.defaultTextStyle.copy(
+                                                fontSize = 11.sp,
+                                                color = if (allowed) Color(0xFF67C587) else Color(0xFFE0B86A),
+                                            ),
+                                    )
+                                }
+                                OutlinedButton(onClick = { onSetAcpAllowed(agent, !allowed) }) {
+                                    Text(if (allowed) "Remove" else "Add to chat")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                DefaultButton(onClick = onDismiss) { Text("Done") }
+            }
+        }
+    }
+}
+
+private fun AcpAgentDto.transportDescription(): String =
+    if (executablePath.startsWith("tcp://")) {
+        val endpoint = executablePath.removePrefix("tcp://")
+        if (endpoint.startsWith("localhost:") || endpoint.startsWith("127.0.0.1:") || endpoint.startsWith("[::1]:")) {
+            "External · Local TCP · $endpoint"
+        } else {
+            "External · Remote TCP · $endpoint"
+        }
+    } else {
+        "External · Local application · $executablePath"
+    }
 
 @Composable
 private fun channelActivityPanel(
@@ -352,7 +736,11 @@ private fun channelActivityPanel(
                 Text(task.title, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                 Text(task.status.name.lowercase(), fontSize = 11.sp, color = ChatAppColors.Text.disabled)
                 if (task.assignedRoles.isNotEmpty()) {
-                    Text(task.assignedRoles.joinToString(", "), fontSize = 11.sp, color = ChatAppColors.Text.disabled)
+                    Text(
+                        task.assignedRoles.joinToString(", "),
+                        fontSize = 11.sp,
+                        color = ChatAppColors.Text.disabled,
+                    )
                 }
             }
         }
@@ -400,166 +788,373 @@ private fun taskStatusColor(status: DelegatedTaskStatusDto): Color =
         DelegatedTaskStatusDto.FAILED -> Color(0xFFBF616A)
     }
 
-@Composable
-private fun agentsPanel(
-    modifier: Modifier = Modifier,
-    agents: List<AgentInfoDto>,
-    onCreateDefaultTeam: () -> Unit,
+private enum class AgentPresenceState(
+    val label: String,
+    val color: Color,
 ) {
-    Column(
-        modifier =
-            modifier
-                .padding(horizontal = 8.dp, vertical = 4.dp)
-                .background(ChatAppColors.Panel.background, RoundedCornerShape(8.dp))
-                .padding(8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Text("Agents", fontWeight = FontWeight.SemiBold)
-        if (agents.isEmpty()) {
-            Text(
-                text = "No agents created yet.",
-                fontSize = 12.sp,
-            )
-            Text(
-                text = "Create the default team: Analitic, Tester, Developer.",
-                fontSize = 12.sp,
-            )
-            DefaultButton(onClick = onCreateDefaultTeam) {
-                Text("Create default team")
-            }
-        } else {
-            Row(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                agents.forEach { agent ->
-                    val agentColor = colorForAgent(agent.id)
-                    val showProfile = remember(agent.id) { mutableStateOf(false) }
-                    Box {
-                        Row(
-                            modifier =
-                                Modifier
-                                    .widthIn(min = 150.dp, max = 220.dp)
-                                    .background(Color.White.copy(alpha = 0.04f), RoundedCornerShape(10.dp))
-                                    .padding(10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            agentAvatar(
-                                agent = agent,
-                                color = agentColor,
-                                onClick = { showProfile.value = true },
-                            )
-                            Column(
-                                modifier = Modifier.weight(1f),
-                                verticalArrangement = Arrangement.spacedBy(2.dp),
-                            ) {
-                                Text(agent.role.replaceFirstChar { it.uppercase() }, fontWeight = FontWeight.Medium)
-                                Text(
-                                    text = agent.model?.takeIf { it.isNotBlank() } ?: "unknown model",
-                                    fontSize = 11.sp,
-                                )
-                                Text(
-                                    text = "Profile",
-                                    fontSize = 11.sp,
-                                    color = Color(0xFF88C0D0),
-                                    modifier = Modifier.clickable { showProfile.value = true },
-                                )
-                            }
-                        }
+    IDLE("Ready", Color(0xFF8FBCBB)),
+    WORKING("Working", Color(0xFF88C0D0)),
+    WAITING("Waiting", Color(0xFFEBCB8B)),
+    FAILED("Needs attention", Color(0xFFBF616A)),
+}
 
-                        if (showProfile.value) {
-                            agentProfileDialog(
-                                agent = agent,
-                                color = agentColor,
-                                onDismiss = { showProfile.value = false },
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
+private data class AgentPresence(
+    val id: String,
+    val name: String,
+    val type: String,
+    val state: AgentPresenceState,
+    val details: String,
+    val instructions: String,
+    val color: Color,
+    val external: Boolean = false,
+)
+
+private fun DelegatedTaskDto.isAssignedTo(agent: AgentInfoDto): Boolean {
+    val normalizedRole = agent.role.trim().lowercase()
+    return agent.id in assignedAgentIds || assignedRoles.any { it.trim().lowercase() == normalizedRole }
 }
 
 @Composable
-private fun agentAvatar(
-    agent: AgentInfoDto,
-    color: Color,
-    onClick: (() -> Unit)? = null,
+private fun agentPresenceStrip(
+    modifier: Modifier = Modifier,
+    internalAgents: List<AgentInfoDto>,
+    allowedAcpAgents: List<AcpAgentDto>,
+    delegatedTasks: List<DelegatedTaskDto>,
+    chatMessages: List<ChatMessage>,
+    managerBusy: Boolean,
 ) {
+    val presences =
+        buildList {
+            add(
+                AgentPresence(
+                    id = "main-agent",
+                    name = "AI",
+                    type = "Main agent",
+                    state = if (managerBusy) AgentPresenceState.WORKING else AgentPresenceState.IDLE,
+                    details =
+                        if (managerBusy) {
+                            "The main agent is working on the current response."
+                        } else {
+                            "The main agent is ready for the next task."
+                        },
+                    instructions =
+                        "Coordinates the chat, delegates focused work to teammates, and verifies the final result.",
+                    color = Color(0xFF5E81AC),
+                ),
+            )
+            internalAgents.forEach { agent ->
+                val tasks = delegatedTasks.filter { it.isAssignedTo(agent) }
+                val state =
+                    when {
+                        agent.isWorking || tasks.any { it.status == DelegatedTaskStatusDto.RUNNING } -> {
+                            AgentPresenceState.WORKING
+                        }
+
+                        tasks.any { it.status == DelegatedTaskStatusDto.QUEUED || it.status == DelegatedTaskStatusDto.BLOCKED } -> {
+                            AgentPresenceState.WAITING
+                        }
+
+                        tasks.any { it.status == DelegatedTaskStatusDto.FAILED } -> {
+                            AgentPresenceState.FAILED
+                        }
+
+                        else -> {
+                            AgentPresenceState.IDLE
+                        }
+                    }
+                val details =
+                    buildString {
+                        append(agent.model?.takeIf(String::isNotBlank) ?: "Quanta teammate")
+                        if (tasks.isNotEmpty()) {
+                            append("\n\nCurrent work")
+                            tasks.takeLast(3).forEach { task ->
+                                append("\n• ").append(task.title).append(" · ").append(task.status.name.lowercase())
+                            }
+                        } else {
+                            append("\n\nNo delegated task is currently assigned.")
+                        }
+                    }
+                add(
+                    AgentPresence(
+                        id = agent.id,
+                        name = agent.role.replaceFirstChar { it.uppercase() },
+                        type = "Quanta teammate",
+                        state = state,
+                        details = details,
+                        instructions =
+                            agent.instructions?.takeIf(String::isNotBlank)
+                                ?: "No custom instructions are configured for this teammate.",
+                        color = colorForAgent(agent.id),
+                    ),
+                )
+            }
+            allowedAcpAgents.forEach { agent ->
+                val latestCard =
+                    chatMessages
+                        .asReversed()
+                        .flatMap { it.toolItems.asReversed() }
+                        .firstOrNull { item ->
+                            item.toolName == "AcpDelegationCard" && item.displayText.startsWith("${agent.name} ·")
+                        }
+                val state =
+                    when (latestCard?.status) {
+                        com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus.EXECUTING -> {
+                            AgentPresenceState.WORKING
+                        }
+
+                        com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus.FAILED -> {
+                            AgentPresenceState.FAILED
+                        }
+
+                        else -> {
+                            AgentPresenceState.IDLE
+                        }
+                    }
+                add(
+                    AgentPresence(
+                        id = "acp:${agent.id}",
+                        name = agent.name,
+                        type = "External ACP agent",
+                        state = state,
+                        details = latestCard?.detailText ?: "Allowed for this chat. No live task is currently running.",
+                        instructions =
+                            "Independent external ACP agent. It receives delegated task context only after you allow it for this chat.",
+                        color = Color(0xFFB48EAD),
+                        external = true,
+                    ),
+                )
+            }
+        }
+    if (presences.isEmpty()) return
+
+    Row(
+        modifier =
+            modifier
+                .horizontalScroll(rememberScrollState())
+                // Reserve room for the activity ring so working and idle strips keep the same height.
+                .padding(horizontal = 8.dp, vertical = 7.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("Agents", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = ChatAppColors.Text.disabled)
+        presences.forEach { presence -> agentPresenceAvatar(presence) }
+    }
+}
+
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+private fun agentPresenceAvatar(presence: AgentPresence) {
+    var isAvatarHovered by remember(presence.id) { mutableStateOf(false) }
+    var isPopupHovered by remember(presence.id) { mutableStateOf(false) }
+    var showStatusPopup by remember(presence.id) { mutableStateOf(false) }
+    var showProfileDialog by remember(presence.id) { mutableStateOf(false) }
+    val popupGapPx = with(LocalDensity.current) { 8.dp.roundToPx() }
+    val popupPositionProvider =
+        remember(popupGapPx) {
+            object : PopupPositionProvider {
+                override fun calculatePosition(
+                    anchorBounds: androidx.compose.ui.unit.IntRect,
+                    windowSize: IntSize,
+                    layoutDirection: LayoutDirection,
+                    popupContentSize: IntSize,
+                ): IntOffset {
+                    val maxX = (windowSize.width - popupContentSize.width).coerceAtLeast(0)
+                    val centeredX = anchorBounds.left + (anchorBounds.width - popupContentSize.width) / 2
+                    val x = centeredX.coerceIn(0, maxX)
+                    val aboveY = anchorBounds.top - popupContentSize.height - popupGapPx
+                    val maxY = (windowSize.height - popupContentSize.height).coerceAtLeast(0)
+                    val y =
+                        if (aboveY >= 0) {
+                            aboveY
+                        } else {
+                            (anchorBounds.bottom + popupGapPx).coerceAtMost(maxY)
+                        }
+                    return IntOffset(x, y)
+                }
+            }
+        }
+
+    LaunchedEffect(isAvatarHovered, isPopupHovered) {
+        if (isAvatarHovered || isPopupHovered) {
+            showStatusPopup = true
+        } else {
+            delay(150)
+            if (!isAvatarHovered && !isPopupHovered) {
+                showStatusPopup = false
+            }
+        }
+    }
+
+    val isWorking = presence.state == AgentPresenceState.WORKING
+    val activityTransition = rememberInfiniteTransition(label = "agentPresenceActivity")
+    val activityPulse by
+        activityTransition.animateFloat(
+            initialValue = 0.25f,
+            targetValue = 0.75f,
+            animationSpec = infiniteRepeatable(tween(durationMillis = 900, easing = LinearEasing)),
+            label = "agentPresencePulse",
+        )
+
+    if (showProfileDialog) {
+        agentProfileDialog(
+            presence = presence,
+            onDismiss = { showProfileDialog = false },
+        )
+    }
+
+    // This fixed-size surface reserves space for the activity ring even while it is invisible.
+    // It keeps the strip height stable and prevents the ring stroke from being clipped.
     Box(
         modifier =
             Modifier
-                .size(28.dp)
-                .background(color, RoundedCornerShape(999.dp))
-                .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier),
+                .size(42.dp)
+                .pointerHoverIcon(PointerIcon.Hand)
+                .onPointerEvent(PointerEventType.Enter) { isAvatarHovered = true }
+                .onPointerEvent(PointerEventType.Exit) { isAvatarHovered = false },
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = agent.role.firstOrNull()?.uppercase() ?: "A",
-            color = Color.White,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
-        )
+        Canvas(
+            modifier =
+                Modifier
+                    .size(42.dp)
+                    .alpha(if (isWorking) activityPulse else 0f),
+        ) {
+            val strokeWidth = 2.dp.toPx()
+            drawCircle(
+                color = presence.state.color,
+                radius = size.minDimension / 2 - strokeWidth / 2 - 1.dp.toPx(),
+                style = Stroke(width = strokeWidth),
+            )
+        }
+        if (showStatusPopup) {
+            val hoverSummary =
+                presence.details
+                    .lineSequence()
+                    .map(String::trim)
+                    .firstOrNull(String::isNotBlank)
+                    ?.take(120)
+                    ?: "No current activity."
+            Popup(
+                popupPositionProvider = popupPositionProvider,
+                properties = PopupProperties(focusable = false),
+            ) {
+                Column(
+                    modifier =
+                        Modifier
+                            .zIndex(2f)
+                            .widthIn(min = 210.dp, max = 300.dp)
+                            .background(ChatAppColors.Panel.background, RoundedCornerShape(8.dp))
+                            .border(1.dp, presence.state.color.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                            .padding(10.dp)
+                            .onPointerEvent(PointerEventType.Enter) { isPopupHovered = true }
+                            .onPointerEvent(PointerEventType.Exit) { isPopupHovered = false },
+                    verticalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    Text(presence.name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "${presence.type} · ${presence.state.label}",
+                        fontSize = 10.sp,
+                        color = presence.state.color,
+                    )
+                    Text(hoverSummary, fontSize = 11.sp, color = ChatAppColors.Text.disabled)
+                    Text(
+                        "Click avatar to view profile",
+                        fontSize = 10.sp,
+                        color = ChatAppColors.Text.disabled,
+                    )
+                }
+            }
+        }
+        Box(
+            modifier =
+                Modifier
+                    .size(30.dp)
+                    .background(
+                        presence.color.copy(alpha = if (isWorking) 1f else 0.68f),
+                        RoundedCornerShape(999.dp),
+                    ).border(
+                        width = if (isWorking) 2.dp else 1.dp,
+                        color = if (isWorking) presence.state.color else Color.Transparent,
+                        shape = RoundedCornerShape(999.dp),
+                    ).clickable { showProfileDialog = true },
+            contentAlignment = Alignment.Center,
+        ) {
+            if (presence.external || presence.id == "main-agent") {
+                Icon(
+                    key = ChatAppIcons.Header.agenticTeam,
+                    contentDescription = "${presence.name}, ${presence.state.label}. Hover for status, click to view profile.",
+                    modifier = Modifier.size(16.dp),
+                    tint = Color.White,
+                )
+            } else {
+                Text(
+                    text = presence.name.firstOrNull()?.uppercase() ?: "A",
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            Box(
+                modifier =
+                    Modifier
+                        .align(Alignment.BottomEnd)
+                        .size(if (isWorking) 11.dp else 9.dp)
+                        .border(1.dp, ChatAppColors.Panel.background, RoundedCornerShape(999.dp))
+                        .background(presence.state.color, RoundedCornerShape(999.dp)),
+            )
+        }
     }
 }
 
 @Composable
 private fun agentProfileDialog(
-    agent: AgentInfoDto,
-    color: Color,
+    presence: AgentPresence,
     onDismiss: () -> Unit,
 ) {
     Dialog(onDismissRequest = onDismiss) {
-        Box(
+        Column(
             modifier =
                 Modifier
-                    .widthIn(min = 320.dp, max = 520.dp)
-                    .heightIn(max = 420.dp)
-                    .background(Color(0xFF1E1E1E), RoundedCornerShape(14.dp))
-                    .padding(16.dp),
+                    .widthIn(min = 360.dp, max = 520.dp)
+                    .background(ChatAppColors.Panel.background, RoundedCornerShape(12.dp))
+                    .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+            Text("${presence.name} profile", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+            Text(
+                "${presence.type} · ${presence.state.label}",
+                fontSize = 12.sp,
+                color = presence.state.color,
+            )
+            Divider(orientation = Orientation.Horizontal)
+            Text("Current status", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 160.dp)
+                        .verticalScroll(rememberScrollState())
+                        .background(ChatAppColors.MessageBubble.othersBackground, RoundedCornerShape(8.dp))
+                        .padding(10.dp),
             ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    agentAvatar(agent = agent, color = color)
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(
-                            agent.role.replaceFirstChar { it.uppercase() },
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color.White,
-                        )
-                        Text(agent.model ?: "unknown model", fontSize = 11.sp, color = Color(0xFFB0BEC5))
-                    }
-                }
-                profileField("ID", agent.id)
-                profileField("Model", agent.model ?: "unknown model")
-                profileField("Role", agent.role)
-                if (!agent.instructions.isNullOrBlank()) {
-                    profileField("Custom instructions", agent.instructions!!)
-                }
+                Text(presence.details, fontSize = 12.sp)
+            }
+            Text("Instructions", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 220.dp)
+                        .verticalScroll(rememberScrollState())
+                        .background(ChatAppColors.MessageBubble.othersBackground, RoundedCornerShape(8.dp))
+                        .padding(10.dp),
+            ) {
+                Text(presence.instructions, fontSize = 12.sp)
+            }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                DefaultButton(onClick = onDismiss) { Text("Close") }
             }
         }
-    }
-}
-
-@Composable
-private fun profileField(
-    label: String,
-    value: String,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(label, fontSize = 10.sp, color = Color(0xFF88C0D0))
-        Text(value, fontSize = 11.sp, color = Color.White)
     }
 }
 
@@ -753,7 +1348,9 @@ private fun agentThread(
                             FrontendQuantaSettingsState.MESSAGE_WIDTH_RANGE,
                         ),
                     modifier = Modifier.fillMaxWidth(),
-                    isMatchingSearch = searchState.searchQuery?.let { query -> threadMessage.matches(query) } ?: false,
+                    isMatchingSearch =
+                        searchState.searchQuery?.let { query -> threadMessage.matches(query) }
+                            ?: false,
                     isHighlightedInSearch = threadMessage.id == searchState.currentSelectedSearchResultId,
                 )
             }

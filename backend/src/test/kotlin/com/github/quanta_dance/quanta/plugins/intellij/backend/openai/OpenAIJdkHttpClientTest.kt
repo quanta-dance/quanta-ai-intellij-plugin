@@ -9,12 +9,18 @@ import com.openai.core.http.HttpRequest
 import com.openai.core.http.HttpRequestBody
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
+import java.io.IOException
 import java.net.InetSocketAddress
+import java.net.ServerSocket
+import java.net.SocketTimeoutException
+import java.net.http.HttpTimeoutException
 import java.nio.charset.StandardCharsets
+import java.time.Duration
 import java.util.concurrent.Executors
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class OpenAIJdkHttpClientTest {
@@ -87,6 +93,83 @@ class OpenAIJdkHttpClientTest {
             assertEquals("{\"id\":\"resp_123\"}", it.body().readBytes().toString(StandardCharsets.UTF_8))
         }
     }
+
+    @Test
+    fun `execute fails when response headers do not arrive before the deadline`() {
+        server =
+            startServer {
+                Thread.sleep(500)
+                it.respondJson(200, """{"ok":true}""")
+            }
+
+        assertFailsWith<HttpTimeoutException> {
+            OpenAIJdkHttpClient(shortTimeouts()).execute(getRequest(), RequestOptions.none())
+        }
+    }
+
+    @Test
+    fun `response body idle timeout closes a stalled response`() {
+        server =
+            startServer { exchange ->
+                exchange.responseHeaders.add("Content-Type", "application/json")
+                exchange.sendResponseHeaders(200, 100)
+                exchange.responseBody.write("{\"partial\":".toByteArray(StandardCharsets.UTF_8))
+                exchange.responseBody.flush()
+                Thread.sleep(1_000)
+                exchange.close()
+            }
+
+        val response = OpenAIJdkHttpClient(shortTimeouts()).execute(getRequest(), RequestOptions.none())
+        response.use {
+            assertFailsWith<SocketTimeoutException> {
+                it.body().readBytes()
+            }
+        }
+    }
+
+    @Test
+    fun `pre-header connection failures retire the shared transport generation`() {
+        val unavailablePort = ServerSocket(0).use { it.localPort }
+        val connectTimeout = Duration.ofMillis(750)
+        val timeouts =
+            OpenAIJdkHttpClient.Timeouts(
+                connect = connectTimeout,
+                responseHeaders = Duration.ofSeconds(1),
+                responseIdle = Duration.ofSeconds(1),
+                responseTotal = Duration.ofSeconds(1),
+            )
+        val before = OpenAIJdkHttpClient.currentTransportGenerationForTesting(connectTimeout)
+        val request =
+            HttpRequest
+                .builder()
+                .method(HttpMethod.GET)
+                .baseUrl("http://127.0.0.1:$unavailablePort")
+                .addPathSegment("responses")
+                .build()
+
+        assertFailsWith<IOException> {
+            OpenAIJdkHttpClient(timeouts).execute(request, RequestOptions.none())
+        }
+
+        val after = OpenAIJdkHttpClient.currentTransportGenerationForTesting(connectTimeout)
+        assertTrue(after > before)
+    }
+
+    private fun shortTimeouts() =
+        OpenAIJdkHttpClient.Timeouts(
+            connect = Duration.ofSeconds(1),
+            responseHeaders = Duration.ofMillis(100),
+            responseIdle = Duration.ofMillis(100),
+            responseTotal = Duration.ofSeconds(1),
+        )
+
+    private fun getRequest(): HttpRequest =
+        HttpRequest
+            .builder()
+            .method(HttpMethod.GET)
+            .baseUrl(serverBaseUrl())
+            .addPathSegment("responses")
+            .build()
 
     private fun startServer(handler: (HttpExchange) -> Unit): HttpServer =
         HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).also { httpServer ->

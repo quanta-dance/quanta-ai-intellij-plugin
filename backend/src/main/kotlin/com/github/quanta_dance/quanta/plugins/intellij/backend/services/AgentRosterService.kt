@@ -44,6 +44,7 @@ class AgentRosterService(
                     it.model?.takeIf { model -> model.isNotBlank() }
                         ?: BackendRuntimeSettingsService.instance.settings.aiChatModel,
                 instructions = it.instructions,
+                isWorking = it.isWorking,
             )
         }
     }

@@ -40,3 +40,6 @@ build
 
 .quantadance
 memory
+
+# Runtime state produced by locally launched Codemaster ACP agents
+backend/.codemaster/
