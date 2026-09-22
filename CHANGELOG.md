@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2026.09.22]
+
+This release improves agent visibility, ACP discovery, and IntelliJ-platform safety for multi-agent work.
+
+### Added
+- Added an agent-presence strip in agentic mode with compact agent avatars, live status badges, animated working indicators, quick status popups, and detailed agent profiles.
+- Added click-to-open agent profiles with readable, scrollable current status and instructions for long ACP activity and teammate prompts.
+- ACP discovery now imports compatible agent servers configured by JetBrains in `~/.jetbrains/acp.json`, including command arguments and environment overrides.
+
+### Improved
+- Restores already authorized ACP teammates automatically when the IDE or chat starts, without starting a persistent ACP work session.
+- Keeps the agent-presence strip layout stable while agents start or finish work, and makes working internal teammates visible from their live execution state.
+- Keeps the ACP discovery stdio input open until the `initialize` probe completes, improving compatibility with Node-based adapters such as `codex-acp`.
+
+### Fixed
+- Corrected IntelliJ document-model access in `PatchFile` and `CreateOrUpdateFile` when agent tools run from background orchestration threads.
+- Prevented expected ACP adapter behavior from being misclassified as unavailable during the discovery handshake.
+
 ## [2026.09.20]
 
 This release delivers controlled external-agent collaboration, per-chat MCP management, and stronger reliability for AI, MCP, and multi-project workflows.
