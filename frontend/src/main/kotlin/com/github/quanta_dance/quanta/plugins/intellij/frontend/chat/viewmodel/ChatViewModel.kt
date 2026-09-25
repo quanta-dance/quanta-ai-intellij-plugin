@@ -35,6 +35,7 @@ interface ChatViewModelApi : Disposable {
     val mcpConfigurationErrorFlow: StateFlow<String?>
     val delegatedTasksFlow: StateFlow<List<DelegatedTaskDto>>
     val channelEventsFlow: StateFlow<List<AgentChannelEventDto>>
+    val quantaAcpInviteFlow: StateFlow<String?>
 
     fun onPromptInputChanged(input: String)
 
@@ -69,6 +70,14 @@ interface ChatViewModelApi : Disposable {
 
     fun onCreateDefaultAgentTeam()
 
+    fun onCreateQuantaAcpShare()
+
+    fun onJoinQuantaAcpShare(invite: String)
+
+    fun onStopQuantaAcpShare()
+
+    fun onRemoveJoinedQuantaAcpAgent(agentId: String)
+
     fun searchChatMessagesHandler(): SearchChatMessagesHandler
 
     val promptInputState: StateFlow<MessageInputState>
@@ -94,6 +103,7 @@ class ChatViewModel(
     override val mcpConfigurationErrorFlow: StateFlow<String?> = repository.mcpConfigurationErrorFlow
     override val delegatedTasksFlow: StateFlow<List<DelegatedTaskDto>> = repository.delegatedTasksFlow
     override val channelEventsFlow: StateFlow<List<AgentChannelEventDto>> = repository.channelEventsFlow
+    override val quantaAcpInviteFlow: StateFlow<String?> = repository.quantaAcpInviteFlow
 
     private val _promptInputState = MutableStateFlow<MessageInputState>(MessageInputState.Disabled)
     override val promptInputState: StateFlow<MessageInputState> = _promptInputState.asStateFlow()
@@ -229,6 +239,22 @@ class ChatViewModel(
         coroutineScope.launch {
             repository.createDefaultAgentTeam()
         }
+    }
+
+    override fun onCreateQuantaAcpShare() {
+        coroutineScope.launch { repository.createQuantaAcpShare() }
+    }
+
+    override fun onJoinQuantaAcpShare(invite: String) {
+        coroutineScope.launch { repository.joinQuantaAcpShare(invite) }
+    }
+
+    override fun onStopQuantaAcpShare() {
+        coroutineScope.launch { repository.stopQuantaAcpShare() }
+    }
+
+    override fun onRemoveJoinedQuantaAcpAgent(agentId: String) {
+        coroutineScope.launch { repository.removeJoinedQuantaAcpAgent(agentId) }
     }
 
     override fun searchChatMessagesHandler(): SearchChatMessagesHandler = searchChatMessagesHandler

@@ -13,6 +13,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.Delegat
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.FrontendLogDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServerStatusesDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.MicrophoneTranscriptionResultDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.QuantaAcpShareDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.SpeechChunkDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.SynthesizedSpeechDto
 import com.intellij.platform.rpc.RemoteApiProviderService
@@ -41,8 +42,11 @@ interface QuantaBackendApi : RemoteApi<Unit> {
 
     suspend fun getCurrentPlanStatus(projectPath: String): ChatPlanStatusDto
 
-    /** Returns locally installed commands that complete the ACP initialize handshake. */
-    suspend fun discoverAcpAgents(): List<AcpAgentDto>
+    /** Returns the last verified ACP roster without starting a new discovery probe. */
+    suspend fun getKnownAcpAgents(projectPath: String): List<AcpAgentDto>
+
+    /** Explicitly probes configured ACP applications and endpoints, then updates the cached roster. */
+    suspend fun discoverAcpAgents(projectPath: String): List<AcpAgentDto>
 
     /** Returns configured MCP servers and whether their synced configuration is still being applied. */
     suspend fun getMcpServerStatuses(projectPath: String): McpServerStatusesDto
@@ -60,6 +64,23 @@ interface QuantaBackendApi : RemoteApi<Unit> {
     suspend fun getCurrentChannelEvents(projectPath: String): List<AgentChannelEventDto>
 
     suspend fun createDefaultAgentTeam(projectPath: String): List<AgentInfoDto>
+
+    /** Starts a localhost-only, single-use Quanta ACP share and returns its pasteable invite. */
+    suspend fun createQuantaAcpShare(projectPath: String): QuantaAcpShareDto
+
+    /** Joins a localhost Quanta ACP share and adds the paired IDE to this chat's ACP roster. */
+    suspend fun joinQuantaAcpShare(
+        projectPath: String,
+        invite: String,
+    ): QuantaAcpShareDto
+
+    suspend fun stopQuantaAcpShare(projectPath: String)
+
+    /** Removes a previously joined Quanta ACP peer and revokes it for the active chat. */
+    suspend fun removeJoinedQuantaAcpAgent(
+        projectPath: String,
+        agentId: String,
+    ): Boolean
 
     suspend fun synthesizeSpeech(
         projectPath: String,

@@ -6,7 +6,6 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent.CancelAcpDelegationTool
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent.DelegateToAcpAgentTool
-import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent.DiscoverAcpAgentsTool
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent.GetAcpDelegationStatusTool
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent.SendAcpDelegationMessageTool
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.catalog.ListToolsCatalogTool
@@ -53,7 +52,14 @@ object ToolsRegistry {
         val tools: List<Class<out ToolInterface<out Any>>>,
     )
 
+    private data class ProjectCapabilities(
+        val gradle: Boolean,
+        val go: Boolean,
+        val javaPsi: Boolean,
+    )
+
     private val cache = ConcurrentHashMap<Project, CacheEntry>()
+    private val capabilitiesCache = ConcurrentHashMap<Project, ProjectCapabilities>()
 
     private fun javaPsiAvailable(project: Project?): Boolean {
         fun tryLoad(loader: ClassLoader?): Boolean =
@@ -114,7 +120,6 @@ object ToolsRegistry {
                 ToolEntry(RequestModelSwitch::class.java, Group.GENERIC),
                 ToolEntry(McpListServersTool::class.java, Group.GENERIC),
                 ToolEntry(McpListServerToolsTool::class.java, Group.GENERIC),
-                ToolEntry(DiscoverAcpAgentsTool::class.java, Group.GENERIC),
                 ToolEntry(DelegateToAcpAgentTool::class.java, Group.GENERIC),
                 ToolEntry(GetAcpDelegationStatusTool::class.java, Group.GENERIC),
                 ToolEntry(CancelAcpDelegationTool::class.java, Group.GENERIC),
@@ -194,22 +199,28 @@ object ToolsRegistry {
         val runtimeSettings = BackendRuntimeSettingsService.instance.settings
         val agentic = runtimeSettings.agenticEnabled ?: true
         val basePath = project.basePath
-        val gradle = basePath?.let { detectGradle(File(it)) } ?: false
-        val go = basePath?.let { detectGo(File(it)) } ?: false
-        val javaPsi = javaPsiAvailable(project)
+        val capabilities =
+            capabilitiesCache.computeIfAbsent(project) {
+                val baseDirectory = basePath?.let(::File)
+                ProjectCapabilities(
+                    gradle = baseDirectory?.let(::detectGradle) ?: false,
+                    go = baseDirectory?.let(::detectGo) ?: false,
+                    javaPsi = javaPsiAvailable(project),
+                )
+            }
         val signature =
             buildString {
                 append("agentic=").append(agentic).append(';')
-                append("gradle=").append(gradle).append(';')
-                append("go=").append(go).append(';')
-                append("javaPsi=").append(javaPsi).append(';')
+                append("gradle=").append(capabilities.gradle).append(';')
+                append("go=").append(capabilities.go).append(';')
+                append("javaPsi=").append(capabilities.javaPsi).append(';')
                 append("terminal=").append(runtimeSettings.terminalToolEnabled == true).append(';')
                 append("base=").append(basePath ?: "<none>")
             }
         cache[project]?.takeIf { it.signature == signature }?.let { return it.tools }
 
         val entries = baseEntries(project).toMutableList()
-        if (gradle && gradlePluginAvailable(project)) {
+        if (capabilities.gradle && gradlePluginAvailable(project)) {
             entries.add(
                 ToolEntry(
                     com.github.quanta_dance.quanta.plugins.intellij.backend.tools.builder.GradleSyncTool::class.java,
@@ -235,7 +246,7 @@ object ToolsRegistry {
                 ),
             )
         }
-        if (!go) {
+        if (!capabilities.go) {
             entries.removeIf { it.group == Group.GO }
         }
         val result = entries.map { it.clazz }

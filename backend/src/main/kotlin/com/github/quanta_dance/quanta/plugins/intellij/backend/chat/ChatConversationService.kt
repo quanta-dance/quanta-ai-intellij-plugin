@@ -6,6 +6,7 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.chat
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.project.CurrentFileContextProvider
 import com.github.quanta_dance.quanta.plugins.intellij.backend.repository.ChatMessageFactory
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AcpAgentRosterService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AcpDelegationTaskService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentManagerService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AiInputSanitizer
@@ -31,6 +32,7 @@ import com.openai.models.responses.ResponseInputItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
@@ -43,6 +45,8 @@ import java.net.http.HttpTimeoutException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
@@ -72,7 +76,11 @@ class ChatConversationService(
     private val _sessions = MutableStateFlow<List<ChatSessionDto>>(emptyList())
 
     private val mainAgentTurnRunning = AtomicBoolean(false)
+    private val inboundAcpPeerTaskCount = AtomicInteger(0)
     private val acpContinuationRunning = AtomicBoolean(false)
+    private val persistenceFlushScheduled = AtomicBoolean(false)
+    private val messageRevision = AtomicLong(0)
+    private val persistedMessageRevision = AtomicLong(0)
     private val acpEventInboxes =
         ConcurrentHashMap<String, ConcurrentLinkedQueue<AcpDelegationTaskService.MeaningfulEvent>>()
     private val acpContinuationScheduled = ConcurrentHashMap<String, AtomicBoolean>()
@@ -166,6 +174,7 @@ class ChatConversationService(
     override fun dispose() {
         agentManager.removePropertyChangeListener(agentTaskListener)
         acpDelegations.removePropertyChangeListener(acpDelegationListener)
+        onChatPublicationThread(::persistMessagesNow)
     }
 
     private fun <T> onChatPublicationThread(action: () -> T): T = runBlocking(executionContexts.chatPublicationDispatcher) { action() }
@@ -213,7 +222,8 @@ class ChatConversationService(
         }
     }
 
-    suspend fun sendUserMessage(messageContent: String) {
+    /** Sends a user turn and returns the final manager response, including a user-facing failure response. */
+    suspend fun sendUserMessage(messageContent: String): String =
         withContext(Dispatchers.IO) {
             mainAgentTurnRunning.set(true)
             var thinkingMessageId: String
@@ -272,6 +282,7 @@ class ChatConversationService(
                     clearThinkingMessages()
                 }
                 persistMessages()
+                responseText
             } catch (e: Throwable) {
                 if (e is CancellationException) {
                     clearThinkingMessages()
@@ -285,12 +296,44 @@ class ChatConversationService(
                 )
                 clearThinkingMessages()
                 appendAiMessage(errorText)
+                errorText
             } finally {
                 mainAgentTurnRunning.set(false)
                 scheduleAcpCoordinationTurn(persistence.getActiveSessionId())
             }
         }
-    }
+
+    /** Processes a task received from a paired ACP peer without adding it to the local user conversation. */
+    suspend fun processAcpPeerTask(
+        peerName: String,
+        task: String,
+    ): String =
+        withContext(Dispatchers.IO) {
+            inboundAcpPeerTaskCount.incrementAndGet()
+            try {
+                awaitAcpPeerTaskTurn {
+                    openAIService.agentTurn(
+                        inputs = buildAcpPeerTaskInputs(peerName, task),
+                        previousId = null,
+                        agentLabel = "Shared Quanta · $peerName",
+                        allowedMcpNames = enabledMcpServerNames(),
+                    )
+                }.first
+            } catch (error: Throwable) {
+                if (error is CancellationException) throw error
+                QDLog.warn(
+                    Logger.getInstance(ChatConversationService::class.java),
+                    { "Could not process ACP peer task from $peerName: ${error.message}" },
+                    error,
+                )
+                "The shared Quanta ACP task could not be completed."
+            } finally {
+                inboundAcpPeerTaskCount.decrementAndGet()
+            }
+        }
+
+    /** Prevents an inbound peer task from recursively delegating the same work back through ACP. */
+    fun isProcessingAcpPeerTask(): Boolean = inboundAcpPeerTaskCount.get() > 0
 
     private fun buildRequestInputs(): MutableList<ResponseInputItem> = buildInputsFromTurns(buildHistory())
 
@@ -327,6 +370,17 @@ class ChatConversationService(
 
     private fun buildInputsFromTurns(turns: List<ChatTurn>): MutableList<ResponseInputItem> =
         buildList {
+            buildAcpRosterContextMessage()?.let { rosterContext ->
+                add(
+                    ResponseInputItem.ofEasyInputMessage(
+                        EasyInputMessage
+                            .builder()
+                            .role(EasyInputMessage.Role.SYSTEM)
+                            .content(rosterContext)
+                            .build(),
+                    ),
+                )
+            }
             buildContextMessage()?.let { contextMessage ->
                 add(
                     ResponseInputItem.ofEasyInputMessage(
@@ -350,6 +404,75 @@ class ChatConversationService(
                 )
             }
         }.toMutableList()
+
+    private fun buildAcpPeerTaskInputs(
+        peerName: String,
+        task: String,
+    ): MutableList<ResponseInputItem> =
+        buildList {
+            buildContextMessage()?.let { contextMessage ->
+                add(
+                    ResponseInputItem.ofEasyInputMessage(
+                        EasyInputMessage
+                            .builder()
+                            .role(EasyInputMessage.Role.SYSTEM)
+                            .content(aiInputSanitizer.sanitizeForAi(contextMessage))
+                            .build(),
+                    ),
+                )
+            }
+            add(
+                ResponseInputItem.ofEasyInputMessage(
+                    EasyInputMessage
+                        .builder()
+                        .role(EasyInputMessage.Role.SYSTEM)
+                        .content(
+                            "A paired Quanta peer named '$peerName' delegated the following task. " +
+                                "This is private peer-to-peer work, not a user message: do not add it to the chat, " +
+                                "do not describe it as user-authored, and return only the useful result to the peer. " +
+                                "Work only in this local project. Never call DelegateToAcpAgentTool, " +
+                                "SendAcpDelegationMessageTool, GetAcpDelegationStatusTool, or CancelAcpDelegationTool " +
+                                "while handling an inbound peer task.",
+                        ).build(),
+                ),
+            )
+            add(
+                ResponseInputItem.ofEasyInputMessage(
+                    EasyInputMessage
+                        .builder()
+                        .role(EasyInputMessage.Role.USER)
+                        .content(aiInputSanitizer.sanitizeForAi(task))
+                        .build(),
+                ),
+            )
+        }.toMutableList()
+
+    /** Supplies the manager with the user-approved external ACP agents and their usable IDs. */
+    private fun buildAcpRosterContextMessage(): String? {
+        val allowedAgentIds = persistence.getAllowedAcpAgentIds()
+        if (allowedAgentIds.isEmpty()) return null
+
+        val agentsById = project.service<AcpAgentRosterService>().agents().associateBy { it.id }
+        return buildString {
+            append("External ACP agents explicitly enabled by the user for this chat:\n")
+            allowedAgentIds.sorted().forEach { agentId ->
+                val agent = agentsById[agentId]
+                if (agent == null) {
+                    append("- id: ").append(agentId).append(" (currently unavailable)\n")
+                } else {
+                    append("- name: ")
+                        .append(agent.name)
+                        .append("; id: ")
+                        .append(agent.id)
+                        .append('\n')
+                }
+            }
+            append(
+                "Use DelegateToAcpAgentTool with an available agent ID when external collaboration is useful. " +
+                    "Do not claim that an enabled agent is absent or ask the user to rediscover it before using this roster.",
+            )
+        }
+    }
 
     private fun appendUserMessage(
         messageContent: String,
@@ -715,15 +838,13 @@ class ChatConversationService(
             )
         }
 
-    private suspend fun <T> awaitDetachedAgentTurn(block: () -> T): T {
-        val deferred =
-            executionContexts.agentOrchestrationScope.async {
-                block()
-            }
-        return withContext(NonCancellable) {
-            deferred.await()
-        }
-    }
+    private suspend fun <T> awaitDetachedAgentTurn(block: () -> T): T = executionContexts.agentOrchestrationScope.async { block() }.await()
+
+    /**
+     * Keeps inbound peer work off the manager-orchestration pool so a busy local team cannot delay
+     * an ACP response until the caller times out.
+     */
+    private suspend fun <T> awaitAcpPeerTaskTurn(block: () -> T): T = executionContexts.acpPeerTaskScope.async { block() }.await()
 
     private fun buildHistory(): List<ChatTurn> =
         _messages.value
@@ -801,11 +922,14 @@ class ChatConversationService(
         }
     }
 
-    private fun isAcpCardOwnedTool(toolName: String): Boolean = toolName in setOf("DelegateToAcpAgentTool", "SendAcpDelegationMessageTool")
-
-    companion object {
-        private const val MAX_ACP_EVENTS_PER_CONTINUATION = 4
-    }
+    private fun isAcpCardOwnedTool(toolName: String): Boolean =
+        toolName in
+            setOf(
+                "DelegateToAcpAgentTool",
+                "GetAcpDelegationStatusTool",
+                "SendAcpDelegationMessageTool",
+                "CancelAcpDelegationTool",
+            )
 
     private fun isContextWindowError(t: Throwable): Boolean {
         val msg = t.message.orEmpty()
@@ -885,8 +1009,40 @@ class ChatConversationService(
         persistMessages()
     }
 
+    /**
+     * Persists chat state after a short quiet period instead of serializing the complete message history
+     * for every thinking, tool, and progress update. UI state is still published synchronously.
+     */
     private fun persistMessages() {
+        messageRevision.incrementAndGet()
+        scheduleMessagePersistence()
+    }
+
+    private fun scheduleMessagePersistence() {
+        if (!persistenceFlushScheduled.compareAndSet(false, true)) return
+        executionContexts.chatPublicationScope.launch {
+            try {
+                delay(MESSAGE_PERSIST_DEBOUNCE_MS)
+                while (true) {
+                    val revision = messageRevision.get()
+                    persistMessagesNow()
+                    persistedMessageRevision.set(revision)
+                    if (messageRevision.get() == revision) break
+                }
+            } finally {
+                persistenceFlushScheduled.set(false)
+                if (messageRevision.get() != persistedMessageRevision.get()) scheduleMessagePersistence()
+            }
+        }
+    }
+
+    private fun persistMessagesNow() {
         persistence.saveActiveMessages(_messages.value, openAIService.getLastResponseId())
         _sessions.value = persistence.listSessions()
+    }
+
+    companion object {
+        private const val MAX_ACP_EVENTS_PER_CONTINUATION = 4
+        private const val MESSAGE_PERSIST_DEBOUNCE_MS = 250L
     }
 }

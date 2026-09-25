@@ -26,6 +26,7 @@ interface ChatRepositoryApi {
     val mcpConfigurationErrorFlow: StateFlow<String?>
     val delegatedTasksFlow: StateFlow<List<DelegatedTaskDto>>
     val channelEventsFlow: StateFlow<List<AgentChannelEventDto>>
+    val quantaAcpInviteFlow: StateFlow<String?>
 
     suspend fun sendMessage(messageContent: String)
 
@@ -52,6 +53,14 @@ interface ChatRepositoryApi {
     suspend fun retryMcpServerConnection(serverName: String)
 
     suspend fun createDefaultAgentTeam()
+
+    suspend fun createQuantaAcpShare()
+
+    suspend fun joinQuantaAcpShare(invite: String)
+
+    suspend fun stopQuantaAcpShare()
+
+    suspend fun removeJoinedQuantaAcpAgent(agentId: String)
 
     suspend fun stopAllAgents(): Int
 }

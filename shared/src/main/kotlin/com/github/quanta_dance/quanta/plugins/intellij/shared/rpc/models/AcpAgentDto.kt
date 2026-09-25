@@ -16,4 +16,6 @@ data class AcpAgentDto(
     val environment: Map<String, String> = emptyMap(),
     val version: String? = null,
     val protocolVersion: Int,
+    /** A short-lived secret used only to pair with a Quanta-hosted local TCP endpoint. */
+    val connectionToken: String? = null,
 )

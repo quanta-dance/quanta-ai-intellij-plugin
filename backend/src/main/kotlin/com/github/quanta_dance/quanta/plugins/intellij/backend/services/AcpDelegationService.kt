@@ -14,7 +14,6 @@ import java.io.Closeable
 import java.io.File
 import java.net.InetSocketAddress
 import java.net.Socket
-import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
@@ -45,7 +44,12 @@ class AcpDelegationService(
         return try {
             cancellation.throwIfCancelled()
             QDLog.debug(logger) { "ACP collaboration session opening for ${agent.name} (${agent.id})" }
-            transport.request(INITIALIZE_METHOD, initializeParams(), INITIALIZE_REQUEST_ID, timeoutMillis)
+            transport.request(
+                INITIALIZE_METHOD,
+                initializeParams(agent, workspacePath),
+                INITIALIZE_REQUEST_ID,
+                timeoutMillis,
+            )
             cancellation.throwIfCancelled()
             val session =
                 transport.request(
@@ -164,12 +168,19 @@ class AcpDelegationService(
         )
     }
 
-    private fun initializeParams(): Map<String, Any> =
-        mapOf(
+    private fun initializeParams(
+        agent: AcpAgentDto,
+        workspacePath: String?,
+    ): Map<String, Any> {
+        val clientCapabilities: Map<String, Any> =
+            agent.connectionToken?.let { token -> mapOf("quanta" to mapOf("token" to token)) } ?: emptyMap()
+        val projectName = File(workspacePath.orEmpty()).name.ifBlank { "Quanta project" }
+        return mapOf(
             "protocolVersion" to ACP_PROTOCOL_VERSION,
-            "clientInfo" to mapOf("name" to "quanta-ai-plugin", "version" to "0"),
-            "clientCapabilities" to emptyMap<String, Any>(),
+            "clientInfo" to mapOf("name" to projectName, "version" to "quanta"),
+            "clientCapabilities" to clientCapabilities,
         )
+    }
 
     private fun sessionNewParams(workspacePath: String?): Map<String, Any> =
         mapOf(
@@ -281,8 +292,6 @@ class AcpDelegationService(
         private val mapper: ObjectMapper,
     ) : Closeable {
         private val closed = AtomicBoolean(false)
-        private val readExecutor =
-            Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "acp-response-reader") }
 
         fun request(
             method: String,
@@ -325,16 +334,12 @@ class AcpDelegationService(
             }
         }
 
-        private fun readLine(timeoutMillis: Long): String {
-            val future =
-                readExecutor.submit<String> { reader.readLine() ?: error("ACP connection closed unexpectedly.") }
-            return try {
-                future.get(timeoutMillis, TimeUnit.MILLISECONDS)
-            } catch (error: TimeoutException) {
-                future.cancel(true)
+        private fun readLine(timeoutMillis: Long): String =
+            try {
+                reader.readLine() ?: error("ACP connection closed unexpectedly.")
+            } catch (error: java.net.SocketTimeoutException) {
                 throw IllegalStateException("ACP response timed out after ${timeoutMillis}ms.", error)
             }
-        }
 
         private fun respondUnsupportedServerRequest(message: JsonNode) {
             writer.write(
@@ -356,7 +361,6 @@ class AcpDelegationService(
 
         override fun close() {
             if (!closed.compareAndSet(false, true)) return
-            readExecutor.shutdownNow()
             runCatching { reader.close() }
             runCatching { writer.close() }
             closeAction()
@@ -390,7 +394,7 @@ class AcpDelegationService(
 
     companion object {
         private val logger = Logger.getInstance(AcpDelegationService::class.java)
-        const val DEFAULT_TIMEOUT_MILLIS = 60_000L
+        const val DEFAULT_TIMEOUT_MILLIS = 5 * 60_000L
         private const val PROCESS_STOP_TIMEOUT_MILLIS = 500L
         private const val ACP_PROTOCOL_VERSION = 1
         private const val TCP_PREFIX = "tcp://"

@@ -5,12 +5,12 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.rpc
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AIVoiceService
-import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AcpAgentDiscoveryService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AcpAgentRosterService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentManagerService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentRosterService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.QuantaAcpShareService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SessionPlanService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SpeechToTextService
-import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.OpenFileInEditorTool
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.McpClientService
 import com.github.quanta_dance.quanta.plugins.intellij.models.Suggestion
@@ -26,6 +26,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.Fronten
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServerStatusDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServerStatusesDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.MicrophoneTranscriptionResultDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.QuantaAcpShareDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.SpeechChunkDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.SynthesizedSpeechDto
 import com.intellij.openapi.application.ApplicationManager
@@ -70,10 +71,15 @@ class QuantaBackendRpcApi : QuantaBackendApi {
         return backendProject.service<SessionPlanService>().getCurrentPlanStatus()
     }
 
-    override suspend fun discoverAcpAgents(): List<AcpAgentDto> =
-        AcpAgentDiscoveryService(
-            manualAgents = BackendRuntimeSettingsService.instance.settings.manualAcpAgents,
-        ).discover()
+    override suspend fun getKnownAcpAgents(projectPath: String): List<AcpAgentDto> {
+        val backendProject = findBackendProject(projectPath) ?: return emptyList()
+        return backendProject.service<AcpAgentRosterService>().agents()
+    }
+
+    override suspend fun discoverAcpAgents(projectPath: String): List<AcpAgentDto> {
+        val backendProject = findBackendProject(projectPath) ?: return emptyList()
+        return backendProject.service<AcpAgentRosterService>().refresh()
+    }
 
     override suspend fun getMcpServerStatuses(projectPath: String): McpServerStatusesDto {
         val backendProject =
@@ -139,6 +145,31 @@ class QuantaBackendRpcApi : QuantaBackendApi {
         backendProject.service<AgentManagerService>().createDefaultTeam()
         return getCurrentAgents(projectPath)
     }
+
+    override suspend fun createQuantaAcpShare(projectPath: String): QuantaAcpShareDto {
+        val backendProject = findBackendProject(projectPath) ?: return QuantaAcpShareDto(error = "Project not found")
+        return backendProject.service<QuantaAcpShareService>().createInvite()
+    }
+
+    override suspend fun joinQuantaAcpShare(
+        projectPath: String,
+        invite: String,
+    ): QuantaAcpShareDto {
+        val backendProject = findBackendProject(projectPath) ?: return QuantaAcpShareDto(error = "Project not found")
+        return backendProject.service<QuantaAcpShareService>().join(invite)
+    }
+
+    override suspend fun stopQuantaAcpShare(projectPath: String) {
+        findBackendProject(projectPath)?.service<QuantaAcpShareService>()?.stopSharing()
+    }
+
+    override suspend fun removeJoinedQuantaAcpAgent(
+        projectPath: String,
+        agentId: String,
+    ): Boolean =
+        findBackendProject(projectPath)
+            ?.service<QuantaAcpShareService>()
+            ?.removeJoinedAcpAgent(agentId) == true
 
     override suspend fun synthesizeSpeech(
         projectPath: String,

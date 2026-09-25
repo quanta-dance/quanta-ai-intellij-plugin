@@ -116,6 +116,8 @@ import org.jetbrains.jewel.ui.component.OutlinedButton
 import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.ui.component.TextField
 import org.jetbrains.jewel.ui.component.VerticallyScrollableContainer
+import java.awt.Toolkit
+import java.awt.datatransfer.StringSelection
 
 @Composable
 fun chatApp(
@@ -151,6 +153,7 @@ fun chatApp(
     val mcpConfigurationError by viewModel.mcpConfigurationErrorFlow.collectAsState(null)
     val delegatedTasks by viewModel.delegatedTasksFlow.collectAsState(emptyList())
     val channelEvents by viewModel.channelEventsFlow.collectAsState(emptyList())
+    val quantaAcpInvite by viewModel.quantaAcpInviteFlow.collectAsState(null)
     val hasRunningAgentWork = delegatedTasks.any { it.status == DelegatedTaskStatusDto.RUNNING }
     val activeSession = sessions.firstOrNull { it.isActive }
     val microphoneService = remember(project) { project.service<FrontendMicrophoneService>() }
@@ -356,6 +359,7 @@ fun chatApp(
                     acpAgents = acpAgents,
                     acpDiscoveryLoading = acpDiscoveryLoading,
                     allowedAcpAgentIds = allowedAcpAgentIds,
+                    quantaAcpInvite = quantaAcpInvite,
                     onSetAgenticEnabled = { enabled ->
                         agenticEnabled = enabled
                         FrontendQuantaSettingsState.instance.state.agenticEnabled = enabled
@@ -363,12 +367,21 @@ fun chatApp(
                     },
                     onRefresh = { viewModel.onRefreshAcpAgents() },
                     onSetAcpAllowed = { agent, allowed ->
-                        val action = if (allowed) "Add" else "Remove"
+                        val removeSharedPeer = !allowed && agent.isJoinedQuantaAcpPeer()
+                        val action =
+                            when {
+                                allowed -> "Add"
+                                removeSharedPeer -> "Remove shared ACP"
+                                else -> "Remove"
+                            }
                         val message =
                             if (allowed) {
                                 "Add ${agent.name} to this chat and turn on agentic team mode?\n\n" +
                                     "This independent external ACP agent may receive task context and access this project " +
                                     "using its own tools.\n\n${agent.transportDescription()}"
+                            } else if (removeSharedPeer) {
+                                "Remove ${agent.name} from this chat and forget this shared Quanta ACP peer? " +
+                                    "It will no longer appear in the roster."
                             } else {
                                 "Remove ${agent.name} from this chat? Any active work for this agent will be stopped."
                             }
@@ -382,14 +395,21 @@ fun chatApp(
                                 Messages.getQuestionIcon(),
                             ) == Messages.YES
                         if (approved) {
-                            val enableAgenticMode = allowed && !agenticEnabled
-                            if (enableAgenticMode) {
-                                agenticEnabled = true
-                                FrontendQuantaSettingsState.instance.state.agenticEnabled = true
+                            if (removeSharedPeer) {
+                                viewModel.onRemoveJoinedQuantaAcpAgent(agent.id)
+                            } else {
+                                val enableAgenticMode = allowed && !agenticEnabled
+                                if (enableAgenticMode) {
+                                    agenticEnabled = true
+                                    FrontendQuantaSettingsState.instance.state.agenticEnabled = true
+                                }
+                                viewModel.onSetAcpAgentAllowed(agent.id, allowed, enableAgenticMode)
                             }
-                            viewModel.onSetAcpAgentAllowed(agent.id, allowed, enableAgenticMode)
                         }
                     },
+                    onCreateQuantaAcpShare = viewModel::onCreateQuantaAcpShare,
+                    onJoinQuantaAcpShare = viewModel::onJoinQuantaAcpShare,
+                    onStopQuantaAcpShare = viewModel::onStopQuantaAcpShare,
                     onDismiss = { showAgenticTeamDialog = false },
                 )
             }
@@ -577,11 +597,22 @@ private fun agenticTeamDialog(
     acpAgents: List<AcpAgentDto>,
     acpDiscoveryLoading: Boolean,
     allowedAcpAgentIds: Set<String>,
+    quantaAcpInvite: String?,
     onSetAgenticEnabled: (Boolean) -> Unit,
     onRefresh: () -> Unit,
     onSetAcpAllowed: (AcpAgentDto, Boolean) -> Unit,
+    onCreateQuantaAcpShare: () -> Unit,
+    onJoinQuantaAcpShare: (String) -> Unit,
+    onStopQuantaAcpShare: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    var joinInvite by remember { mutableStateOf("") }
+    val joinInviteFieldState = rememberTextFieldState()
+    LaunchedEffect(Unit) {
+        snapshotFlow { joinInviteFieldState.text.toString() }
+            .distinctUntilChanged()
+            .collect { joinInvite = it }
+    }
     Dialog(onDismissRequest = onDismiss) {
         Column(
             modifier =
@@ -609,6 +640,43 @@ private fun agenticTeamDialog(
             }
 
             Divider(orientation = Orientation.Horizontal)
+            Text("Quanta ACP collaboration", fontWeight = FontWeight.SemiBold)
+            Text(
+                "Share a one-time localhost invite with another Quanta IDE session. A joined session appears below as an external ACP teammate.",
+                style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onCreateQuantaAcpShare) { Text("Share ACP") }
+                if (quantaAcpInvite != null) {
+                    OutlinedButton(
+                        onClick = {
+                            Toolkit.getDefaultToolkit().systemClipboard.setContents(
+                                StringSelection(quantaAcpInvite),
+                                null,
+                            )
+                        },
+                    ) {
+                        Text("Copy invite")
+                    }
+                    OutlinedButton(onClick = onStopQuantaAcpShare) { Text("Stop sharing") }
+                }
+            }
+            quantaAcpInvite?.let { invite ->
+                Text(
+                    invite,
+                    style = JewelTheme.defaultTextStyle.copy(fontSize = 11.sp, color = Color(0xFF67C587)),
+                )
+            }
+            TextField(
+                state = joinInviteFieldState,
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("Paste quanta-acp:// invite") },
+            )
+            OutlinedButton(onClick = { onJoinQuantaAcpShare(joinInvite) }, enabled = joinInvite.isNotBlank()) {
+                Text("Join ACP")
+            }
+
+            Divider(orientation = Orientation.Horizontal)
             Text("Quanta teammates", fontWeight = FontWeight.SemiBold)
             Text(
                 if (internalAgents.isEmpty()) "No internal teammates active." else "${internalAgents.size} internal teammate(s) active.",
@@ -625,28 +693,27 @@ private fun agenticTeamDialog(
                     Text(if (acpDiscoveryLoading) "Discovering…" else "Refresh")
                 }
             }
-            when {
-                acpDiscoveryLoading -> {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        loadingIndicator()
-                        Text(
-                            "Discovering available ACP agents…",
-                            style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
-                        )
-                    }
+            if (acpDiscoveryLoading) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    loadingIndicator()
+                    Text(
+                        "Refreshing available ACP agents…",
+                        style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
+                    )
                 }
-
-                acpAgents.isEmpty() -> {
+            }
+            when {
+                acpAgents.isEmpty() && !acpDiscoveryLoading -> {
                     Text(
                         "No available ACP agents found. Refresh after installing or configuring an agent.",
                         style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
                     )
                 }
 
-                else -> {
+                acpAgents.isNotEmpty() -> {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         acpAgents.forEach { agent ->
                             val allowed = agent.id in allowedAcpAgentIds
@@ -678,7 +745,13 @@ private fun agenticTeamDialog(
                                     )
                                 }
                                 OutlinedButton(onClick = { onSetAcpAllowed(agent, !allowed) }) {
-                                    Text(if (allowed) "Remove" else "Add to chat")
+                                    Text(
+                                        when {
+                                            agent.isJoinedQuantaAcpPeer() -> "Remove shared ACP"
+                                            allowed -> "Remove"
+                                            else -> "Add to chat"
+                                        },
+                                    )
                                 }
                             }
                         }
@@ -692,6 +765,8 @@ private fun agenticTeamDialog(
         }
     }
 }
+
+private fun AcpAgentDto.isJoinedQuantaAcpPeer(): Boolean = command == listOf("quanta-acp")
 
 private fun AcpAgentDto.transportDescription(): String =
     if (executablePath.startsWith("tcp://")) {
