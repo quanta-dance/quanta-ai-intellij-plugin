@@ -442,36 +442,23 @@ class McpClientService(
     }
 
     /**
-     * Returns cached MCP tools immediately for remote servers and refreshes the cache in the background.
+     * Returns the last discovered tool list immediately and schedules discovery when it is absent.
      *
-     * A URL server can require interactive OAuth. Waiting for its browser callback here would make callers
-     * such as response construction block for up to the OAuth timeout when the user declines to open the
-     * browser. Once remote discovery has completed, including with an empty tool list, reuse that result
-     * until configuration reconciliation invalidates it. Re-listing tools for every model turn needlessly
-     * adds remote work and repeatedly rebuilds identical OpenAI tool definitions.
-     * Local stdio servers retain the synchronous behavior because no user interaction is needed.
+     * Tool-schema construction runs for every model response, so it must never reconnect a server,
+     * parse configuration, or wait for stdio/HTTP discovery on an agent-turn thread. Configuration
+     * refresh and discovery are owned by the MCP lifecycle executor instead.
      */
     fun getTools(server: String): List<Tool> {
-        refreshIfConfigChanged()
-        val configuredServer = serversConfig.mcpServers[server]
-        if (requiresInteractiveMcpConnection(configuredServer)) {
-            toolCache[server]?.let { cached ->
-                QDLog.debug(log) { "getTools[$server]: using cached remote tool list (${cached.size} tool(s))" }
-                return cached
-            }
-            discoverToolsAsync(server)
-            return emptyList()
-        }
-        toolCache[server]?.let { cached ->
-            if (cached.isNotEmpty()) return cached
-        }
-        return try {
-            discoverTools(server)
-        } catch (e: Exception) {
-            QDLog.warn(log) { "getTools($server): discovery failed - ${e.message}" }
-            toolCache[server] ?: emptyList()
-        }
+        toolCache[server]?.let { return it }
+        discoverToolsAsync(server)
+        return emptyList()
     }
+
+    /** Immutable view used by response construction; it never triggers configuration refresh or I/O. */
+    fun cachedToolsByServer(): Map<String, List<Tool>> =
+        serversConfig.mcpServers.keys
+            .sorted()
+            .associateWith { server -> toolCache[server].orEmpty() }
 
     private fun causeDetails(error: Throwable): String =
         generateSequence(error as Throwable?) { it.cause }
@@ -767,10 +754,7 @@ class McpClientService(
         }
     }
 
-    fun listServers(): List<String> {
-        refreshIfConfigChanged()
-        return serversConfig.mcpServers.keys.sorted()
-    }
+    fun listServers(): List<String> = serversConfig.mcpServers.keys.sorted()
 
     fun getServerStatus(name: String): ServerStatus {
         val connected = clients.containsKey(name)

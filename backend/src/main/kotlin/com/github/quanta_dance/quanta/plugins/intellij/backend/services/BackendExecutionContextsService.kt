@@ -39,6 +39,7 @@ class BackendExecutionContextsService : Disposable {
     private val mcpLifecycleExecutor = namedSinglePool(prefix = "qd-mcp-lifecycle")
     private val agentOrchestrationExecutor = namedFixedPool(size = 4, prefix = "qd-agent-orch")
     private val acpPeerTaskExecutor = namedFixedPool(size = 2, prefix = "qd-acp-peer")
+    private val toolCatalogExecutor = namedSinglePool(prefix = "qd-tool-catalog")
     private val chatPublicationExecutor = namedSinglePool(prefix = "qd-chat-pub")
     private val voiceStreamingExecutor = namedSinglePool(prefix = "qd-voice-stream")
 
@@ -46,6 +47,7 @@ class BackendExecutionContextsService : Disposable {
     val mcpLifecycleDispatcher: ExecutorCoroutineDispatcher = mcpLifecycleExecutor.asCoroutineDispatcher()
     val agentOrchestrationDispatcher: ExecutorCoroutineDispatcher = agentOrchestrationExecutor.asCoroutineDispatcher()
     val acpPeerTaskDispatcher: ExecutorCoroutineDispatcher = acpPeerTaskExecutor.asCoroutineDispatcher()
+    val toolCatalogDispatcher: ExecutorCoroutineDispatcher = toolCatalogExecutor.asCoroutineDispatcher()
     val chatPublicationDispatcher: ExecutorCoroutineDispatcher = chatPublicationExecutor.asCoroutineDispatcher()
     val voiceStreamingDispatcher: ExecutorCoroutineDispatcher = voiceStreamingExecutor.asCoroutineDispatcher()
 
@@ -53,6 +55,7 @@ class BackendExecutionContextsService : Disposable {
     val mcpLifecycleScope: CoroutineScope = CoroutineScope(SupervisorJob() + mcpLifecycleDispatcher)
     val agentOrchestrationScope: CoroutineScope = CoroutineScope(SupervisorJob() + agentOrchestrationDispatcher)
     val acpPeerTaskScope: CoroutineScope = CoroutineScope(SupervisorJob() + acpPeerTaskDispatcher)
+    val toolCatalogScope: CoroutineScope = CoroutineScope(SupervisorJob() + toolCatalogDispatcher)
     val chatPublicationScope: CoroutineScope = CoroutineScope(SupervisorJob() + chatPublicationDispatcher)
     val voiceStreamingScope: CoroutineScope = CoroutineScope(SupervisorJob() + voiceStreamingDispatcher)
 
@@ -62,6 +65,7 @@ class BackendExecutionContextsService : Disposable {
             mcpLifecycleScope,
             agentOrchestrationScope,
             acpPeerTaskScope,
+            toolCatalogScope,
             chatPublicationScope,
             voiceStreamingScope,
         ).forEach { scope ->
@@ -72,6 +76,7 @@ class BackendExecutionContextsService : Disposable {
             mcpLifecycleDispatcher,
             agentOrchestrationDispatcher,
             acpPeerTaskDispatcher,
+            toolCatalogDispatcher,
             chatPublicationDispatcher,
             voiceStreamingDispatcher,
         ).forEach { dispatcher ->
