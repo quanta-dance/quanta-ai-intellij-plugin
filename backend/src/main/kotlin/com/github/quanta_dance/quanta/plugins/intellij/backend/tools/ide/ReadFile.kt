@@ -16,6 +16,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolExecutio
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolPresentationProvider
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
@@ -304,7 +305,7 @@ data class ReadFile
 
                     val currentCtx =
                         try {
-                            CurrentFileContextProvider(project).getCurrent()
+                            project.service<CurrentFileContextProvider>().getCurrent()
                         } catch (_: Throwable) {
                             null
                         }

@@ -43,7 +43,7 @@ class AgentContextInjector(
         val needBaseContext = (previousId == null) || (!initialContextInjectedThisIdeSession)
 
         try {
-            val ctx = ProjectAgentsFileManager(project).readAgentsFile(maxChars = 8_000)
+            val ctx = project.service<ProjectContextSnapshotService>().agentsMd()
             if (ctx.isNotBlank()) {
                 val hash = ctx.hashCode()
                 if (needBaseContext || lastInjectedAgentsMdHash == null || lastInjectedAgentsMdHash != hash) {
@@ -65,11 +65,13 @@ class AgentContextInjector(
         }
 
         try {
-            val landscape = ProjectLandscapeContextBuilder(project).buildMessage()
-            val hash = landscape.hashCode()
-            if (needBaseContext || lastInjectedProjectLandscapeHash == null || lastInjectedProjectLandscapeHash != hash) {
-                inputs.add(0, systemMessageFactory(landscape))
-                lastInjectedProjectLandscapeHash = hash
+            val landscape = project.service<ProjectContextSnapshotService>().landscape()
+            if (landscape.isNotBlank()) {
+                val hash = landscape.hashCode()
+                if (needBaseContext || lastInjectedProjectLandscapeHash == null || lastInjectedProjectLandscapeHash != hash) {
+                    inputs.add(0, systemMessageFactory(landscape))
+                    lastInjectedProjectLandscapeHash = hash
+                }
             }
         } catch (_: Throwable) {
         }

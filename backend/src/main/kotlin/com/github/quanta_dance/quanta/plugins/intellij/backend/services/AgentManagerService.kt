@@ -464,7 +464,7 @@ class AgentManagerService(
             )
         }
         try {
-            val agentsText = ProjectAgentsFileManager(project).readAgentsFile(maxChars = 8_000)
+            val agentsText = project.service<ProjectContextSnapshotService>().agentsMd()
             if (agentsText.isNotBlank()) {
                 retryInputs.add(
                     ResponseInputItem.ofMessage(
@@ -1016,7 +1016,7 @@ class AgentManagerService(
 
                     // Provide project-specific instructions from repository-root AGENTS.md (if present)
                     try {
-                        val agentsText = ProjectAgentsFileManager(project).readAgentsFile(maxChars = 8_000)
+                        val agentsText = project.service<ProjectContextSnapshotService>().agentsMd()
                         if (agentsText.isNotBlank()) {
                             inputs.add(
                                 ResponseInputItem.ofMessage(
@@ -1295,7 +1295,7 @@ class AgentManagerService(
 
                 // Provide project-specific instructions from repository-root AGENTS.md (if present)
                 try {
-                    val agentsText = ProjectAgentsFileManager(project).readAgentsFile(maxChars = 8_000)
+                    val agentsText = project.service<ProjectContextSnapshotService>().agentsMd()
                     if (agentsText.isNotBlank()) {
                         inputs.add(
                             ResponseInputItem.ofMessage(

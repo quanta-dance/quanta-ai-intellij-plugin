@@ -30,7 +30,6 @@ import com.intellij.openapi.project.Project
 import com.openai.models.responses.EasyInputMessage
 import com.openai.models.responses.ResponseInputItem
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -938,7 +937,7 @@ class ChatConversationService(
     }
 
     private fun buildContextMessage(): String? {
-        val ctx = runCatching { CurrentFileContextProvider(project).getCurrent() }.getOrNull() ?: return null
+        val ctx = runCatching { project.service<CurrentFileContextProvider>().getCurrent() }.getOrNull() ?: return null
         val caretSuffix =
             buildString {
                 val caretLine = ctx.caretLine

@@ -10,6 +10,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.project.CurrentFi
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
@@ -59,7 +60,7 @@ class ReadPsiBlockAtPosition : ToolInterface<Map<String, Any?>> {
         val base = PathUtils.projectRootPath(project) ?: return err("Project base path not found.")
         val ctx =
             try {
-                CurrentFileContextProvider(project).getCurrent()
+                project.service<CurrentFileContextProvider>().getCurrent()
             } catch (_: Throwable) {
                 null
             }
