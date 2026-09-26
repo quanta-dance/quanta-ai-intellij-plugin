@@ -10,8 +10,11 @@ import kotlinx.coroutines.ExecutorCoroutineDispatcher
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.cancel
+import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 
 /**
  * Owns isolated execution contexts for backend subsystems that should not contend with each other.
@@ -37,15 +40,21 @@ class BackendExecutionContextsService : Disposable {
 
     private val mcpExecutor = namedFixedPool(size = 4, prefix = "qd-mcp")
     private val mcpLifecycleExecutor = namedSinglePool(prefix = "qd-mcp-lifecycle")
-    private val agentOrchestrationExecutor = namedFixedPool(size = 4, prefix = "qd-agent-orch")
-    private val acpPeerTaskExecutor = namedFixedPool(size = 2, prefix = "qd-acp-peer")
+    private val interactiveAgentExecutor =
+        namedBoundedFixedPool(size = 2, queueCapacity = 32, prefix = "qd-agent-interactive")
+    private val backgroundAgentExecutor =
+        namedBoundedFixedPool(size = 2, queueCapacity = 32, prefix = "qd-agent-background")
+    private val toolExecutionExecutor = namedBoundedFixedPool(size = 4, queueCapacity = 32, prefix = "qd-tool-exec")
+    private val acpPeerTaskExecutor = namedBoundedFixedPool(size = 2, queueCapacity = 16, prefix = "qd-acp-peer")
     private val toolCatalogExecutor = namedSinglePool(prefix = "qd-tool-catalog")
     private val chatPublicationExecutor = namedSinglePool(prefix = "qd-chat-pub")
     private val voiceStreamingExecutor = namedSinglePool(prefix = "qd-voice-stream")
 
     val mcpDispatcher: ExecutorCoroutineDispatcher = mcpExecutor.asCoroutineDispatcher()
     val mcpLifecycleDispatcher: ExecutorCoroutineDispatcher = mcpLifecycleExecutor.asCoroutineDispatcher()
-    val agentOrchestrationDispatcher: ExecutorCoroutineDispatcher = agentOrchestrationExecutor.asCoroutineDispatcher()
+    val interactiveAgentDispatcher: ExecutorCoroutineDispatcher = interactiveAgentExecutor.asCoroutineDispatcher()
+    val backgroundAgentDispatcher: ExecutorCoroutineDispatcher = backgroundAgentExecutor.asCoroutineDispatcher()
+    val toolExecutionDispatcher: ExecutorCoroutineDispatcher = toolExecutionExecutor.asCoroutineDispatcher()
     val acpPeerTaskDispatcher: ExecutorCoroutineDispatcher = acpPeerTaskExecutor.asCoroutineDispatcher()
     val toolCatalogDispatcher: ExecutorCoroutineDispatcher = toolCatalogExecutor.asCoroutineDispatcher()
     val chatPublicationDispatcher: ExecutorCoroutineDispatcher = chatPublicationExecutor.asCoroutineDispatcher()
@@ -53,7 +62,9 @@ class BackendExecutionContextsService : Disposable {
 
     val mcpScope: CoroutineScope = CoroutineScope(SupervisorJob() + mcpDispatcher)
     val mcpLifecycleScope: CoroutineScope = CoroutineScope(SupervisorJob() + mcpLifecycleDispatcher)
-    val agentOrchestrationScope: CoroutineScope = CoroutineScope(SupervisorJob() + agentOrchestrationDispatcher)
+    val interactiveAgentScope: CoroutineScope = CoroutineScope(SupervisorJob() + interactiveAgentDispatcher)
+    val backgroundAgentScope: CoroutineScope = CoroutineScope(SupervisorJob() + backgroundAgentDispatcher)
+    val toolExecutionScope: CoroutineScope = CoroutineScope(SupervisorJob() + toolExecutionDispatcher)
     val acpPeerTaskScope: CoroutineScope = CoroutineScope(SupervisorJob() + acpPeerTaskDispatcher)
     val toolCatalogScope: CoroutineScope = CoroutineScope(SupervisorJob() + toolCatalogDispatcher)
     val chatPublicationScope: CoroutineScope = CoroutineScope(SupervisorJob() + chatPublicationDispatcher)
@@ -63,7 +74,9 @@ class BackendExecutionContextsService : Disposable {
         listOf(
             mcpScope,
             mcpLifecycleScope,
-            agentOrchestrationScope,
+            interactiveAgentScope,
+            backgroundAgentScope,
+            toolExecutionScope,
             acpPeerTaskScope,
             toolCatalogScope,
             chatPublicationScope,
@@ -74,7 +87,9 @@ class BackendExecutionContextsService : Disposable {
         listOf(
             mcpDispatcher,
             mcpLifecycleDispatcher,
-            agentOrchestrationDispatcher,
+            interactiveAgentDispatcher,
+            backgroundAgentDispatcher,
+            toolExecutionDispatcher,
             acpPeerTaskDispatcher,
             toolCatalogDispatcher,
             chatPublicationDispatcher,
@@ -83,4 +98,19 @@ class BackendExecutionContextsService : Disposable {
             dispatcher.close()
         }
     }
+
+    private fun namedBoundedFixedPool(
+        size: Int,
+        queueCapacity: Int,
+        prefix: String,
+    ): ExecutorService =
+        ThreadPoolExecutor(
+            size,
+            size,
+            0L,
+            TimeUnit.MILLISECONDS,
+            ArrayBlockingQueue(queueCapacity),
+            { runnable -> Thread(runnable, "$prefix-${System.nanoTime()}").apply { isDaemon = true } },
+            ThreadPoolExecutor.AbortPolicy(),
+        )
 }

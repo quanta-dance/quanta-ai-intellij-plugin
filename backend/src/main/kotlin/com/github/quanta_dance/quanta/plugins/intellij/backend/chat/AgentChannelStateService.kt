@@ -191,7 +191,7 @@ class AgentChannelStateService(
             )
             manager.sendMessageAsync(agentId, task.requestText, task.id).whenComplete { _, _ ->
                 runningTaskIds.remove(task.id)
-                executionContexts.agentOrchestrationScope.launch {
+                executionContexts.backgroundAgentScope.launch {
                     triggerReadyTasks()
                 }
             }

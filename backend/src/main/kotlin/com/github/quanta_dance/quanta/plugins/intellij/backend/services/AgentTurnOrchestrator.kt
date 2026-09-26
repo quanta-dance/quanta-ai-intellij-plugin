@@ -16,10 +16,12 @@ import com.intellij.openapi.project.Project
 import com.openai.models.responses.ResponseFunctionToolCall
 import com.openai.models.responses.ResponseInputItem
 import com.openai.models.responses.StructuredResponse
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 
 /**
  * Runs the main agent-turn orchestration loop for OpenAI-backed chat turns.
@@ -44,6 +46,7 @@ class AgentTurnOrchestrator(
     ) -> Pair<StructuredResponse<OpenAIResponse>, String?>,
     private val systemMessage: (String) -> ResponseInputItem,
     private val persistAndShow: (role: String, agentLabel: String, text: String) -> Unit,
+    private val toolExecutionDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
     private val objectMapper = ObjectMapper()
 
@@ -205,6 +208,36 @@ class AgentTurnOrchestrator(
             )
         }
 
+    private suspend fun executeParallelPlannedTool(
+        plan: ToolExecutionPlan,
+        agentLabel: String,
+        toolExecutionService: ToolExecutionService,
+        parallelBatchSize: Int,
+    ): ToolExecutionOutcome {
+        val queuedAtNanos = System.nanoTime()
+        return withContext(toolExecutionDispatcher) {
+            val startedAtNanos = System.nanoTime()
+            val queueWaitMs = (startedAtNanos - queuedAtNanos) / 1_000_000
+            QDLog.info(thisLogger()) {
+                "Tool execution started name=${plan.functionCall.name()} callId=${plan.callId} queueWaitMs=$queueWaitMs"
+            }
+            try {
+                executePlannedTool(
+                    plan = plan,
+                    agentLabel = agentLabel,
+                    toolExecutionService = toolExecutionService,
+                    executionMode = "parallel",
+                    parallelBatchSize = parallelBatchSize,
+                )
+            } finally {
+                val executionMs = (System.nanoTime() - startedAtNanos) / 1_000_000
+                QDLog.info(thisLogger()) {
+                    "Tool execution completed name=${plan.functionCall.name()} callId=${plan.callId} executionMs=$executionMs"
+                }
+            }
+        }
+    }
+
     private fun applyToolExecutionOutcome(
         outcome: ToolExecutionOutcome,
         guardrailState: TurnGuardrailState,
@@ -310,20 +343,23 @@ class AgentTurnOrchestrator(
                         ),
                     )
                 } else {
-                    runBlocking {
-                        parallelPlans
-                            .map { batchPlan ->
-                                async(Dispatchers.IO) {
-                                    executePlannedTool(
-                                        plan = batchPlan,
-                                        agentLabel = agentLabel,
-                                        toolExecutionService = toolExecutionService,
-                                        executionMode = "parallel",
-                                        parallelBatchSize = parallelPlans.size,
-                                    )
-                                }
-                            }.awaitAll()
-                    }
+                    parallelPlans
+                        .chunked(MAX_PARALLEL_TOOL_EXECUTIONS)
+                        .flatMap { toolBatch ->
+                            runBlocking {
+                                toolBatch
+                                    .map { batchPlan ->
+                                        async {
+                                            executeParallelPlannedTool(
+                                                plan = batchPlan,
+                                                agentLabel = agentLabel,
+                                                toolExecutionService = toolExecutionService,
+                                                parallelBatchSize = toolBatch.size,
+                                            )
+                                        }
+                                    }.awaitAll()
+                            }
+                        }
                 }
             outcomes.forEach { outcome ->
                 applyToolExecutionOutcome(
@@ -534,5 +570,6 @@ class AgentTurnOrchestrator(
     companion object {
         private const val ACP_STATUS_TOOL = "GetAcpDelegationStatusTool"
         private const val MAX_ACP_STATUS_CHECKS_PER_TURN = 1
+        private const val MAX_PARALLEL_TOOL_EXECUTIONS = 4
     }
 }

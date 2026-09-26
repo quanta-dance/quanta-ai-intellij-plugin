@@ -13,6 +13,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.QuantaAI
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionItem
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
+import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
 import com.openai.client.OpenAIClient
@@ -57,6 +58,7 @@ class OpenAIService(
             createResponse = ::createResponse,
             systemMessage = ::systemMessage,
             persistAndShow = ::persistAndShow,
+            toolExecutionDispatcher = project.service<BackendExecutionContextsService>().toolExecutionDispatcher,
         )
     private val sessionCoordinator =
         OpenAISessionCoordinator(

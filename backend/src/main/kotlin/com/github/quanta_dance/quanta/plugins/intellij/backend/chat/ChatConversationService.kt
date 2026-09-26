@@ -29,6 +29,7 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.openai.models.responses.EasyInputMessage
 import com.openai.models.responses.ResponseInputItem
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -618,7 +619,7 @@ class ChatConversationService(
         if (sessionId != persistence.getActiveSessionId()) return
         val scheduled = acpContinuationScheduled.computeIfAbsent(sessionId) { AtomicBoolean() }
         if (!scheduled.compareAndSet(false, true)) return
-        executionContexts.agentOrchestrationScope.launch {
+        executionContexts.backgroundAgentScope.launch {
             try {
                 runAcpCoordinationTurn(sessionId)
             } finally {
@@ -650,6 +651,7 @@ class ChatConversationService(
                         thinkingMessageIdProvider = { thinkingMessageId },
                         onThinkingMessageIdChanged = { thinkingMessageId = it },
                         onFirstAssistantMessageShown = { firstAssistantMessageShown = true },
+                        executionClass = ManagerTurnExecution.BACKGROUND,
                     )
                 if (!firstAssistantMessageShown) {
                     replaceMessage(thinkingMessageId, chatMessageFactory.createAIMessage(responseText))
@@ -786,7 +788,7 @@ class ChatConversationService(
             try {
                 val inputs = buildReminderRequestInputs(reminderContext)
                 val (responseText, _) =
-                    awaitDetachedAgentTurn {
+                    awaitBackgroundAgentTurn {
                         openAIService.agentTurn(
                             inputs = inputs,
                             previousId = null,
@@ -837,13 +839,42 @@ class ChatConversationService(
             )
         }
 
-    private suspend fun <T> awaitDetachedAgentTurn(block: () -> T): T = executionContexts.agentOrchestrationScope.async { block() }.await()
+    private enum class ManagerTurnExecution {
+        INTERACTIVE,
+        BACKGROUND,
+    }
 
-    /**
-     * Keeps inbound peer work off the manager-orchestration pool so a busy local team cannot delay
-     * an ACP response until the caller times out.
-     */
-    private suspend fun <T> awaitAcpPeerTaskTurn(block: () -> T): T = executionContexts.acpPeerTaskScope.async { block() }.await()
+    private suspend fun <T> awaitInteractiveAgentTurn(block: () -> T): T =
+        awaitAgentTurn("interactive", executionContexts.interactiveAgentScope, block)
+
+    private suspend fun <T> awaitBackgroundAgentTurn(block: () -> T): T =
+        awaitAgentTurn("background", executionContexts.backgroundAgentScope, block)
+
+    private suspend fun <T> awaitAcpPeerTaskTurn(block: () -> T): T = awaitAgentTurn("acp-peer", executionContexts.acpPeerTaskScope, block)
+
+    private suspend fun <T> awaitAgentTurn(
+        executionClass: String,
+        scope: CoroutineScope,
+        block: () -> T,
+    ): T {
+        val queuedAtNanos = System.nanoTime()
+        return scope
+            .async {
+                val startedAtNanos = System.nanoTime()
+                val queueWaitMs = (startedAtNanos - queuedAtNanos) / 1_000_000
+                QDLog.info(Logger.getInstance(ChatConversationService::class.java)) {
+                    "Agent turn execution started class=$executionClass queueWaitMs=$queueWaitMs"
+                }
+                try {
+                    block()
+                } finally {
+                    val executionMs = (System.nanoTime() - startedAtNanos) / 1_000_000
+                    QDLog.info(Logger.getInstance(ChatConversationService::class.java)) {
+                        "Agent turn execution completed class=$executionClass executionMs=$executionMs"
+                    }
+                }
+            }.await()
+    }
 
     private fun buildHistory(): List<ChatTurn> =
         _messages.value
@@ -869,10 +900,11 @@ class ChatConversationService(
         thinkingMessageIdProvider: () -> String,
         onThinkingMessageIdChanged: (String) -> Unit,
         onFirstAssistantMessageShown: () -> Unit,
+        executionClass: ManagerTurnExecution = ManagerTurnExecution.INTERACTIVE,
     ): Pair<String, String?> {
         var activeToolMessageId: String? = null
 
-        return awaitDetachedAgentTurn {
+        val executeTurn: () -> Pair<String, String?> = {
             openAIService.agentTurn(
                 inputs = inputs,
                 previousId = null,
@@ -918,6 +950,10 @@ class ChatConversationService(
                     )
                 },
             )
+        }
+        return when (executionClass) {
+            ManagerTurnExecution.INTERACTIVE -> awaitInteractiveAgentTurn(executeTurn)
+            ManagerTurnExecution.BACKGROUND -> awaitBackgroundAgentTurn(executeTurn)
         }
     }
 
