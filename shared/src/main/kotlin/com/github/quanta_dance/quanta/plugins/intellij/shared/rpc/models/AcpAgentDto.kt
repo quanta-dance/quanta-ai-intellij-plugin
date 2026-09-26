@@ -16,6 +16,8 @@ data class AcpAgentDto(
     val environment: Map<String, String> = emptyMap(),
     val version: String? = null,
     val protocolVersion: Int,
+    /** Stable identity advertised by a paired Quanta ACP peer, independent of its transient port/token. */
+    val peerIdentity: String? = null,
     /** A short-lived secret used only to pair with a Quanta-hosted local TCP endpoint. */
     val connectionToken: String? = null,
 )

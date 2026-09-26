@@ -29,17 +29,26 @@ class AcpAgentDiscoveryService(
 ) {
     fun discover(timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS): List<AcpAgentDto> {
         val applicationCandidates =
-            defaultApplicationCandidates() +
-                manualApplicationCandidates() +
+            manualApplicationCandidates() +
                 jetBrainsConfigService.loadApplicationCandidates().map { configured ->
                     ApplicationCandidate(configured.command, configured.name, configured.environment)
-                }
+                } +
+                defaultApplicationCandidates()
+        val resolvedApplicationCandidates =
+            applicationCandidates
+                .mapNotNull { candidate -> resolveApplicationCandidate(candidate) }
+                .distinctBy(ResolvedApplicationCandidate::executablePath)
         QDLog.debug(logger) {
-            "ACP discovery started for ${applicationCandidates.size} application and " +
+            "ACP discovery started for ${resolvedApplicationCandidates.size} unique application and " +
                 "${manualTcpCandidates().size} TCP candidate(s)"
         }
         return (
-            applicationCandidates.mapNotNull { candidate -> discoverApplication(candidate, timeoutMillis) } +
+            resolvedApplicationCandidates.mapNotNull { candidate ->
+                discoverApplication(
+                    candidate,
+                    timeoutMillis,
+                )
+            } +
                 manualTcpCandidates().mapNotNull { endpoint -> discoverTcp(endpoint, timeoutMillis) }
         ).distinctBy { it.id }
             .also { agents ->
@@ -52,21 +61,26 @@ class AcpAgentDiscoveryService(
             }
     }
 
-    private fun discoverApplication(
-        candidate: ApplicationCandidate,
-        timeoutMillis: Long,
-    ): AcpAgentDto? {
-        val command = candidate.command
+    private fun resolveApplicationCandidate(candidate: ApplicationCandidate): ResolvedApplicationCandidate? {
         val executablePath =
-            resolveExecutable(command.first()) ?: run {
-                QDLog.debug(logger) { "ACP candidate not found on PATH: ${command.joinToString(" ")}" }
+            resolveExecutable(candidate.command.first()) ?: run {
+                QDLog.debug(logger) { "ACP candidate not found on PATH: ${candidate.command.joinToString(" ")}" }
                 return null
             }
+        return ResolvedApplicationCandidate(candidate, executablePath)
+    }
+
+    private fun discoverApplication(
+        candidate: ResolvedApplicationCandidate,
+        timeoutMillis: Long,
+    ): AcpAgentDto? {
+        val command = candidate.application.command
+        val executablePath = candidate.executablePath
         QDLog.debug(logger) {
             "ACP candidate found: ${command.joinToString(" ")} (resolved to $executablePath); starting handshake"
         }
         val process =
-            runCatching { processFactory(listOf(executablePath) + command.drop(1), candidate.environment) }
+            runCatching { processFactory(listOf(executablePath) + command.drop(1), candidate.application.environment) }
                 .onFailure { error ->
                     QDLog.debug(logger) {
                         "ACP handshake could not start for ${command.joinToString(" ")}: ${error.message}"
@@ -86,7 +100,13 @@ class AcpAgentDiscoveryService(
                     }
                     return null
                 }
-            agentFromResponse(response, command, executablePath, candidate.name, candidate.environment)
+            agentFromResponse(
+                response,
+                command,
+                executablePath,
+                candidate.application.name,
+                candidate.application.environment,
+            )
         } catch (error: Exception) {
             QDLog.debug(logger) { "ACP handshake failed for ${command.joinToString(" ")}: ${error.message}" }
             null
@@ -138,7 +158,7 @@ class AcpAgentDiscoveryService(
             return null
         }
         return AcpAgentDto(
-            id = UUID.nameUUIDFromBytes((endpointPath + command + environment.toSortedMap()).toByteArray()).toString(),
+            id = applicationAgentId(endpointPath, command, environment),
             name = AGENT_NAME.find(response)?.groupValues?.get(1) ?: configuredName ?: command.first(),
             command = command,
             executablePath = endpointPath,
@@ -203,10 +223,25 @@ class AcpAgentDiscoveryService(
             ?.absolutePath
     }
 
+    private fun applicationAgentId(
+        executablePath: String,
+        command: List<String>,
+        environment: Map<String, String>,
+    ): String =
+        UUID
+            .nameUUIDFromBytes(
+                (executablePath + command.drop(1) + environment.toSortedMap()).toByteArray(),
+            ).toString()
+
     private data class ApplicationCandidate(
         val command: List<String>,
         val name: String? = null,
         val environment: Map<String, String> = emptyMap(),
+    )
+
+    private data class ResolvedApplicationCandidate(
+        val application: ApplicationCandidate,
+        val executablePath: String,
     )
 
     companion object {

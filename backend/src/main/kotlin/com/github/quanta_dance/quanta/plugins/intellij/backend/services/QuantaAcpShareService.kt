@@ -54,6 +54,7 @@ class QuantaAcpShareService(
     private data class PairingResponse(
         val connectionToken: String,
         val peerName: String,
+        val peerIdentity: String?,
     )
 
     private val logger = Logger.getInstance(QuantaAcpShareService::class.java)
@@ -62,6 +63,7 @@ class QuantaAcpShareService(
         Executors.newCachedThreadPool { runnable ->
             Thread(runnable, "qd-acp-share-${System.nanoTime()}").apply { isDaemon = true }
         }
+    private val localPeerIdentity = UUID.randomUUID().toString()
     private val joinedAgents = ConcurrentHashMap<String, AcpAgentDto>()
     private val reverseSessionsByAgentId = ConcurrentHashMap<String, HostSession>()
 
@@ -108,7 +110,8 @@ class QuantaAcpShareService(
             val (host, port, inviteToken) = parsed
             val pairing = pairWithHost(host, port, inviteToken, reverseSession)
             val endpoint = "tcp://$host:$port"
-            val id = UUID.nameUUIDFromBytes("$endpoint:${pairing.connectionToken}".toByteArray()).toString()
+            val peerIdentity = pairing.peerIdentity ?: "$endpoint:${pairing.connectionToken}"
+            val id = quantaPeerAgentId(peerIdentity)
             val agent =
                 AcpAgentDto(
                     id = id,
@@ -116,10 +119,10 @@ class QuantaAcpShareService(
                     command = listOf("quanta-acp"),
                     executablePath = endpoint,
                     protocolVersion = ACP_PROTOCOL_VERSION,
+                    peerIdentity = peerIdentity,
                     connectionToken = pairing.connectionToken,
                 )
-            joinedAgents[id] = agent
-            reverseSessionsByAgentId[id] = reverseSession
+            replaceJoinedAgent(agent, reverseSession)
             project.service<ChatConversationService>().setAcpAgentAllowed(id, true)
             QuantaAcpShareDto(peerName = agent.name, connected = true)
         }.getOrElse { error ->
@@ -195,7 +198,10 @@ class QuantaAcpShareService(
                                 .asText("Shared Quanta")
                         if (pairedWithInvite) {
                             connectedPeerName = peerName
-                            callbackEndpoint(quanta)?.let { callback -> registerPairedPeer(callback, peerName) }
+                            val peerIdentity = quanta.path("peerIdentity").asText().ifBlank { null }
+                            callbackEndpoint(quanta)?.let { callback ->
+                                registerPairedPeer(callback, peerName, peerIdentity)
+                            }
                                 ?: run {
                                     writeError(
                                         writer,
@@ -211,7 +217,11 @@ class QuantaAcpShareService(
                             mapOf(
                                 "protocolVersion" to ACP_PROTOCOL_VERSION,
                                 "agentInfo" to mapOf("name" to project.name, "version" to "quanta"),
-                                "quanta" to mapOf("connectionToken" to session.connectionToken),
+                                "quanta" to
+                                    mapOf(
+                                        "connectionToken" to session.connectionToken,
+                                        "peerIdentity" to localPeerIdentity,
+                                    ),
                             ),
                         )
                     }
@@ -303,6 +313,7 @@ class QuantaAcpShareService(
                                     "quanta" to
                                         mapOf(
                                             "token" to inviteToken,
+                                            "peerIdentity" to localPeerIdentity,
                                             "callback" to
                                                 mapOf(
                                                     "host" to "127.0.0.1",
@@ -333,6 +344,12 @@ class QuantaAcpShareService(
                         .path("name")
                         .asText()
                         .ifBlank { "Shared Quanta" },
+                peerIdentity =
+                    result
+                        .path("quanta")
+                        .path("peerIdentity")
+                        .asText()
+                        .ifBlank { null },
             )
         }
 
@@ -351,19 +368,44 @@ class QuantaAcpShareService(
     private fun registerPairedPeer(
         callback: CallbackEndpoint,
         peerName: String,
+        peerIdentity: String?,
     ) {
         val endpoint = "tcp://${callback.host}:${callback.port}"
-        val id = UUID.nameUUIDFromBytes("$endpoint:${callback.token}".toByteArray()).toString()
-        joinedAgents[id] =
+        val stablePeerIdentity = peerIdentity ?: "$endpoint:${callback.token}"
+        val id = quantaPeerAgentId(stablePeerIdentity)
+        val agent =
             AcpAgentDto(
                 id = id,
                 name = "Shared Quanta · $peerName",
                 command = listOf("quanta-acp"),
                 executablePath = endpoint,
                 protocolVersion = ACP_PROTOCOL_VERSION,
+                peerIdentity = stablePeerIdentity,
                 connectionToken = callback.token,
             )
+        replaceJoinedAgent(agent)
         project.service<ChatConversationService>().setAcpAgentAllowed(id, true)
+    }
+
+    private fun quantaPeerAgentId(peerIdentity: String): String = "quanta:$peerIdentity"
+
+    private fun replaceJoinedAgent(
+        agent: AcpAgentDto,
+        reverseSession: HostSession? = null,
+    ) {
+        val replacedAgentIds =
+            joinedAgents.entries
+                .filter { (_, existing) ->
+                    existing.peerIdentity == agent.peerIdentity ||
+                        (existing.peerIdentity == null && existing.name == agent.name)
+                }.map { it.key }
+        replacedAgentIds.forEach { replacedId ->
+            joinedAgents.remove(replacedId)
+            reverseSessionsByAgentId.remove(replacedId)?.server?.close()
+            project.service<ChatConversationService>().setAcpAgentAllowed(replacedId, false)
+        }
+        joinedAgents[agent.id] = agent
+        reverseSession?.let { reverseSessionsByAgentId[agent.id] = it }
     }
 
     private fun responseError(error: JsonNode): String = error.path("message").asText("Unknown Quanta ACP pairing error.")

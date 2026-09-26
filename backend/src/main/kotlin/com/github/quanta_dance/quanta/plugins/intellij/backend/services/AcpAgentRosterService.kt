@@ -5,9 +5,11 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.services
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AcpAgentDto
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Keeps the most recently verified ACP roster for one project.
@@ -20,21 +22,40 @@ import com.intellij.openapi.project.Project
 class AcpAgentRosterService(
     private val project: Project,
 ) {
-    @Volatile
-    private var discoveredAgents: List<AcpAgentDto> = emptyList()
+    private val refreshScheduled = AtomicBoolean(false)
 
+    @Volatile
+    private var discoveredAgents: List<AcpAgentDto> = project.service<AcpAgentRosterStateService>().agents()
+
+    @Synchronized
     fun refresh(): List<AcpAgentDto> {
-        discoveredAgents =
-            AcpAgentDiscoveryService(
-                manualAgents = BackendRuntimeSettingsService.instance.settings.manualAcpAgents,
-            ).discover()
-        return agents()
+        try {
+            discoveredAgents =
+                AcpAgentDiscoveryService(
+                    manualAgents = BackendRuntimeSettingsService.instance.settings.manualAcpAgents,
+                ).discover()
+            project.service<AcpAgentRosterStateService>().replace(discoveredAgents)
+            return agents(scheduleRefresh = false)
+        } finally {
+            refreshScheduled.set(false)
+        }
     }
 
-    fun agents(): List<AcpAgentDto> =
-        (discoveredAgents + project.service<QuantaAcpShareService>().joinedAcpAgents())
-            .distinctBy(AcpAgentDto::id)
+    fun agents(): List<AcpAgentDto> = agents(scheduleRefresh = true)
+
+    private fun agents(scheduleRefresh: Boolean): List<AcpAgentDto> {
+        if (scheduleRefresh) scheduleBackgroundRefresh()
+        return (discoveredAgents + project.service<QuantaAcpShareService>().joinedAcpAgents())
+            .distinctBy(::acpRosterIdentity)
             .sortedBy(AcpAgentDto::name)
+    }
+
+    private fun scheduleBackgroundRefresh() {
+        if (!refreshScheduled.compareAndSet(false, true)) return
+        ApplicationManager.getApplication().executeOnPooledThread { refresh() }
+    }
 
     fun find(agentId: String): AcpAgentDto? = agents().firstOrNull { it.id == agentId }
 }
+
+internal fun acpRosterIdentity(agent: AcpAgentDto): String = agent.peerIdentity?.let { "quanta:$it" } ?: agent.id
