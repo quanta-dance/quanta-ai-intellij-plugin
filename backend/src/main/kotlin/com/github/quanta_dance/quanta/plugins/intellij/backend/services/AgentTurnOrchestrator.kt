@@ -49,6 +49,12 @@ class AgentTurnOrchestrator(
     private val toolExecutionDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
     private val objectMapper = ObjectMapper()
+    private val performanceTelemetry = runCatching { project.service<PerformanceTelemetryService>() }.getOrNull()
+
+    private fun <T> measureToolExecution(
+        toolName: String,
+        block: () -> T,
+    ): T = performanceTelemetry?.measureCurrentPhase("tool_execution:$toolName", block = block) ?: block()
 
     private data class GuardrailDecision(
         val allowExecution: Boolean,
@@ -183,29 +189,31 @@ class AgentTurnOrchestrator(
         executionMode: String,
         parallelBatchSize: Int = 1,
     ): ToolExecutionOutcome =
-        runCatching {
-            val toolResult =
-                if (plan.decision.allowExecution) {
-                    toolExecutionService.executeToolCall(plan.functionCall, agentLabel)
-                } else {
-                    QDLog.warn(thisLogger()) {
-                        "OpenAIService.agentTurn: stability intervention tool=${plan.functionCall.name()} callId=${plan.callId} reason=${plan.decision.reason} executionMode=$executionMode"
+        measureToolExecution(plan.functionCall.name()) {
+            runCatching {
+                val toolResult =
+                    if (plan.decision.allowExecution) {
+                        toolExecutionService.executeToolCall(plan.functionCall, agentLabel)
+                    } else {
+                        QDLog.warn(thisLogger()) {
+                            "OpenAIService.agentTurn: stability intervention tool=${plan.functionCall.name()} callId=${plan.callId} reason=${plan.decision.reason} executionMode=$executionMode"
+                        }
+                        guardrailToolResult(plan.functionCall, plan.decision.reason ?: "guardrail_blocked")
                     }
-                    guardrailToolResult(plan.functionCall, plan.decision.reason ?: "guardrail_blocked")
-                }
-            ToolExecutionOutcome(
-                plan = plan,
-                executionMode = executionMode,
-                parallelBatchSize = parallelBatchSize,
-                result = toolResult,
-            )
-        }.getOrElse {
-            ToolExecutionOutcome(
-                plan = plan,
-                executionMode = executionMode,
-                parallelBatchSize = parallelBatchSize,
-                failure = it,
-            )
+                ToolExecutionOutcome(
+                    plan = plan,
+                    executionMode = executionMode,
+                    parallelBatchSize = parallelBatchSize,
+                    result = toolResult,
+                )
+            }.getOrElse {
+                ToolExecutionOutcome(
+                    plan = plan,
+                    executionMode = executionMode,
+                    parallelBatchSize = parallelBatchSize,
+                    failure = it,
+                )
+            }
         }
 
     private suspend fun executeParallelPlannedTool(

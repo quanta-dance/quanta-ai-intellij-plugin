@@ -41,6 +41,7 @@ class OpenAIService(
 
     private val mapper = ObjectMapper()
     private val responseBuilder = ResponseBuilder(project)
+    private val performanceTelemetry = runCatching { project.service<PerformanceTelemetryService>() }.getOrNull()
     private val requestRetryStatusListener = ThreadLocal<((RequestRetryStatus) -> Unit)?>()
     private val contextInjector = AgentContextInjector(project, ::systemMessage)
     private val toolExecutionPresenter = ToolExecutionPresenter(project, mapper)
@@ -220,7 +221,18 @@ class OpenAIService(
                 "allowedBuiltInNames=${allowedBuiltInNames?.size ?: "all"}, allowedMcpNames=${allowedMcpNames?.size ?: "all"}"
         }
         val createParams =
-            responseBuilder.buildStructuredResponseParams(
+            performanceTelemetry?.measureCurrentPhase("request_build", count = inputs.size) {
+                responseBuilder.buildStructuredResponseParams(
+                    inputs = inputs,
+                    includeMcp = includeMcp,
+                    previousResponseId = previousId,
+                    overrideInstructions = overrideInstructions,
+                    overrideModel = overrideModel,
+                    allowedToolClassFilter = allowedToolClassFilter,
+                    allowedBuiltInNames = allowedBuiltInNames,
+                    allowedMcpNames = allowedMcpNames,
+                )
+            } ?: responseBuilder.buildStructuredResponseParams(
                 inputs = inputs,
                 includeMcp = includeMcp,
                 previousResponseId = previousId,
@@ -234,6 +246,7 @@ class OpenAIService(
         QDLog.debug(thisLogger()) { "OpenAIService.createResponse: request built, sending to OpenAI" }
         var retryNumber = 1
         var backoffSpentMillis = 0L
+        val modelRequestStartedAtNanos = System.nanoTime()
         lateinit var structResponse: StructuredResponse<OpenAIResponse>
         while (true) {
             try {
@@ -261,6 +274,7 @@ class OpenAIService(
                 retryNumber += 1
             }
         }
+        performanceTelemetry?.recordCurrentPhase("model_request", System.nanoTime() - modelRequestStartedAtNanos)
         QDLog.info(thisLogger()) {
             val responseId = runCatching { structResponse.id() }.getOrNull()
             val outputSize = runCatching { structResponse.output().size }.getOrDefault(-1)

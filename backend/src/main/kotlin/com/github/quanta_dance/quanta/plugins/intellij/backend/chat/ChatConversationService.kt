@@ -12,6 +12,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentMan
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AiInputSanitizer
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.BackendExecutionContextsService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.OpenAIService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.PerformanceTelemetryService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.ProjectAgentsFileManager
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SessionPlanService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ToolsRegistry
@@ -67,6 +68,7 @@ class ChatConversationService(
     private val agentManager: AgentManagerService get() = project.service()
     private val persistence: ChatConversationStateService get() = project.service()
     private val executionContexts: BackendExecutionContextsService get() = project.service()
+    private val performanceTelemetry: PerformanceTelemetryService get() = project.service()
     private val acpDelegations: AcpDelegationTaskService get() = project.service()
 
     @Suppress("ktlint:standard:backing-property-naming")
@@ -177,7 +179,14 @@ class ChatConversationService(
         onChatPublicationThread(::persistMessagesNow)
     }
 
-    private fun <T> onChatPublicationThread(action: () -> T): T = runBlocking(executionContexts.chatPublicationDispatcher) { action() }
+    private fun <T> onChatPublicationThread(action: () -> T): T {
+        val startedAtNanos = System.nanoTime()
+        return try {
+            runBlocking(executionContexts.chatPublicationDispatcher) { action() }
+        } finally {
+            performanceTelemetry.recordCurrentPhase("chat_publication", System.nanoTime() - startedAtNanos)
+        }
+    }
 
     fun createNewSession() {
         onChatPublicationThread {
@@ -862,15 +871,20 @@ class ChatConversationService(
             .async {
                 val startedAtNanos = System.nanoTime()
                 val queueWaitMs = (startedAtNanos - queuedAtNanos) / 1_000_000
-                QDLog.info(Logger.getInstance(ChatConversationService::class.java)) {
-                    "Agent turn execution started class=$executionClass queueWaitMs=$queueWaitMs"
-                }
-                try {
-                    block()
-                } finally {
-                    val executionMs = (System.nanoTime() - startedAtNanos) / 1_000_000
+                performanceTelemetry.measureTurn(
+                    executionClass = executionClass,
+                    queueWaitMs = queueWaitMs,
+                ) {
                     QDLog.info(Logger.getInstance(ChatConversationService::class.java)) {
-                        "Agent turn execution completed class=$executionClass executionMs=$executionMs"
+                        "Agent turn execution started class=$executionClass queueWaitMs=$queueWaitMs"
+                    }
+                    try {
+                        block()
+                    } finally {
+                        val executionMs = (System.nanoTime() - startedAtNanos) / 1_000_000
+                        QDLog.info(Logger.getInstance(ChatConversationService::class.java)) {
+                            "Agent turn execution completed class=$executionClass executionMs=$executionMs"
+                        }
                     }
                 }
             }.await()
