@@ -32,6 +32,7 @@ import com.openai.models.responses.EasyInputMessage
 import com.openai.models.responses.ResponseInputItem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -40,6 +41,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import java.beans.PropertyChangeListener
 import java.net.SocketTimeoutException
 import java.net.http.HttpTimeoutException
@@ -78,6 +80,9 @@ class ChatConversationService(
     private val _sessions = MutableStateFlow<List<ChatSessionDto>>(emptyList())
 
     private val mainAgentTurnRunning = AtomicBoolean(false)
+
+    /** Serializes all visible manager turns so the session history is strictly linear. */
+    private val visibleManagerTurnCoordinator = VisibleChatTurnCoordinator()
     private val inboundAcpPeerTaskCount = AtomicInteger(0)
     private val acpContinuationRunning = AtomicBoolean(false)
     private val persistenceFlushScheduled = AtomicBoolean(false)
@@ -90,21 +95,19 @@ class ChatConversationService(
     private val agentTaskListener =
         PropertyChangeListener { event ->
             when (event.propertyName) {
-                "agent_task_started" -> {
-                    val payload = event.newValue as? Map<*, *> ?: return@PropertyChangeListener
-                    val agentId = payload["agentId"] as? String ?: return@PropertyChangeListener
-                    appendAgentThreadMessage(
-                        agentId = agentId,
-                        content = "Started delegated task",
-                    )
-                }
-
                 "agent_task_finished" -> {
                     val result = event.newValue as? AgentManagerService.AgentTaskResult ?: return@PropertyChangeListener
-                    appendAgentThreadMessage(
-                        agentId = result.agentId,
-                        content = result.text ?: result.error ?: "Completed delegated task",
-                    )
+                    if (result.visibleInChat && result.taskId != null) {
+                        appendAgentThreadMessage(
+                            agentId = result.agentId,
+                            content = result.text ?: result.error ?: "Completed delegated task",
+                        )
+                    }
+                }
+
+                "agent_manager_report" -> {
+                    val report = event.newValue as? AgentManagerService.ManagerReport ?: return@PropertyChangeListener
+                    appendManagerReport(report)
                 }
             }
         }
@@ -234,81 +237,83 @@ class ChatConversationService(
     /** Sends a user turn and returns the final manager response, including a user-facing failure response. */
     suspend fun sendUserMessage(messageContent: String): String =
         withContext(Dispatchers.IO) {
-            mainAgentTurnRunning.set(true)
-            var thinkingMessageId: String
-            var firstAssistantMessageShown = false
-            try {
-                QDLog.info(
-                    com.intellij.openapi.diagnostic.Logger
-                        .getInstance(ChatConversationService::class.java),
-                ) {
-                    "ChatConversationService.sendUserMessage: user='${
-                        messageContent.replace("\n", "\\n").take(2_000)
-                    }'"
-                }
-                val sanitizedMessageContent = aiInputSanitizer.sanitizeForAi(messageContent)
-                appendUserMessage(
-                    messageContent = messageContent,
-                    sanitizedForAiContent = sanitizedMessageContent.takeIf { it != messageContent },
-                )
-                val inputs = buildRequestInputs()
-                thinkingMessageId = appendAiThinkingMessage()
-                val (responseText, _) =
-                    try {
-                        awaitManagerTurn(
-                            inputs = inputs,
-                            thinkingMessageIdProvider = { thinkingMessageId },
-                            onThinkingMessageIdChanged = { thinkingMessageId = it },
-                            onFirstAssistantMessageShown = { firstAssistantMessageShown = true },
-                        )
-                    } catch (e: Throwable) {
-                        if (e is CancellationException) throw e
-                        if (!isContextWindowError(e)) throw e
-
-                        clearThinkingMessages()
-                        compactConversationWithBrief("")
-                        thinkingMessageId = appendAiThinkingMessage()
-                        firstAssistantMessageShown = false
-
-                        awaitManagerTurn(
-                            inputs =
-                                buildCompactedRetryInputs(
-                                    brief = "",
-                                    messageContent = messageContent,
-                                    sanitizedForAiContent = sanitizedMessageContent.takeIf { it != messageContent },
-                                ),
-                            thinkingMessageIdProvider = { thinkingMessageId },
-                            onThinkingMessageIdChanged = { thinkingMessageId = it },
-                            onFirstAssistantMessageShown = { firstAssistantMessageShown = true },
-                        )
+            visibleManagerTurnCoordinator.run {
+                mainAgentTurnRunning.set(true)
+                var thinkingMessageId = ""
+                var firstAssistantMessageShown = false
+                try {
+                    QDLog.info(
+                        com.intellij.openapi.diagnostic.Logger
+                            .getInstance(ChatConversationService::class.java),
+                    ) {
+                        "ChatConversationService.sendUserMessage: user='${
+                            messageContent.replace("\n", "\\n").take(2_000)
+                        }'"
                     }
-                if (!firstAssistantMessageShown) {
-                    replaceMessage(
-                        thinkingMessageId,
-                        chatMessageFactory.createAIMessage(responseText),
+                    val sanitizedMessageContent = aiInputSanitizer.sanitizeForAi(messageContent)
+                    appendUserMessage(
+                        messageContent = messageContent,
+                        sanitizedForAiContent = sanitizedMessageContent.takeIf { it != messageContent },
                     )
-                } else {
-                    clearThinkingMessages()
+                    val inputs = buildRequestInputs()
+                    thinkingMessageId = appendAiThinkingMessage()
+                    val (responseText, _) =
+                        try {
+                            awaitManagerTurn(
+                                inputs = inputs,
+                                thinkingMessageIdProvider = { thinkingMessageId },
+                                onThinkingMessageIdChanged = { thinkingMessageId = it },
+                                onFirstAssistantMessageShown = { firstAssistantMessageShown = true },
+                            )
+                        } catch (e: Throwable) {
+                            if (e is CancellationException) throw e
+                            if (!isContextWindowError(e)) throw e
+
+                            clearThinkingMessage(thinkingMessageId)
+                            compactConversationWithBrief("")
+                            thinkingMessageId = appendAiThinkingMessage()
+                            firstAssistantMessageShown = false
+
+                            awaitManagerTurn(
+                                inputs =
+                                    buildCompactedRetryInputs(
+                                        brief = "",
+                                        messageContent = messageContent,
+                                        sanitizedForAiContent = sanitizedMessageContent.takeIf { it != messageContent },
+                                    ),
+                                thinkingMessageIdProvider = { thinkingMessageId },
+                                onThinkingMessageIdChanged = { thinkingMessageId = it },
+                                onFirstAssistantMessageShown = { firstAssistantMessageShown = true },
+                            )
+                        }
+                    if (!firstAssistantMessageShown) {
+                        replaceMessage(
+                            thinkingMessageId,
+                            chatMessageFactory.createAIMessage(responseText),
+                        )
+                    } else {
+                        clearThinkingMessage(thinkingMessageId)
+                    }
+                    persistMessages()
+                    responseText
+                } catch (e: Throwable) {
+                    if (e is CancellationException) {
+                        clearThinkingMessage(thinkingMessageId)
+                        throw e
+                    }
+                    val errorText = userFacingErrorText(e)
+                    QDLog.warn(
+                        Logger.getInstance(ChatConversationService::class.java),
+                        { "ChatConversationService.sendUserMessage failed: ${e::class.java.simpleName}: ${e.message}" },
+                        e,
+                    )
+                    clearThinkingMessage(thinkingMessageId)
+                    appendAiMessage(errorText)
+                    errorText
+                } finally {
+                    mainAgentTurnRunning.set(false)
+                    scheduleAcpCoordinationTurn(persistence.getActiveSessionId())
                 }
-                persistMessages()
-                responseText
-            } catch (e: Throwable) {
-                if (e is CancellationException) {
-                    clearThinkingMessages()
-                    throw e
-                }
-                val errorText = userFacingErrorText(e)
-                QDLog.warn(
-                    Logger.getInstance(ChatConversationService::class.java),
-                    { "ChatConversationService.sendUserMessage failed: ${e::class.java.simpleName}: ${e.message}" },
-                    e,
-                )
-                clearThinkingMessages()
-                appendAiMessage(errorText)
-                errorText
-            } finally {
-                mainAgentTurnRunning.set(false)
-                scheduleAcpCoordinationTurn(persistence.getActiveSessionId())
             }
         }
 
@@ -340,6 +345,76 @@ class ChatConversationService(
                 inboundAcpPeerTaskCount.decrementAndGet()
             }
         }
+
+    /** Schedules exactly one visible manager synthesis after an asynchronous team delegation settles. */
+    fun scheduleTeamDelegationSummary(
+        title: String,
+        reports: List<String>,
+    ) {
+        if (reports.isEmpty()) return
+        executionContexts.backgroundAgentScope.launch {
+            visibleManagerTurnCoordinator.run {
+                mainAgentTurnRunning.set(true)
+                var thinkingMessageId: String? = null
+                val summaryStillActive = AtomicBoolean(true)
+                try {
+                    thinkingMessageId = appendAiThinkingMessage()
+                    updateThinkingMessage(thinkingMessageId, "Team reports received. Preparing the final summary…")
+                    var firstAssistantMessageShown = false
+                    val reportText = reports.joinToString("\n\n").take(MAX_TEAM_REPORT_CHARS)
+                    val inputs =
+                        buildRequestInputs().apply {
+                            add(
+                                ResponseInputItem.ofEasyInputMessage(
+                                    EasyInputMessage
+                                        .builder()
+                                        .role(EasyInputMessage.Role.SYSTEM)
+                                        .content(
+                                            "All asynchronous team tasks for '$title' have settled. " +
+                                                "Write the final concise user-facing synthesis now. Do not delegate, poll, " +
+                                                "or claim more work is pending. Reports:\n$reportText",
+                                        ).build(),
+                                ),
+                            )
+                        }
+                    val (summary, _) =
+                        withTimeout(TEAM_SUMMARY_TIMEOUT_MS) {
+                            awaitManagerTurn(
+                                inputs = inputs,
+                                thinkingMessageIdProvider = { thinkingMessageId.orEmpty() },
+                                onThinkingMessageIdChanged = { thinkingMessageId = it },
+                                onFirstAssistantMessageShown = { firstAssistantMessageShown = true },
+                                executionClass = ManagerTurnExecution.BACKGROUND,
+                                allowTools = false,
+                                shouldPublish = summaryStillActive::get,
+                            )
+                        }
+                    if (!firstAssistantMessageShown) {
+                        replaceMessage(thinkingMessageId.orEmpty(), chatMessageFactory.createAIMessage(summary))
+                    }
+                } catch (timeout: TimeoutCancellationException) {
+                    appendAiMessage(
+                        "Team work completed, but the final summary timed out. The agent results are available above; " +
+                            "ask me to summarize them again if needed.",
+                    )
+                    QDLog.warn(Logger.getInstance(ChatConversationService::class.java)) {
+                        "Team delegation synthesis timed out after ${TEAM_SUMMARY_TIMEOUT_MS}ms"
+                    }
+                } catch (error: Throwable) {
+                    appendAiMessage("Team work completed, but the manager could not summarize it. Please retry the summary.")
+                    QDLog.warn(
+                        Logger.getInstance(ChatConversationService::class.java),
+                        { "Team delegation synthesis failed: ${error.message}" },
+                        error,
+                    )
+                } finally {
+                    summaryStillActive.set(false)
+                    thinkingMessageId?.let(::clearThinkingMessage)
+                    mainAgentTurnRunning.set(false)
+                }
+            }
+        }
+    }
 
     /** Prevents an inbound peer task from recursively delegating the same work back through ACP. */
     fun isProcessingAcpPeerTask(): Boolean = inboundAcpPeerTaskCount.get() > 0
@@ -514,6 +589,15 @@ class ChatConversationService(
         }
     }
 
+    /** Adds an explicit agent-to-manager report without treating it as a user or manager turn. */
+    private fun appendManagerReport(report: AgentManagerService.ManagerReport) {
+        onChatPublicationThread {
+            val author = report.from?.takeIf(String::isNotBlank) ?: "Agent"
+            _messages.value += chatMessageFactory.createAIMessage(content = report.text).copy(author = author)
+            persistMessages()
+        }
+    }
+
     private fun upsertAcpDelegationCard(task: AcpDelegationTaskService.TaskSnapshot) {
         onChatPublicationThread {
             val cardId =
@@ -640,34 +724,34 @@ class ChatConversationService(
 
     private suspend fun runAcpCoordinationTurn(sessionId: String) {
         if (sessionId != persistence.getActiveSessionId() || !acpContinuationRunning.compareAndSet(false, true)) return
-        if (!mainAgentTurnRunning.compareAndSet(false, true)) {
-            acpContinuationRunning.set(false)
-            return
-        }
         try {
-            val events = mutableListOf<AcpDelegationTaskService.MeaningfulEvent>()
-            val inbox = acpEventInboxes[sessionId] ?: return
-            repeat(MAX_ACP_EVENTS_PER_CONTINUATION) {
-                inbox.poll()?.let(events::add) ?: return@repeat
-            }
-            if (events.isEmpty()) return
-            withContext(Dispatchers.IO) {
-                var thinkingMessageId = appendAiThinkingMessage()
-                var firstAssistantMessageShown = false
-                val (responseText, _) =
-                    awaitManagerTurn(
-                        inputs = buildAcpCoordinationInputs(events),
-                        thinkingMessageIdProvider = { thinkingMessageId },
-                        onThinkingMessageIdChanged = { thinkingMessageId = it },
-                        onFirstAssistantMessageShown = { firstAssistantMessageShown = true },
-                        executionClass = ManagerTurnExecution.BACKGROUND,
-                    )
-                if (!firstAssistantMessageShown) {
-                    replaceMessage(thinkingMessageId, chatMessageFactory.createAIMessage(responseText))
-                } else {
-                    clearThinkingMessages()
+            visibleManagerTurnCoordinator.run {
+                if (sessionId != persistence.getActiveSessionId()) return@run
+                mainAgentTurnRunning.set(true)
+                val events = mutableListOf<AcpDelegationTaskService.MeaningfulEvent>()
+                val inbox = acpEventInboxes[sessionId] ?: return@run
+                repeat(MAX_ACP_EVENTS_PER_CONTINUATION) {
+                    inbox.poll()?.let(events::add) ?: return@repeat
                 }
-                persistMessages()
+                if (events.isEmpty()) return@run
+                withContext(Dispatchers.IO) {
+                    var thinkingMessageId = appendAiThinkingMessage()
+                    var firstAssistantMessageShown = false
+                    val (responseText, _) =
+                        awaitManagerTurn(
+                            inputs = buildAcpCoordinationInputs(events),
+                            thinkingMessageIdProvider = { thinkingMessageId },
+                            onThinkingMessageIdChanged = { thinkingMessageId = it },
+                            onFirstAssistantMessageShown = { firstAssistantMessageShown = true },
+                            executionClass = ManagerTurnExecution.BACKGROUND,
+                        )
+                    if (!firstAssistantMessageShown) {
+                        replaceMessage(thinkingMessageId, chatMessageFactory.createAIMessage(responseText))
+                    } else {
+                        clearThinkingMessage(thinkingMessageId)
+                    }
+                    persistMessages()
+                }
             }
         } finally {
             acpContinuationRunning.set(false)
@@ -784,47 +868,52 @@ class ChatConversationService(
         }
     }
 
-    private fun clearThinkingMessages() {
+    private fun clearThinkingMessage(messageId: String) {
         onChatPublicationThread {
-            _messages.value = _messages.value.filterNot { it.type == AI_THINKING }
+            _messages.value = _messages.value.filterNot { it.id == messageId && it.type == AI_THINKING }
             persistMessages()
         }
     }
 
     suspend fun sendScheduledReminder(reminderContext: String) {
         withContext(Dispatchers.IO) {
-            val thinkingMessageId = appendAiThinkingMessage()
-            try {
-                val inputs = buildReminderRequestInputs(reminderContext)
-                val (responseText, _) =
-                    awaitBackgroundAgentTurn {
-                        openAIService.agentTurn(
-                            inputs = inputs,
-                            previousId = null,
-                            agentLabel = "AI Manager",
-                            allowedMcpNames = enabledMcpServerNames(),
-                        )
+            visibleManagerTurnCoordinator.run {
+                mainAgentTurnRunning.set(true)
+                val thinkingMessageId = appendAiThinkingMessage()
+                try {
+                    val inputs = buildReminderRequestInputs(reminderContext)
+                    val (responseText, _) =
+                        awaitBackgroundAgentTurn {
+                            openAIService.agentTurn(
+                                inputs = inputs,
+                                previousId = null,
+                                agentLabel = "AI Manager",
+                                allowedMcpNames = enabledMcpServerNames(),
+                            )
+                        }
+                    replaceMessage(
+                        thinkingMessageId,
+                        chatMessageFactory.createAIMessage(responseText),
+                    )
+                    persistMessages()
+                } catch (e: Throwable) {
+                    if (e is CancellationException) {
+                        clearThinkingMessage(thinkingMessageId)
+                        throw e
                     }
-                replaceMessage(
-                    thinkingMessageId,
-                    chatMessageFactory.createAIMessage(responseText),
-                )
-                persistMessages()
-            } catch (e: Throwable) {
-                if (e is CancellationException) {
-                    clearThinkingMessages()
-                    throw e
+                    replaceMessage(
+                        thinkingMessageId,
+                        chatMessageFactory.createAIMessage(
+                            "I want to remind you: ${
+                                reminderContext.trim().removePrefix("Reminder:").trim()
+                                    .ifBlank { "please check your reminder." }
+                            }",
+                        ),
+                    )
+                    persistMessages()
+                } finally {
+                    mainAgentTurnRunning.set(false)
                 }
-                replaceMessage(
-                    thinkingMessageId,
-                    chatMessageFactory.createAIMessage(
-                        "I want to remind you: ${
-                            reminderContext.trim().removePrefix("Reminder:").trim()
-                                .ifBlank { "please check your reminder." }
-                        }",
-                    ),
-                )
-                persistMessages()
             }
         }
     }
@@ -892,7 +981,7 @@ class ChatConversationService(
 
     private fun buildHistory(): List<ChatTurn> =
         _messages.value
-            .filter { it.isMyMessage || it.isTextMessage() }
+            .filter(::isMainConversationHistoryMessage)
             .map { message ->
                 val role = if (message.isMyMessage) "user" else "assistant"
                 ChatTurn(
@@ -915,6 +1004,8 @@ class ChatConversationService(
         onThinkingMessageIdChanged: (String) -> Unit,
         onFirstAssistantMessageShown: () -> Unit,
         executionClass: ManagerTurnExecution = ManagerTurnExecution.INTERACTIVE,
+        allowTools: Boolean = true,
+        shouldPublish: () -> Boolean = { true },
     ): Pair<String, String?> {
         var activeToolMessageId: String? = null
 
@@ -923,8 +1014,11 @@ class ChatConversationService(
                 inputs = inputs,
                 previousId = null,
                 agentLabel = "AI Manager",
-                allowedMcpNames = enabledMcpServerNames(),
+                allowedToolClassFilter =
+                    if (allowTools) ManagerToolPolicy::allows else { _ -> false },
+                allowedMcpNames = if (allowTools) enabledMcpServerNames() else emptySet(),
                 onAssistantMessage = { assistantMessage ->
+                    if (!shouldPublish()) return@agentTurn
                     val visibleContent =
                         if (assistantMessage.isReasoning) {
                             "Reasoning\n${assistantMessage.text}"
@@ -943,6 +1037,7 @@ class ChatConversationService(
                     onThinkingMessageIdChanged(appendAiThinkingMessage())
                 },
                 onRequestRetry = { retryStatus ->
+                    if (!shouldPublish()) return@agentTurn
                     updateThinkingMessage(
                         thinkingMessageIdProvider(),
                         "We're having trouble reaching the AI service. Retrying automatically in " +
@@ -950,7 +1045,7 @@ class ChatConversationService(
                     )
                 },
                 onToolUpdate = { update ->
-                    if (isAcpCardOwnedTool(update.item.toolName)) return@agentTurn
+                    if (!shouldPublish() || ChatToolVisibilityPolicy.shouldHideToolCard(update.item.toolName)) return@agentTurn
                     val targetId =
                         activeToolMessageId
                             ?: appendAiToolMessage(
@@ -962,6 +1057,9 @@ class ChatConversationService(
                         targetId,
                         chatMessageFactory.createAIToolMessage(mergedItems),
                     )
+                    if (mergedItems.isNotEmpty() && mergedItems.none { item -> item.status == ToolExecutionStatus.EXECUTING }) {
+                        updateThinkingMessage(thinkingMessageIdProvider(), SYNTHESIZING_TOOL_RESULTS_STATUS)
+                    }
                 },
             )
         }
@@ -970,15 +1068,6 @@ class ChatConversationService(
             ManagerTurnExecution.BACKGROUND -> awaitBackgroundAgentTurn(executeTurn)
         }
     }
-
-    private fun isAcpCardOwnedTool(toolName: String): Boolean =
-        toolName in
-            setOf(
-                "DelegateToAcpAgentTool",
-                "GetAcpDelegationStatusTool",
-                "SendAcpDelegationMessageTool",
-                "CancelAcpDelegationTool",
-            )
 
     private fun isContextWindowError(t: Throwable): Boolean {
         val msg = t.message.orEmpty()
@@ -1092,6 +1181,9 @@ class ChatConversationService(
 
     companion object {
         private const val MAX_ACP_EVENTS_PER_CONTINUATION = 4
+        private const val MAX_TEAM_REPORT_CHARS = 12_000
+        private const val TEAM_SUMMARY_TIMEOUT_MS = 90_000L
         private const val MESSAGE_PERSIST_DEBOUNCE_MS = 250L
+        private const val SYNTHESIZING_TOOL_RESULTS_STATUS = "Tools completed. Preparing the final response…"
     }
 }

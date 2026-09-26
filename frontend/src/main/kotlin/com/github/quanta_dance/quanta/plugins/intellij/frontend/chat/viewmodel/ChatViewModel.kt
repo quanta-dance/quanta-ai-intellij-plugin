@@ -138,7 +138,7 @@ class ChatViewModel(
                 }
 
                 _promptInputState.value is MessageInputState.Sending -> {
-                    MessageInputState.Enabled(input)
+                    MessageInputState.Sending(input)
                 }
 
                 else -> {
@@ -148,6 +148,7 @@ class ChatViewModel(
     }
 
     override fun onSendMessage() {
+        if (currentSendMessageJob?.isActive == true || _promptInputState.value is MessageInputState.Sending) return
         currentSendMessageJob =
             coroutineScope.launch {
                 try {
@@ -163,6 +164,8 @@ class ChatViewModel(
                 } catch (e: Exception) {
                     if (e is CancellationException) throw e
                     emitPromptInputState(MessageInputState.SendFailed(e.message ?: "Unknown error", e))
+                } finally {
+                    currentSendMessageJob = null
                 }
             }
     }

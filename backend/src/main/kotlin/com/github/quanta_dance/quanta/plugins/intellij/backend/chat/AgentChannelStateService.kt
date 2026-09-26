@@ -106,6 +106,7 @@ class AgentChannelStateService(
         createdByRole: String = "Manager",
         relatedMessageId: String? = null,
         dependsOnTaskIds: List<String> = emptyList(),
+        autoStart: Boolean = true,
     ): DelegatedTaskDto {
         val now = System.currentTimeMillis()
         val initialStatus =
@@ -125,7 +126,7 @@ class AgentChannelStateService(
                 updatedAtEpochMs = now,
             )
         return upsertTask(task).also {
-            if (it.status == DelegatedTaskStatusDto.QUEUED) {
+            if (autoStart && it.status == DelegatedTaskStatusDto.QUEUED) {
                 triggerReadyTasks()
             }
         }

@@ -301,7 +301,7 @@ class AgentTurnOrchestrator(
         agentLabel: String,
         responseId: String?,
         onToolUpdate: ((OpenAIService.ToolTurnUpdate) -> Unit)?,
-    ) {
+    ): String? {
         val plans =
             functionCalls.map { functionCall ->
                 val plan = buildToolExecutionPlan(functionCall, toolExecutionService, guardrailState)
@@ -318,19 +318,24 @@ class AgentTurnOrchestrator(
         while (index < plans.size) {
             val plan = plans[index]
             if (!plan.canRunInParallel) {
+                val outcome =
+                    executePlannedTool(
+                        plan = plan,
+                        agentLabel = agentLabel,
+                        toolExecutionService = toolExecutionService,
+                        executionMode = "sequential",
+                    )
                 applyToolExecutionOutcome(
-                    outcome =
-                        executePlannedTool(
-                            plan = plan,
-                            agentLabel = agentLabel,
-                            toolExecutionService = toolExecutionService,
-                            executionMode = "sequential",
-                        ),
+                    outcome = outcome,
                     guardrailState = guardrailState,
                     pendingToolOutputs = pendingToolOutputs,
                     responseId = responseId,
                     onToolUpdate = onToolUpdate,
                 )
+                outcome.result
+                    ?.takeIf { it.handoffToAsyncCoordination }
+                    ?.handoffMessage
+                    ?.let { return it }
                 index += 1
                 continue
             }
@@ -378,8 +383,14 @@ class AgentTurnOrchestrator(
                     onToolUpdate = onToolUpdate,
                 )
             }
+            outcomes
+                .firstOrNull { it.result?.handoffToAsyncCoordination == true }
+                ?.result
+                ?.handoffMessage
+                ?.let { return it }
             index = parallelEndExclusive
         }
+        return null
     }
 
     private fun logTurnSummary(
@@ -415,6 +426,7 @@ class AgentTurnOrchestrator(
         val planService = project.service<SessionPlanService>()
         val activePlanCoordinator = ActiveSessionPlanCoordinator(continuationPolicy)
         var reprocess = true
+        var terminalAsyncHandoffText: String? = null
         var loopState = ActivePlanLoopState()
         val configuredContinuations =
             try {
@@ -478,7 +490,7 @@ class AgentTurnOrchestrator(
                             }
                             probeIndex += 1
                         }
-                        if (functionCalls.isNotEmpty()) {
+                        val handoffMessage =
                             executeFunctionCallBatch(
                                 functionCalls = functionCalls,
                                 toolExecutionService = toolExecutionService,
@@ -488,8 +500,13 @@ class AgentTurnOrchestrator(
                                 responseId = newId,
                                 onToolUpdate = onToolUpdate,
                             )
+                        if (handoffMessage != null) {
+                            terminalAsyncHandoffText = handoffMessage
+                            aggregated.append(handoffMessage).append('\n')
+                            outputIndex = outputItems.size
+                        } else {
+                            outputIndex = probeIndex
                         }
-                        outputIndex = probeIndex
                     }
 
                     item.isMessage() -> {
@@ -567,9 +584,14 @@ class AgentTurnOrchestrator(
                     }
                 }
             }
-            val hasPending = pendingToolOutputs.isNotEmpty()
-            if (hasPending) inputs.addAll(pendingToolOutputs)
-            if (hasPending) reprocess = true
+            if (terminalAsyncHandoffText != null) {
+                pendingToolOutputs.clear()
+                reprocess = false
+            } else {
+                val hasPending = pendingToolOutputs.isNotEmpty()
+                if (hasPending) inputs.addAll(pendingToolOutputs)
+                if (hasPending) reprocess = true
+            }
         }
         logTurnSummary(guardrailState, agentLabel, localPrevId)
         return aggregated.toString().trim() to localPrevId

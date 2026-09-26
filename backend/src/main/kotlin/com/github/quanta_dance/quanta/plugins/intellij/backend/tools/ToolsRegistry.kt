@@ -152,9 +152,10 @@ object ToolsRegistry {
                     Group.GENERIC,
                 ),
             )
+
             list.add(
                 ToolEntry(
-                    com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent.AgentSendMessageTool::class.java,
+                    com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent.DelegateTeamTaskTool::class.java,
                     Group.GENERIC,
                 ),
             )
