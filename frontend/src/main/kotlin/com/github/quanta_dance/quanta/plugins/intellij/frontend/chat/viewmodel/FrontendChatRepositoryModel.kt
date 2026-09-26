@@ -16,6 +16,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentCh
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationParticipantDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServerStatusDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.toChatMessage
@@ -61,6 +62,10 @@ class FrontendChatRepositoryModel(
 
     private val _agentsFlow = MutableStateFlow<List<AgentInfoDto>>(emptyList())
     override val agentsFlow: StateFlow<List<AgentInfoDto>> = _agentsFlow.asStateFlow()
+
+    private val _collaborationParticipantsFlow = MutableStateFlow<List<CollaborationParticipantDto>>(emptyList())
+    override val collaborationParticipantsFlow: StateFlow<List<CollaborationParticipantDto>> =
+        _collaborationParticipantsFlow.asStateFlow()
 
     private val _acpAgentsFlow = MutableStateFlow<List<AcpAgentDto>>(emptyList())
     override val acpAgentsFlow: StateFlow<List<AcpAgentDto>> = _acpAgentsFlow.asStateFlow()
@@ -153,8 +158,9 @@ class FrontendChatRepositoryModel(
         }
         runCatching {
             _agentsFlow.value = backendApi.getCurrentAgents(projectPath)
+            _collaborationParticipantsFlow.value = backendApi.getCollaborationParticipants(projectPath)
         }.onFailure { error ->
-            logger.warn("Failed to refresh current agents from backend", error)
+            logger.warn("Failed to refresh current collaboration roster from backend", error)
         }
         runCatching {
             _delegatedTasksFlow.value = backendApi.getCurrentDelegatedTasks(projectPath)

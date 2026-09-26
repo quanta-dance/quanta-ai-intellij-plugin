@@ -8,6 +8,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AIVoiceS
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AcpAgentRosterService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentManagerService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentRosterService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.CollaborationRosterService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.QuantaAcpShareService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SessionPlanService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SpeechToTextService
@@ -20,6 +21,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentCh
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ApplyRefactorSuggestionResultDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationParticipantDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.FrontendLogDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.FrontendLogLevel
@@ -124,6 +126,11 @@ class QuantaBackendRpcApi : QuantaBackendApi {
             backendProject.service<AgentManagerService>().ensureAgentsLoadedFromSession()
             backendProject.service<AgentRosterService>().agentsFlow.value
         }
+    }
+
+    override suspend fun getCollaborationParticipants(projectPath: String): List<CollaborationParticipantDto> {
+        val backendProject = findBackendProject(projectPath) ?: return emptyList()
+        return backendProject.service<CollaborationRosterService>().participants()
     }
 
     override suspend fun getCurrentDelegatedTasks(projectPath: String): List<DelegatedTaskDto> {

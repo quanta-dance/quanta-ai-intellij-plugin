@@ -9,6 +9,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentCh
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ApplyRefactorSuggestionResultDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationParticipantDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.FrontendLogDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServerStatusesDto
@@ -58,6 +59,9 @@ interface QuantaBackendApi : RemoteApi<Unit> {
     ): Boolean
 
     suspend fun getCurrentAgents(projectPath: String): List<AgentInfoDto>
+
+    /** Returns the session-authorized, transport-neutral manager/local/ACP collaboration roster. */
+    suspend fun getCollaborationParticipants(projectPath: String): List<CollaborationParticipantDto>
 
     suspend fun getCurrentDelegatedTasks(projectPath: String): List<DelegatedTaskDto>
 

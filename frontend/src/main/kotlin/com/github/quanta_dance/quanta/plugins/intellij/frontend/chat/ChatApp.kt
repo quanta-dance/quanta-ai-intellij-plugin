@@ -97,6 +97,9 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentCh
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationAvailabilityDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationParticipantDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationParticipantKindDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskStatusDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServerStatusDto
@@ -145,6 +148,7 @@ fun chatApp(
     }
     val planStatus by viewModel.planStatusFlow.collectAsState(ChatPlanStatusDto())
     val agents by viewModel.agentsFlow.collectAsState(emptyList())
+    val collaborationParticipants by viewModel.collaborationParticipantsFlow.collectAsState(emptyList())
     val acpAgents by viewModel.acpAgentsFlow.collectAsState(emptyList())
     val acpDiscoveryLoading by viewModel.acpDiscoveryLoadingFlow.collectAsState(false)
     val allowedAcpAgentIds by viewModel.allowedAcpAgentIdsFlow.collectAsState(emptySet())
@@ -303,13 +307,11 @@ fun chatApp(
             if (agenticEnabled) {
                 agentPresenceStrip(
                     modifier = Modifier.fillMaxWidth(),
-                    internalAgents = agents,
-                    allowedAcpAgents = acpAgents.filter { it.id in allowedAcpAgentIds },
+                    participants = collaborationParticipants,
                     delegatedTasks = delegatedTasks,
-                    chatMessages = chatMessages,
                     managerBusy =
                         messageInputState is MessageInputState.Sending ||
-                                chatMessages.any(ChatMessage::isAIThinkingMessage),
+                            chatMessages.any(ChatMessage::isAIThinkingMessage),
                 )
             }
 
@@ -379,11 +381,11 @@ fun chatApp(
                         val message =
                             if (allowed) {
                                 "Add ${agent.name} to this chat and turn on agentic team mode?\n\n" +
-                                        "This independent external ACP agent may receive task context and access this project " +
-                                        "using its own tools.\n\n${agent.transportDescription()}"
+                                    "This independent external ACP agent may receive task context and access this project " +
+                                    "using its own tools.\n\n${agent.transportDescription()}"
                             } else if (removeSharedPeer) {
                                 "Remove ${agent.name} from this chat and forget this shared Quanta ACP peer? " +
-                                        "It will no longer appear in the roster."
+                                    "It will no longer appear in the roster."
                             } else {
                                 "Remove ${agent.name} from this chat? Any active work for this agent will be stopped."
                             }
@@ -886,121 +888,70 @@ private data class AgentPresence(
     val external: Boolean = false,
 )
 
-private fun DelegatedTaskDto.isAssignedTo(agent: AgentInfoDto): Boolean {
-    val normalizedRole = agent.role.trim().lowercase()
-    return agent.id in assignedAgentIds || assignedRoles.any { it.trim().lowercase() == normalizedRole }
+private fun DelegatedTaskDto.isAssignedTo(participant: CollaborationParticipantDto): Boolean {
+    val transportId = participant.transportId ?: return false
+    return transportId in assignedAgentIds ||
+        assignedRoles.any { role -> role.trim().equals(participant.displayName.trim(), ignoreCase = true) }
 }
 
 @Composable
 private fun agentPresenceStrip(
     modifier: Modifier = Modifier,
-    internalAgents: List<AgentInfoDto>,
-    allowedAcpAgents: List<AcpAgentDto>,
+    participants: List<CollaborationParticipantDto>,
     delegatedTasks: List<DelegatedTaskDto>,
-    chatMessages: List<ChatMessage>,
     managerBusy: Boolean,
 ) {
     val presences =
-        buildList {
-            add(
-                AgentPresence(
-                    id = "main-agent",
-                    name = "AI",
-                    type = "Main agent",
-                    state = if (managerBusy) AgentPresenceState.WORKING else AgentPresenceState.IDLE,
-                    details =
-                        if (managerBusy) {
-                            "The main agent is working on the current response."
-                        } else {
-                            "The main agent is ready for the next task."
-                        },
-                    instructions =
-                        "Coordinates the chat, delegates focused work to teammates, and verifies the final result.",
-                    color = Color(0xFF5E81AC),
-                ),
+        participants.map { participant ->
+            val tasks = delegatedTasks.filter { task -> task.isAssignedTo(participant) }
+            val state =
+                when {
+                    participant.kind == CollaborationParticipantKindDto.MANAGER && managerBusy -> {
+                        AgentPresenceState.WORKING
+                    }
+
+                    tasks.any { it.status == DelegatedTaskStatusDto.RUNNING } ||
+                        participant.availability == CollaborationAvailabilityDto.BUSY -> {
+                        AgentPresenceState.WORKING
+                    }
+
+                    tasks.any { it.status == DelegatedTaskStatusDto.QUEUED || it.status == DelegatedTaskStatusDto.BLOCKED } -> {
+                        AgentPresenceState.WAITING
+                    }
+
+                    tasks.any { it.status == DelegatedTaskStatusDto.FAILED } ||
+                        participant.availability == CollaborationAvailabilityDto.OFFLINE -> {
+                        AgentPresenceState.FAILED
+                    }
+
+                    else -> {
+                        AgentPresenceState.IDLE
+                    }
+                }
+            val details =
+                buildString {
+                    append(participantAvailabilityLabel(participant, state))
+                    if (tasks.isNotEmpty()) {
+                        append("\n\nCurrent work")
+                        tasks.takeLast(3).forEach { task ->
+                            append("\n• ").append(task.title).append(" · ").append(task.status.name.lowercase())
+                        }
+                    } else if (participant.kind == CollaborationParticipantKindDto.MANAGER) {
+                        append("\n\nCoordinates the chat, delegates focused work, and publishes final summaries.")
+                    } else {
+                        append("\n\nNo live task is currently running.")
+                    }
+                }
+            AgentPresence(
+                id = participant.id,
+                name = participant.displayName,
+                type = participantTypeLabel(participant),
+                state = state,
+                details = details,
+                instructions = participantInstructions(participant),
+                color = colorForAgent(participant.id),
+                external = participant.kind != CollaborationParticipantKindDto.LOCAL_AGENT,
             )
-            internalAgents.forEach { agent ->
-                val tasks = delegatedTasks.filter { it.isAssignedTo(agent) }
-                val state =
-                    when {
-                        agent.isWorking || tasks.any { it.status == DelegatedTaskStatusDto.RUNNING } -> {
-                            AgentPresenceState.WORKING
-                        }
-
-                        tasks.any { it.status == DelegatedTaskStatusDto.QUEUED || it.status == DelegatedTaskStatusDto.BLOCKED } -> {
-                            AgentPresenceState.WAITING
-                        }
-
-                        tasks.any { it.status == DelegatedTaskStatusDto.FAILED } -> {
-                            AgentPresenceState.FAILED
-                        }
-
-                        else -> {
-                            AgentPresenceState.IDLE
-                        }
-                    }
-                val details =
-                    buildString {
-                        append(agent.model?.takeIf(String::isNotBlank) ?: "Quanta teammate")
-                        if (tasks.isNotEmpty()) {
-                            append("\n\nCurrent work")
-                            tasks.takeLast(3).forEach { task ->
-                                append("\n• ").append(task.title).append(" · ").append(task.status.name.lowercase())
-                            }
-                        } else {
-                            append("\n\nNo delegated task is currently assigned.")
-                        }
-                    }
-                add(
-                    AgentPresence(
-                        id = agent.id,
-                        name = agent.role.replaceFirstChar { it.uppercase() },
-                        type = "Quanta teammate",
-                        state = state,
-                        details = details,
-                        instructions =
-                            agent.instructions?.takeIf(String::isNotBlank)
-                                ?: "No custom instructions are configured for this teammate.",
-                        color = colorForAgent(agent.id),
-                    ),
-                )
-            }
-            allowedAcpAgents.forEach { agent ->
-                val latestCard =
-                    chatMessages
-                        .asReversed()
-                        .flatMap { it.toolItems.asReversed() }
-                        .firstOrNull { item ->
-                            item.toolName == "AcpDelegationCard" && item.displayText.startsWith("${agent.name} ·")
-                        }
-                val state =
-                    when (latestCard?.status) {
-                        com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus.EXECUTING -> {
-                            AgentPresenceState.WORKING
-                        }
-
-                        com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus.FAILED -> {
-                            AgentPresenceState.FAILED
-                        }
-
-                        else -> {
-                            AgentPresenceState.IDLE
-                        }
-                    }
-                add(
-                    AgentPresence(
-                        id = "acp:${agent.id}",
-                        name = agent.name,
-                        type = "External ACP agent",
-                        state = state,
-                        details = latestCard?.detailText ?: "Allowed for this chat. No live task is currently running.",
-                        instructions =
-                            "Independent external ACP agent. It receives delegated task context only after you allow it for this chat.",
-                        color = Color(0xFFB48EAD),
-                        external = true,
-                    ),
-                )
-            }
         }
     if (presences.isEmpty()) return
 
@@ -1013,10 +964,54 @@ private fun agentPresenceStrip(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("Agents", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = ChatAppColors.Text.disabled)
+        Text("Collaboration", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = ChatAppColors.Text.disabled)
         presences.forEach { presence -> agentPresenceAvatar(presence) }
     }
 }
+
+private fun participantAvailabilityLabel(
+    participant: CollaborationParticipantDto,
+    state: AgentPresenceState,
+): String =
+    when (state) {
+        AgentPresenceState.WORKING -> {
+            "Working"
+        }
+
+        AgentPresenceState.WAITING -> {
+            "Waiting for scheduled work"
+        }
+
+        AgentPresenceState.FAILED -> {
+            if (participant.availability == CollaborationAvailabilityDto.OFFLINE) "Unavailable" else "Needs attention"
+        }
+
+        AgentPresenceState.IDLE -> {
+            "Ready"
+        }
+    }
+
+private fun participantTypeLabel(participant: CollaborationParticipantDto): String =
+    when (participant.kind) {
+        CollaborationParticipantKindDto.MANAGER -> "Main coordinator"
+        CollaborationParticipantKindDto.LOCAL_AGENT -> "Quanta teammate"
+        CollaborationParticipantKindDto.ACP_AGENT -> "Shared collaborator"
+    }
+
+private fun participantInstructions(participant: CollaborationParticipantDto): String =
+    when (participant.kind) {
+        CollaborationParticipantKindDto.MANAGER -> {
+            "Coordinates the chat, delegates focused work, and verifies final results."
+        }
+
+        CollaborationParticipantKindDto.LOCAL_AGENT -> {
+            "Can receive asynchronous tasks and collaborate with the currently authorized team."
+        }
+
+        CollaborationParticipantKindDto.ACP_AGENT -> {
+            "A paired collaboration peer. It receives only work authorized for this chat."
+        }
+    }
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -1065,12 +1060,12 @@ private fun agentPresenceAvatar(presence: AgentPresence) {
     val isWorking = presence.state == AgentPresenceState.WORKING
     val activityTransition = rememberInfiniteTransition(label = "agentPresenceActivity")
     val activityPulse by
-    activityTransition.animateFloat(
-        initialValue = 0.25f,
-        targetValue = 0.75f,
-        animationSpec = infiniteRepeatable(tween(durationMillis = 900, easing = LinearEasing)),
-        label = "agentPresencePulse",
-    )
+        activityTransition.animateFloat(
+            initialValue = 0.25f,
+            targetValue = 0.75f,
+            animationSpec = infiniteRepeatable(tween(durationMillis = 900, easing = LinearEasing)),
+            label = "agentPresencePulse",
+        )
 
     if (showProfileDialog) {
         agentProfileDialog(

@@ -152,6 +152,13 @@ class CollaborationRouterService(
                 kind = recipient.kind,
             ),
         )
+        publishUpdate(
+            task.id,
+            sender.id,
+            recipient.id,
+            CollaborationTaskStatusDto.QUEUED,
+            message.correlationId,
+        )
         project
             .service<AgentManagerService>()
             .sendMessageAsync(localAgentId, message.text, task.id)
@@ -181,13 +188,6 @@ class CollaborationRouterService(
                         ),
                 )
             }
-        publishUpdate(
-            task.id,
-            sender.id,
-            recipient.id,
-            CollaborationTaskStatusDto.QUEUED,
-            message.correlationId,
-        )
         return DispatchResult(true, "Task queued for ${recipient.displayName}", task.id)
     }
 

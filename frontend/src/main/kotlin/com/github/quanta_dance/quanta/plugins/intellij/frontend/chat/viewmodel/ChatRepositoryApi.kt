@@ -9,6 +9,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentCh
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationParticipantDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServerStatusDto
 import kotlinx.coroutines.flow.StateFlow
@@ -18,6 +19,7 @@ interface ChatRepositoryApi {
     val sessionsFlow: StateFlow<List<ChatSessionDto>>
     val planStatusFlow: StateFlow<ChatPlanStatusDto>
     val agentsFlow: StateFlow<List<AgentInfoDto>>
+    val collaborationParticipantsFlow: StateFlow<List<CollaborationParticipantDto>>
     val acpAgentsFlow: StateFlow<List<AcpAgentDto>>
     val acpDiscoveryLoadingFlow: StateFlow<Boolean>
     val allowedAcpAgentIdsFlow: StateFlow<Set<String>>
