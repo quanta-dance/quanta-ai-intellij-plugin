@@ -4,10 +4,15 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.services
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.AgentChannelStateService
-import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskStatusDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationIntentDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationMessageDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationTaskStatusDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationTaskUpdateDto
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
+import java.beans.PropertyChangeListener
+import java.util.UUID
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 
@@ -20,6 +25,7 @@ internal data class NestedTaskReport(
 internal class NestedTaskTracker {
     private val childTaskIds = linkedSetOf<String>()
     private val results = linkedMapOf<String, NestedTaskReport>()
+    private val earlyResults = linkedMapOf<String, NestedTaskReport>()
 
     val isEmpty: Boolean
         get() = childTaskIds.isEmpty()
@@ -27,17 +33,24 @@ internal class NestedTaskTracker {
     val isComplete: Boolean
         get() = childTaskIds.isNotEmpty() && results.size == childTaskIds.size
 
-    fun register(childTaskId: String) {
+    /** Returns true when a terminal result arrived before the router returned the child task ID. */
+    fun register(childTaskId: String): Boolean {
         childTaskIds += childTaskId
+        earlyResults.remove(childTaskId)?.let { report -> results[childTaskId] = report }
+        return isComplete
     }
 
-    /** Returns false for an unknown or duplicate completion. */
+    /** Returns true only when this records a known, non-duplicate child completion. */
     fun record(
         childTaskId: String,
         role: String,
         text: String,
     ): Boolean {
-        if (childTaskId !in childTaskIds || childTaskId in results) return false
+        if (childTaskId !in childTaskIds) {
+            earlyResults.putIfAbsent(childTaskId, NestedTaskReport(role, text))
+            return false
+        }
+        if (childTaskId in results) return false
         results[childTaskId] = NestedTaskReport(role, text)
         return true
     }
@@ -70,6 +83,31 @@ class NestedAgentTaskCoordinatorService(
 
     private val activeParentContext = ThreadLocal<ParentTaskContext?>()
     private val parents = ConcurrentHashMap<String, ParentState>()
+    private val terminalStatuses =
+        setOf(
+            CollaborationTaskStatusDto.COMPLETED,
+            CollaborationTaskStatusDto.FAILED,
+            CollaborationTaskStatusDto.CANCELLED,
+            CollaborationTaskStatusDto.INTERRUPTED,
+        )
+    private val routerListener =
+        PropertyChangeListener { event ->
+            if (event.propertyName != "collaboration_task_update") return@PropertyChangeListener
+            val update = event.newValue as? CollaborationTaskUpdateDto ?: return@PropertyChangeListener
+            val correlationId = update.correlationId ?: return@PropertyChangeListener
+            if (update.status !in terminalStatuses) return@PropertyChangeListener
+            val sender = project.service<CollaborationRosterService>().find(update.senderId)
+            recordChildResult(
+                correlationId,
+                update.taskId,
+                sender?.displayName ?: "Participant",
+                update.text ?: update.error.orEmpty(),
+            )
+        }
+
+    init {
+        project.service<CollaborationRouterService>().addPropertyChangeListener(routerListener)
+    }
 
     fun <T> withActiveParentTask(
         agentId: String,
@@ -85,48 +123,91 @@ class NestedAgentTaskCoordinatorService(
         }
     }
 
-    /** Starts a tracked child task for the agent currently executing a delegated parent task. */
+    fun currentParentTaskContext(): ParentTaskContext? = activeParentContext.get()
+
+    /** Routes one unified collaboration operation from the agent currently handling a delegated task. */
+    fun dispatchFromActiveParent(
+        recipientParticipantId: String,
+        intent: CollaborationIntentDto,
+        text: String,
+        taskId: String? = null,
+    ): CollaborationRouterService.DispatchResult {
+        val parent =
+            activeParentContext.get()
+                ?: return CollaborationRouterService.DispatchResult(
+                    false,
+                    "Collaboration messages are available only while handling a delegated task",
+                )
+        return if (intent == CollaborationIntentDto.TASK) {
+            requestChildTask(recipientParticipantId, text).toDispatchResult()
+        } else {
+            project.service<CollaborationRouterService>().dispatch(
+                CollaborationMessageDto(
+                    id = UUID.randomUUID().toString(),
+                    sessionId =
+                        project
+                            .service<com.github.quanta_dance.quanta.plugins.intellij.backend.chat.ChatConversationStateService>()
+                            .getActiveSessionId(),
+                    senderId = CollaborationRosterService.localParticipantId(parent.agentId),
+                    recipientId = recipientParticipantId,
+                    intent = intent,
+                    text = text,
+                    taskId = taskId,
+                    parentTaskId = parent.taskId,
+                    rootTaskId = parent.taskId,
+                    correlationId = parent.taskId,
+                    createdAtEpochMs = System.currentTimeMillis(),
+                ),
+            )
+        }
+    }
+
+    /** Starts a transport-neutral child task for the agent currently executing a delegated parent task. */
     fun requestChildTask(
-        targetAgentId: String,
+        recipientParticipantId: String,
         requestText: String,
     ): ChildTaskRequestResult {
         val parent =
             activeParentContext.get()
                 ?: return ChildTaskRequestResult.error("Agent task requests are available only while handling a delegated task")
-        if (targetAgentId == parent.agentId) {
+        if (recipientParticipantId == CollaborationRosterService.localParticipantId(parent.agentId)) {
             return ChildTaskRequestResult.error("An agent cannot request a child task from itself")
         }
-        val manager = project.service<AgentManagerService>()
-        val target =
-            manager.getAgentsSnapshot().firstOrNull { it.id == targetAgentId }
-                ?: return ChildTaskRequestResult.error("Unknown target agent: $targetAgentId")
         if (requestText.isBlank()) return ChildTaskRequestResult.error("Task request is empty")
 
-        val channel = project.service<AgentChannelStateService>()
-        val childTask =
-            channel.createTask(
-                title = "${target.role}: ${requestText.take(96)}",
-                requestText = requestText,
-                assignedAgentIds = listOf(target.id),
-                assignedRoles = listOf(target.role),
-                createdByRole = "Agent",
-                dependsOnTaskIds = emptyList(),
-                autoStart = false,
-            )
         val state = parents.computeIfAbsent(parent.taskId) { ParentState(parent.agentId) }
-        synchronized(state) {
-            state.childTasks.register(childTask.id)
-        }
-        channel.updateTaskStatus(parent.taskId, DelegatedTaskStatusDto.RUNNING, summary = "Waiting for ${target.role}")
-        manager.sendMessageAsync(target.id, requestText, childTask.id).whenComplete { result, error ->
-            recordChildResult(
-                parentTaskId = parent.taskId,
-                childTaskId = childTask.id,
-                childRole = target.role,
-                text = result?.text ?: "Failed: ${result?.error ?: error?.message ?: "unknown error"}",
+        val router = project.service<CollaborationRouterService>()
+        val recipient =
+            router.roster().firstOrNull { it.id == recipientParticipantId }
+                ?: return ChildTaskRequestResult.error("Unknown or unauthorized collaboration recipient: $recipientParticipantId")
+        val result =
+            router.dispatch(
+                CollaborationMessageDto(
+                    id = UUID.randomUUID().toString(),
+                    sessionId =
+                        project
+                            .service<com.github.quanta_dance.quanta.plugins.intellij.backend.chat.ChatConversationStateService>()
+                            .getActiveSessionId(),
+                    senderId = CollaborationRosterService.localParticipantId(parent.agentId),
+                    recipientId = recipientParticipantId,
+                    intent = CollaborationIntentDto.TASK,
+                    text = requestText,
+                    parentTaskId = parent.taskId,
+                    rootTaskId = parent.taskId,
+                    correlationId = parent.taskId,
+                    createdAtEpochMs = System.currentTimeMillis(),
+                ),
             )
+        val childTaskId = result.taskId ?: return ChildTaskRequestResult.error(result.message)
+        synchronized(state) {
+            if (state.childTasks.register(childTaskId)) startContinuationIfReady(parent.taskId, state)
         }
-        return ChildTaskRequestResult.queued(childTask.id, target.role)
+        project.service<AgentChannelStateService>().updateTaskStatus(
+            parent.taskId,
+            com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskStatusDto.RUNNING,
+            summary = "Waiting for ${recipient.displayName}",
+        )
+        return ChildTaskRequestResult.queued(childTaskId, recipient.displayName)
     }
 
     /**
@@ -192,6 +273,13 @@ class NestedAgentTaskCoordinatorService(
                 parents.remove(parentTaskId, state)
             }
     }
+
+    private fun ChildTaskRequestResult.toDispatchResult(): CollaborationRouterService.DispatchResult =
+        CollaborationRouterService.DispatchResult(
+            accepted = ok,
+            message = message,
+            taskId = childTaskId,
+        )
 
     data class ChildTaskRequestResult(
         val ok: Boolean,

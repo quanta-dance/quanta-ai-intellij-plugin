@@ -3,12 +3,15 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.backend.chat
 
-import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentManagerService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.CollaborationRouterService
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationTaskStatusDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationTaskUpdateDto
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import java.beans.PropertyChangeListener
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 /** Coordinates one asynchronous manager-to-team fan-out and its single fan-in summary. */
@@ -17,84 +20,162 @@ class TeamDelegationCoordinatorService(
     private val project: Project,
 ) : Disposable {
     internal data class TaskReport(
-        val agentRole: String,
+        val participantName: String,
         val text: String,
     )
 
+    /** Opaque handle used while the caller atomically registers every member of one team request. */
+    data class GroupHandle internal constructor(
+        internal val id: String,
+    )
+
+    /** Thread-safe tracker that cannot complete until registration is explicitly sealed. */
     internal class GroupTracker(
-        taskIds: Collection<String>,
+        private val expectedTaskCount: Int,
     ) {
-        private val pendingTaskIds = taskIds.toMutableSet()
-        private val reports = linkedMapOf<String, TaskReport>()
+        private val participantNamesByTaskId = linkedMapOf<String, String>()
+        private val reportsByTaskId = linkedMapOf<String, TaskReport>()
+        private var sealed = false
         private var closed = false
 
-        /** Returns all reports exactly once when every registered task has settled. */
+        @Synchronized
+        fun register(
+            taskId: String,
+            participantName: String,
+        ): List<TaskReport>? {
+            if (closed || participantNamesByTaskId.putIfAbsent(taskId, participantName) != null) return null
+            return completeIfReady()
+        }
+
         @Synchronized
         fun record(
             taskId: String,
-            report: TaskReport,
+            text: String,
         ): List<TaskReport>? {
-            if (closed || taskId !in pendingTaskIds) return null
-            pendingTaskIds.remove(taskId)
-            reports[taskId] = report
-            if (pendingTaskIds.isNotEmpty()) return null
+            val participantName = participantNamesByTaskId[taskId] ?: return null
+            if (closed || reportsByTaskId.putIfAbsent(taskId, TaskReport(participantName, text)) != null) return null
+            return completeIfReady()
+        }
+
+        @Synchronized
+        fun seal(): List<TaskReport>? {
+            if (closed || participantNamesByTaskId.size != expectedTaskCount) return null
+            sealed = true
+            return completeIfReady()
+        }
+
+        @Synchronized
+        fun taskIds(): Set<String> = participantNamesByTaskId.keys.toSet()
+
+        private fun completeIfReady(): List<TaskReport>? {
+            if (!sealed || closed || reportsByTaskId.size != expectedTaskCount) return null
             closed = true
-            return reports.values.toList()
+            return reportsByTaskId.values.toList()
         }
     }
 
     private data class Group(
         val title: String,
         val tracker: GroupTracker,
-        val taskRoles: Map<String, String>,
     )
 
+    private val groupsById = ConcurrentHashMap<String, Group>()
     private val groupsByTaskId = ConcurrentHashMap<String, Group>()
-    private val agentManager = project.service<AgentManagerService>()
-    private val taskListener =
+    private val earlyTerminalReportsByTaskId = ConcurrentHashMap<String, String>()
+    private val router = project.service<CollaborationRouterService>()
+    private val routerListener =
         PropertyChangeListener { event ->
-            if (event.propertyName != "agent_task_finished") return@PropertyChangeListener
-            val result = event.newValue as? AgentManagerService.AgentTaskResult ?: return@PropertyChangeListener
-            recordTaskResult(result)
+            if (event.propertyName != "collaboration_task_update") return@PropertyChangeListener
+            val update = event.newValue as? CollaborationTaskUpdateDto ?: return@PropertyChangeListener
+            if (update.status !in TERMINAL_STATUSES) return@PropertyChangeListener
+            recordTaskUpdate(update)
         }
 
     init {
-        agentManager.addPropertyChangeListener(taskListener)
+        router.addPropertyChangeListener(routerListener)
     }
 
-    fun register(
+    fun begin(
         title: String,
-        taskRoles: Map<String, String>,
+        expectedTaskCount: Int,
+    ): GroupHandle {
+        require(expectedTaskCount > 0) { "expectedTaskCount must be positive" }
+        val handle = GroupHandle(UUID.randomUUID().toString())
+        groupsById[handle.id] = Group(title, GroupTracker(expectedTaskCount))
+        return handle
+    }
+
+    /** Registers one accepted routed task before its transport is allowed to execute. */
+    fun registerTask(
+        handle: GroupHandle,
+        taskId: String,
+        participantName: String,
     ) {
-        if (taskRoles.isEmpty()) return
-        val group = Group(title = title, tracker = GroupTracker(taskRoles.keys), taskRoles = taskRoles)
-        taskRoles.keys.forEach { taskId -> groupsByTaskId[taskId] = group }
+        val group = groupsById[handle.id] ?: return
+        groupsByTaskId[taskId] = group
+        group.tracker.register(taskId, participantName)?.let { reports -> completeGroup(group, reports) }
+        earlyTerminalReportsByTaskId.remove(taskId)?.let { text ->
+            group.tracker.record(taskId, text)?.let { reports -> completeGroup(group, reports) }
+        }
     }
 
-    /** Accepts task completion from either the manager event stream or its returned future. */
-    fun recordTaskResult(result: AgentManagerService.AgentTaskResult) {
-        onTaskFinished(result)
+    /** Records an immediate transport-start failure as one terminal group result. */
+    fun registerFailedTask(
+        handle: GroupHandle,
+        taskId: String,
+        participantName: String,
+        error: String,
+    ) {
+        registerTask(handle, taskId, participantName)
+        val group = groupsById[handle.id] ?: return
+        group.tracker.record(taskId, "Failed: $error")?.let { reports -> completeGroup(group, reports) }
     }
 
-    private fun onTaskFinished(result: AgentManagerService.AgentTaskResult) {
-        val taskId = result.taskId ?: return
-        val group = groupsByTaskId[taskId] ?: return
-        val report =
-            TaskReport(
-                agentRole = group.taskRoles[taskId] ?: "Agent",
-                text = result.text ?: "Failed: ${result.error ?: "unknown error"}",
-            )
-        val reports = group.tracker.record(taskId, report) ?: return
+    /** Permits fan-in only after every requested participant has been registered. */
+    fun seal(handle: GroupHandle) {
+        val group = groupsById[handle.id] ?: return
+        group.tracker.seal()?.let { reports -> completeGroup(group, reports) }
+    }
 
-        group.taskRoles.keys.forEach(groupsByTaskId::remove)
+    private fun recordTaskUpdate(update: CollaborationTaskUpdateDto) {
+        val text = update.text ?: update.error?.let { "Failed: $it" } ?: "Failed: no result"
+        val group = groupsByTaskId[update.taskId]
+        if (group == null) {
+            earlyTerminalReportsByTaskId.putIfAbsent(update.taskId, text)
+            return
+        }
+        group.tracker.record(update.taskId, text)?.let { reports -> completeGroup(group, reports) }
+    }
+
+    private fun completeGroup(
+        group: Group,
+        reports: List<TaskReport>,
+    ) {
+        group.tracker.taskIds().forEach { taskId ->
+            groupsByTaskId.remove(taskId, group)
+            earlyTerminalReportsByTaskId.remove(taskId)
+        }
+        groupsById.entries.removeIf { (_, candidate) -> candidate === group }
         project.service<ChatConversationService>().scheduleTeamDelegationSummary(
             group.title,
-            reports.map { report -> "${report.agentRole}: ${report.text}" },
+            reports.map { report -> "${report.participantName}: ${report.text}" },
         )
     }
 
     override fun dispose() {
-        agentManager.removePropertyChangeListener(taskListener)
+        router.removePropertyChangeListener(routerListener)
+        groupsById.clear()
         groupsByTaskId.clear()
+        earlyTerminalReportsByTaskId.clear()
+    }
+
+    private companion object {
+        val TERMINAL_STATUSES =
+            setOf(
+                CollaborationTaskStatusDto.COMPLETED,
+                CollaborationTaskStatusDto.FAILED,
+                CollaborationTaskStatusDto.CANCELLED,
+                CollaborationTaskStatusDto.INTERRUPTED,
+            )
     }
 }

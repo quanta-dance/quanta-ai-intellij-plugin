@@ -3,28 +3,35 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent
 
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationIntentDto
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class AgentPostMessageToolTest {
     @Test
-    fun `defaults to an agent inbox destination`() {
-        assertEquals(AgentMessageDestination.AGENT, AgentPostMessageTool().destination)
+    fun `defaults to a fire and forget collaboration notification`() {
+        assertEquals(CollaborationIntentDto.NOTIFICATION, AgentPostMessageTool().intent)
     }
 
     @Test
-    fun `supports explicit manager reports separately from agent inbox messages`() {
+    fun `uses one unified recipient identifier for task work`() {
         val tool = AgentPostMessageTool()
-        tool.destination = AgentMessageDestination.MANAGER
+        tool.recipientId = "acp:orders-service"
+        tool.intent = CollaborationIntentDto.TASK
 
-        assertEquals(AgentMessageDestination.MANAGER, tool.destination)
+        assertEquals("acp:orders-service", tool.recipientId)
+        assertEquals(CollaborationIntentDto.TASK, tool.intent)
     }
 
     @Test
-    fun `supports tracked agent task requests separately from notifications`() {
+    fun `supports correlated result and status intents without a recipient type switch`() {
         val tool = AgentPostMessageTool()
-        tool.destination = AgentMessageDestination.AGENT_TASK
+        tool.recipientId = "manager:chat-1"
 
-        assertEquals(AgentMessageDestination.AGENT_TASK, tool.destination)
+        tool.intent = CollaborationIntentDto.RESULT
+        assertEquals(CollaborationIntentDto.RESULT, tool.intent)
+
+        tool.intent = CollaborationIntentDto.STATUS
+        assertEquals(CollaborationIntentDto.STATUS, tool.intent)
     }
 }

@@ -12,7 +12,6 @@ import com.sun.net.httpserver.HttpServer
 import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.ServerSocket
-import java.net.SocketTimeoutException
 import java.net.http.HttpTimeoutException
 import java.nio.charset.StandardCharsets
 import java.time.Duration

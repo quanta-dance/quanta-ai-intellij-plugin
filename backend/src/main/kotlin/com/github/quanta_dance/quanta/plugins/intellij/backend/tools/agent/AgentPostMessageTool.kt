@@ -5,76 +5,52 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
-import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentManagerService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.NestedAgentTaskCoordinatorService
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationIntentDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 
 /**
- * Delivers a fire-and-forget notification, a tracked child-task request, or a manager-visible report.
+ * Sends one transport-neutral collaboration message to a participant from the current roster.
  *
- * Manager-directed reports never enter an agent inbox and never wake an agent. A tracked child-task
- * request returns its final result to the requesting agent's delegated task; use it when the sender
- * needs an answer before it can complete its own assignment.
+ * The sender identity and active parent-task correlation are established by the executing agent
+ * context, never by model-provided IDs. TASK creates asynchronous tracked work; NOTIFICATION is
+ * fire-and-forget; RESULT and STATUS are correlated updates for a manager participant; CANCEL
+ * requests cancellation of a known routed task.
  */
 @JsonClassDescription(
-    "Post a notification to another agent, request tracked work from another agent, or report a material update to the manager.",
+    "Send a collaboration message to a roster participant. Choose recipientId from the current collaboration roster and intent based on the required lifecycle.",
 )
 class AgentPostMessageTool : ToolInterface<Map<String, Any>> {
+    @field:JsonPropertyDescription("Session-scoped participant ID from the current collaboration roster")
+    var recipientId: String = ""
+
     @field:JsonPropertyDescription(
-        "Destination: AGENT for a fire-and-forget inbox notification, AGENT_TASK for a tracked request/reply, or MANAGER for a manager-visible report",
+        "NOTIFICATION for fire-and-forget information, TASK for tracked asynchronous work with a result, RESULT or STATUS for correlated manager updates, or CANCEL for a routed task",
     )
-    var destination: AgentMessageDestination = AgentMessageDestination.AGENT
+    var intent: CollaborationIntentDto = CollaborationIntentDto.NOTIFICATION
 
-    @field:JsonPropertyDescription("Target agent id. Required when destination is AGENT or AGENT_TASK")
-    var toAgentId: String = ""
-
-    @field:JsonPropertyDescription("Optional sender label (for example agent id or role)")
-    var from: String? = null
-
-    @field:JsonPropertyDescription("Message text or task request")
+    @field:JsonPropertyDescription("Message text; required except for CANCEL")
     var message: String = ""
 
-    @field:JsonPropertyDescription("Optional kind tag for AGENT inbox notifications")
-    var kind: String? = "notification"
+    @field:JsonPropertyDescription("Task ID required only for CANCEL")
+    var taskId: String? = null
 
     override fun execute(project: Project): Map<String, Any> {
-        val svc = project.service<AgentManagerService>()
-        when (destination) {
-            AgentMessageDestination.MANAGER -> {
-                return if (svc.reportToManager(from = from, text = message)) {
-                    mapOf("status" to "ok", "destination" to destination.name)
-                } else {
-                    mapOf("status" to "error", "message" to "failed to report to manager: empty message")
-                }
-            }
-
-            AgentMessageDestination.AGENT_TASK -> {
-                val result = project.service<NestedAgentTaskCoordinatorService>().requestChildTask(toAgentId, message)
-                return buildMap {
-                    put("status", if (result.ok) "queued" else "error")
-                    put("destination", destination.name)
-                    put("message", result.message)
-                    result.childTaskId?.let { put("childTaskId", it) }
-                    result.targetRole?.let { put("targetRole", it) }
-                }
-            }
-
-            AgentMessageDestination.AGENT -> {
-                val ok = svc.postInboxMessage(toAgentId = toAgentId, from = from, text = message, kind = kind)
-                return if (ok) {
-                    mapOf("status" to "ok", "destination" to destination.name, "toAgentId" to toAgentId)
-                } else {
-                    mapOf("status" to "error", "message" to "failed to post (unknown agent or empty message)")
-                }
-            }
+        if (recipientId.isBlank()) return error("recipientId is required from the current collaboration roster")
+        if (intent != CollaborationIntentDto.CANCEL && message.isBlank()) return error("message is required")
+        val result =
+            project
+                .service<NestedAgentTaskCoordinatorService>()
+                .dispatchFromActiveParent(recipientId, intent, message, taskId)
+        return buildMap {
+            put("status", if (result.accepted) "accepted" else "error")
+            put("intent", intent.name)
+            put("message", result.message)
+            result.taskId?.let { put("taskId", it) }
         }
     }
-}
 
-enum class AgentMessageDestination {
-    AGENT,
-    AGENT_TASK,
-    MANAGER,
+    private fun error(message: String): Map<String, Any> = mapOf("status" to "error", "message" to message)
 }

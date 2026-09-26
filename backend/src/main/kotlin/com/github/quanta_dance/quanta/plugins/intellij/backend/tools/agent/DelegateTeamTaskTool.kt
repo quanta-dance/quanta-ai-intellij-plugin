@@ -5,31 +5,35 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent
 
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
-import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.AgentChannelStateService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.TeamDelegationCoordinatorService
-import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentManagerService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.services.CollaborationRouterService
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationIntentDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationMessageDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationParticipantDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationParticipantKindDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
+import java.util.UUID
 
-/** Starts tracked asynchronous work for one or more independent agents and schedules one manager summary. */
+/** Starts one mixed local/ACP team delegation and schedules one manager summary after every task settles. */
 @JsonClassDescription(
-    "Delegate tracked asynchronous work to one or more internal agents. Quanta schedules one final manager summary after every task settles.",
+    "Delegate tracked asynchronous work to one or more collaboration participants. Quanta schedules one final manager summary after every task settles.",
 )
 class DelegateTeamTaskTool : ToolInterface<Map<String, Any>> {
     data class Target(
-        @field:JsonPropertyDescription("Current target agent ID from the active Agents roster")
-        var agentId: String = "",
+        @field:JsonPropertyDescription("Current session-scoped participant ID from the Collaboration roster")
+        var participantId: String = "",
         @field:JsonPropertyDescription(
-            "Current target agent role from the active Agents roster. Always provide this with agentId as a stale-ID fallback.",
+            "Current participant name from the Collaboration roster. Always provide it as a safe stale-ID fallback.",
         )
-        var agentRole: String? = null,
+        var participantName: String? = null,
     )
 
     @field:JsonPropertyDescription("Short title for the team task")
     var title: String = "Team task"
 
-    @field:JsonPropertyDescription("Independent task each selected agent should perform")
+    @field:JsonPropertyDescription("Independent task each selected participant should perform")
     var message: String = ""
 
     @field:JsonPropertyDescription(
@@ -38,14 +42,14 @@ class DelegateTeamTaskTool : ToolInterface<Map<String, Any>> {
     var expectedTargetCount: Int = 0
 
     @field:JsonPropertyDescription(
-        "All requested agents. Make exactly ONE DelegateTeamTaskTool call containing every independent recipient; never call this tool once per agent.",
+        "All requested participants. Make exactly ONE DelegateTeamTaskTool call containing every independent recipient; never call this tool once per participant.",
     )
     var targets: List<Target> = emptyList()
 
     override fun execute(project: Project): Map<String, Any> {
-        val manager = project.service<AgentManagerService>()
-        val channel = project.service<AgentChannelStateService>()
-        val roster = manager.getAgentsSnapshot()
+        if (message.isBlank()) return error("message is required")
+        val router = project.service<CollaborationRouterService>()
+        val roster = router.roster()
         if (!hasExpectedTargetCount(expectedTargetCount, targets)) {
             return mapOf(
                 "status" to "error",
@@ -56,87 +60,80 @@ class DelegateTeamTaskTool : ToolInterface<Map<String, Any>> {
             )
         }
         val resolution = resolveDelegationTargets(targets, roster)
-        if (resolution.resolved.isEmpty()) {
+        if (resolution.unresolved.isNotEmpty() || resolution.resolved.size != expectedTargetCount) {
             return mapOf(
                 "status" to "error",
-                "message" to "No current team targets could be resolved",
-                "currentRoster" to rosterSummary(roster),
-            )
-        }
-        if (resolution.unresolved.isNotEmpty()) {
-            return mapOf(
-                "status" to "error",
-                "message" to "No work was started because not every requested target could be resolved",
+                "message" to "No work was started because not every requested participant could be resolved",
                 "unresolvedTargets" to resolution.unresolved,
                 "currentRoster" to rosterSummary(roster),
             )
         }
-        val tasksByAgentId =
-            resolution.resolved.map { agent ->
-                agent.id to
-                    channel.createTask(
-                        title = title,
-                        requestText = message,
-                        assignedAgentIds = listOf(agent.id),
-                        assignedRoles = listOf(agent.role),
-                        autoStart = false,
-                    )
-            }
-        val tasks = tasksByAgentId.map { it.second }
+        val managerParticipant =
+            roster.firstOrNull { it.kind == CollaborationParticipantKindDto.MANAGER }
+                ?: return error("The active chat manager is unavailable")
         val coordinator = project.service<TeamDelegationCoordinatorService>()
-        coordinator.register(
-            title = title,
-            taskRoles =
-                tasksByAgentId.associate { (agentId, task) ->
-                    task.id to roster.first { agent -> agent.id == agentId }.role
-                },
-        )
-        tasksByAgentId.forEach { (agentId, task) ->
-            manager.sendMessageAsync(agentId, message, task.id).whenComplete { result, error ->
-                coordinator.recordTaskResult(
-                    result?.copy(taskId = result.taskId ?: task.id)
-                        ?: AgentManagerService.AgentTaskResult(
-                            requestId = "",
-                            agentId = agentId,
-                            ok = false,
-                            text = null,
-                            error = error?.message ?: "Agent task did not start",
-                            taskId = task.id,
-                        ),
+        val group = coordinator.begin(title, expectedTargetCount)
+        val taskIds = mutableListOf<String>()
+        resolution.resolved.forEach { participant ->
+            val result =
+                router.dispatch(
+                    CollaborationMessageDto(
+                        id = UUID.randomUUID().toString(),
+                        sessionId = managerParticipant.id.removePrefix("manager:"),
+                        senderId = managerParticipant.id,
+                        recipientId = participant.id,
+                        intent = CollaborationIntentDto.TASK,
+                        text = message,
+                        createdAtEpochMs = System.currentTimeMillis(),
+                    ),
+                )
+            val taskId = result.taskId
+            if (result.accepted && taskId != null) {
+                coordinator.registerTask(group, taskId, participant.displayName)
+                taskIds += taskId
+            } else {
+                coordinator.registerFailedTask(
+                    group,
+                    "failed:${UUID.randomUUID()}",
+                    participant.displayName,
+                    result.message,
                 )
             }
         }
+        coordinator.seal(group)
         return mapOf(
             "status" to "queued",
-            "taskCount" to tasks.size,
-            "targetRoles" to resolution.resolved.map(AgentManagerService.AgentSnapshot::role),
-            "taskIds" to tasks.map { it.id },
+            "taskCount" to expectedTargetCount,
+            "targetNames" to resolution.resolved.map(CollaborationParticipantDto::displayName),
+            "taskIds" to taskIds,
             "handoffToAsyncCoordination" to true,
-            "message" to teamDelegationHandoffMessage(resolution.resolved.map(AgentManagerService.AgentSnapshot::role)),
+            "message" to teamDelegationHandoffMessage(resolution.resolved.map(CollaborationParticipantDto::displayName)),
         )
     }
+
+    private fun error(message: String): Map<String, Any> = mapOf("status" to "error", "message" to message)
 }
 
-internal fun teamDelegationHandoffMessage(roles: List<String>): String =
-    "I asked ${formatTeamRecipients(roles)} to work independently. " +
+internal fun teamDelegationHandoffMessage(names: List<String>): String =
+    "I asked ${formatTeamRecipients(names)} to work independently. " +
         "I will summarize the findings after every report is ready."
 
-internal fun formatTeamRecipients(roles: List<String>): String =
-    when (roles.size) {
+internal fun formatTeamRecipients(names: List<String>): String =
+    when (names.size) {
         0 -> "the team"
-        1 -> roles.single()
-        2 -> roles.joinToString(" and ")
-        else -> roles.dropLast(1).joinToString(", ") + ", and " + roles.last()
+        1 -> names.single()
+        2 -> names.joinToString(" and ")
+        else -> names.dropLast(1).joinToString(", ") + ", and " + names.last()
     }
 
 internal data class DelegationTargetResolution(
-    val resolved: List<AgentManagerService.AgentSnapshot>,
+    val resolved: List<CollaborationParticipantDto>,
     val unresolved: List<String>,
 )
 
 internal fun distinctTargetCount(targets: List<DelegateTeamTaskTool.Target>): Int =
     targets
-        .map { target -> target.agentId.trim().ifBlank { target.agentRole.orEmpty().trim() } }
+        .map { target -> target.participantId.trim().ifBlank { target.participantName.orEmpty().trim() } }
         .filter(String::isNotEmpty)
         .distinct()
         .size
@@ -146,40 +143,47 @@ internal fun hasExpectedTargetCount(
     targets: List<DelegateTeamTaskTool.Target>,
 ): Boolean = expectedTargetCount > 0 && expectedTargetCount == distinctTargetCount(targets)
 
-/** Resolves all requested targets atomically so an incomplete team never produces a partial summary. */
+/** Resolves all requested participants atomically so an incomplete team never produces a partial summary. */
 internal fun resolveDelegationTargets(
     targets: List<DelegateTeamTaskTool.Target>,
-    agents: List<AgentManagerService.AgentSnapshot>,
+    participants: List<CollaborationParticipantDto>,
 ): DelegationTargetResolution {
     val resolvedIds = linkedSetOf<String>()
     val unresolved = mutableListOf<String>()
     targets.forEach { target ->
-        val resolvedId = resolveDelegatedAgentId(target.agentId, target.agentRole, agents)
+        val resolvedId = resolveDelegatedParticipantId(target.participantId, target.participantName, participants)
         if (resolvedId == null) {
-            unresolved += target.agentRole?.trim()?.takeIf(String::isNotEmpty)
-                ?: target.agentId.ifBlank { "<unspecified>" }
+            unresolved += target.participantName?.trim()?.takeIf(String::isNotEmpty)
+                ?: target.participantId.ifBlank { "<unspecified>" }
         } else {
             resolvedIds += resolvedId
         }
     }
     return DelegationTargetResolution(
-        resolved = agents.filter { it.id in resolvedIds },
+        resolved = participants.filter { it.id in resolvedIds },
         unresolved = unresolved.distinct(),
     )
 }
 
-internal fun rosterSummary(agents: List<AgentManagerService.AgentSnapshot>): List<Map<String, String>> =
-    agents.map { agent -> mapOf("agentId" to agent.id, "agentRole" to agent.role) }
+internal fun rosterSummary(participants: List<CollaborationParticipantDto>): List<Map<String, String>> =
+    participants
+        .filter { it.kind != CollaborationParticipantKindDto.MANAGER }
+        .map { participant ->
+            mapOf(
+                "participantId" to participant.id,
+                "displayName" to participant.displayName,
+                "kind" to participant.kind.name,
+            )
+        }
 
-/** Resolves a current target ID first, then safely falls back to one uniquely matched current role. */
-internal fun resolveDelegatedAgentId(
-    agentId: String,
-    agentRole: String?,
-    agents: List<AgentManagerService.AgentSnapshot>,
+/** Resolves a current ID first, then safely falls back to one uniquely matched participant name. */
+internal fun resolveDelegatedParticipantId(
+    participantId: String,
+    participantName: String?,
+    participants: List<CollaborationParticipantDto>,
 ): String? {
-    val requestedId = agentId.trim()
-    agents.firstOrNull { agent -> agent.id == requestedId }?.let { return it.id }
-
-    val requestedRole = agentRole?.trim()?.takeIf(String::isNotEmpty) ?: return null
-    return agents.filter { agent -> agent.role.equals(requestedRole, ignoreCase = true) }.singleOrNull()?.id
+    val requestedId = participantId.trim()
+    participants.firstOrNull { participant -> participant.id == requestedId }?.let { return it.id }
+    val requestedName = participantName?.trim()?.takeIf(String::isNotEmpty) ?: return null
+    return participants.filter { it.displayName.equals(requestedName, ignoreCase = true) }.singleOrNull()?.id
 }

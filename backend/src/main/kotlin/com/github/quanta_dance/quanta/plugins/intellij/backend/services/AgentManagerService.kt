@@ -169,25 +169,28 @@ class AgentManagerService(
 
     fun getAgentAllowedBuiltInNames(agentId: String): Set<String>? = agents[agentId]?.config?.allowedBuiltInNames
 
-    private fun buildAgentsRosterText(): String {
-        val snaps = getAgentsSnapshot().sortedBy { it.role }
-        val b = StringBuilder()
-        b.append("Agents roster (auto):\n")
-        if (snaps.isEmpty()) {
-            b.append("- <none>\n")
-            return b.toString()
-        }
-        snaps.forEach { a ->
-            b
-                .append("- id=")
-                .append(a.id)
-                .append(", role=")
-                .append(a.role)
-            a.model?.let { m -> b.append(", model=").append(m) }
-            b.append('\n')
-        }
-        return b.toString().trimEnd()
-    }
+    private fun buildAgentsRosterText(): String =
+        buildString {
+            append("Collaboration roster (auto):\n")
+            val participants = project.service<CollaborationRosterService>().participants()
+            if (participants.isEmpty()) {
+                append("- <none>\n")
+            } else {
+                participants
+                    .sortedBy { it.displayName }
+                    .forEach { participant ->
+                        append("- id=")
+                            .append(participant.id)
+                            .append(", name=")
+                            .append(participant.displayName)
+                            .append(", kind=")
+                            .append(participant.kind)
+                            .append(", capabilities=")
+                            .append(participant.capabilities.sortedBy { it.name }.joinToString { it.name })
+                            .append('\n')
+                    }
+            }
+        }.trimEnd()
 
     /**
      * Records a roster change without waking agents or creating an AI turn. The latest roster is
@@ -635,6 +638,13 @@ class AgentManagerService(
                 append("You are an assistant agent with the role '").append(config.role).append("'. ")
                 append("Follow the global development instructions. Communicate in plain text.\n\n")
                 append(Instructions.instructions)
+                append(
+                    "\n\n# Collaboration\n" +
+                        "Use AgentPostMessageTool only with a recipientId from the current Collaboration roster. " +
+                        "Use TASK when you need a participant's result before completing your own task; " +
+                        "use NOTIFICATION for fire-and-forget information; use correlated STATUS or RESULT only " +
+                        "for the manager participant. Do not expose internal routing mechanics in your reply.",
+                )
                 if (!config.instructions.isNullOrBlank()) {
                     append("\n\n# Role-specific instructions\n").append(config.instructions)
                 }

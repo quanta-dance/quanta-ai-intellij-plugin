@@ -6,7 +6,6 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.chat
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.project.CurrentFileContextProvider
 import com.github.quanta_dance.quanta.plugins.intellij.backend.repository.ChatMessageFactory
-import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AcpAgentRosterService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AcpDelegationTaskService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentManagerService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AiInputSanitizer
@@ -454,17 +453,6 @@ class ChatConversationService(
 
     private fun buildInputsFromTurns(turns: List<ChatTurn>): MutableList<ResponseInputItem> =
         buildList {
-            buildAcpRosterContextMessage()?.let { rosterContext ->
-                add(
-                    ResponseInputItem.ofEasyInputMessage(
-                        EasyInputMessage
-                            .builder()
-                            .role(EasyInputMessage.Role.SYSTEM)
-                            .content(rosterContext)
-                            .build(),
-                    ),
-                )
-            }
             buildContextMessage()?.let { contextMessage ->
                 add(
                     ResponseInputItem.ofEasyInputMessage(
@@ -530,33 +518,6 @@ class ChatConversationService(
                 ),
             )
         }.toMutableList()
-
-    /** Supplies the manager with the user-approved external ACP agents and their usable IDs. */
-    private fun buildAcpRosterContextMessage(): String? {
-        val allowedAgentIds = persistence.getAllowedAcpAgentIds()
-        if (allowedAgentIds.isEmpty()) return null
-
-        val agentsById = project.service<AcpAgentRosterService>().agents().associateBy { it.id }
-        return buildString {
-            append("External ACP agents explicitly enabled by the user for this chat:\n")
-            allowedAgentIds.sorted().forEach { agentId ->
-                val agent = agentsById[agentId]
-                if (agent == null) {
-                    append("- id: ").append(agentId).append(" (currently unavailable)\n")
-                } else {
-                    append("- name: ")
-                        .append(agent.name)
-                        .append("; id: ")
-                        .append(agent.id)
-                        .append('\n')
-                }
-            }
-            append(
-                "Use DelegateToAcpAgentTool with an available agent ID when external collaboration is useful. " +
-                    "Do not claim that an enabled agent is absent or ask the user to rediscover it before using this roster.",
-            )
-        }
-    }
 
     private fun appendUserMessage(
         messageContent: String,

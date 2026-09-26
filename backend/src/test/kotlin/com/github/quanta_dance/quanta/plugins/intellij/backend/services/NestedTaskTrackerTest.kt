@@ -35,4 +35,14 @@ class NestedTaskTrackerTest {
         assertFalse(tracker.record("tester", "Tester", "duplicate"))
         assertEquals(listOf("34 tests"), tracker.reports().map(NestedTaskReport::text))
     }
+
+    @Test
+    fun `retains a terminal result that arrives before child task registration`() {
+        val tracker = NestedTaskTracker()
+
+        assertFalse(tracker.record("tester", "Tester", "34 tests"))
+        assertTrue(tracker.register("tester"))
+        assertTrue(tracker.isComplete)
+        assertEquals(listOf("34 tests"), tracker.reports().map(NestedTaskReport::text))
+    }
 }

@@ -82,27 +82,31 @@ class AgentContextInjector(
     }
 
     private fun buildAgentsRosterContext(): String {
-        val agents =
+        val participants =
             try {
-                project.service<AgentManagerService>().getAgentsSnapshot()
+                project.service<CollaborationRosterService>().participants()
             } catch (_: Throwable) {
                 emptyList()
             }
-        val builder = StringBuilder()
-        builder.append("Agents roster (auto):\n")
-        if (agents.isEmpty()) {
-            builder.append("- <none>")
-            return builder.toString()
-        }
-        agents.forEach { agent ->
-            builder
-                .append("- id=")
-                .append(agent.id)
-                .append(", role=")
-                .append(agent.role)
-            agent.model?.let { model -> builder.append(", model=").append(model) }
-            builder.append('\n')
-        }
-        return builder.toString().trimEnd()
+        return buildString {
+            append("Collaboration roster (auto):\n")
+            if (participants.isEmpty()) {
+                append("- <none>")
+            } else {
+                participants
+                    .sortedBy { it.displayName }
+                    .forEach { participant ->
+                        append("- id=")
+                            .append(participant.id)
+                            .append(", name=")
+                            .append(participant.displayName)
+                            .append(", kind=")
+                            .append(participant.kind)
+                            .append(", capabilities=")
+                            .append(participant.capabilities.sortedBy { it.name }.joinToString { it.name })
+                            .append('\n')
+                    }
+            }
+        }.trimEnd()
     }
 }

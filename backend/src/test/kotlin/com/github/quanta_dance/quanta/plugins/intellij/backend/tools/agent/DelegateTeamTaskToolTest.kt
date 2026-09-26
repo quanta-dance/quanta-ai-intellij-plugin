@@ -3,54 +3,65 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent
 
-import com.github.quanta_dance.quanta.plugins.intellij.backend.services.AgentManagerService
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationParticipantDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationParticipantKindDto
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class DelegateTeamTaskToolTest {
     @Test
-    fun `resolves every requested target before starting a team delegation`() {
+    fun `resolves every requested participant before starting a team delegation`() {
         val resolution =
             resolveDelegationTargets(
                 targets =
                     listOf(
-                        DelegateTeamTaskTool.Target(agentId = "stale-developer-id", agentRole = "Developer"),
-                        DelegateTeamTaskTool.Target(agentId = "missing-reviewer-id"),
+                        DelegateTeamTaskTool.Target(
+                            participantId = "stale-developer-id",
+                            participantName = "Developer",
+                        ),
+                        DelegateTeamTaskTool.Target(participantId = "missing-reviewer-id"),
                     ),
-                agents =
+                participants =
                     listOf(
-                        snapshot(id = "developer-id", role = "Developer"),
-                        snapshot(id = "reviewer-id", role = "Reviewer"),
+                        participant(id = "local:developer-id", name = "Developer"),
+                        participant(
+                            id = "acp:reviewer-id",
+                            name = "Reviewer",
+                            kind = CollaborationParticipantKindDto.ACP_AGENT,
+                        ),
                     ),
             )
 
-        assertEquals(listOf("developer-id"), resolution.resolved.map(AgentManagerService.AgentSnapshot::id))
+        assertEquals(listOf("local:developer-id"), resolution.resolved.map(CollaborationParticipantDto::id))
         assertEquals(listOf("missing-reviewer-id"), resolution.unresolved)
     }
 
     @Test
-    fun `deduplicates repeated resolved targets`() {
+    fun `deduplicates repeated resolved participants across local and ACP rosters`() {
         val resolution =
             resolveDelegationTargets(
                 targets =
                     listOf(
-                        DelegateTeamTaskTool.Target(agentId = "developer-id", agentRole = "Developer"),
-                        DelegateTeamTaskTool.Target(agentId = "stale-id", agentRole = "Developer"),
+                        DelegateTeamTaskTool.Target(
+                            participantId = "local:developer-id",
+                            participantName = "Developer",
+                        ),
+                        DelegateTeamTaskTool.Target(participantId = "stale-id", participantName = "Developer"),
                     ),
-                agents = listOf(snapshot(id = "developer-id", role = "Developer")),
+                participants = listOf(participant(id = "local:developer-id", name = "Developer")),
             )
 
-        assertEquals(listOf("developer-id"), resolution.resolved.map(AgentManagerService.AgentSnapshot::id))
+        assertEquals(listOf("local:developer-id"), resolution.resolved.map(CollaborationParticipantDto::id))
         assertTrue(resolution.unresolved.isEmpty())
     }
 
     @Test
-    fun `requires declared recipient count to match distinct targets`() {
+    fun `requires declared recipient count to match distinct participant targets`() {
         val targets =
             listOf(
-                DelegateTeamTaskTool.Target(agentId = "developer-id", agentRole = "Developer"),
-                DelegateTeamTaskTool.Target(agentId = "reviewer-id", agentRole = "Reviewer"),
+                DelegateTeamTaskTool.Target(participantId = "local:developer-id", participantName = "Developer"),
+                DelegateTeamTaskTool.Target(participantId = "acp:reviewer-id", participantName = "Reviewer"),
             )
 
         assertTrue(hasExpectedTargetCount(expectedTargetCount = 2, targets))
@@ -59,22 +70,21 @@ class DelegateTeamTaskToolTest {
     }
 
     @Test
-    fun `uses a natural handoff message for a team delegation`() {
+    fun `uses a natural handoff message for a mixed team delegation`() {
         assertEquals(
-            "I asked Developer, Reviewer, and Tester to work independently. " +
+            "I asked Developer, Reviewer, and Shared Quanta · orders to work independently. " +
                 "I will summarize the findings after every report is ready.",
-            teamDelegationHandoffMessage(listOf("Developer", "Reviewer", "Tester")),
+            teamDelegationHandoffMessage(listOf("Developer", "Reviewer", "Shared Quanta · orders")),
         )
     }
 
-    private fun snapshot(
+    private fun participant(
         id: String,
-        role: String,
-    ) = AgentManagerService.AgentSnapshot(
+        name: String,
+        kind: CollaborationParticipantKindDto = CollaborationParticipantKindDto.LOCAL_AGENT,
+    ) = CollaborationParticipantDto(
         id = id,
-        role = role,
-        instructions = null,
-        model = null,
-        isWorking = false,
+        displayName = name,
+        kind = kind,
     )
 }
