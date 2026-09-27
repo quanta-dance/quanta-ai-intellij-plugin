@@ -131,6 +131,12 @@ interface QuantaBackendApi : RemoteApi<Unit> {
         relativePath: String,
     )
 
+    /** Selects a project-relative directory in the IDE Project tool window. */
+    suspend fun openProjectDirectory(
+        projectPath: String,
+        relativePath: String,
+    )
+
     suspend fun openProjectFileAtLine(
         projectPath: String,
         relativePath: String,

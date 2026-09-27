@@ -176,11 +176,20 @@ private fun toolExecutionRow(
             ToolExecutionStatus.FAILED -> ChatAppIcons.ToolStatus.failed
         }
     val filePath = item.filePath
+    val directoryPath = item.directoryPath
+    val navigationPath = filePath ?: directoryPath
+    val isDirectoryLink = filePath == null && directoryPath != null
     val detailText = item.detailText
-    val fileName = filePath?.substringAfterLast('/')?.substringAfterLast('\\')
-    val linkDisplayName = filePath?.let(::compactPathForLink)
-    val hasFileLink = !filePath.isNullOrBlank() && !fileName.isNullOrBlank() && item.displayText.contains(fileName)
-    val displayPrefix = if (hasFileLink) item.displayText.substringBefore(fileName) else item.displayText
+    val navigationName = navigationPath?.substringAfterLast('/')?.substringAfterLast('\\')
+    val linkDisplayName = navigationPath?.let(::compactPathForLink)
+    val hasNavigationLink = !navigationPath.isNullOrBlank() && !navigationName.isNullOrBlank()
+    val displayPrefix =
+        when {
+            !hasNavigationLink -> item.displayText
+            item.displayText.contains(navigationName) -> item.displayText.substringBefore(navigationName)
+            isDirectoryLink -> "${item.displayText} in "
+            else -> "${item.displayText} "
+        }
     val density = LocalDensity.current
     Box {
         if (statusHovered && !detailText.isNullOrBlank()) {
@@ -203,7 +212,7 @@ private fun toolExecutionRow(
                 }
             }
         }
-        if (hovered && !filePath.isNullOrBlank()) {
+        if (hovered && !navigationPath.isNullOrBlank()) {
             val fileTooltipOffsetX = with(density) { 18.dp.toPx().toInt() }
             val fileTooltipOffsetY = with(density) { (-36).dp.toPx().toInt() }
             Popup(offset = IntOffset(fileTooltipOffsetX, fileTooltipOffsetY)) {
@@ -216,7 +225,7 @@ private fun toolExecutionRow(
                             .padding(horizontal = 8.dp, vertical = 4.dp),
                 ) {
                     Text(
-                        text = filePath,
+                        text = navigationPath,
                         style = JewelTheme.defaultTextStyle.copy(fontSize = 11.sp, color = Color.White),
                     )
                 }
@@ -255,7 +264,7 @@ private fun toolExecutionRow(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    if (hasFileLink) {
+                    if (hasNavigationLink) {
                         Text(
                             text = displayPrefix,
                             style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, fontWeight = FontWeight.Medium),
@@ -271,25 +280,31 @@ private fun toolExecutionRow(
                                         frontendLinkLog(
                                             project,
                                             FrontendLogLevel.INFO,
-                                            "ToolExecutionRow.click filePath=$filePath",
+                                            "ToolExecutionRow.click path=$navigationPath directory=$isDirectoryLink",
                                         )
                                         scope.launch {
                                             runCatching {
-                                                QuantaBackendApi
-                                                    .getInstance()
-                                                    .openProjectFile(project.rpcProjectPath(), filePath!!)
+                                                val backend = QuantaBackendApi.getInstance()
+                                                if (isDirectoryLink) {
+                                                    backend.openProjectDirectory(
+                                                        project.rpcProjectPath(),
+                                                        navigationPath!!,
+                                                    )
+                                                } else {
+                                                    backend.openProjectFile(project.rpcProjectPath(), navigationPath!!)
+                                                }
                                             }.onFailure { error ->
                                                 frontendLinkLog(
                                                     project,
                                                     FrontendLogLevel.ERROR,
-                                                    "ToolExecutionRow.openProjectFile failed: ${error.message}",
+                                                    "ToolExecutionRow.openProjectPath failed: ${error.message}",
                                                 )
                                             }
                                         }
                                     },
                         ) {
                             Text(
-                                text = linkDisplayName ?: fileName,
+                                text = linkDisplayName ?: navigationName,
                                 style =
                                     JewelTheme.defaultTextStyle.copy(
                                         fontSize = 12.sp,

@@ -12,6 +12,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.services.Collabor
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.QuantaAcpShareService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SessionPlanService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.SpeechToTextService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.OpenFileInEditorTool
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.McpClientService
 import com.github.quanta_dance.quanta.plugins.intellij.models.Suggestion
@@ -31,6 +32,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.Microph
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.QuantaAcpShareDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.SpeechChunkDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.SynthesizedSpeechDto
+import com.intellij.ide.projectView.ProjectView
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.command.WriteCommandAction
@@ -262,6 +264,18 @@ class QuantaBackendRpcApi : QuantaBackendApi {
     ) {
         val backendProject = findBackendProject(projectPath) ?: return
         OpenFileInEditorTool(filePath = relativePath).execute(backendProject)
+    }
+
+    override suspend fun openProjectDirectory(
+        projectPath: String,
+        relativePath: String,
+    ) {
+        val backendProject = findBackendProject(projectPath) ?: return
+        val directory = PathUtils.resolveVirtualFileWithinProject(backendProject, relativePath, allowBlankAsDot = true)
+        if (directory == null || !directory.isDirectory) return
+        ApplicationManager.getApplication().invokeLater {
+            ProjectView.getInstance(backendProject).select(directory, directory, true)
+        }
     }
 
     override suspend fun openProjectFileAtLine(
