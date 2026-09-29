@@ -30,6 +30,8 @@ class BackendSettingsRpcApi : QuantaSettingsApi {
         val AVAILABLE_CHAT_MODELS =
             listOf(
                 ChatModel.GPT_6_ASTRA.toString(),
+                ChatModel.GPT_6_SOL.toString(),
+                ChatModel.GPT_6_LUNA.toString(),
                 AllModels.ResponsesOnlyModel.GPT_5_6_CYBER.toString(),
                 ChatModel.GPT_5_6_SOL.toString(),
                 ChatModel.GPT_5_6_TERRA.toString(),
