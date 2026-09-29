@@ -109,4 +109,31 @@ class ChatConversationStateServiceTest {
                 .none { it.type == ChatMessage.ChatMessageType.AI_THINKING.name },
         )
     }
+
+    @Test
+    fun `removes stale Quanta ACP permissions from every chat session`() {
+        val service = ChatConversationStateService()
+        service.loadState(
+            ChatConversationStateService.State(
+                activeSessionId = "active",
+                sessions =
+                    mutableListOf(
+                        ChatConversationStateService.PersistedChatSession(
+                            id = "active",
+                            allowedAcpAgentIds = mutableListOf("quanta:stale", "codex"),
+                        ),
+                        ChatConversationStateService.PersistedChatSession(
+                            id = "older",
+                            allowedAcpAgentIds = mutableListOf("quanta:stale", "opencode"),
+                        ),
+                    ),
+            ),
+        )
+
+        assertTrue(service.removeAcpAgentsMatching { agentId -> agentId.startsWith("quanta:") })
+
+        val sessions = service.getState().sessions
+        assertEquals(listOf("codex"), sessions[0].allowedAcpAgentIds)
+        assertEquals(listOf("opencode"), sessions[1].allowedAcpAgentIds)
+    }
 }

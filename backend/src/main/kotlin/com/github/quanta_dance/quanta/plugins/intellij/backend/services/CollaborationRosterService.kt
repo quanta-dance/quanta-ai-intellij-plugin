@@ -28,6 +28,8 @@ class CollaborationRosterService(
         val localAgents = manager.getAgentsSnapshot()
         val allowedAcpIds = chatState.getAllowedAcpAgentIds()
         val acpAgentsById = project.service<AcpAgentRosterService>().agents().associateBy { it.id }
+        val acpDelegations = project.service<AcpDelegationTaskService>()
+        val quantaShares = project.service<QuantaAcpShareService>()
         return buildList {
             add(
                 CollaborationParticipantDto(
@@ -76,12 +78,21 @@ class CollaborationRosterService(
                                     CollaborationCapabilityDto.CANCELLATION,
                                 ),
                             availability =
-                                if (agent ==
-                                    null
-                                ) {
-                                    CollaborationAvailabilityDto.OFFLINE
-                                } else {
-                                    CollaborationAvailabilityDto.AVAILABLE
+                                when {
+                                    agent == null -> {
+                                        CollaborationAvailabilityDto.OFFLINE
+                                    }
+
+                                    quantaShares.isJoinedPeerWorking(agentId) ||
+                                        acpDelegations.list().any { task ->
+                                            task.agent.id == agentId && task.status in ACTIVE_ACP_STATUSES
+                                        } -> {
+                                        CollaborationAvailabilityDto.BUSY
+                                    }
+
+                                    else -> {
+                                        CollaborationAvailabilityDto.AVAILABLE
+                                    }
                                 },
                             transportId = agentId,
                         ),
@@ -100,6 +111,15 @@ class CollaborationRosterService(
         fun managerParticipantId(chatSessionId: String): String = "$MANAGER_PREFIX$chatSessionId"
 
         fun localParticipantId(agentId: String): String = "$LOCAL_PREFIX$agentId"
+
+        private val ACTIVE_ACP_STATUSES =
+            setOf(
+                AcpDelegationTaskService.Status.QUEUED,
+                AcpDelegationTaskService.Status.RUNNING,
+                AcpDelegationTaskService.Status.WAITING_FOR_AUTHENTICATION,
+                AcpDelegationTaskService.Status.WAITING_FOR_PERMISSION,
+                AcpDelegationTaskService.Status.WAITING_FOR_USER_INPUT,
+            )
 
         fun acpParticipantId(agentId: String): String = "$ACP_PREFIX$agentId"
     }

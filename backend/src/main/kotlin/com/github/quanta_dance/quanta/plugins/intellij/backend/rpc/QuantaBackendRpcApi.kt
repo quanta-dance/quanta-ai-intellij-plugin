@@ -26,6 +26,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.Collabo
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.FrontendLogDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.FrontendLogLevel
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.LocalQuantaAcpSessionDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServerStatusDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServerStatusesDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.MicrophoneTranscriptionResultDto
@@ -166,6 +167,18 @@ class QuantaBackendRpcApi : QuantaBackendApi {
     ): QuantaAcpShareDto {
         val backendProject = findBackendProject(projectPath) ?: return QuantaAcpShareDto(error = "Project not found")
         return backendProject.service<QuantaAcpShareService>().join(invite)
+    }
+
+    override suspend fun getAvailableLocalQuantaAcpSessions(projectPath: String): List<LocalQuantaAcpSessionDto> {
+        val backendProject = findBackendProject(projectPath) ?: return emptyList()
+        return backendProject.service<QuantaAcpShareService>().availableLocalSessions()
+    }
+
+    override suspend fun forgetLocalQuantaAcpSession(
+        projectPath: String,
+        peerIdentity: String,
+    ) {
+        findBackendProject(projectPath)?.service<QuantaAcpShareService>()?.forgetLocalSession(peerIdentity)
     }
 
     override suspend fun stopQuantaAcpShare(projectPath: String) {

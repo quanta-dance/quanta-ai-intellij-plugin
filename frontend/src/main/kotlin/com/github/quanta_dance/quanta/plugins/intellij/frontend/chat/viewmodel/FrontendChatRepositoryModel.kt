@@ -18,6 +18,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPla
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationParticipantDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.LocalQuantaAcpSessionDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServerStatusDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.toChatMessage
 import com.intellij.openapi.components.Service
@@ -93,6 +94,10 @@ class FrontendChatRepositoryModel(
 
     private val _quantaAcpInviteFlow = MutableStateFlow<String?>(null)
     override val quantaAcpInviteFlow: StateFlow<String?> = _quantaAcpInviteFlow.asStateFlow()
+
+    private val _availableLocalQuantaAcpSessionsFlow = MutableStateFlow<List<LocalQuantaAcpSessionDto>>(emptyList())
+    override val availableLocalQuantaAcpSessionsFlow: StateFlow<List<LocalQuantaAcpSessionDto>> =
+        _availableLocalQuantaAcpSessionsFlow.asStateFlow()
 
     private val acpDiscoveryMutex = Mutex()
 
@@ -174,8 +179,9 @@ class FrontendChatRepositoryModel(
         }
         runCatching {
             _acpAgentsFlow.value = backendApi.getKnownAcpAgents(projectPath)
+            _availableLocalQuantaAcpSessionsFlow.value = backendApi.getAvailableLocalQuantaAcpSessions(projectPath)
         }.onFailure { error ->
-            logger.warn("Failed to load known ACP agents from backend", error)
+            logger.warn("Failed to load known ACP agents or local Quanta shares from backend", error)
         }
     }
 
@@ -293,6 +299,16 @@ class FrontendChatRepositoryModel(
         _quantaAcpInviteFlow.value = share.error?.let { "Error: $it" }
         _acpAgentsFlow.value = QuantaBackendApi.getInstance().getKnownAcpAgents(project.rpcProjectPath())
         refreshCurrentState()
+    }
+
+    override suspend fun refreshAvailableLocalQuantaAcpSessions() {
+        _availableLocalQuantaAcpSessionsFlow.value =
+            QuantaBackendApi.getInstance().getAvailableLocalQuantaAcpSessions(project.rpcProjectPath())
+    }
+
+    override suspend fun forgetLocalQuantaAcpSession(peerIdentity: String) {
+        QuantaBackendApi.getInstance().forgetLocalQuantaAcpSession(project.rpcProjectPath(), peerIdentity)
+        refreshAvailableLocalQuantaAcpSessions()
     }
 
     override suspend fun stopQuantaAcpShare() {

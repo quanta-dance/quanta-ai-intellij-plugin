@@ -46,27 +46,30 @@ class AcpAgentRosterStateService : PersistentStateComponent<AcpAgentRosterStateS
     }
 
     fun agents(): List<AcpAgentDto> =
-        state.discoveredAgents.mapNotNull { agent ->
-            agent
-                .takeIf { it.id.isNotBlank() && it.name.isNotBlank() && it.executablePath.isNotBlank() }
-                ?.let {
-                    AcpAgentDto(
-                        id = it.id,
-                        name = it.name,
-                        command = it.command.toList(),
-                        executablePath = it.executablePath,
-                        version = it.version,
-                        protocolVersion = it.protocolVersion,
-                    )
-                }
-        }
+        state.discoveredAgents
+            .asSequence()
+            .filterNot { it.command == QUANTA_ACP_COMMAND }
+            .mapNotNull { agent ->
+                agent
+                    .takeIf { it.id.isNotBlank() && it.name.isNotBlank() && it.executablePath.isNotBlank() }
+                    ?.let {
+                        AcpAgentDto(
+                            id = it.id,
+                            name = it.name,
+                            command = it.command.toList(),
+                            executablePath = it.executablePath,
+                            version = it.version,
+                            protocolVersion = it.protocolVersion,
+                        )
+                    }
+            }.toList()
 
     fun replace(agents: List<AcpAgentDto>) {
         state =
             State(
                 discoveredAgents =
                     agents
-                        .filter { it.peerIdentity == null }
+                        .filter { it.peerIdentity == null && it.command != QUANTA_ACP_COMMAND }
                         .map { agent ->
                             PersistedAgent(
                                 id = agent.id,
@@ -78,5 +81,9 @@ class AcpAgentRosterStateService : PersistentStateComponent<AcpAgentRosterStateS
                             )
                         }.toMutableList(),
             )
+    }
+
+    private companion object {
+        val QUANTA_ACP_COMMAND = listOf("quanta-acp")
     }
 }

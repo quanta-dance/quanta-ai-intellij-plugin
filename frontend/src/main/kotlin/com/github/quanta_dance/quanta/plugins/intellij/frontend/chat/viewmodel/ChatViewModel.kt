@@ -11,6 +11,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPla
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationParticipantDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.LocalQuantaAcpSessionDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServerStatusDto
 import com.intellij.openapi.Disposable
 import kotlinx.coroutines.CancellationException
@@ -38,6 +39,7 @@ interface ChatViewModelApi : Disposable {
     val delegatedTasksFlow: StateFlow<List<DelegatedTaskDto>>
     val channelEventsFlow: StateFlow<List<AgentChannelEventDto>>
     val quantaAcpInviteFlow: StateFlow<String?>
+    val availableLocalQuantaAcpSessionsFlow: StateFlow<List<LocalQuantaAcpSessionDto>>
 
     fun onPromptInputChanged(input: String)
 
@@ -76,6 +78,10 @@ interface ChatViewModelApi : Disposable {
 
     fun onJoinQuantaAcpShare(invite: String)
 
+    fun onRefreshAvailableLocalQuantaAcpSessions()
+
+    fun onForgetLocalQuantaAcpSession(peerIdentity: String)
+
     fun onStopQuantaAcpShare()
 
     fun onRemoveJoinedQuantaAcpAgent(agentId: String)
@@ -108,6 +114,8 @@ class ChatViewModel(
     override val delegatedTasksFlow: StateFlow<List<DelegatedTaskDto>> = repository.delegatedTasksFlow
     override val channelEventsFlow: StateFlow<List<AgentChannelEventDto>> = repository.channelEventsFlow
     override val quantaAcpInviteFlow: StateFlow<String?> = repository.quantaAcpInviteFlow
+    override val availableLocalQuantaAcpSessionsFlow: StateFlow<List<LocalQuantaAcpSessionDto>> =
+        repository.availableLocalQuantaAcpSessionsFlow
 
     private val _promptInputState = MutableStateFlow<MessageInputState>(MessageInputState.Disabled)
     override val promptInputState: StateFlow<MessageInputState> = _promptInputState.asStateFlow()
@@ -254,6 +262,14 @@ class ChatViewModel(
 
     override fun onJoinQuantaAcpShare(invite: String) {
         coroutineScope.launch { repository.joinQuantaAcpShare(invite) }
+    }
+
+    override fun onRefreshAvailableLocalQuantaAcpSessions() {
+        coroutineScope.launch { repository.refreshAvailableLocalQuantaAcpSessions() }
+    }
+
+    override fun onForgetLocalQuantaAcpSession(peerIdentity: String) {
+        coroutineScope.launch { repository.forgetLocalQuantaAcpSession(peerIdentity) }
     }
 
     override fun onStopQuantaAcpShare() {

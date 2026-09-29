@@ -255,6 +255,22 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
         return changed
     }
 
+    /** Removes an unavailable ACP peer from every persisted chat session. */
+    fun removeAcpAgentFromAllSessions(agentId: String): Boolean = removeAcpAgentsMatching { candidate -> candidate == agentId }
+
+    /** Removes ACP permissions that are no longer represented by a live transport. */
+    fun removeAcpAgentsMatching(predicate: (String) -> Boolean): Boolean {
+        var changed = false
+        state.sessions.forEach { session ->
+            val removed = session.allowedAcpAgentIds.removeIf(predicate)
+            if (removed) {
+                session.updatedAtEpochMs = System.currentTimeMillis()
+                changed = true
+            }
+        }
+        return changed
+    }
+
     /** New sessions enable configured MCP servers by default; this list records explicit opt-outs only. */
     fun isMcpServerEnabled(
         sessionId: String,

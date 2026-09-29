@@ -163,6 +163,24 @@ class ChatConversationService(
         }
     }
 
+    /** Removes a stale or explicitly disconnected ACP peer from every persisted chat session. */
+    fun removeAcpAgentFromAllSessions(agentId: String) {
+        onChatPublicationThread {
+            persistence.removeAcpAgentFromAllSessions(agentId)
+            _sessions.value = persistence.listSessions()
+        }
+    }
+
+    /** Removes persisted Quanta-peer permissions that have no live paired transport after restart. */
+    fun removeStaleQuantaAcpAgents(liveAgentIds: Set<String>) {
+        onChatPublicationThread {
+            persistence.removeAcpAgentsMatching { agentId ->
+                agentId.startsWith("quanta:") && agentId !in liveAgentIds
+            }
+            _sessions.value = persistence.listSessions()
+        }
+    }
+
     fun getDisabledMcpServerNames(): Set<String> = persistence.getDisabledMcpServerNames()
 
     fun setMcpServerEnabled(

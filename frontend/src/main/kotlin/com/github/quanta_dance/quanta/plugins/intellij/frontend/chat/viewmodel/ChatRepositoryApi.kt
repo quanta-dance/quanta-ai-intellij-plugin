@@ -11,6 +11,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPla
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationParticipantDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.LocalQuantaAcpSessionDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServerStatusDto
 import kotlinx.coroutines.flow.StateFlow
 
@@ -29,6 +30,7 @@ interface ChatRepositoryApi {
     val delegatedTasksFlow: StateFlow<List<DelegatedTaskDto>>
     val channelEventsFlow: StateFlow<List<AgentChannelEventDto>>
     val quantaAcpInviteFlow: StateFlow<String?>
+    val availableLocalQuantaAcpSessionsFlow: StateFlow<List<LocalQuantaAcpSessionDto>>
 
     suspend fun sendMessage(messageContent: String)
 
@@ -59,6 +61,10 @@ interface ChatRepositoryApi {
     suspend fun createQuantaAcpShare()
 
     suspend fun joinQuantaAcpShare(invite: String)
+
+    suspend fun refreshAvailableLocalQuantaAcpSessions()
+
+    suspend fun forgetLocalQuantaAcpSession(peerIdentity: String)
 
     suspend fun stopQuantaAcpShare()
 

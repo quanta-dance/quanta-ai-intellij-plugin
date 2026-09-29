@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.quanta_dance.quanta.plugins.intellij.backend.chat.ChatConversationService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AcpAgentDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.LocalQuantaAcpSessionDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.QuantaAcpShareDto
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
@@ -19,6 +20,7 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.nio.file.Path
 import java.security.SecureRandom
 import java.util.Base64
 import java.util.UUID
@@ -26,6 +28,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Hosts and joins short-lived, localhost-only ACP collaboration sessions.
@@ -43,6 +46,7 @@ class QuantaAcpShareService(
         val connectionToken: String,
         val expiresAtMillis: Long,
         val paired: AtomicBoolean = AtomicBoolean(inviteToken == null),
+        @Volatile var peerAgentId: String? = null,
     )
 
     private data class CallbackEndpoint(
@@ -64,8 +68,20 @@ class QuantaAcpShareService(
             Thread(runnable, "qd-acp-share-${System.nanoTime()}").apply { isDaemon = true }
         }
     private val localPeerIdentity = UUID.randomUUID().toString()
+    private val publisherProcessId = ProcessHandle.current().pid()
+    private val localProjectPath =
+        project.basePath?.let {
+            Path
+                .of(it)
+                .toAbsolutePath()
+                .normalize()
+                .toString()
+        }
+    private val localSessionRegistry = LocalQuantaAcpSessionRegistry()
     private val joinedAgents = ConcurrentHashMap<String, AcpAgentDto>()
+    private val hostedSessions = ConcurrentHashMap.newKeySet<HostSession>()
     private val reverseSessionsByAgentId = ConcurrentHashMap<String, HostSession>()
+    private val activePeerTaskCounts = ConcurrentHashMap<String, AtomicInteger>()
 
     @Volatile
     private var hostSession: HostSession? = null
@@ -73,12 +89,22 @@ class QuantaAcpShareService(
     @Volatile
     private var connectedPeerName: String? = null
 
+    init {
+        createLocalShare(AUTO_DISCOVERY_TTL_MILLIS)
+        project.service<ChatConversationService>().removeStaleQuantaAcpAgents(joinedAgents.keys)
+    }
+
     @Synchronized
     fun createInvite(): QuantaAcpShareDto {
         stopSharing()
+        return createLocalShare(INVITE_TTL_MILLIS)
+    }
+
+    @Synchronized
+    private fun createLocalShare(ttlMillis: Long): QuantaAcpShareDto {
         val inviteToken = newToken()
         val server = ServerSocket(0, 1, InetAddress.getLoopbackAddress())
-        val expiresAtMillis = System.currentTimeMillis() + INVITE_TTL_MILLIS
+        val expiresAtMillis = System.currentTimeMillis() + ttlMillis
         val session =
             HostSession(
                 server = server,
@@ -86,10 +112,22 @@ class QuantaAcpShareService(
                 connectionToken = newToken(),
                 expiresAtMillis = expiresAtMillis,
             )
+        hostedSessions += session
         hostSession = session
         executor.submit { acceptConnections(session) }
+        val invite = "quanta-acp://join?host=127.0.0.1&port=${server.localPort}&token=$inviteToken&v=1"
+        localSessionRegistry.publish(
+            LocalQuantaAcpSessionDto(
+                peerIdentity = localPeerIdentity,
+                projectName = project.name,
+                invite = invite,
+                expiresAtMillis = expiresAtMillis,
+                publisherProjectPath = localProjectPath,
+                publisherProcessId = publisherProcessId,
+            ),
+        )
         return QuantaAcpShareDto(
-            invite = "quanta-acp://join?host=127.0.0.1&port=${server.localPort}&token=$inviteToken&v=1",
+            invite = invite,
             port = server.localPort,
             expiresAtMillis = expiresAtMillis,
         )
@@ -97,9 +135,27 @@ class QuantaAcpShareService(
 
     @Synchronized
     fun stopSharing() {
-        hostSession?.server?.close()
+        hostedSessions.forEach { session -> session.server.close() }
+        hostedSessions.clear()
         hostSession = null
         connectedPeerName = null
+        localSessionRegistry.remove(localPeerIdentity)
+    }
+
+    fun availableLocalSessions(): List<LocalQuantaAcpSessionDto> =
+        localSessionRegistry.available(
+            excludingPeerIdentity = localPeerIdentity,
+            excludingProjectPath = localProjectPath,
+            excludingLegacyPublisherProcessId = publisherProcessId,
+        )
+
+    /** Removes a stale or unwanted local-session advertisement and any matching paired collaborator. */
+    fun forgetLocalSession(peerIdentity: String) {
+        if (peerIdentity == localPeerIdentity) return
+        localSessionRegistry.remove(peerIdentity)
+        joinedAgents.values
+            .filter { agent -> agent.peerIdentity == peerIdentity }
+            .forEach { agent -> removeJoinedAcpAgent(agent.id) }
     }
 
     @Synchronized
@@ -133,12 +189,15 @@ class QuantaAcpShareService(
 
     fun joinedAcpAgents(): List<AcpAgentDto> = joinedAgents.values.sortedBy(AcpAgentDto::name)
 
+    /** True while this paired Quanta peer has work executing in this IDE. */
+    fun isJoinedPeerWorking(agentId: String): Boolean = activePeerTaskCounts[agentId]?.get()?.let { it > 0 } == true
+
     /** Removes a paired peer and revokes its permission for the active chat. */
     fun removeJoinedAcpAgent(agentId: String): Boolean {
-        val removed = joinedAgents.remove(agentId) ?: return false
+        val removed = joinedAgents.remove(agentId)
         reverseSessionsByAgentId.remove(agentId)?.server?.close()
-        project.service<ChatConversationService>().setAcpAgentAllowed(removed.id, false)
-        return true
+        project.service<ChatConversationService>().removeAcpAgentFromAllSessions(agentId)
+        return removed != null
     }
 
     fun currentShare(): QuantaAcpShareDto =
@@ -173,6 +232,10 @@ class QuantaAcpShareService(
                 val message = runCatching { mapper.readTree(request) }.getOrNull() ?: continue
                 val id = message.path("id")
                 when (message.path("method").asText()) {
+                    "quanta/ping" -> {
+                        writeResult(writer, id, mapOf("peerIdentity" to localPeerIdentity))
+                    }
+
                     "initialize" -> {
                         val quanta = message.path("params").path("clientCapabilities").path("quanta")
                         val token = quanta.path("token").asText()
@@ -196,11 +259,11 @@ class QuantaAcpShareService(
                                 .path("clientInfo")
                                 .path("name")
                                 .asText("Shared Quanta")
+                        val peerIdentity = quanta.path("peerIdentity").asText().ifBlank { null }
                         if (pairedWithInvite) {
                             connectedPeerName = peerName
-                            val peerIdentity = quanta.path("peerIdentity").asText().ifBlank { null }
                             callbackEndpoint(quanta)?.let { callback ->
-                                registerPairedPeer(callback, peerName, peerIdentity)
+                                registerPairedPeer(callback, peerName, peerIdentity, session)
                             }
                                 ?: run {
                                     writeError(
@@ -224,6 +287,7 @@ class QuantaAcpShareService(
                                     ),
                             ),
                         )
+                        if (pairedWithInvite) refreshAutomaticAdvertisement(session)
                     }
 
                     "session/new" -> {
@@ -245,18 +309,24 @@ class QuantaAcpShareService(
                             writeError(writer, id, "The shared ACP prompt is empty.")
                             continue
                         }
+                        val peerAgentId = session.peerAgentId
+                        peerAgentId?.let(::markPeerTaskStarted)
                         val responseText =
-                            runCatching {
-                                runBlocking {
-                                    project.service<ChatConversationService>().processAcpPeerTask(peerName, text)
+                            try {
+                                runCatching {
+                                    runBlocking {
+                                        project.service<ChatConversationService>().processAcpPeerTask(peerName, text)
+                                    }
+                                }.getOrElse { error ->
+                                    QDLog.warn(
+                                        logger,
+                                        { "Could not deliver shared ACP prompt: ${error.message}" },
+                                        error,
+                                    )
+                                    "The shared Quanta ACP request could not be completed."
                                 }
-                            }.getOrElse { error ->
-                                QDLog.warn(
-                                    logger,
-                                    { "Could not deliver shared ACP prompt: ${error.message}" },
-                                    error,
-                                )
-                                "The shared Quanta ACP request could not be completed."
+                            } finally {
+                                peerAgentId?.let(::markPeerTaskFinished)
                             }
                         writeNotification(
                             writer,
@@ -369,6 +439,7 @@ class QuantaAcpShareService(
         callback: CallbackEndpoint,
         peerName: String,
         peerIdentity: String?,
+        session: HostSession,
     ) {
         val endpoint = "tcp://${callback.host}:${callback.port}"
         val stablePeerIdentity = peerIdentity ?: "$endpoint:${callback.token}"
@@ -384,7 +455,19 @@ class QuantaAcpShareService(
                 connectionToken = callback.token,
             )
         replaceJoinedAgent(agent)
+        session.peerAgentId = id
         project.service<ChatConversationService>().setAcpAgentAllowed(id, true)
+    }
+
+    /**
+     * Replaces the consumed one-time discovery invite without closing the already paired listener.
+     * Existing peers keep using the prior session's connection token; the registry always points at
+     * the next one-time endpoint for a newly opened local IDE project.
+     */
+    @Synchronized
+    private fun refreshAutomaticAdvertisement(consumedSession: HostSession) {
+        if (hostSession !== consumedSession || consumedSession.server.isClosed) return
+        createLocalShare(AUTO_DISCOVERY_TTL_MILLIS)
     }
 
     private fun quantaPeerAgentId(peerIdentity: String): String = "quanta:$peerIdentity"
@@ -402,10 +485,23 @@ class QuantaAcpShareService(
         replacedAgentIds.forEach { replacedId ->
             joinedAgents.remove(replacedId)
             reverseSessionsByAgentId.remove(replacedId)?.server?.close()
-            project.service<ChatConversationService>().setAcpAgentAllowed(replacedId, false)
+            project.service<ChatConversationService>().removeAcpAgentFromAllSessions(replacedId)
         }
         joinedAgents[agent.id] = agent
-        reverseSession?.let { reverseSessionsByAgentId[agent.id] = it }
+        reverseSession?.let {
+            it.peerAgentId = agent.id
+            reverseSessionsByAgentId[agent.id] = it
+        }
+    }
+
+    private fun markPeerTaskStarted(agentId: String) {
+        activePeerTaskCounts.computeIfAbsent(agentId) { AtomicInteger() }.incrementAndGet()
+    }
+
+    private fun markPeerTaskFinished(agentId: String) {
+        activePeerTaskCounts.computeIfPresent(agentId) { _, count ->
+            if (count.decrementAndGet() <= 0) null else count
+        }
     }
 
     private fun responseError(error: JsonNode): String = error.path("message").asText("Unknown Quanta ACP pairing error.")
@@ -433,7 +529,11 @@ class QuantaAcpShareService(
         message: String,
     ) = write(
         writer,
-        mapOf("jsonrpc" to "2.0", "id" to id.asText(), "error" to mapOf("code" to -32001, "message" to message)),
+        mapOf(
+            "jsonrpc" to "2.0",
+            "id" to id.asText(),
+            "error" to mapOf("code" to -32001, "message" to message),
+        ),
     )
 
     private fun write(
@@ -474,11 +574,13 @@ class QuantaAcpShareService(
         reverseSessionsByAgentId.clear()
         executor.shutdownNow()
         joinedAgents.clear()
+        activePeerTaskCounts.clear()
     }
 
     private companion object {
         const val ACP_PROTOCOL_VERSION = 1
         const val INVITE_TTL_MILLIS = 10 * 60 * 1_000L
+        const val AUTO_DISCOVERY_TTL_MILLIS = 24 * 60 * 60 * 1_000L
         const val TOKEN_BYTES = 32
         const val PAIRING_TIMEOUT_MILLIS = 5_000
         const val PAIRING_REQUEST_ID = 1

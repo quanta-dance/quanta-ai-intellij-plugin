@@ -12,6 +12,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPla
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationParticipantDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.FrontendLogDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.LocalQuantaAcpSessionDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServerStatusesDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.MicrophoneTranscriptionResultDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.QuantaAcpShareDto
@@ -31,7 +32,8 @@ import fleet.rpc.remoteApiDescriptor
 @Rpc
 interface QuantaBackendApi : RemoteApi<Unit> {
     companion object {
-        suspend fun getInstance(): QuantaBackendApi = RemoteApiProviderService.resolve(remoteApiDescriptor<QuantaBackendApi>())
+        suspend fun getInstance(): QuantaBackendApi =
+            RemoteApiProviderService.resolve(remoteApiDescriptor<QuantaBackendApi>())
     }
 
     suspend fun ping(): String
@@ -77,6 +79,15 @@ interface QuantaBackendApi : RemoteApi<Unit> {
         projectPath: String,
         invite: String,
     ): QuantaAcpShareDto
+
+    /** Returns currently shared Quanta IDE sessions for this operating-system user on localhost. */
+    suspend fun getAvailableLocalQuantaAcpSessions(projectPath: String): List<LocalQuantaAcpSessionDto>
+
+    /** Removes a stale or unwanted localhost Quanta IDE advertisement from the local session picker. */
+    suspend fun forgetLocalQuantaAcpSession(
+        projectPath: String,
+        peerIdentity: String,
+    )
 
     suspend fun stopQuantaAcpShare(projectPath: String)
 

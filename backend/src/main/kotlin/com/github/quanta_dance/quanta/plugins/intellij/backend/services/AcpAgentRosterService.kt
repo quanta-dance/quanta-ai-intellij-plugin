@@ -45,8 +45,10 @@ class AcpAgentRosterService(
 
     private fun agents(scheduleRefresh: Boolean): List<AcpAgentDto> {
         if (scheduleRefresh) scheduleBackgroundRefresh()
-        return (discoveredAgents + project.service<QuantaAcpShareService>().joinedAcpAgents())
-            .distinctBy(::acpRosterIdentity)
+        val joinedAgents = project.service<QuantaAcpShareService>().joinedAcpAgents()
+        return (
+            discoveredAgents.filterNot(::isQuantaAcpAgent) + joinedAgents
+        ).distinctBy(::acpRosterIdentity)
             .sortedBy(AcpAgentDto::name)
     }
 
@@ -59,3 +61,9 @@ class AcpAgentRosterService(
 }
 
 internal fun acpRosterIdentity(agent: AcpAgentDto): String = agent.peerIdentity?.let { "quanta:$it" } ?: agent.id
+
+private fun isQuantaAcpAgent(agent: AcpAgentDto): Boolean =
+    agent.command == QUANTA_ACP_COMMAND || agent.id.startsWith(QUANTA_ACP_AGENT_ID_PREFIX)
+
+private const val QUANTA_ACP_AGENT_ID_PREFIX = "quanta:"
+private val QUANTA_ACP_COMMAND = listOf("quanta-acp")

@@ -102,6 +102,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.Collabo
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationParticipantKindDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskStatusDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.LocalQuantaAcpSessionDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServerStatusDto
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
@@ -158,6 +159,7 @@ fun chatApp(
     val delegatedTasks by viewModel.delegatedTasksFlow.collectAsState(emptyList())
     val channelEvents by viewModel.channelEventsFlow.collectAsState(emptyList())
     val quantaAcpInvite by viewModel.quantaAcpInviteFlow.collectAsState(null)
+    val availableLocalQuantaAcpSessions by viewModel.availableLocalQuantaAcpSessionsFlow.collectAsState(emptyList())
     val hasRunningAgentWork = delegatedTasks.any { it.status == DelegatedTaskStatusDto.RUNNING }
     val activeSession = sessions.firstOrNull { it.isActive }
     val microphoneService = remember(project) { project.service<FrontendMicrophoneService>() }
@@ -360,10 +362,12 @@ fun chatApp(
                 agenticTeamDialog(
                     agenticEnabled = agenticEnabled,
                     internalAgents = agents,
+                    collaborationParticipants = collaborationParticipants,
                     acpAgents = acpAgents,
                     acpDiscoveryLoading = acpDiscoveryLoading,
                     allowedAcpAgentIds = allowedAcpAgentIds,
                     quantaAcpInvite = quantaAcpInvite,
+                    availableLocalQuantaAcpSessions = availableLocalQuantaAcpSessions,
                     onSetAgenticEnabled = { enabled ->
                         agenticEnabled = enabled
                         FrontendQuantaSettingsState.instance.state.agenticEnabled = enabled
@@ -413,7 +417,24 @@ fun chatApp(
                     },
                     onCreateQuantaAcpShare = viewModel::onCreateQuantaAcpShare,
                     onJoinQuantaAcpShare = viewModel::onJoinQuantaAcpShare,
+                    onRefreshAvailableLocalQuantaAcpSessions = viewModel::onRefreshAvailableLocalQuantaAcpSessions,
+                    onForgetLocalQuantaAcpSession = viewModel::onForgetLocalQuantaAcpSession,
                     onStopQuantaAcpShare = viewModel::onStopQuantaAcpShare,
+                    onRemoveSharedAcpParticipant = { agent ->
+                        val approved =
+                            Messages.showYesNoDialog(
+                                project,
+                                "Remove ${agent.name} from this chat and forget this shared Quanta ACP peer? " +
+                                    "It will no longer appear in the roster.",
+                                "Remove Shared Collaborator",
+                                "Remove",
+                                "Cancel",
+                                Messages.getQuestionIcon(),
+                            ) == Messages.YES
+                        if (approved) {
+                            viewModel.onRemoveJoinedQuantaAcpAgent(agent.id)
+                        }
+                    },
                     onDismiss = { showAgenticTeamDialog = false },
                 )
             }
@@ -598,31 +619,35 @@ private fun McpServerStatusDto.connectionDescription(): String =
 private fun agenticTeamDialog(
     agenticEnabled: Boolean,
     internalAgents: List<AgentInfoDto>,
+    collaborationParticipants: List<CollaborationParticipantDto>,
     acpAgents: List<AcpAgentDto>,
     acpDiscoveryLoading: Boolean,
     allowedAcpAgentIds: Set<String>,
     quantaAcpInvite: String?,
+    availableLocalQuantaAcpSessions: List<LocalQuantaAcpSessionDto>,
     onSetAgenticEnabled: (Boolean) -> Unit,
     onRefresh: () -> Unit,
     onSetAcpAllowed: (AcpAgentDto, Boolean) -> Unit,
     onCreateQuantaAcpShare: () -> Unit,
     onJoinQuantaAcpShare: (String) -> Unit,
+    onRefreshAvailableLocalQuantaAcpSessions: () -> Unit,
+    onForgetLocalQuantaAcpSession: (String) -> Unit,
     onStopQuantaAcpShare: () -> Unit,
+    onRemoveSharedAcpParticipant: (AcpAgentDto) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var joinInvite by remember { mutableStateOf("") }
-    val joinInviteFieldState = rememberTextFieldState()
-    LaunchedEffect(Unit) {
-        snapshotFlow { joinInviteFieldState.text.toString() }
-            .distinctUntilChanged()
-            .collect { joinInvite = it }
-    }
+    var showQuantaIdeConnectionsDialog by remember { mutableStateOf(false) }
+    val sharedAcpAgents = acpAgents.filter(AcpAgentDto::isJoinedQuantaAcpPeer)
+    val discoveredAcpAgents = acpAgents.filterNot(AcpAgentDto::isJoinedQuantaAcpPeer)
+    val dialogScrollState = rememberScrollState()
     Dialog(onDismissRequest = onDismiss) {
         Column(
             modifier =
                 Modifier
                     .widthIn(min = 460.dp, max = 620.dp)
+                    .heightIn(max = 720.dp)
                     .background(ChatAppColors.Panel.background, RoundedCornerShape(12.dp))
+                    .verticalScroll(dialogScrollState)
                     .padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
@@ -644,40 +669,30 @@ private fun agenticTeamDialog(
             }
 
             Divider(orientation = Orientation.Horizontal)
-            Text("Quanta ACP collaboration", fontWeight = FontWeight.SemiBold)
-            Text(
-                "Share a one-time localhost invite with another Quanta IDE session. A joined session appears below as an external ACP teammate.",
-                style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onCreateQuantaAcpShare) { Text("Share ACP") }
-                if (quantaAcpInvite != null) {
-                    OutlinedButton(
-                        onClick = {
-                            Toolkit.getDefaultToolkit().systemClipboard.setContents(
-                                StringSelection(quantaAcpInvite),
-                                null,
-                            )
-                        },
-                    ) {
-                        Text("Copy invite")
-                    }
-                    OutlinedButton(onClick = onStopQuantaAcpShare) { Text("Stop sharing") }
-                }
-            }
-            quantaAcpInvite?.let { invite ->
-                Text(
-                    invite,
-                    style = JewelTheme.defaultTextStyle.copy(fontSize = 11.sp, color = Color(0xFF67C587)),
-                )
-            }
-            TextField(
-                state = joinInviteFieldState,
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Paste quanta-acp:// invite") },
-            )
-            OutlinedButton(onClick = { onJoinQuantaAcpShare(joinInvite) }, enabled = joinInvite.isNotBlank()) {
-                Text("Join ACP")
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                    Text("Shared IDE collaborators", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        if (sharedAcpAgents.isEmpty()) {
+                            "Connect another Quanta IDE or manage existing collaborators."
+                        } else {
+                            "${sharedAcpAgents.size} shared collaborator(s) connected."
+                        },
+                        style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
+                    )
+                }
+                OutlinedButton(
+                    onClick = {
+                        onRefreshAvailableLocalQuantaAcpSessions()
+                        showQuantaIdeConnectionsDialog = true
+                    },
+                ) {
+                    Text("Manage")
+                }
             }
 
             Divider(orientation = Orientation.Horizontal)
@@ -710,16 +725,16 @@ private fun agenticTeamDialog(
                 }
             }
             when {
-                acpAgents.isEmpty() && !acpDiscoveryLoading -> {
+                discoveredAcpAgents.isEmpty() && !acpDiscoveryLoading -> {
                     Text(
                         "No available ACP agents found. Refresh after installing or configuring an agent.",
                         style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
                     )
                 }
 
-                acpAgents.isNotEmpty() -> {
+                discoveredAcpAgents.isNotEmpty() -> {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        acpAgents.forEach { agent ->
+                        discoveredAcpAgents.forEach { agent ->
                             val allowed = agent.id in allowedAcpAgentIds
                             Row(
                                 modifier =
@@ -737,7 +752,11 @@ private fun agenticTeamDialog(
                                     Text(agent.name, fontWeight = FontWeight.SemiBold)
                                     Text(
                                         agent.transportDescription(),
-                                        style = JewelTheme.defaultTextStyle.copy(fontSize = 11.sp, color = Color.Gray),
+                                        style =
+                                            JewelTheme.defaultTextStyle.copy(
+                                                fontSize = 11.sp,
+                                                color = Color.Gray,
+                                            ),
                                     )
                                     Text(
                                         if (allowed) "Allowed for this chat" else "Available · Not allowed",
@@ -759,6 +778,145 @@ private fun agenticTeamDialog(
                                 }
                             }
                         }
+                    }
+                }
+            }
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                DefaultButton(onClick = onDismiss) { Text("Done") }
+            }
+        }
+    }
+    if (showQuantaIdeConnectionsDialog) {
+        quantaIdeConnectionsDialog(
+            sharedAcpAgents = sharedAcpAgents,
+            quantaAcpInvite = quantaAcpInvite,
+            availableLocalQuantaAcpSessions = availableLocalQuantaAcpSessions,
+            onCreateQuantaAcpShare = onCreateQuantaAcpShare,
+            onJoinQuantaAcpShare = onJoinQuantaAcpShare,
+            onRefreshAvailableLocalQuantaAcpSessions = onRefreshAvailableLocalQuantaAcpSessions,
+            onForgetLocalQuantaAcpSession = onForgetLocalQuantaAcpSession,
+            onStopQuantaAcpShare = onStopQuantaAcpShare,
+            onRemoveSharedAcpParticipant = onRemoveSharedAcpParticipant,
+            onDismiss = { showQuantaIdeConnectionsDialog = false },
+        )
+    }
+}
+
+@Composable
+private fun quantaIdeConnectionsDialog(
+    sharedAcpAgents: List<AcpAgentDto>,
+    quantaAcpInvite: String?,
+    availableLocalQuantaAcpSessions: List<LocalQuantaAcpSessionDto>,
+    onCreateQuantaAcpShare: () -> Unit,
+    onJoinQuantaAcpShare: (String) -> Unit,
+    onRefreshAvailableLocalQuantaAcpSessions: () -> Unit,
+    onForgetLocalQuantaAcpSession: (String) -> Unit,
+    onStopQuantaAcpShare: () -> Unit,
+    onRemoveSharedAcpParticipant: (AcpAgentDto) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var joinInvite by remember { mutableStateOf("") }
+    var showManualConnection by remember { mutableStateOf(false) }
+    val joinInviteFieldState = rememberTextFieldState()
+    val scrollState = rememberScrollState()
+    LaunchedEffect(Unit) {
+        onRefreshAvailableLocalQuantaAcpSessions()
+        snapshotFlow { joinInviteFieldState.text.toString() }
+            .distinctUntilChanged()
+            .collect { joinInvite = it }
+    }
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier =
+                Modifier
+                    .widthIn(min = 420.dp, max = 560.dp)
+                    .heightIn(max = 600.dp)
+                    .background(ChatAppColors.Panel.background, RoundedCornerShape(12.dp))
+                    .verticalScroll(scrollState)
+                    .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Shared IDE collaborators", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                    Text(
+                        "Connect another open Quanta IDE on this machine.",
+                        style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
+                    )
+                }
+                OutlinedButton(onClick = onRefreshAvailableLocalQuantaAcpSessions) { Text("Find IDEs") }
+            }
+
+            if (availableLocalQuantaAcpSessions.isEmpty()) {
+                Text(
+                    "No other open Quanta IDE sessions found.",
+                    style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
+                )
+            } else {
+                availableLocalQuantaAcpSessions.forEach { session ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(start = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(session.projectName, fontSize = 12.sp)
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            OutlinedButton(onClick = { onJoinQuantaAcpShare(session.invite) }) { Text("Connect") }
+                            OutlinedButton(onClick = { onForgetLocalQuantaAcpSession(session.peerIdentity) }) {
+                                Text("Forget")
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (sharedAcpAgents.isNotEmpty()) {
+                Divider(orientation = Orientation.Horizontal)
+                Text("Connected collaborators", fontWeight = FontWeight.SemiBold)
+                sharedAcpAgents.forEach { agent ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(start = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(agent.name, fontSize = 12.sp)
+                        OutlinedButton(onClick = { onRemoveSharedAcpParticipant(agent) }) { Text("Remove") }
+                    }
+                }
+            }
+
+            Divider(orientation = Orientation.Horizontal)
+            OutlinedButton(onClick = { showManualConnection = !showManualConnection }) {
+                Text(if (showManualConnection) "Hide manual connection" else "Manual connection")
+            }
+            if (showManualConnection) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = onCreateQuantaAcpShare) { Text("Create invite") }
+                        if (quantaAcpInvite != null) {
+                            OutlinedButton(
+                                onClick = {
+                                    Toolkit.getDefaultToolkit().systemClipboard.setContents(
+                                        StringSelection(quantaAcpInvite),
+                                        null,
+                                    )
+                                },
+                            ) { Text("Copy") }
+                            OutlinedButton(onClick = onStopQuantaAcpShare) { Text("Stop") }
+                        }
+                    }
+                    TextField(
+                        state = joinInviteFieldState,
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("Paste an invite") },
+                    )
+                    OutlinedButton(onClick = { onJoinQuantaAcpShare(joinInvite) }, enabled = joinInvite.isNotBlank()) {
+                        Text("Connect pasted invite")
                     }
                 }
             }
