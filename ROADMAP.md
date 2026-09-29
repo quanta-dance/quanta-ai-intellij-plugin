@@ -44,13 +44,23 @@ Near-term work should strengthen the trust, reliability, and usability around th
 - [x] Add bounded OpenAI request/connect/body deadlines, request lifecycle timing, transport-pool recovery after pre-header connection failures, and long-lived automatic retry for transient gateway/network failures.
 - [x] Make terminal output, document saving, settings synchronization, and shared MCP-file editing choose the originating project instead of an arbitrary open IDE project.
 
-### ACP external-agent collaboration
+### ACP and asynchronous collaboration
 
 - [x] Discover known and manually configured ACP applications or TCP endpoints through a bounded ACP `initialize` probe.
 - [x] Expose discovered ACP agents to the main AI and support independent background delegation, cancellation, live task cards, progress updates, and curated findings.
 - [x] Retain live ACP sessions for follow-up messages and coordinate meaningful ACP findings with the main agent without forwarding routine progress noise.
 - [x] Add chat-scoped authorization for ACP teammates: discovered does not imply allowed, allowed does not imply active, and removing an agent cancels its active work.
 - [x] Add an agentic-team roster with explicit external-agent approval, loading feedback, local/remote transport labels, and per-chat membership.
+- [x] Pair Quanta-enabled IDE projects on the same machine through backend-to-backend localhost ACP, with local-session discovery, manual-invite fallback, stable peer identity, explicit removal, and stale-advertisement cleanup.
+- [x] Unify the collaboration roster and task lifecycle for the coordinator, local teammates, and paired ACP peers; normalize task, result, status, cancellation, and capability handling behind transport adapters.
+- [x] Support asynchronous team fan-out/fan-in and nested dependency-aware teammate tasks without blocking the manager or a teammate worker while another participant runs.
+- [x] Keep the visible manager conversation linear: suppress housekeeping inbox chatter, prevent stale working indicators after restart, and show collaboration state through participant/task UI rather than raw routing tool cards.
+
+### Agent-turn performance and observability
+
+- [x] Move tool capability discovery, MCP metadata/schema construction, project context, and active-editor hashing off the per-turn path through cache-first snapshots and asynchronous refresh.
+- [x] Isolate bounded interactive manager, background coordination, inbound ACP, tool-execution, tool-catalog, and chat-publication execution paths.
+- [x] Add local privacy-safe timing for turn queueing, request construction, model requests, tool execution, and chat publication to distinguish local contention from provider latency.
 
 ### MCP control and resilience
 
@@ -74,10 +84,10 @@ Near-term work should strengthen the trust, reliability, and usability around th
    - Keep external-agent authentication external: show actionable sign-in guidance, but never collect or store another agent's credentials.
    - Add user-facing ACP-card actions for follow-up, redirect, stop, copy summary, and activity/details; expire idle retained sessions predictably.
 
-3. **Context, tool, and diagnostics efficiency**
-   - Cache converted OpenAI function schemas by MCP server generation; later offer optional per-tool filtering for large MCP servers.
-   - Measure request preparation, history/context tokens, enabled tool-schema tokens, and attached tool counts; compact conversation history within a documented budget.
+3. **Complete context and integration diagnostics**
+   - Add history/context token, enabled tool-schema token, and attached-tool measurements; compact conversation history within a documented budget.
    - Add a redacted integrations diagnostics surface covering AI-gateway transport/retries, MCP lifecycle/OAuth state, and ACP discovery/session state.
+   - Use the existing local turn timings to add targeted performance coverage for large conversations, tool batches, and concurrent collaborators.
 
 ## Priority 1 — Release reliability and structured failures
 

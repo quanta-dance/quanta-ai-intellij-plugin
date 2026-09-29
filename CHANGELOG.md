@@ -2,6 +2,38 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2026.09.29]
+
+This release adds autonomous, asynchronous collaboration across Quanta-managed teammates and paired local Quanta IDEs, while making agent turns, ACP rosters, and collaboration UI faster and more reliable.
+
+### Added
+- Added localhost-only Quanta ACP pairing for separately opened Quanta IDE projects on the same machine. Projects can be discovered from the Agentic team UI, paired through the existing backend-to-backend ACP handshake, and managed as shared collaborators.
+- Added a transport-neutral collaboration roster and task router for the main coordinator, local Quanta teammates, and explicitly paired ACP collaborators.
+- Added asynchronous team fan-out/fan-in: independent collaborators can work concurrently, and the main coordinator posts one final synthesis only after every requested report reaches a terminal state.
+- Added dependency-aware nested agent tasks so a teammate can request work from another teammate or an ACP collaborator, wait without blocking its worker, and resume with the correlated result.
+- Added local, privacy-safe turn-performance telemetry for scheduler wait, request construction, model request, tool execution, and chat-publication phases. Telemetry records timings and counts only; it does not log prompts, responses, source content, paths, tool arguments, or credentials.
+- Added a same-machine Shared IDE collaborators picker with a compact configuration popup, manual invite fallback, and explicit collaborator removal.
+- Added project-aware shared-collaborator names, live ACP activity indicators, and stable paired-peer identities.
+- Added GPT-6 Sol and GPT-6 Luna to the selectable chat models.
+
+### Improved
+- Isolated interactive manager turns, background coordination, inbound ACP work, tool execution, catalog refreshes, and chat publication onto bounded project-owned execution paths.
+- Made built-in tools, MCP tool metadata/schemas, active-editor hashes, and project context snapshots cache-first so agent turns do not repeat filesystem scans, context reads, or MCP discovery.
+- Improved agentic chat coordination with one linear visible manager conversation, per-turn thinking indicators, retained drafts while a turn is active, and clearer collaboration activity.
+- Made local/ACP collaboration lifecycle state monotonic, including fast completions, cancellation, restart recovery, and duplicate-result handling.
+- Simplified the Agentic team settings UI: shared-IDE connection settings are compact and isolated from the primary agent roster; the entire settings dialog scrolls as one surface.
+- Deduplicate discovered ACP applications by resolved executable, preserve a cached roster during background refresh, and keep stable identities for re-paired Quanta collaborators.
+- Improved tool cards: Search Files shows its query and filters; List Files shows its directory and can reveal directory targets in the Project view.
+- Updated the OpenAI Java SDK to 4.70.0.
+
+### Fixed
+- Removed stale typing/glowing agent state after IDE restart and convert interrupted in-flight work to a terminal state.
+- Prevented routine roster updates and inbox maintenance from producing unsolicited `Processed inbox messages` responses.
+- Prevented manager delegation from blocking on a teammate response, creating partial team summaries, or exposing raw internal delegation tool cards.
+- Fixed stale and duplicate ACP roster/discovery entries, including stale local IDE advertisements, self-discovery, and legacy ghost shared peers.
+- Fixed shared ACP activity visibility in both the initiating and receiving IDE sessions.
+- Fixed invalid List Files directory links and missing Search Files/List Files context in tool cards.
+
 ## [2026.09.22]
 
 This release improves agent visibility, ACP discovery, and IntelliJ-platform safety for multi-agent work.
