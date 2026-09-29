@@ -120,14 +120,12 @@ tasks {
                     .resolvedConfiguration
                     .resolvedArtifacts
                     .filter { it.file.name.endsWith(".jar") }
-                    // Exclude the OpenAI OkHttp transport and its dependencies: the backend uses
-                    // OpenAIJdkHttpClient, and the IntelliJ runtime does not provide OkHttp.
+                    // Jackson is not available from the split-mode backend classpath. Keep its
+                    // complete runtime dependency set in this module JAR, including jackson-core.
+                    // Jackson databind links to com.fasterxml.jackson.core.Versioned at class load time.
                     .filter { !it.file.name.startsWith("openai-java-client-okhttp") }
                     .filter { !it.file.name.startsWith("okhttp") }
                     .filter { !it.file.name.startsWith("okio") }
-                    // jackson-core is provided by the IDE platform; bundling it adds shaded
-                    // FastDoubleParse classes that reference VarHandle.set unavailable on older JVMs
-                    .filter { !it.file.name.startsWith("jackson-core") }
                     .map {
                         zipTree(it.file).matching {
                             // Defense in depth: keep the optional OpenAI OkHttp transport out even
