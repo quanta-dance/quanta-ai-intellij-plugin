@@ -6,7 +6,6 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent.CancelAcpDelegationTool
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent.DelegateToAcpAgentTool
-import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent.DiscoverAcpAgentsTool
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent.GetAcpDelegationStatusTool
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent.SendAcpDelegationMessageTool
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.catalog.ListToolsCatalogTool
@@ -30,9 +29,9 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.session.Ses
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.system.RequestModelSwitch
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.system.TerminalCommandTool
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
+import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import java.io.File
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Central registry for agent-callable backend tools.
@@ -48,12 +47,11 @@ object ToolsRegistry {
         val group: Group = Group.GENERIC,
     )
 
-    private data class CacheEntry(
-        val signature: String,
-        val tools: List<Class<out ToolInterface<out Any>>>,
+    private data class ProjectCapabilities(
+        val gradle: Boolean,
+        val go: Boolean,
+        val javaPsi: Boolean,
     )
-
-    private val cache = ConcurrentHashMap<Project, CacheEntry>()
 
     private fun javaPsiAvailable(project: Project?): Boolean {
         fun tryLoad(loader: ClassLoader?): Boolean =
@@ -91,10 +89,11 @@ object ToolsRegistry {
         }
     }
 
-    private fun baseEntries(project: Project?): List<ToolEntry> {
-        val runtimeSettings = BackendRuntimeSettingsService.instance.settings
-        val agentic = runtimeSettings.agenticEnabled ?: true
-        val terminalEnabled = runtimeSettings.terminalToolEnabled == true
+    private fun baseEntries(
+        agentic: Boolean,
+        terminalEnabled: Boolean,
+        javaPsi: Boolean,
+    ): List<ToolEntry> {
         val list =
             mutableListOf(
                 ToolEntry(ListToolsCatalogTool::class.java, Group.GENERIC),
@@ -114,7 +113,6 @@ object ToolsRegistry {
                 ToolEntry(RequestModelSwitch::class.java, Group.GENERIC),
                 ToolEntry(McpListServersTool::class.java, Group.GENERIC),
                 ToolEntry(McpListServerToolsTool::class.java, Group.GENERIC),
-                ToolEntry(DiscoverAcpAgentsTool::class.java, Group.GENERIC),
                 ToolEntry(DelegateToAcpAgentTool::class.java, Group.GENERIC),
                 ToolEntry(GetAcpDelegationStatusTool::class.java, Group.GENERIC),
                 ToolEntry(CancelAcpDelegationTool::class.java, Group.GENERIC),
@@ -154,9 +152,10 @@ object ToolsRegistry {
                     Group.GENERIC,
                 ),
             )
+
             list.add(
                 ToolEntry(
-                    com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent.AgentSendMessageTool::class.java,
+                    com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent.DelegateTeamTaskTool::class.java,
                     Group.GENERIC,
                 ),
             )
@@ -179,7 +178,7 @@ object ToolsRegistry {
                 ),
             )
         }
-        if (javaPsiAvailable(project)) {
+        if (javaPsi) {
             list.add(
                 ToolEntry(
                     com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.InspectDependencies::class.java,
@@ -190,57 +189,56 @@ object ToolsRegistry {
         return list
     }
 
-    fun toolsFor(project: Project): List<Class<out ToolInterface<out Any>>> {
-        val runtimeSettings = BackendRuntimeSettingsService.instance.settings
-        val agentic = runtimeSettings.agenticEnabled ?: true
-        val basePath = project.basePath
-        val gradle = basePath?.let { detectGradle(File(it)) } ?: false
-        val go = basePath?.let { detectGo(File(it)) } ?: false
-        val javaPsi = javaPsiAvailable(project)
-        val signature =
-            buildString {
-                append("agentic=").append(agentic).append(';')
-                append("gradle=").append(gradle).append(';')
-                append("go=").append(go).append(';')
-                append("javaPsi=").append(javaPsi).append(';')
-                append("terminal=").append(runtimeSettings.terminalToolEnabled == true).append(';')
-                append("base=").append(basePath ?: "<none>")
-            }
-        cache[project]?.takeIf { it.signature == signature }?.let { return it.tools }
+    /**
+     * Returns the current project snapshot without filesystem, plugin, or settings checks.
+     * Capability detection is scheduled by [ToolCatalogService] outside of agent turns.
+     */
+    fun toolsFor(project: Project): List<Class<out ToolInterface<out Any>>> = project.service<ToolCatalogService>().tools()
 
-        val entries = baseEntries(project).toMutableList()
-        if (gradle && gradlePluginAvailable(project)) {
-            entries.add(
+    /** Conservative snapshot available while project capability detection is still running. */
+    internal fun defaultTools(): List<Class<out ToolInterface<out Any>>> =
+        baseEntries(agentic = true, terminalEnabled = false, javaPsi = false).map { it.clazz }
+
+    /** Runs only from [ToolCatalogService]'s isolated refresh context. */
+    internal fun detectTools(project: Project): List<Class<out ToolInterface<out Any>>> {
+        val runtimeSettings = BackendRuntimeSettingsService.instance.settings
+        val baseDirectory = project.basePath?.let(::File)
+        val capabilities =
+            ProjectCapabilities(
+                gradle = baseDirectory?.let(::detectGradle) ?: false,
+                go = baseDirectory?.let(::detectGo) ?: false,
+                javaPsi = javaPsiAvailable(project),
+            )
+        val entries =
+            baseEntries(
+                agentic = runtimeSettings.agenticEnabled ?: true,
+                terminalEnabled = runtimeSettings.terminalToolEnabled == true,
+                javaPsi = capabilities.javaPsi,
+            ).toMutableList()
+        if (capabilities.gradle && gradlePluginAvailable(project)) {
+            entries +=
                 ToolEntry(
                     com.github.quanta_dance.quanta.plugins.intellij.backend.tools.builder.GradleSyncTool::class.java,
                     Group.GRADLE,
-                ),
-            )
-            entries.add(
+                )
+            entries +=
                 ToolEntry(
                     com.github.quanta_dance.quanta.plugins.intellij.backend.tools.builder.RunGradleBuildTool::class.java,
                     Group.GRADLE,
-                ),
-            )
-            entries.add(
+                )
+            entries +=
                 ToolEntry(
                     com.github.quanta_dance.quanta.plugins.intellij.backend.tools.builder.RunGradleTestsTool::class.java,
                     Group.GRADLE,
-                ),
-            )
-            entries.add(
+                )
+            entries +=
                 ToolEntry(
                     com.github.quanta_dance.quanta.plugins.intellij.backend.tools.builder.GetTestInfoTool::class.java,
                     Group.GRADLE,
-                ),
-            )
+                )
         }
-        if (!go) {
-            entries.removeIf { it.group == Group.GO }
-        }
-        val result = entries.map { it.clazz }
-        cache[project] = CacheEntry(signature, result)
-        return result
+        if (!capabilities.go) entries.removeIf { it.group == Group.GO }
+        return entries.map { it.clazz }
     }
 
     private fun detectGradle(dir: File): Boolean =

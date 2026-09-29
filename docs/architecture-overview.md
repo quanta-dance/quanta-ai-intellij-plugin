@@ -45,6 +45,13 @@ Quanta AI is a split IntelliJ plugin organized into three Gradle modules:
 - If startup ordering still proves risky, introduce an explicit backend readiness or "settings synchronized" signal at the UX boundary rather than reintroducing duplicate persisted ownership.
 - Keep ownership single-sourced: frontend persists editable settings, backend consumes the synced runtime snapshot, and session services own only transient state.
 
+## Collaboration architecture
+- The frontend presents collaboration state and collects explicit user intent; it does not run ACP transport connections.
+- `:shared` owns transport-neutral collaboration participant, task, and message contracts. A participant can represent the main coordinator, a local Quanta teammate, or an explicitly paired ACP peer.
+- `:backend` owns the collaboration router, bounded task execution, task/result correlation, persistence/restart recovery, and the local-agent or ACP transport adapters.
+- Same-machine Quanta IDE discovery is a local, same-user registry of short-lived localhost invitations. Selecting a session in the frontend delegates pairing to the local backend; the actual ACP handshake and later task/result traffic are backend-to-backend.
+- The visible manager chat remains linear. Independent work uses asynchronous task fan-out/fan-in; a final manager synthesis is scheduled only after the requested participant tasks reach terminal states.
+
 ## Documentation maintenance order
 1. Verify behavior through integration tests, scenario coverage, or other executable evidence.
 2. Document code/API surfaces with KDoc.

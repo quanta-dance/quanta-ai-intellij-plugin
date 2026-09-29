@@ -198,6 +198,10 @@ fun promptInput(
                                         onStop(message.toString())
                                     }
 
+                                    isSending -> {
+                                        // Keep the draft for the next linear turn; do not submit it concurrently.
+                                    }
+
                                     isSettingsSyncFailed -> {
                                         onSync()
                                     }

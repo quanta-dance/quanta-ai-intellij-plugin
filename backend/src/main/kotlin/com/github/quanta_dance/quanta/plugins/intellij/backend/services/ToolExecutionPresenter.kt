@@ -36,15 +36,18 @@ class ToolExecutionPresenter(
         val argsText = runCatching { functionCall.arguments() }.getOrDefault("")
         val argsJson = runCatching { mapper.readTree(argsText) }.getOrNull()
         val filePath = filePathOverride ?: extractFilePath(argsJson)
+        val directoryPath = extractDirectoryPath(toolName, argsJson)
         val toolPresentation = resolveToolPresentation(functionCall, status)
         val effectiveDetailText =
             detailText?.trim()?.ifBlank { null }
                 ?: toolPresentation?.detail?.trim()?.ifBlank { null }
+                ?: fallbackDirectoryDetail(directoryPath)
         val displayText =
             toolPresentation
                 ?.title
                 ?.trim()
                 .orEmpty()
+                .ifBlank { fallbackDirectoryTitle(toolName, directoryPath) }
                 .ifBlank { displaySummary?.trim().orEmpty() }
                 .ifBlank { buildFallbackDisplayText(toolName, filePath) }
         return ToolExecutionItem(
@@ -53,6 +56,7 @@ class ToolExecutionPresenter(
             displayText = displayText,
             status = status,
             filePath = filePath,
+            directoryPath = directoryPath,
             errorText = errorText,
             detailText = effectiveDetailText,
         )
@@ -84,11 +88,38 @@ class ToolExecutionPresenter(
         return trimmed
     }
 
+    /**
+     * Extracts only paths that identify an editable file. Generic `path` arguments may identify
+     * directories (for example, ListFiles), which must not be rendered as file-editor links.
+     */
     private fun extractFilePath(argsJson: JsonNode?): String? {
         if (argsJson == null) return null
-        return listOf("filePath", "path", "sourcePath")
+        return listOf("filePath", "sourcePath")
             .firstNotNullOfOrNull { key -> sanitizeCandidatePath(argsJson.path(key).asText("")) }
     }
+
+    private fun extractDirectoryPath(
+        toolName: String,
+        argsJson: JsonNode?,
+    ): String? =
+        if (toolName == "ListFiles" && argsJson != null) {
+            sanitizeCandidatePath(argsJson.path("path").asText("")) ?: ""
+        } else {
+            null
+        }
+
+    private fun fallbackDirectoryTitle(
+        toolName: String,
+        directoryPath: String?,
+    ): String =
+        if (toolName == "ListFiles" && directoryPath != null) {
+            "Listing files in ${directoryPath.ifBlank { "project root" }}"
+        } else {
+            ""
+        }
+
+    private fun fallbackDirectoryDetail(directoryPath: String?): String? =
+        directoryPath?.let { "Directory: ${it.ifBlank { "Project root" }}" }
 
     private fun buildFallbackDisplayText(
         toolName: String,

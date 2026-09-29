@@ -27,10 +27,14 @@ class ListFiles :
     ToolPresentationProvider {
     override val canBeParallel: Boolean = true
 
-    override fun presentation(status: ToolExecutionStatus): ToolExecutionPresentation =
-        ToolExecutionPresentation(
-            title = path?.trim()?.takeIf { it.isNotBlank() }?.let { "Listing files in $it" } ?: "Listing files",
+    override fun presentation(status: ToolExecutionStatus): ToolExecutionPresentation {
+        val requestedPath = path?.trim().orEmpty()
+        val directoryLabel = requestedPath.ifBlank { "project root" }
+        return ToolExecutionPresentation(
+            title = "Listing files in $directoryLabel",
+            detail = "Directory: $directoryLabel",
         )
+    }
 
     @JsonClassDescription("ListFiles operation result")
     data class Result(

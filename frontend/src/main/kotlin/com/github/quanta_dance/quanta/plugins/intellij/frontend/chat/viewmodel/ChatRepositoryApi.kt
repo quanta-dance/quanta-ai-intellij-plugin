@@ -9,7 +9,9 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentCh
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationParticipantDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.LocalQuantaAcpSessionDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServerStatusDto
 import kotlinx.coroutines.flow.StateFlow
 
@@ -18,6 +20,7 @@ interface ChatRepositoryApi {
     val sessionsFlow: StateFlow<List<ChatSessionDto>>
     val planStatusFlow: StateFlow<ChatPlanStatusDto>
     val agentsFlow: StateFlow<List<AgentInfoDto>>
+    val collaborationParticipantsFlow: StateFlow<List<CollaborationParticipantDto>>
     val acpAgentsFlow: StateFlow<List<AcpAgentDto>>
     val acpDiscoveryLoadingFlow: StateFlow<Boolean>
     val allowedAcpAgentIdsFlow: StateFlow<Set<String>>
@@ -26,6 +29,8 @@ interface ChatRepositoryApi {
     val mcpConfigurationErrorFlow: StateFlow<String?>
     val delegatedTasksFlow: StateFlow<List<DelegatedTaskDto>>
     val channelEventsFlow: StateFlow<List<AgentChannelEventDto>>
+    val quantaAcpInviteFlow: StateFlow<String?>
+    val availableLocalQuantaAcpSessionsFlow: StateFlow<List<LocalQuantaAcpSessionDto>>
 
     suspend fun sendMessage(messageContent: String)
 
@@ -52,6 +57,18 @@ interface ChatRepositoryApi {
     suspend fun retryMcpServerConnection(serverName: String)
 
     suspend fun createDefaultAgentTeam()
+
+    suspend fun createQuantaAcpShare()
+
+    suspend fun joinQuantaAcpShare(invite: String)
+
+    suspend fun refreshAvailableLocalQuantaAcpSessions()
+
+    suspend fun forgetLocalQuantaAcpSession(peerIdentity: String)
+
+    suspend fun stopQuantaAcpShare()
+
+    suspend fun removeJoinedQuantaAcpAgent(agentId: String)
 
     suspend fun stopAllAgents(): Int
 }

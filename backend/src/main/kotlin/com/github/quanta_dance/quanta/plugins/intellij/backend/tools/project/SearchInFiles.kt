@@ -38,7 +38,24 @@ class SearchInFiles :
     ToolPresentationProvider {
     override val canBeParallel: Boolean = true
 
-    override fun presentation(status: ToolExecutionStatus): ToolExecutionPresentation = ToolExecutionPresentation(title = "Searching files")
+    override fun presentation(status: ToolExecutionStatus): ToolExecutionPresentation {
+        val searchQuery = query?.trim().orEmpty()
+        val title = if (searchQuery.isBlank()) "Searching files" else "Searching files for \"$searchQuery\""
+        val filters =
+            buildList {
+                includeExtensions
+                    ?.map { it.trim().removePrefix(".") }
+                    ?.filter { it.isNotBlank() }
+                    ?.takeIf { it.isNotEmpty() && it != listOf("*") }
+                    ?.let { add("Extensions: ${it.joinToString(", ")}") }
+                excludePathSegments
+                    ?.map { it.trim() }
+                    ?.filter { it.isNotBlank() }
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.let { add("Excluding: ${it.joinToString(", ")}") }
+            }
+        return ToolExecutionPresentation(title = title, detail = filters.joinToString(" · ").ifBlank { null })
+    }
 
     @field:JsonPropertyDescription("Text to search for in project files (regex supported). Use a|b|c for OR.")
     var query: String? = null

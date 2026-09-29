@@ -4,6 +4,7 @@
 package com.github.quanta_dance.quanta.plugins.intellij.backend.rpc
 
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ToolCatalogService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.McpClientService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaSettingsApi
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.QuantaSettingsDto
@@ -29,6 +30,8 @@ class BackendSettingsRpcApi : QuantaSettingsApi {
         val AVAILABLE_CHAT_MODELS =
             listOf(
                 ChatModel.GPT_6_ASTRA.toString(),
+                ChatModel.GPT_6_SOL.toString(),
+                ChatModel.GPT_6_LUNA.toString(),
                 AllModels.ResponsesOnlyModel.GPT_5_6_CYBER.toString(),
                 ChatModel.GPT_5_6_SOL.toString(),
                 ChatModel.GPT_5_6_TERRA.toString(),
@@ -69,14 +72,20 @@ class BackendSettingsRpcApi : QuantaSettingsApi {
 
     override suspend fun updateSettings(settings: QuantaSettingsDto) =
         withContext(Dispatchers.IO) {
-            val previousJson = BackendRuntimeSettingsService.instance.settings.mcpServersJson
+            val previousRuntimeSettings = BackendRuntimeSettingsService.instance.settings.copy()
+            val mcpConfigurationChanged = settings.mcpServersJson != previousRuntimeSettings.mcpServersJson
+            val toolConfigurationChanged =
+                settings.agenticEnabled != previousRuntimeSettings.agenticEnabled ||
+                    settings.terminalToolEnabled != previousRuntimeSettings.terminalToolEnabled
             BackendRuntimeSettingsService.instance.updateFrom(settings)
 
-            if (settings.mcpServersJson != previousJson) {
-                log.info(
-                    "Backend settings sync: MCP config changed (chars=${settings.mcpServersJson.length}), refreshing MCP runtime",
-                )
+            if (mcpConfigurationChanged || toolConfigurationChanged) {
                 ProjectManager.getInstance().openProjects.filterNot { it.isDisposed }.forEach { project ->
+                    if (toolConfigurationChanged) project.service<ToolCatalogService>().refreshAsync()
+                    if (!mcpConfigurationChanged) return@forEach
+                    log.info(
+                        "Backend settings sync: MCP config changed (chars=${settings.mcpServersJson.length}), refreshing MCP runtime",
+                    )
                     runCatching {
                         project.service<McpClientService>().refresh()
                     }.onFailure { error ->
@@ -84,7 +93,7 @@ class BackendSettingsRpcApi : QuantaSettingsApi {
                     }
                 }
             } else {
-                log.info("Backend settings sync: MCP config unchanged, skipping refresh")
+                log.info("Backend settings sync: tool and MCP configuration unchanged, skipping refresh")
             }
         }
 

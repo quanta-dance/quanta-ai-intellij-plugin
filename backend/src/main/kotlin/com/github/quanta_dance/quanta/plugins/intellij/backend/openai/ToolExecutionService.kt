@@ -14,6 +14,12 @@ import com.intellij.openapi.project.Project
 import com.openai.models.responses.ResponseFunctionToolCall
 import com.openai.models.responses.ResponseInputItem
 
+internal fun asyncCoordinationHandoffMessage(result: Any?): String? {
+    val map = result as? Map<*, *> ?: return null
+    val handoff = map["handoffToAsyncCoordination"]?.toString()?.toBooleanStrictOrNull() == true
+    return map["message"]?.toString()?.trim()?.takeIf { handoff && it.isNotBlank() }
+}
+
 @Service(Service.Level.PROJECT)
 class ToolExecutionService(
     private val project: Project,
@@ -30,6 +36,8 @@ class ToolExecutionService(
         val detailText: String? = null,
         val errorText: String? = null,
         val filePath: String? = null,
+        val handoffToAsyncCoordination: Boolean = false,
+        val handoffMessage: String? = null,
     )
 
     private val objectMapper = ObjectMapper()
@@ -42,7 +50,6 @@ class ToolExecutionService(
         functionCall: ResponseFunctionToolCall,
         agentLabel: String,
     ): ToolExecutionResult {
-        val argsJson = runCatching { objectMapper.readTree(functionCall.arguments()) }.getOrNull()
         val functionResult = toolRouter.route(functionCall)
         val safeResult = sanitizeToolResultForModel(functionCall.name(), functionResult) ?: emptyMap<String, Any>()
         val succeeded = !isErrorResult(functionResult)
@@ -64,6 +71,8 @@ class ToolExecutionService(
             detailText = detailText,
             errorText = errorText,
             filePath = filePath,
+            handoffToAsyncCoordination = asyncCoordinationHandoffMessage(safeResult) != null,
+            handoffMessage = asyncCoordinationHandoffMessage(safeResult),
         )
     }
 
@@ -112,15 +121,10 @@ class ToolExecutionService(
             ?: map["errorText"]?.toString()?.takeIf { it.isNotBlank() }
     }
 
-    private fun sanitizeToolResultForModel(
+    internal fun sanitizeToolResultForModel(
         toolName: String,
         result: Any?,
-    ): Any? =
-        if (toolName.equals("TerminalCommandTool", ignoreCase = true)) {
-            truncateToolOutput(result)
-        } else {
-            result
-        }
+    ): Any? = if (toolName.equals("TerminalCommandTool", ignoreCase = true)) truncateToolOutput(result) else result
 
     private fun extractDisplaySummary(safeResult: Any?): String? {
         val map = asResultMap(safeResult) ?: return null

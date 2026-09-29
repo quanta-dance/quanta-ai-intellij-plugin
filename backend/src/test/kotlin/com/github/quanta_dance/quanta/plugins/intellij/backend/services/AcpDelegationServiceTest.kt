@@ -20,7 +20,9 @@ class AcpDelegationServiceTest {
                     server.accept().use { socket ->
                         val reader = socket.getInputStream().bufferedReader()
                         val writer = socket.getOutputStream().bufferedWriter()
-                        assertTrue(reader.readLine().contains("\"method\":\"initialize\""))
+                        val initialize = reader.readLine()
+                        assertTrue(initialize.contains("\"method\":\"initialize\""))
+                        assertTrue(initialize.contains("\"clientInfo\":{\"name\":\"workspace\",\"version\":\"quanta\"}"))
                         writer.write("{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":1}}")
                         writer.newLine()
                         writer.flush()

@@ -16,7 +16,9 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentCh
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationParticipantDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.LocalQuantaAcpSessionDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServerStatusDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.toChatMessage
 import com.intellij.openapi.components.Service
@@ -62,6 +64,10 @@ class FrontendChatRepositoryModel(
     private val _agentsFlow = MutableStateFlow<List<AgentInfoDto>>(emptyList())
     override val agentsFlow: StateFlow<List<AgentInfoDto>> = _agentsFlow.asStateFlow()
 
+    private val _collaborationParticipantsFlow = MutableStateFlow<List<CollaborationParticipantDto>>(emptyList())
+    override val collaborationParticipantsFlow: StateFlow<List<CollaborationParticipantDto>> =
+        _collaborationParticipantsFlow.asStateFlow()
+
     private val _acpAgentsFlow = MutableStateFlow<List<AcpAgentDto>>(emptyList())
     override val acpAgentsFlow: StateFlow<List<AcpAgentDto>> = _acpAgentsFlow.asStateFlow()
 
@@ -85,6 +91,13 @@ class FrontendChatRepositoryModel(
 
     private val _channelEventsFlow = MutableStateFlow<List<AgentChannelEventDto>>(emptyList())
     override val channelEventsFlow: StateFlow<List<AgentChannelEventDto>> = _channelEventsFlow.asStateFlow()
+
+    private val _quantaAcpInviteFlow = MutableStateFlow<String?>(null)
+    override val quantaAcpInviteFlow: StateFlow<String?> = _quantaAcpInviteFlow.asStateFlow()
+
+    private val _availableLocalQuantaAcpSessionsFlow = MutableStateFlow<List<LocalQuantaAcpSessionDto>>(emptyList())
+    override val availableLocalQuantaAcpSessionsFlow: StateFlow<List<LocalQuantaAcpSessionDto>> =
+        _availableLocalQuantaAcpSessionsFlow.asStateFlow()
 
     private val acpDiscoveryMutex = Mutex()
 
@@ -150,8 +163,9 @@ class FrontendChatRepositoryModel(
         }
         runCatching {
             _agentsFlow.value = backendApi.getCurrentAgents(projectPath)
+            _collaborationParticipantsFlow.value = backendApi.getCollaborationParticipants(projectPath)
         }.onFailure { error ->
-            logger.warn("Failed to refresh current agents from backend", error)
+            logger.warn("Failed to refresh current collaboration roster from backend", error)
         }
         runCatching {
             _delegatedTasksFlow.value = backendApi.getCurrentDelegatedTasks(projectPath)
@@ -162,6 +176,12 @@ class FrontendChatRepositoryModel(
             _channelEventsFlow.value = backendApi.getCurrentChannelEvents(projectPath)
         }.onFailure { error ->
             logger.warn("Failed to refresh current channel events from backend", error)
+        }
+        runCatching {
+            _acpAgentsFlow.value = backendApi.getKnownAcpAgents(projectPath)
+            _availableLocalQuantaAcpSessionsFlow.value = backendApi.getAvailableLocalQuantaAcpSessions(projectPath)
+        }.onFailure { error ->
+            logger.warn("Failed to load known ACP agents or local Quanta shares from backend", error)
         }
     }
 
@@ -222,7 +242,7 @@ class FrontendChatRepositoryModel(
             _acpDiscoveryLoadingFlow.value = true
             try {
                 syncSettingsToBackend()
-                _acpAgentsFlow.value = QuantaBackendApi.getInstance().discoverAcpAgents()
+                _acpAgentsFlow.value = QuantaBackendApi.getInstance().discoverAcpAgents(project.rpcProjectPath())
                 _allowedAcpAgentIdsFlow.value =
                     ChatRepositoryRpcApi.getInstance().getAllowedAcpAgentIds(project.rpcProjectPath()).toSet()
             } catch (error: Exception) {
@@ -266,6 +286,39 @@ class FrontendChatRepositoryModel(
 
     override suspend fun createDefaultAgentTeam() {
         QuantaBackendApi.getInstance().createDefaultAgentTeam(project.rpcProjectPath())
+        refreshCurrentState()
+    }
+
+    override suspend fun createQuantaAcpShare() {
+        val share = QuantaBackendApi.getInstance().createQuantaAcpShare(project.rpcProjectPath())
+        _quantaAcpInviteFlow.value = share.invite ?: "Error: ${share.error ?: "Could not start local ACP sharing."}"
+    }
+
+    override suspend fun joinQuantaAcpShare(invite: String) {
+        val share = QuantaBackendApi.getInstance().joinQuantaAcpShare(project.rpcProjectPath(), invite)
+        _quantaAcpInviteFlow.value = share.error?.let { "Error: $it" }
+        _acpAgentsFlow.value = QuantaBackendApi.getInstance().getKnownAcpAgents(project.rpcProjectPath())
+        refreshCurrentState()
+    }
+
+    override suspend fun refreshAvailableLocalQuantaAcpSessions() {
+        _availableLocalQuantaAcpSessionsFlow.value =
+            QuantaBackendApi.getInstance().getAvailableLocalQuantaAcpSessions(project.rpcProjectPath())
+    }
+
+    override suspend fun forgetLocalQuantaAcpSession(peerIdentity: String) {
+        QuantaBackendApi.getInstance().forgetLocalQuantaAcpSession(project.rpcProjectPath(), peerIdentity)
+        refreshAvailableLocalQuantaAcpSessions()
+    }
+
+    override suspend fun stopQuantaAcpShare() {
+        QuantaBackendApi.getInstance().stopQuantaAcpShare(project.rpcProjectPath())
+        _quantaAcpInviteFlow.value = null
+    }
+
+    override suspend fun removeJoinedQuantaAcpAgent(agentId: String) {
+        QuantaBackendApi.getInstance().removeJoinedQuantaAcpAgent(project.rpcProjectPath(), agentId)
+        _acpAgentsFlow.value = QuantaBackendApi.getInstance().getKnownAcpAgents(project.rpcProjectPath())
         refreshCurrentState()
     }
 

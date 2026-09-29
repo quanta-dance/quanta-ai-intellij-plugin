@@ -14,12 +14,15 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.Delegat
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.util.Collections
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 @Service(Service.Level.PROJECT)
 class AgentChannelStateService(
@@ -30,6 +33,12 @@ class AgentChannelStateService(
     private val executionContexts: BackendExecutionContextsService =
         project.getService(BackendExecutionContextsService::class.java)
     private val runningTaskIds = Collections.synchronizedSet(mutableSetOf<String>())
+    private val eventPersistenceScheduled = AtomicBoolean(false)
+    private val taskPersistenceScheduled = AtomicBoolean(false)
+    private val eventRevision = AtomicLong(0)
+    private val taskRevision = AtomicLong(0)
+    private val persistedEventRevision = AtomicLong(0)
+    private val persistedTaskRevision = AtomicLong(0)
 
     @Suppress("ktlint:standard:backing-property-naming")
     private val _events = MutableStateFlow(persistence.loadActiveChannelEvents())
@@ -72,7 +81,7 @@ class AgentChannelStateService(
                 createdAtEpochMs = System.currentTimeMillis(),
             )
         _events.value = _events.value + event
-        persistence.saveActiveChannelEvents(_events.value)
+        scheduleEventPersistence()
         return event
     }
 
@@ -85,7 +94,7 @@ class AgentChannelStateService(
             } else {
                 _tasks.value + updated
             }
-        persistence.saveActiveDelegatedTasks(_tasks.value)
+        scheduleTaskPersistence()
         return updated
     }
 
@@ -97,6 +106,7 @@ class AgentChannelStateService(
         createdByRole: String = "Manager",
         relatedMessageId: String? = null,
         dependsOnTaskIds: List<String> = emptyList(),
+        autoStart: Boolean = true,
     ): DelegatedTaskDto {
         val now = System.currentTimeMillis()
         val initialStatus =
@@ -116,7 +126,7 @@ class AgentChannelStateService(
                 updatedAtEpochMs = now,
             )
         return upsertTask(task).also {
-            if (it.status == DelegatedTaskStatusDto.QUEUED) {
+            if (autoStart && it.status == DelegatedTaskStatusDto.QUEUED) {
                 triggerReadyTasks()
             }
         }
@@ -165,7 +175,7 @@ class AgentChannelStateService(
                     task
                 }
             }
-        persistence.saveActiveDelegatedTasks(_tasks.value)
+        scheduleTaskPersistence()
     }
 
     fun triggerReadyTasks() {
@@ -182,7 +192,7 @@ class AgentChannelStateService(
             )
             manager.sendMessageAsync(agentId, task.requestText, task.id).whenComplete { _, _ ->
                 runningTaskIds.remove(task.id)
-                executionContexts.agentOrchestrationScope.launch {
+                executionContexts.backgroundAgentScope.launch {
                     triggerReadyTasks()
                 }
             }
@@ -211,12 +221,54 @@ class AgentChannelStateService(
                     task
                 }
             }
-        persistence.saveActiveDelegatedTasks(_tasks.value)
+        scheduleTaskPersistence()
         appendEvent(
             kind = AgentChannelEventKindDto.DELEGATION_UPDATED,
             authorType = AgentChannelAuthorTypeDto.SYSTEM,
             text = reason,
         )
         return stoppedIds.size
+    }
+
+    private fun scheduleEventPersistence() {
+        eventRevision.incrementAndGet()
+        if (!eventPersistenceScheduled.compareAndSet(false, true)) return
+        executionContexts.chatPublicationScope.launch {
+            try {
+                delay(STATE_PERSIST_DEBOUNCE_MS)
+                while (true) {
+                    val revision = eventRevision.get()
+                    persistence.saveActiveChannelEvents(_events.value)
+                    persistedEventRevision.set(revision)
+                    if (eventRevision.get() == revision) break
+                }
+            } finally {
+                eventPersistenceScheduled.set(false)
+                if (eventRevision.get() != persistedEventRevision.get()) scheduleEventPersistence()
+            }
+        }
+    }
+
+    private fun scheduleTaskPersistence() {
+        taskRevision.incrementAndGet()
+        if (!taskPersistenceScheduled.compareAndSet(false, true)) return
+        executionContexts.chatPublicationScope.launch {
+            try {
+                delay(STATE_PERSIST_DEBOUNCE_MS)
+                while (true) {
+                    val revision = taskRevision.get()
+                    persistence.saveActiveDelegatedTasks(_tasks.value)
+                    persistedTaskRevision.set(revision)
+                    if (taskRevision.get() == revision) break
+                }
+            } finally {
+                taskPersistenceScheduled.set(false)
+                if (taskRevision.get() != persistedTaskRevision.get()) scheduleTaskPersistence()
+            }
+        }
+    }
+
+    private companion object {
+        const val STATE_PERSIST_DEBOUNCE_MS = 250L
     }
 }

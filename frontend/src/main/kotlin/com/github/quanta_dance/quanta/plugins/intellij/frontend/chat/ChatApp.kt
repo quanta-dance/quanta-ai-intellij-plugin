@@ -97,8 +97,12 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentCh
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationAvailabilityDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationParticipantDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationParticipantKindDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskStatusDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.LocalQuantaAcpSessionDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServerStatusDto
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
@@ -116,6 +120,8 @@ import org.jetbrains.jewel.ui.component.OutlinedButton
 import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.ui.component.TextField
 import org.jetbrains.jewel.ui.component.VerticallyScrollableContainer
+import java.awt.Toolkit
+import java.awt.datatransfer.StringSelection
 
 @Composable
 fun chatApp(
@@ -143,6 +149,7 @@ fun chatApp(
     }
     val planStatus by viewModel.planStatusFlow.collectAsState(ChatPlanStatusDto())
     val agents by viewModel.agentsFlow.collectAsState(emptyList())
+    val collaborationParticipants by viewModel.collaborationParticipantsFlow.collectAsState(emptyList())
     val acpAgents by viewModel.acpAgentsFlow.collectAsState(emptyList())
     val acpDiscoveryLoading by viewModel.acpDiscoveryLoadingFlow.collectAsState(false)
     val allowedAcpAgentIds by viewModel.allowedAcpAgentIdsFlow.collectAsState(emptySet())
@@ -151,6 +158,8 @@ fun chatApp(
     val mcpConfigurationError by viewModel.mcpConfigurationErrorFlow.collectAsState(null)
     val delegatedTasks by viewModel.delegatedTasksFlow.collectAsState(emptyList())
     val channelEvents by viewModel.channelEventsFlow.collectAsState(emptyList())
+    val quantaAcpInvite by viewModel.quantaAcpInviteFlow.collectAsState(null)
+    val availableLocalQuantaAcpSessions by viewModel.availableLocalQuantaAcpSessionsFlow.collectAsState(emptyList())
     val hasRunningAgentWork = delegatedTasks.any { it.status == DelegatedTaskStatusDto.RUNNING }
     val activeSession = sessions.firstOrNull { it.isActive }
     val microphoneService = remember(project) { project.service<FrontendMicrophoneService>() }
@@ -300,11 +309,11 @@ fun chatApp(
             if (agenticEnabled) {
                 agentPresenceStrip(
                     modifier = Modifier.fillMaxWidth(),
-                    internalAgents = agents,
-                    allowedAcpAgents = acpAgents.filter { it.id in allowedAcpAgentIds },
+                    participants = collaborationParticipants,
                     delegatedTasks = delegatedTasks,
-                    chatMessages = chatMessages,
-                    managerBusy = messageInputState is MessageInputState.Sending,
+                    managerBusy =
+                        messageInputState is MessageInputState.Sending ||
+                            chatMessages.any(ChatMessage::isAIThinkingMessage),
                 )
             }
 
@@ -353,9 +362,12 @@ fun chatApp(
                 agenticTeamDialog(
                     agenticEnabled = agenticEnabled,
                     internalAgents = agents,
+                    collaborationParticipants = collaborationParticipants,
                     acpAgents = acpAgents,
                     acpDiscoveryLoading = acpDiscoveryLoading,
                     allowedAcpAgentIds = allowedAcpAgentIds,
+                    quantaAcpInvite = quantaAcpInvite,
+                    availableLocalQuantaAcpSessions = availableLocalQuantaAcpSessions,
                     onSetAgenticEnabled = { enabled ->
                         agenticEnabled = enabled
                         FrontendQuantaSettingsState.instance.state.agenticEnabled = enabled
@@ -363,12 +375,21 @@ fun chatApp(
                     },
                     onRefresh = { viewModel.onRefreshAcpAgents() },
                     onSetAcpAllowed = { agent, allowed ->
-                        val action = if (allowed) "Add" else "Remove"
+                        val removeSharedPeer = !allowed && agent.isJoinedQuantaAcpPeer()
+                        val action =
+                            when {
+                                allowed -> "Add"
+                                removeSharedPeer -> "Remove shared ACP"
+                                else -> "Remove"
+                            }
                         val message =
                             if (allowed) {
                                 "Add ${agent.name} to this chat and turn on agentic team mode?\n\n" +
                                     "This independent external ACP agent may receive task context and access this project " +
                                     "using its own tools.\n\n${agent.transportDescription()}"
+                            } else if (removeSharedPeer) {
+                                "Remove ${agent.name} from this chat and forget this shared Quanta ACP peer? " +
+                                    "It will no longer appear in the roster."
                             } else {
                                 "Remove ${agent.name} from this chat? Any active work for this agent will be stopped."
                             }
@@ -382,12 +403,36 @@ fun chatApp(
                                 Messages.getQuestionIcon(),
                             ) == Messages.YES
                         if (approved) {
-                            val enableAgenticMode = allowed && !agenticEnabled
-                            if (enableAgenticMode) {
-                                agenticEnabled = true
-                                FrontendQuantaSettingsState.instance.state.agenticEnabled = true
+                            if (removeSharedPeer) {
+                                viewModel.onRemoveJoinedQuantaAcpAgent(agent.id)
+                            } else {
+                                val enableAgenticMode = allowed && !agenticEnabled
+                                if (enableAgenticMode) {
+                                    agenticEnabled = true
+                                    FrontendQuantaSettingsState.instance.state.agenticEnabled = true
+                                }
+                                viewModel.onSetAcpAgentAllowed(agent.id, allowed, enableAgenticMode)
                             }
-                            viewModel.onSetAcpAgentAllowed(agent.id, allowed, enableAgenticMode)
+                        }
+                    },
+                    onCreateQuantaAcpShare = viewModel::onCreateQuantaAcpShare,
+                    onJoinQuantaAcpShare = viewModel::onJoinQuantaAcpShare,
+                    onRefreshAvailableLocalQuantaAcpSessions = viewModel::onRefreshAvailableLocalQuantaAcpSessions,
+                    onForgetLocalQuantaAcpSession = viewModel::onForgetLocalQuantaAcpSession,
+                    onStopQuantaAcpShare = viewModel::onStopQuantaAcpShare,
+                    onRemoveSharedAcpParticipant = { agent ->
+                        val approved =
+                            Messages.showYesNoDialog(
+                                project,
+                                "Remove ${agent.name} from this chat and forget this shared Quanta ACP peer? " +
+                                    "It will no longer appear in the roster.",
+                                "Remove Shared Collaborator",
+                                "Remove",
+                                "Cancel",
+                                Messages.getQuestionIcon(),
+                            ) == Messages.YES
+                        if (approved) {
+                            viewModel.onRemoveJoinedQuantaAcpAgent(agent.id)
                         }
                     },
                     onDismiss = { showAgenticTeamDialog = false },
@@ -574,20 +619,35 @@ private fun McpServerStatusDto.connectionDescription(): String =
 private fun agenticTeamDialog(
     agenticEnabled: Boolean,
     internalAgents: List<AgentInfoDto>,
+    collaborationParticipants: List<CollaborationParticipantDto>,
     acpAgents: List<AcpAgentDto>,
     acpDiscoveryLoading: Boolean,
     allowedAcpAgentIds: Set<String>,
+    quantaAcpInvite: String?,
+    availableLocalQuantaAcpSessions: List<LocalQuantaAcpSessionDto>,
     onSetAgenticEnabled: (Boolean) -> Unit,
     onRefresh: () -> Unit,
     onSetAcpAllowed: (AcpAgentDto, Boolean) -> Unit,
+    onCreateQuantaAcpShare: () -> Unit,
+    onJoinQuantaAcpShare: (String) -> Unit,
+    onRefreshAvailableLocalQuantaAcpSessions: () -> Unit,
+    onForgetLocalQuantaAcpSession: (String) -> Unit,
+    onStopQuantaAcpShare: () -> Unit,
+    onRemoveSharedAcpParticipant: (AcpAgentDto) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    var showQuantaIdeConnectionsDialog by remember { mutableStateOf(false) }
+    val sharedAcpAgents = acpAgents.filter(AcpAgentDto::isJoinedQuantaAcpPeer)
+    val discoveredAcpAgents = acpAgents.filterNot(AcpAgentDto::isJoinedQuantaAcpPeer)
+    val dialogScrollState = rememberScrollState()
     Dialog(onDismissRequest = onDismiss) {
         Column(
             modifier =
                 Modifier
                     .widthIn(min = 460.dp, max = 620.dp)
+                    .heightIn(max = 720.dp)
                     .background(ChatAppColors.Panel.background, RoundedCornerShape(12.dp))
+                    .verticalScroll(dialogScrollState)
                     .padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
@@ -609,6 +669,33 @@ private fun agenticTeamDialog(
             }
 
             Divider(orientation = Orientation.Horizontal)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                    Text("Shared IDE collaborators", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        if (sharedAcpAgents.isEmpty()) {
+                            "Connect another Quanta IDE or manage existing collaborators."
+                        } else {
+                            "${sharedAcpAgents.size} shared collaborator(s) connected."
+                        },
+                        style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
+                    )
+                }
+                OutlinedButton(
+                    onClick = {
+                        onRefreshAvailableLocalQuantaAcpSessions()
+                        showQuantaIdeConnectionsDialog = true
+                    },
+                ) {
+                    Text("Manage")
+                }
+            }
+
+            Divider(orientation = Orientation.Horizontal)
             Text("Quanta teammates", fontWeight = FontWeight.SemiBold)
             Text(
                 if (internalAgents.isEmpty()) "No internal teammates active." else "${internalAgents.size} internal teammate(s) active.",
@@ -625,30 +712,29 @@ private fun agenticTeamDialog(
                     Text(if (acpDiscoveryLoading) "Discovering…" else "Refresh")
                 }
             }
-            when {
-                acpDiscoveryLoading -> {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        loadingIndicator()
-                        Text(
-                            "Discovering available ACP agents…",
-                            style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
-                        )
-                    }
+            if (acpDiscoveryLoading) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    loadingIndicator()
+                    Text(
+                        "Refreshing available ACP agents…",
+                        style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
+                    )
                 }
-
-                acpAgents.isEmpty() -> {
+            }
+            when {
+                discoveredAcpAgents.isEmpty() && !acpDiscoveryLoading -> {
                     Text(
                         "No available ACP agents found. Refresh after installing or configuring an agent.",
                         style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
                     )
                 }
 
-                else -> {
+                discoveredAcpAgents.isNotEmpty() -> {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        acpAgents.forEach { agent ->
+                        discoveredAcpAgents.forEach { agent ->
                             val allowed = agent.id in allowedAcpAgentIds
                             Row(
                                 modifier =
@@ -666,7 +752,11 @@ private fun agenticTeamDialog(
                                     Text(agent.name, fontWeight = FontWeight.SemiBold)
                                     Text(
                                         agent.transportDescription(),
-                                        style = JewelTheme.defaultTextStyle.copy(fontSize = 11.sp, color = Color.Gray),
+                                        style =
+                                            JewelTheme.defaultTextStyle.copy(
+                                                fontSize = 11.sp,
+                                                color = Color.Gray,
+                                            ),
                                     )
                                     Text(
                                         if (allowed) "Allowed for this chat" else "Available · Not allowed",
@@ -678,7 +768,13 @@ private fun agenticTeamDialog(
                                     )
                                 }
                                 OutlinedButton(onClick = { onSetAcpAllowed(agent, !allowed) }) {
-                                    Text(if (allowed) "Remove" else "Add to chat")
+                                    Text(
+                                        when {
+                                            agent.isJoinedQuantaAcpPeer() -> "Remove shared ACP"
+                                            allowed -> "Remove"
+                                            else -> "Add to chat"
+                                        },
+                                    )
                                 }
                             }
                         }
@@ -691,7 +787,148 @@ private fun agenticTeamDialog(
             }
         }
     }
+    if (showQuantaIdeConnectionsDialog) {
+        quantaIdeConnectionsDialog(
+            sharedAcpAgents = sharedAcpAgents,
+            quantaAcpInvite = quantaAcpInvite,
+            availableLocalQuantaAcpSessions = availableLocalQuantaAcpSessions,
+            onCreateQuantaAcpShare = onCreateQuantaAcpShare,
+            onJoinQuantaAcpShare = onJoinQuantaAcpShare,
+            onRefreshAvailableLocalQuantaAcpSessions = onRefreshAvailableLocalQuantaAcpSessions,
+            onForgetLocalQuantaAcpSession = onForgetLocalQuantaAcpSession,
+            onStopQuantaAcpShare = onStopQuantaAcpShare,
+            onRemoveSharedAcpParticipant = onRemoveSharedAcpParticipant,
+            onDismiss = { showQuantaIdeConnectionsDialog = false },
+        )
+    }
 }
+
+@Composable
+private fun quantaIdeConnectionsDialog(
+    sharedAcpAgents: List<AcpAgentDto>,
+    quantaAcpInvite: String?,
+    availableLocalQuantaAcpSessions: List<LocalQuantaAcpSessionDto>,
+    onCreateQuantaAcpShare: () -> Unit,
+    onJoinQuantaAcpShare: (String) -> Unit,
+    onRefreshAvailableLocalQuantaAcpSessions: () -> Unit,
+    onForgetLocalQuantaAcpSession: (String) -> Unit,
+    onStopQuantaAcpShare: () -> Unit,
+    onRemoveSharedAcpParticipant: (AcpAgentDto) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var joinInvite by remember { mutableStateOf("") }
+    var showManualConnection by remember { mutableStateOf(false) }
+    val joinInviteFieldState = rememberTextFieldState()
+    val scrollState = rememberScrollState()
+    LaunchedEffect(Unit) {
+        onRefreshAvailableLocalQuantaAcpSessions()
+        snapshotFlow { joinInviteFieldState.text.toString() }
+            .distinctUntilChanged()
+            .collect { joinInvite = it }
+    }
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier =
+                Modifier
+                    .widthIn(min = 420.dp, max = 560.dp)
+                    .heightIn(max = 600.dp)
+                    .background(ChatAppColors.Panel.background, RoundedCornerShape(12.dp))
+                    .verticalScroll(scrollState)
+                    .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Shared IDE collaborators", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                    Text(
+                        "Connect another open Quanta IDE on this machine.",
+                        style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
+                    )
+                }
+                OutlinedButton(onClick = onRefreshAvailableLocalQuantaAcpSessions) { Text("Find IDEs") }
+            }
+
+            if (availableLocalQuantaAcpSessions.isEmpty()) {
+                Text(
+                    "No other open Quanta IDE sessions found.",
+                    style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
+                )
+            } else {
+                availableLocalQuantaAcpSessions.forEach { session ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(start = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(session.projectName, fontSize = 12.sp)
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            OutlinedButton(onClick = { onJoinQuantaAcpShare(session.invite) }) { Text("Connect") }
+                            OutlinedButton(onClick = { onForgetLocalQuantaAcpSession(session.peerIdentity) }) {
+                                Text("Forget")
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (sharedAcpAgents.isNotEmpty()) {
+                Divider(orientation = Orientation.Horizontal)
+                Text("Connected collaborators", fontWeight = FontWeight.SemiBold)
+                sharedAcpAgents.forEach { agent ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(start = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(agent.name, fontSize = 12.sp)
+                        OutlinedButton(onClick = { onRemoveSharedAcpParticipant(agent) }) { Text("Remove") }
+                    }
+                }
+            }
+
+            Divider(orientation = Orientation.Horizontal)
+            OutlinedButton(onClick = { showManualConnection = !showManualConnection }) {
+                Text(if (showManualConnection) "Hide manual connection" else "Manual connection")
+            }
+            if (showManualConnection) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = onCreateQuantaAcpShare) { Text("Create invite") }
+                        if (quantaAcpInvite != null) {
+                            OutlinedButton(
+                                onClick = {
+                                    Toolkit.getDefaultToolkit().systemClipboard.setContents(
+                                        StringSelection(quantaAcpInvite),
+                                        null,
+                                    )
+                                },
+                            ) { Text("Copy") }
+                            OutlinedButton(onClick = onStopQuantaAcpShare) { Text("Stop") }
+                        }
+                    }
+                    TextField(
+                        state = joinInviteFieldState,
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("Paste an invite") },
+                    )
+                    OutlinedButton(onClick = { onJoinQuantaAcpShare(joinInvite) }, enabled = joinInvite.isNotBlank()) {
+                        Text("Connect pasted invite")
+                    }
+                }
+            }
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                DefaultButton(onClick = onDismiss) { Text("Done") }
+            }
+        }
+    }
+}
+
+private fun AcpAgentDto.isJoinedQuantaAcpPeer(): Boolean = command == listOf("quanta-acp")
 
 private fun AcpAgentDto.transportDescription(): String =
     if (executablePath.startsWith("tcp://")) {
@@ -809,121 +1046,70 @@ private data class AgentPresence(
     val external: Boolean = false,
 )
 
-private fun DelegatedTaskDto.isAssignedTo(agent: AgentInfoDto): Boolean {
-    val normalizedRole = agent.role.trim().lowercase()
-    return agent.id in assignedAgentIds || assignedRoles.any { it.trim().lowercase() == normalizedRole }
+private fun DelegatedTaskDto.isAssignedTo(participant: CollaborationParticipantDto): Boolean {
+    val transportId = participant.transportId ?: return false
+    return transportId in assignedAgentIds ||
+        assignedRoles.any { role -> role.trim().equals(participant.displayName.trim(), ignoreCase = true) }
 }
 
 @Composable
 private fun agentPresenceStrip(
     modifier: Modifier = Modifier,
-    internalAgents: List<AgentInfoDto>,
-    allowedAcpAgents: List<AcpAgentDto>,
+    participants: List<CollaborationParticipantDto>,
     delegatedTasks: List<DelegatedTaskDto>,
-    chatMessages: List<ChatMessage>,
     managerBusy: Boolean,
 ) {
     val presences =
-        buildList {
-            add(
-                AgentPresence(
-                    id = "main-agent",
-                    name = "AI",
-                    type = "Main agent",
-                    state = if (managerBusy) AgentPresenceState.WORKING else AgentPresenceState.IDLE,
-                    details =
-                        if (managerBusy) {
-                            "The main agent is working on the current response."
-                        } else {
-                            "The main agent is ready for the next task."
-                        },
-                    instructions =
-                        "Coordinates the chat, delegates focused work to teammates, and verifies the final result.",
-                    color = Color(0xFF5E81AC),
-                ),
+        participants.map { participant ->
+            val tasks = delegatedTasks.filter { task -> task.isAssignedTo(participant) }
+            val state =
+                when {
+                    participant.kind == CollaborationParticipantKindDto.MANAGER && managerBusy -> {
+                        AgentPresenceState.WORKING
+                    }
+
+                    tasks.any { it.status == DelegatedTaskStatusDto.RUNNING } ||
+                        participant.availability == CollaborationAvailabilityDto.BUSY -> {
+                        AgentPresenceState.WORKING
+                    }
+
+                    tasks.any { it.status == DelegatedTaskStatusDto.QUEUED || it.status == DelegatedTaskStatusDto.BLOCKED } -> {
+                        AgentPresenceState.WAITING
+                    }
+
+                    tasks.any { it.status == DelegatedTaskStatusDto.FAILED } ||
+                        participant.availability == CollaborationAvailabilityDto.OFFLINE -> {
+                        AgentPresenceState.FAILED
+                    }
+
+                    else -> {
+                        AgentPresenceState.IDLE
+                    }
+                }
+            val details =
+                buildString {
+                    append(participantAvailabilityLabel(participant, state))
+                    if (tasks.isNotEmpty()) {
+                        append("\n\nCurrent work")
+                        tasks.takeLast(3).forEach { task ->
+                            append("\n• ").append(task.title).append(" · ").append(task.status.name.lowercase())
+                        }
+                    } else if (participant.kind == CollaborationParticipantKindDto.MANAGER) {
+                        append("\n\nCoordinates the chat, delegates focused work, and publishes final summaries.")
+                    } else {
+                        append("\n\nNo live task is currently running.")
+                    }
+                }
+            AgentPresence(
+                id = participant.id,
+                name = participant.displayName,
+                type = participantTypeLabel(participant),
+                state = state,
+                details = details,
+                instructions = participantInstructions(participant),
+                color = colorForAgent(participant.id),
+                external = participant.kind != CollaborationParticipantKindDto.LOCAL_AGENT,
             )
-            internalAgents.forEach { agent ->
-                val tasks = delegatedTasks.filter { it.isAssignedTo(agent) }
-                val state =
-                    when {
-                        agent.isWorking || tasks.any { it.status == DelegatedTaskStatusDto.RUNNING } -> {
-                            AgentPresenceState.WORKING
-                        }
-
-                        tasks.any { it.status == DelegatedTaskStatusDto.QUEUED || it.status == DelegatedTaskStatusDto.BLOCKED } -> {
-                            AgentPresenceState.WAITING
-                        }
-
-                        tasks.any { it.status == DelegatedTaskStatusDto.FAILED } -> {
-                            AgentPresenceState.FAILED
-                        }
-
-                        else -> {
-                            AgentPresenceState.IDLE
-                        }
-                    }
-                val details =
-                    buildString {
-                        append(agent.model?.takeIf(String::isNotBlank) ?: "Quanta teammate")
-                        if (tasks.isNotEmpty()) {
-                            append("\n\nCurrent work")
-                            tasks.takeLast(3).forEach { task ->
-                                append("\n• ").append(task.title).append(" · ").append(task.status.name.lowercase())
-                            }
-                        } else {
-                            append("\n\nNo delegated task is currently assigned.")
-                        }
-                    }
-                add(
-                    AgentPresence(
-                        id = agent.id,
-                        name = agent.role.replaceFirstChar { it.uppercase() },
-                        type = "Quanta teammate",
-                        state = state,
-                        details = details,
-                        instructions =
-                            agent.instructions?.takeIf(String::isNotBlank)
-                                ?: "No custom instructions are configured for this teammate.",
-                        color = colorForAgent(agent.id),
-                    ),
-                )
-            }
-            allowedAcpAgents.forEach { agent ->
-                val latestCard =
-                    chatMessages
-                        .asReversed()
-                        .flatMap { it.toolItems.asReversed() }
-                        .firstOrNull { item ->
-                            item.toolName == "AcpDelegationCard" && item.displayText.startsWith("${agent.name} ·")
-                        }
-                val state =
-                    when (latestCard?.status) {
-                        com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus.EXECUTING -> {
-                            AgentPresenceState.WORKING
-                        }
-
-                        com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus.FAILED -> {
-                            AgentPresenceState.FAILED
-                        }
-
-                        else -> {
-                            AgentPresenceState.IDLE
-                        }
-                    }
-                add(
-                    AgentPresence(
-                        id = "acp:${agent.id}",
-                        name = agent.name,
-                        type = "External ACP agent",
-                        state = state,
-                        details = latestCard?.detailText ?: "Allowed for this chat. No live task is currently running.",
-                        instructions =
-                            "Independent external ACP agent. It receives delegated task context only after you allow it for this chat.",
-                        color = Color(0xFFB48EAD),
-                        external = true,
-                    ),
-                )
-            }
         }
     if (presences.isEmpty()) return
 
@@ -936,10 +1122,54 @@ private fun agentPresenceStrip(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("Agents", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = ChatAppColors.Text.disabled)
+        Text("Collaboration", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = ChatAppColors.Text.disabled)
         presences.forEach { presence -> agentPresenceAvatar(presence) }
     }
 }
+
+private fun participantAvailabilityLabel(
+    participant: CollaborationParticipantDto,
+    state: AgentPresenceState,
+): String =
+    when (state) {
+        AgentPresenceState.WORKING -> {
+            "Working"
+        }
+
+        AgentPresenceState.WAITING -> {
+            "Waiting for scheduled work"
+        }
+
+        AgentPresenceState.FAILED -> {
+            if (participant.availability == CollaborationAvailabilityDto.OFFLINE) "Unavailable" else "Needs attention"
+        }
+
+        AgentPresenceState.IDLE -> {
+            "Ready"
+        }
+    }
+
+private fun participantTypeLabel(participant: CollaborationParticipantDto): String =
+    when (participant.kind) {
+        CollaborationParticipantKindDto.MANAGER -> "Main coordinator"
+        CollaborationParticipantKindDto.LOCAL_AGENT -> "Quanta teammate"
+        CollaborationParticipantKindDto.ACP_AGENT -> "Shared collaborator"
+    }
+
+private fun participantInstructions(participant: CollaborationParticipantDto): String =
+    when (participant.kind) {
+        CollaborationParticipantKindDto.MANAGER -> {
+            "Coordinates the chat, delegates focused work, and verifies final results."
+        }
+
+        CollaborationParticipantKindDto.LOCAL_AGENT -> {
+            "Can receive asynchronous tasks and collaborate with the currently authorized team."
+        }
+
+        CollaborationParticipantKindDto.ACP_AGENT -> {
+            "A paired collaboration peer. It receives only work authorized for this chat."
+        }
+    }
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable

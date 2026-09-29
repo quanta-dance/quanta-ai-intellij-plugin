@@ -6,14 +6,30 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.project
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.PathUtils
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.FileHashUtil
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.components.Service
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
 import java.nio.file.Paths
 
+/**
+ * Provides the active editor context while caching the content hash until the selected file changes.
+ *
+ * Hashing an unchanged document on every agent turn is unnecessary and can be expensive for large files.
+ * Caret and selection data remain live, while only the immutable hash is cached by file and modification stamp.
+ */
+@Service(Service.Level.PROJECT)
 class CurrentFileContextProvider(
     private val project: Project,
 ) {
+    @Volatile
+    private var cachedHashKey: String? = null
+
+    @Volatile
+    private var cachedHash: String? = null
+
+    private val hashLock = Any()
+
     data class CurrentFileContext(
         val projectBase: String,
         val filePathRelative: String,
@@ -55,13 +71,25 @@ class CurrentFileContextProvider(
                 return null
             }
 
-        val fileHashSha256 =
-            ApplicationManager.getApplication().runReadAction<String> {
-                val documentText = FileDocumentManager.getInstance().getDocument(vf)?.text
-                FileHashUtil.sha256Normalized(documentText ?: vf.contentsToByteArray().toString(Charsets.UTF_8))
-            }
-
         return ApplicationManager.getApplication().runReadAction<CurrentFileContext> {
+            val document = FileDocumentManager.getInstance().getDocument(vf)
+            val modificationStamp = document?.modificationStamp ?: vf.modificationStamp
+            val hashKey = "${vf.url}:$modificationStamp"
+            val fileHashSha256 =
+                synchronized(hashLock) {
+                    if (cachedHashKey == hashKey) {
+                        checkNotNull(cachedHash)
+                    } else {
+                        FileHashUtil
+                            .sha256Normalized(
+                                document?.text ?: vf.contentsToByteArray().toString(Charsets.UTF_8),
+                            ).also { hash ->
+                                cachedHashKey = hashKey
+                                cachedHash = hash
+                            }
+                    }
+                }
+
             var caretLine: Int? = null
             var caretCol: Int? = null
             var selStartLine: Int? = null

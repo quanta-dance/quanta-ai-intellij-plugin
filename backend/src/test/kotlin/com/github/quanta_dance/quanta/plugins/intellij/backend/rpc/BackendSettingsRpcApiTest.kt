@@ -7,6 +7,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendR
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.QuantaSettingsDto
 import com.intellij.openapi.application.Application
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.project.ProjectManager
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkStatic
@@ -25,10 +26,13 @@ class BackendSettingsRpcApiTest {
     fun setUp() {
         mockkStatic(ApplicationManager::class)
         val app = mockk<Application>()
+        val projectManager = mockk<ProjectManager>()
         runtimeSettingsService = BackendRuntimeSettingsService()
 
         every { ApplicationManager.getApplication() } returns app
         every { app.getService(BackendRuntimeSettingsService::class.java) } returns runtimeSettingsService
+        every { app.getService(ProjectManager::class.java) } returns projectManager
+        every { projectManager.openProjects } returns emptyArray()
     }
 
     @AfterTest

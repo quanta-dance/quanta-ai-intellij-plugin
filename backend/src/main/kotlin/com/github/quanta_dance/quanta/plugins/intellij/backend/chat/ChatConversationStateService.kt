@@ -125,6 +125,7 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
 
     override fun loadState(state: State) {
         this.state = state
+        recoverInterruptedRuntimeState()
         ensureSessionExists()
     }
 
@@ -251,6 +252,22 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
                 session.allowedAcpAgentIds.remove(agentId)
             }
         if (changed) session.updatedAtEpochMs = System.currentTimeMillis()
+        return changed
+    }
+
+    /** Removes an unavailable ACP peer from every persisted chat session. */
+    fun removeAcpAgentFromAllSessions(agentId: String): Boolean = removeAcpAgentsMatching { candidate -> candidate == agentId }
+
+    /** Removes ACP permissions that are no longer represented by a live transport. */
+    fun removeAcpAgentsMatching(predicate: (String) -> Boolean): Boolean {
+        var changed = false
+        state.sessions.forEach { session ->
+            val removed = session.allowedAcpAgentIds.removeIf(predicate)
+            if (removed) {
+                session.updatedAtEpochMs = System.currentTimeMillis()
+                changed = true
+            }
+        }
         return changed
     }
 
@@ -454,6 +471,8 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
         val session = getOrCreateActiveSession()
         session.messages =
             messages
+                .asSequence()
+                .filterNot { it.type == ChatMessage.ChatMessageType.AI_THINKING }
                 .map { message ->
                     PersistedChatMessage(
                         id = message.id,
@@ -503,6 +522,28 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
         session.agents.clear()
     }
 
+    private fun recoverInterruptedRuntimeState() {
+        state.sessions.forEach { session ->
+            session.messages.removeAll { it.type == ChatMessage.ChatMessageType.AI_THINKING.name }
+            session.messages.forEach { message ->
+                message.toolItems.forEach { item ->
+                    if (item.status == ToolExecutionStatus.EXECUTING.name) {
+                        item.status = ToolExecutionStatus.FAILED.name
+                        item.errorText = item.errorText?.takeIf(String::isNotBlank) ?: INTERRUPTED_BY_RESTART
+                    }
+                }
+            }
+            session.delegatedTasks.forEach { task ->
+                if (task.status == DelegatedTaskStatusDto.RUNNING.name) {
+                    task.status = DelegatedTaskStatusDto.FAILED.name
+                    task.summary = INTERRUPTED_BY_RESTART
+                    task.result = INTERRUPTED_BY_RESTART
+                    task.updatedAtEpochMs = System.currentTimeMillis()
+                }
+            }
+        }
+    }
+
     private fun getActiveSession(): PersistedChatSession? {
         val id = ensureSessionExists()
         return state.sessions.firstOrNull { it.id == id }
@@ -513,4 +554,8 @@ class ChatConversationStateService : PersistentStateComponent<ChatConversationSt
             val id = createSession()
             state.sessions.first { it.id == id }
         }
+
+    private companion object {
+        const val INTERRUPTED_BY_RESTART = "Interrupted by IDE restart"
+    }
 }

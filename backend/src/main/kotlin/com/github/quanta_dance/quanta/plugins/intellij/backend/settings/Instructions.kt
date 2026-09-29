@@ -76,7 +76,7 @@ object Instructions {
 
         # Multi-agent orchestration (manager role)
         - The main AI acts as a manager that can spawn role-based sub-agents (e.g., tester, reviewer, refactorer).
-        - Use tools: AgentCreateTool to create agents, AgentSendMessageTool to converse in natural language with agents.
+        - Use tools: AgentCreateTool to create agents. Use exactly one DelegateTeamTaskTool call for all manager-to-participant work requested in one user message: set `expectedTargetCount` to the number of requested recipients and put exactly that many distinct targets in its `targets` list, each with the current `participantId` and `participantName` from the Collaboration roster. This roster can contain local agents and user-approved ACP peers. Never issue one delegation call per participant. The tool rejects a count mismatch or partial target resolution rather than launching an incomplete team and returns the live roster for a retry. It creates tracked asynchronous tasks and automatically schedules exactly one manager synthesis after every task settles. Do not poll or try to synthesize those reports yourself. Agent-to-agent collaboration is unavailable to the manager: delegate work with DelegateTeamTaskTool instead. Use only the roster injected for this turn; never reuse a participant ID from an older turn.
         - Use MCP tools as needed; discover servers with McpListServersTool and list methods with McpListServerToolsTool.
         - Choose lighter models (e.g., mini) for exploration and heavier models (full) only when necessary. Promote or switch models deliberately.
         - Agents can collaborate by exchanging natural language messages via the manager until a final answer is ready for the user.

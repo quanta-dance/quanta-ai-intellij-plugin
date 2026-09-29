@@ -11,7 +11,6 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendR
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.Instructions
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.QuantaAISessionState
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent.AgentPostMessageTool
-import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.agent.AgentSendMessageTool
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.builder.GetTestInfoTool
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.builder.GradleSyncTool
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.builder.RunGradleBuildTool
@@ -49,6 +48,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 @Service(Service.Level.PROJECT)
 class AgentManagerService(
@@ -70,6 +70,7 @@ class AgentManagerService(
         val id: String,
         val config: AgentConfig,
         var previousId: String? = null,
+        var observedRosterRevision: Long = 0,
     )
 
     data class AgentSnapshot(
@@ -86,6 +87,13 @@ class AgentManagerService(
         val ok: Boolean,
         val text: String?,
         val error: String?,
+        val taskId: String? = null,
+        val visibleInChat: Boolean = true,
+    )
+
+    data class ManagerReport(
+        val from: String?,
+        val text: String,
     )
 
     private val logger = Logger.getInstance(AgentManagerService::class.java)
@@ -93,11 +101,13 @@ class AgentManagerService(
     private val pcs = PropertyChangeSupport(this)
     private val executors = ConcurrentHashMap<String, ExecutorService>()
     private val activeTurnCounts = ConcurrentHashMap<String, AtomicInteger>()
+    private val agentTurnLocks = ConcurrentHashMap<String, Any>()
 
     // Proactive summarization throttle
     private val agentSummaryLastRunAtMs = ConcurrentHashMap<String, Long>()
+    private val rosterRevision = AtomicLong(1)
 
-    // Auto-wake agents when new inbox messages arrive
+    // Auto-wake agents when actionable inbox messages arrive.
     private val agentWakeInFlight = ConcurrentHashMap<String, AtomicBoolean>()
     private val agentLastWakeRequestedAtMs = ConcurrentHashMap<String, Long>()
 
@@ -159,24 +169,53 @@ class AgentManagerService(
 
     fun getAgentAllowedBuiltInNames(agentId: String): Set<String>? = agents[agentId]?.config?.allowedBuiltInNames
 
-    private fun buildAgentsRosterText(): String {
-        val snaps = getAgentsSnapshot().sortedBy { it.role }
-        val b = StringBuilder()
-        b.append("Agents roster (auto):\n")
-        if (snaps.isEmpty()) {
-            b.append("- <none>\n")
-            return b.toString()
-        }
-        snaps.forEach { a ->
-            b
-                .append("- id=")
-                .append(a.id)
-                .append(", role=")
-                .append(a.role)
-            a.model?.let { m -> b.append(", model=").append(m) }
-            b.append('\n')
-        }
-        return b.toString().trimEnd()
+    private fun buildAgentsRosterText(): String =
+        buildString {
+            append("Collaboration roster (auto):\n")
+            val participants = project.service<CollaborationRosterService>().participants()
+            if (participants.isEmpty()) {
+                append("- <none>\n")
+            } else {
+                participants
+                    .sortedBy { it.displayName }
+                    .forEach { participant ->
+                        append("- id=")
+                            .append(participant.id)
+                            .append(", name=")
+                            .append(participant.displayName)
+                            .append(", kind=")
+                            .append(participant.kind)
+                            .append(", capabilities=")
+                            .append(participant.capabilities.sortedBy { it.name }.joinToString { it.name })
+                            .append('\n')
+                    }
+            }
+        }.trimEnd()
+
+    /**
+     * Records a roster change without waking agents or creating an AI turn. The latest roster is
+     * injected into each agent's next meaningful turn, which avoids model replies to housekeeping.
+     */
+    private fun markRosterChanged() {
+        rosterRevision.incrementAndGet()
+    }
+
+    private fun addRosterContextIfChanged(
+        inputs: MutableList<ResponseInputItem>,
+        session: AgentSession,
+    ) {
+        val currentRevision = rosterRevision.get()
+        if (session.observedRosterRevision == currentRevision) return
+        inputs.add(
+            ResponseInputItem.ofMessage(
+                ResponseInputItem.Message
+                    .builder()
+                    .addInputTextContent(buildAgentsRosterText())
+                    .role(ResponseInputItem.Message.Role.SYSTEM)
+                    .build(),
+            ),
+        )
+        session.observedRosterRevision = currentRevision
     }
 
     fun postInboxMessage(
@@ -187,6 +226,10 @@ class AgentManagerService(
     ): Boolean {
         if (text.isBlank()) return false
         if (!agents.containsKey(toAgentId)) return false
+        if (!AgentInboxMessagePolicy.shouldDeliver(kind)) {
+            QDLog.debug(logger) { "Inbox message suppressed: to=$toAgentId kind=$kind" }
+            return true
+        }
         return try {
             val st = QuantaAISessionState.instance.state
             val list = st.agentInboxes.getOrPut(toAgentId) { mutableListOf() }
@@ -217,6 +260,16 @@ class AgentManagerService(
         }
     }
 
+    /** Publishes a material agent update to the manager UI without waking another agent. */
+    fun reportToManager(
+        from: String?,
+        text: String,
+    ): Boolean {
+        if (text.isBlank()) return false
+        pcs.firePropertyChange("agent_manager_report", null, ManagerReport(from = from, text = text))
+        return true
+    }
+
     fun getLastWakeRequestedAtMs(agentId: String): Long? = agentLastWakeRequestedAtMs[agentId]
 
     private fun requestWakeIfIdle(agentId: String) {
@@ -242,7 +295,7 @@ class AgentManagerService(
             return
         }
 
-        val session = agents[agentId] ?: return
+        if (!agents.containsKey(agentId)) return
         val flag = agentWakeInFlight.computeIfAbsent(agentId) { AtomicBoolean(false) }
         if (!flag.compareAndSet(false, true)) {
             try {
@@ -252,23 +305,14 @@ class AgentManagerService(
             return
         }
 
-        ensureExecutor(agentId).submit {
+        val wakeMessage =
+            "(auto) You have new inbox notifications. Perform any required work quietly. " +
+                "Do not describe inbox processing, do not send a status-only reply, and respond only when an action is required."
+        sendMessageAsync(agentId, wakeMessage, visibleInChat = false).whenComplete { result, error ->
             try {
-                QDLog.debug(logger) { "Wake turn starting: agent=$agentId" }
-                // A lightweight wake turn. Inbox messages will be injected at start-of-turn and cleared.
-                val reply =
-                    sendMessage(
-                        agentId,
-                        "(auto) You have new inbox messages. Process them. " +
-                            "If you need to respond to another agent, use AgentPostMessageTool. " +
-                            "If nothing is required, reply with DONE.",
-                    )
-                QDLog.debug(logger) { "Wake turn finished: agent=$agentId replyLen=${reply.length}" }
-            } catch (t: Throwable) {
-                try {
-                    QDLog.warn(logger, { "Wake turn failed: agent=$agentId err=${t.message}" }, t)
-                } catch (_: Throwable) {
-                }
+                val outcome = result?.error ?: error?.message ?: "ok"
+                QDLog.debug(logger) { "Wake turn finished: agent=$agentId outcome=$outcome" }
+            } catch (_: Throwable) {
             } finally {
                 flag.set(false)
             }
@@ -279,7 +323,7 @@ class AgentManagerService(
         return try {
             val st = QuantaAISessionState.instance.state
             val list = st.agentInboxes[agentId] ?: return emptyList()
-            val out = list.toList()
+            val out = list.filter { message -> AgentInboxMessagePolicy.shouldDeliver(message.kind) }
             list.clear()
             pcs.firePropertyChange("agent_inbox", null, mapOf("agentId" to agentId, "count" to 0))
             out
@@ -288,15 +332,11 @@ class AgentManagerService(
         }
     }
 
-    private fun broadcastRosterUpdate(from: String? = "AgentManager") {
-        val roster = buildAgentsRosterText()
-        if (roster.isBlank()) return
+    private fun broadcastRosterUpdate() {
+        markRosterChanged()
         try {
-            QDLog.debug(logger) { "Roster broadcast: from=${from ?: "<null>"} agents=${agents.size}" }
+            QDLog.debug(logger) { "Roster changed: agents=${agents.size}" }
         } catch (_: Throwable) {
-        }
-        agents.keys.forEach { id ->
-            postInboxMessage(id, from, roster, kind = "roster_update")
         }
     }
 
@@ -464,7 +504,7 @@ class AgentManagerService(
             )
         }
         try {
-            val agentsText = ProjectAgentsFileManager(project).readAgentsFile(maxChars = 8_000)
+            val agentsText = project.service<ProjectContextSnapshotService>().agentsMd()
             if (agentsText.isNotBlank()) {
                 retryInputs.add(
                     ResponseInputItem.ofMessage(
@@ -598,6 +638,13 @@ class AgentManagerService(
                 append("You are an assistant agent with the role '").append(config.role).append("'. ")
                 append("Follow the global development instructions. Communicate in plain text.\n\n")
                 append(Instructions.instructions)
+                append(
+                    "\n\n# Collaboration\n" +
+                        "Use AgentPostMessageTool only with a recipientId from the current Collaboration roster. " +
+                        "Use TASK when you need a participant's result before completing your own task; " +
+                        "use NOTIFICATION for fire-and-forget information; use correlated STATUS or RESULT only " +
+                        "for the manager participant. Do not expose internal routing mechanics in your reply.",
+                )
                 if (!config.instructions.isNullOrBlank()) {
                     append("\n\n# Role-specific instructions\n").append(config.instructions)
                 }
@@ -606,7 +653,7 @@ class AgentManagerService(
         agents[id] = session
         ensureExecutor(id)
         try {
-            broadcastRosterUpdate(from = "AgentManager")
+            broadcastRosterUpdate()
         } catch (_: Throwable) {
         }
         val st = QuantaAISessionState.instance.state
@@ -644,12 +691,10 @@ class AgentManagerService(
 
         val selectedModels = chooseDefaultTeamModels()
 
-        // Common communication tools for sub-agents.
-        // Note: we intentionally do NOT grant AgentReadInboxTool to sub-agents.
-        // Inbox messages are delivered automatically at the start of each turn.
+        // Sub-agents communicate asynchronously through inbox messages or manager reports.
+        // Manager-to-agent work is created through tracked delegated tasks, not synchronous replies.
         val commonComms =
             setOf(
-                AgentSendMessageTool::class.java,
                 AgentPostMessageTool::class.java,
             ).map { toString() }.toSet()
 
@@ -821,7 +866,7 @@ class AgentManagerService(
             authorRole = removed.config.role,
         )
         try {
-            broadcastRosterUpdate(from = "AgentManager")
+            broadcastRosterUpdate()
         } catch (_: Throwable) {
         }
         pcs.firePropertyChange("agents", null, resolvedAgentId)
@@ -877,6 +922,7 @@ class AgentManagerService(
         agentId: String,
         message: String,
         existingTaskId: String? = null,
+        visibleInChat: Boolean = true,
     ): CompletableFuture<AgentTaskResult> {
         val enabled = BackendRuntimeSettingsService.instance.settings.agenticEnabled ?: true
         if (!enabled) {
@@ -912,8 +958,8 @@ class AgentManagerService(
                 assignedAgentIds = listOf(agentId),
                 assignedRoles = listOf(session.config.role),
             )
+        channelState.updateTaskStatus(delegatedTask.id, DelegatedTaskStatusDto.RUNNING, summary = "Started")
         if (existingTaskId == null) {
-            channelState.updateTaskStatus(delegatedTask.id, DelegatedTaskStatusDto.RUNNING, summary = "Started")
             channelState.appendEvent(
                 kind = AgentChannelEventKindDto.DELEGATION_STARTED,
                 authorType = AgentChannelAuthorTypeDto.MANAGER,
@@ -931,6 +977,305 @@ class AgentManagerService(
         markAgentTurnStarted(agentId)
         fut.whenComplete { _, _ -> markAgentTurnFinished(agentId) }
         ensureExecutor(agentId).submit {
+            synchronized(agentTurnLocks.computeIfAbsent(agentId) { Any() }) {
+                try {
+                    val openAI = project.service<OpenAIService>()
+                    val inputs = mutableListOf<ResponseInputItem>()
+
+                    // Always deliver pending inbox messages at the start of the turn.
+                    try {
+                        val inbox = readAndClearInbox(agentId)
+                        if (inbox.isNotEmpty()) {
+                            try {
+                                QDLog.debug(logger) {
+                                    val kinds = inbox.mapNotNull { it.kind?.ifBlank { null } }.distinct()
+                                    "Inbox injected: agent=$agentId count=${inbox.size} kinds=$kinds"
+                                }
+                            } catch (_: Throwable) {
+                            }
+
+                            val inboxText =
+                                buildString {
+                                    append("Inbox messages (auto):\n")
+                                    inbox.sortedBy { it.timestamp }.forEach { m ->
+                                        val from = m.from?.ifBlank { null } ?: "unknown"
+                                        val kind = m.kind?.ifBlank { null }
+                                        append("- [").append(from)
+                                        if (kind != null) append(", kind=").append(kind)
+                                        append("] ").append(m.text.trim()).append('\n')
+                                    }
+                                }.trimEnd()
+                            inputs.add(
+                                ResponseInputItem.ofMessage(
+                                    ResponseInputItem.Message
+                                        .builder()
+                                        .addInputTextContent(inboxText)
+                                        .role(ResponseInputItem.Message.Role.SYSTEM)
+                                        .build(),
+                                ),
+                            )
+                        }
+                    } catch (_: Throwable) {
+                    }
+
+                    // Refresh roster context only for a real task, not as an autonomous wake turn.
+                    addRosterContextIfChanged(inputs, session)
+
+                    if (session.previousId == null) {
+                        inputs.add(
+                            ResponseInputItem.ofMessage(
+                                ResponseInputItem.Message
+                                    .builder()
+                                    .addInputTextContent(
+                                        "Agent Role: ${session.config.role}",
+                                    ).role(ResponseInputItem.Message.Role.SYSTEM)
+                                    .build(),
+                            ),
+                        )
+
+                        // Provide rolling summary if present
+                        try {
+                            val sum = summaryForAgent(agentId)
+                            if (!sum.isNullOrBlank()) {
+                                inputs.add(
+                                    ResponseInputItem.ofMessage(
+                                        ResponseInputItem.Message
+                                            .builder()
+                                            .addInputTextContent("Conversation summary (auto):\n" + sum)
+                                            .role(ResponseInputItem.Message.Role.SYSTEM)
+                                            .build(),
+                                    ),
+                                )
+                            }
+                        } catch (_: Throwable) {
+                        }
+
+                        // Provide project-specific instructions from repository-root AGENTS.md (if present)
+                        try {
+                            val agentsText = project.service<ProjectContextSnapshotService>().agentsMd()
+                            if (agentsText.isNotBlank()) {
+                                inputs.add(
+                                    ResponseInputItem.ofMessage(
+                                        ResponseInputItem.Message
+                                            .builder()
+                                            .addInputTextContent(agentsText)
+                                            .role(ResponseInputItem.Message.Role.SYSTEM)
+                                            .build(),
+                                    ),
+                                )
+                            }
+                        } catch (_: Throwable) {
+                            // Non-fatal: proceed without AGENTS.md
+                        }
+                    }
+
+                    inputs.add(
+                        ResponseInputItem.ofMessage(
+                            ResponseInputItem.Message
+                                .builder()
+                                .addInputTextContent(message)
+                                .role(ResponseInputItem.Message.Role.USER)
+                                .build(),
+                        ),
+                    )
+                    val filter: ((Class<*>) -> Boolean)? =
+                        if (session.config.allowedBuiltInTools) null else { _ -> false }
+                    val includeMcp = session.config.includeMcp
+                    val agentLabel = "AI(${session.config.role})"
+                    val (reply, newPrev) =
+                        project
+                            .service<NestedAgentTaskCoordinatorService>()
+                            .withActiveParentTask(agentId, delegatedTask.id) {
+                                openAI.agentTurn(
+                                    inputs = inputs,
+                                    previousId = session.previousId,
+                                    overrideInstructions = session.config.instructions,
+                                    overrideModel = session.config.model,
+                                    allowedToolClassFilter = filter,
+                                    includeMcp = includeMcp,
+                                    agentLabel = agentLabel,
+                                    allowedBuiltInNames = session.config.allowedBuiltInNames,
+                                    allowedMcpNames = session.config.allowedMcpNames,
+                                    onToolUpdate = { update ->
+                                        channelState.appendEvent(
+                                            kind = AgentChannelEventKindDto.TOOL_ACTIVITY,
+                                            authorType = AgentChannelAuthorTypeDto.AGENT,
+                                            text = update.item.displayText,
+                                            authorId = agentId,
+                                            authorRole = session.config.role,
+                                            relatedTaskId = delegatedTask.id,
+                                        )
+                                    },
+                                )
+                            }
+                    session.previousId = newPrev
+                    QuantaAISessionState.instance.state.agents
+                        .indexOfFirst { it.id == agentId }
+                        .takeIf { it >= 0 }
+                        ?.let { idx ->
+                            val current = QuantaAISessionState.instance.state.agents[idx]
+                            QuantaAISessionState.instance.state.agents[idx] = current.copy(previousId = newPrev)
+                        }
+
+                    // Persist transcript and schedule proactive summarization
+                    persistAgentMessage(agentId, "user", message)
+                    persistAgentMessage(agentId, "assistant", reply)
+                    try {
+                        scheduleAgentSummaryIfNeeded(agentId, session.config.model)
+                    } catch (_: Throwable) {
+                    }
+
+                    QDLog.info(logger) { "Agent[$agentId][$requestId] reply length=${reply.length}" }
+                    if (project
+                            .service<NestedAgentTaskCoordinatorService>()
+                            .deferParentCompletion(delegatedTask.id, fut)
+                    ) {
+                        return@submit
+                    }
+                    val result =
+                        AgentTaskResult(
+                            requestId,
+                            agentId,
+                            true,
+                            reply.ifBlank { "<no message>" },
+                            null,
+                            delegatedTask.id,
+                            visibleInChat,
+                        )
+                    channelState.updateTaskStatus(
+                        delegatedTask.id,
+                        DelegatedTaskStatusDto.DONE,
+                        result = result.text,
+                        summary = "Completed",
+                    )
+                    channelState.appendEvent(
+                        kind = AgentChannelEventKindDto.DELEGATION_COMPLETED,
+                        authorType = AgentChannelAuthorTypeDto.AGENT,
+                        text = result.text ?: "Completed task",
+                        authorId = agentId,
+                        authorRole = session.config.role,
+                        relatedTaskId = delegatedTask.id,
+                    )
+                    fut.complete(result)
+                    pcs.firePropertyChange("agent_task_finished", null, result)
+                } catch (t: Throwable) {
+                    if (isContextWindowError(t)) {
+                        try {
+                            val openAI = project.service<OpenAIService>()
+                            val filter: ((Class<*>) -> Boolean)? =
+                                if (session.config.allowedBuiltInTools) null else { _ -> false }
+                            val includeMcp = session.config.includeMcp
+                            val agentLabel = "AI(${session.config.role})"
+                            val retry =
+                                softResetAndRetryAgentTurnOnce(
+                                    openAI = openAI,
+                                    agentId = agentId,
+                                    session = session,
+                                    message = message,
+                                    agentLabel = agentLabel,
+                                    toolClassFilter = filter,
+                                    includeMcp = includeMcp,
+                                )
+                            if (retry != null) {
+                                val (reply, newPrev) = retry
+                                session.previousId = newPrev
+                                QuantaAISessionState.instance.state.agents
+                                    .indexOfFirst { it.id == agentId }
+                                    .takeIf { it >= 0 }
+                                    ?.let { idx ->
+                                        val current = QuantaAISessionState.instance.state.agents[idx]
+                                        QuantaAISessionState.instance.state.agents[idx] =
+                                            current.copy(previousId = newPrev)
+                                    }
+
+                                persistAgentMessage(agentId, "user", message)
+                                persistAgentMessage(agentId, "assistant", reply)
+                                try {
+                                    scheduleAgentSummaryIfNeeded(agentId, session.config.model)
+                                } catch (_: Throwable) {
+                                }
+
+                                val result =
+                                    AgentTaskResult(
+                                        requestId,
+                                        agentId,
+                                        true,
+                                        reply.ifBlank { "<no message>" },
+                                        null,
+                                        delegatedTask.id,
+                                        visibleInChat,
+                                    )
+                                channelState.updateTaskStatus(
+                                    delegatedTask.id,
+                                    DelegatedTaskStatusDto.DONE,
+                                    result = result.text,
+                                    summary = "Completed",
+                                )
+                                channelState.appendEvent(
+                                    kind = AgentChannelEventKindDto.DELEGATION_COMPLETED,
+                                    authorType = AgentChannelAuthorTypeDto.AGENT,
+                                    text = result.text ?: "Completed task",
+                                    authorId = agentId,
+                                    authorRole = session.config.role,
+                                    relatedTaskId = delegatedTask.id,
+                                )
+                                fut.complete(result)
+                                pcs.firePropertyChange("agent_task_finished", null, result)
+                                return@submit
+                            }
+                        } catch (_: Throwable) {
+                        }
+                    }
+
+                    val err = t.message ?: t.javaClass.simpleName
+                    val result = AgentTaskResult(requestId, agentId, false, null, err, delegatedTask.id, visibleInChat)
+                    channelState.updateTaskStatus(
+                        delegatedTask.id,
+                        DelegatedTaskStatusDto.FAILED,
+                        result = err,
+                        summary = "Failed",
+                    )
+                    channelState.appendEvent(
+                        kind = AgentChannelEventKindDto.DELEGATION_UPDATED,
+                        authorType = AgentChannelAuthorTypeDto.AGENT,
+                        text = err,
+                        authorId = agentId,
+                        authorRole = session.config.role,
+                        relatedTaskId = delegatedTask.id,
+                    )
+                    fut.complete(result)
+                    pcs.firePropertyChange("agent_task_finished", null, result)
+                }
+            }
+        }
+        return fut
+    }
+
+    private fun markAgentTurnStarted(agentId: String) {
+        activeTurnCounts.computeIfAbsent(agentId) { AtomicInteger() }.incrementAndGet()
+        pcs.firePropertyChange("agents", null, getAgentsSnapshot())
+    }
+
+    private fun markAgentTurnFinished(agentId: String) {
+        activeTurnCounts[agentId]?.let { count ->
+            if (count.decrementAndGet() <= 0) {
+                activeTurnCounts.remove(agentId, count)
+            }
+        }
+        pcs.firePropertyChange("agents", null, getAgentsSnapshot())
+    }
+
+    fun sendMessage(
+        agentId: String,
+        message: String,
+    ): String { // unchanged
+        val enabled = BackendRuntimeSettingsService.instance.settings.agenticEnabled ?: true
+        if (!enabled) throw IllegalStateException("Agentic mode is disabled in settings")
+        val session = agents[agentId] ?: return "Agent not found: $agentId"
+        val requestId = UUID.randomUUID().toString()
+        pcs.firePropertyChange("agent_task_started", null, mapOf("requestId" to requestId, "agentId" to agentId))
+        markAgentTurnStarted(agentId)
+        return synchronized(agentTurnLocks.computeIfAbsent(agentId) { Any() }) {
             try {
                 val openAI = project.service<OpenAIService>()
                 val inputs = mutableListOf<ResponseInputItem>()
@@ -971,6 +1316,9 @@ class AgentManagerService(
                 } catch (_: Throwable) {
                 }
 
+                // Refresh roster context only for a real task, not as an autonomous wake turn.
+                addRosterContextIfChanged(inputs, session)
+
                 if (session.previousId == null) {
                     inputs.add(
                         ResponseInputItem.ofMessage(
@@ -982,20 +1330,6 @@ class AgentManagerService(
                                 .build(),
                         ),
                     )
-
-                    // Provide agents roster so agents can message each other by id.
-                    try {
-                        inputs.add(
-                            ResponseInputItem.ofMessage(
-                                ResponseInputItem.Message
-                                    .builder()
-                                    .addInputTextContent(buildAgentsRosterText())
-                                    .role(ResponseInputItem.Message.Role.SYSTEM)
-                                    .build(),
-                            ),
-                        )
-                    } catch (_: Throwable) {
-                    }
 
                     // Provide rolling summary if present
                     try {
@@ -1016,7 +1350,7 @@ class AgentManagerService(
 
                     // Provide project-specific instructions from repository-root AGENTS.md (if present)
                     try {
-                        val agentsText = ProjectAgentsFileManager(project).readAgentsFile(maxChars = 8_000)
+                        val agentsText = project.service<ProjectContextSnapshotService>().agentsMd()
                         if (agentsText.isNotBlank()) {
                             inputs.add(
                                 ResponseInputItem.ofMessage(
@@ -1056,16 +1390,6 @@ class AgentManagerService(
                         agentLabel = agentLabel,
                         allowedBuiltInNames = session.config.allowedBuiltInNames,
                         allowedMcpNames = session.config.allowedMcpNames,
-                        onToolUpdate = { update ->
-                            channelState.appendEvent(
-                                kind = AgentChannelEventKindDto.TOOL_ACTIVITY,
-                                authorType = AgentChannelAuthorTypeDto.AGENT,
-                                text = update.item.displayText,
-                                authorId = agentId,
-                                authorRole = session.config.role,
-                                relatedTaskId = delegatedTask.id,
-                            )
-                        },
                     )
                 session.previousId = newPrev
                 QuantaAISessionState.instance.state.agents
@@ -1084,24 +1408,14 @@ class AgentManagerService(
                 } catch (_: Throwable) {
                 }
 
-                QDLog.info(logger) { "Agent[$agentId][$requestId] reply length=${reply.length}" }
-                val result = AgentTaskResult(requestId, agentId, true, reply.ifBlank { "<no message>" }, null)
-                channelState.updateTaskStatus(
-                    delegatedTask.id,
-                    DelegatedTaskStatusDto.DONE,
-                    result = result.text,
-                    summary = "Completed",
+                QDLog.info(logger) { "Agent[$agentId] reply length=${reply.length}" }
+                val out = reply.ifBlank { "<no message>" }
+                pcs.firePropertyChange(
+                    "agent_task_finished",
+                    null,
+                    AgentTaskResult(requestId, agentId, true, out, null),
                 )
-                channelState.appendEvent(
-                    kind = AgentChannelEventKindDto.DELEGATION_COMPLETED,
-                    authorType = AgentChannelAuthorTypeDto.AGENT,
-                    text = result.text ?: "Completed task",
-                    authorId = agentId,
-                    authorRole = session.config.role,
-                    relatedTaskId = delegatedTask.id,
-                )
-                fut.complete(result)
-                pcs.firePropertyChange("agent_task_finished", null, result)
+                out
             } catch (t: Throwable) {
                 if (isContextWindowError(t)) {
                     try {
@@ -1128,8 +1442,7 @@ class AgentManagerService(
                                 .takeIf { it >= 0 }
                                 ?.let { idx ->
                                     val current = QuantaAISessionState.instance.state.agents[idx]
-                                    QuantaAISessionState.instance.state.agents[idx] =
-                                        current.copy(previousId = newPrev)
+                                    QuantaAISessionState.instance.state.agents[idx] = current.copy(previousId = newPrev)
                                 }
 
                             persistAgentMessage(agentId, "user", message)
@@ -1139,277 +1452,28 @@ class AgentManagerService(
                             } catch (_: Throwable) {
                             }
 
-                            val result =
-                                AgentTaskResult(requestId, agentId, true, reply.ifBlank { "<no message>" }, null)
-                            channelState.updateTaskStatus(
-                                delegatedTask.id,
-                                DelegatedTaskStatusDto.DONE,
-                                result = result.text,
-                                summary = "Completed",
+                            val out = reply.ifBlank { "<no message>" }
+                            pcs.firePropertyChange(
+                                "agent_task_finished",
+                                null,
+                                AgentTaskResult(requestId, agentId, true, out, null),
                             )
-                            channelState.appendEvent(
-                                kind = AgentChannelEventKindDto.DELEGATION_COMPLETED,
-                                authorType = AgentChannelAuthorTypeDto.AGENT,
-                                text = result.text ?: "Completed task",
-                                authorId = agentId,
-                                authorRole = session.config.role,
-                                relatedTaskId = delegatedTask.id,
-                            )
-                            fut.complete(result)
-                            pcs.firePropertyChange("agent_task_finished", null, result)
-                            return@submit
+                            return out
                         }
                     } catch (_: Throwable) {
                     }
                 }
 
                 val err = t.message ?: t.javaClass.simpleName
-                val result = AgentTaskResult(requestId, agentId, false, null, err)
-                channelState.updateTaskStatus(
-                    delegatedTask.id,
-                    DelegatedTaskStatusDto.FAILED,
-                    result = err,
-                    summary = "Failed",
+                pcs.firePropertyChange(
+                    "agent_task_finished",
+                    null,
+                    AgentTaskResult(requestId, agentId, false, null, err),
                 )
-                channelState.appendEvent(
-                    kind = AgentChannelEventKindDto.DELEGATION_UPDATED,
-                    authorType = AgentChannelAuthorTypeDto.AGENT,
-                    text = err,
-                    authorId = agentId,
-                    authorRole = session.config.role,
-                    relatedTaskId = delegatedTask.id,
-                )
-                fut.complete(result)
-                pcs.firePropertyChange("agent_task_finished", null, result)
+                "Agent error: $err"
+            } finally {
+                markAgentTurnFinished(agentId)
             }
-        }
-        return fut
-    }
-
-    private fun markAgentTurnStarted(agentId: String) {
-        activeTurnCounts.computeIfAbsent(agentId) { AtomicInteger() }.incrementAndGet()
-        pcs.firePropertyChange("agents", null, getAgentsSnapshot())
-    }
-
-    private fun markAgentTurnFinished(agentId: String) {
-        activeTurnCounts[agentId]?.let { count ->
-            if (count.decrementAndGet() <= 0) {
-                activeTurnCounts.remove(agentId, count)
-            }
-        }
-        pcs.firePropertyChange("agents", null, getAgentsSnapshot())
-    }
-
-    fun sendMessage(
-        agentId: String,
-        message: String,
-    ): String { // unchanged
-        val enabled = BackendRuntimeSettingsService.instance.settings.agenticEnabled ?: true
-        if (!enabled) throw IllegalStateException("Agentic mode is disabled in settings")
-        val session = agents[agentId] ?: return "Agent not found: $agentId"
-        val requestId = UUID.randomUUID().toString()
-        pcs.firePropertyChange("agent_task_started", null, mapOf("requestId" to requestId, "agentId" to agentId))
-        markAgentTurnStarted(agentId)
-        return try {
-            val openAI = project.service<OpenAIService>()
-            val inputs = mutableListOf<ResponseInputItem>()
-
-            // Always deliver pending inbox messages at the start of the turn.
-            try {
-                val inbox = readAndClearInbox(agentId)
-                if (inbox.isNotEmpty()) {
-                    try {
-                        QDLog.debug(logger) {
-                            val kinds = inbox.mapNotNull { it.kind?.ifBlank { null } }.distinct()
-                            "Inbox injected: agent=$agentId count=${inbox.size} kinds=$kinds"
-                        }
-                    } catch (_: Throwable) {
-                    }
-
-                    val inboxText =
-                        buildString {
-                            append("Inbox messages (auto):\n")
-                            inbox.sortedBy { it.timestamp }.forEach { m ->
-                                val from = m.from?.ifBlank { null } ?: "unknown"
-                                val kind = m.kind?.ifBlank { null }
-                                append("- [").append(from)
-                                if (kind != null) append(", kind=").append(kind)
-                                append("] ").append(m.text.trim()).append('\n')
-                            }
-                        }.trimEnd()
-                    inputs.add(
-                        ResponseInputItem.ofMessage(
-                            ResponseInputItem.Message
-                                .builder()
-                                .addInputTextContent(inboxText)
-                                .role(ResponseInputItem.Message.Role.SYSTEM)
-                                .build(),
-                        ),
-                    )
-                }
-            } catch (_: Throwable) {
-            }
-
-            if (session.previousId == null) {
-                inputs.add(
-                    ResponseInputItem.ofMessage(
-                        ResponseInputItem.Message
-                            .builder()
-                            .addInputTextContent(
-                                "Agent Role: ${session.config.role}",
-                            ).role(ResponseInputItem.Message.Role.SYSTEM)
-                            .build(),
-                    ),
-                )
-
-                // Provide agents roster so agents can message each other by id.
-                try {
-                    inputs.add(
-                        ResponseInputItem.ofMessage(
-                            ResponseInputItem.Message
-                                .builder()
-                                .addInputTextContent(buildAgentsRosterText())
-                                .role(ResponseInputItem.Message.Role.SYSTEM)
-                                .build(),
-                        ),
-                    )
-                } catch (_: Throwable) {
-                }
-
-                // Provide rolling summary if present
-                try {
-                    val sum = summaryForAgent(agentId)
-                    if (!sum.isNullOrBlank()) {
-                        inputs.add(
-                            ResponseInputItem.ofMessage(
-                                ResponseInputItem.Message
-                                    .builder()
-                                    .addInputTextContent("Conversation summary (auto):\n" + sum)
-                                    .role(ResponseInputItem.Message.Role.SYSTEM)
-                                    .build(),
-                            ),
-                        )
-                    }
-                } catch (_: Throwable) {
-                }
-
-                // Provide project-specific instructions from repository-root AGENTS.md (if present)
-                try {
-                    val agentsText = ProjectAgentsFileManager(project).readAgentsFile(maxChars = 8_000)
-                    if (agentsText.isNotBlank()) {
-                        inputs.add(
-                            ResponseInputItem.ofMessage(
-                                ResponseInputItem.Message
-                                    .builder()
-                                    .addInputTextContent(agentsText)
-                                    .role(ResponseInputItem.Message.Role.SYSTEM)
-                                    .build(),
-                            ),
-                        )
-                    }
-                } catch (_: Throwable) {
-                    // Non-fatal: proceed without AGENTS.md
-                }
-            }
-
-            inputs.add(
-                ResponseInputItem.ofMessage(
-                    ResponseInputItem.Message
-                        .builder()
-                        .addInputTextContent(message)
-                        .role(ResponseInputItem.Message.Role.USER)
-                        .build(),
-                ),
-            )
-            val filter: ((Class<*>) -> Boolean)? = if (session.config.allowedBuiltInTools) null else { _ -> false }
-            val includeMcp = session.config.includeMcp
-            val agentLabel = "AI(${session.config.role})"
-            val (reply, newPrev) =
-                openAI.agentTurn(
-                    inputs = inputs,
-                    previousId = session.previousId,
-                    overrideInstructions = session.config.instructions,
-                    overrideModel = session.config.model,
-                    allowedToolClassFilter = filter,
-                    includeMcp = includeMcp,
-                    agentLabel = agentLabel,
-                    allowedBuiltInNames = session.config.allowedBuiltInNames,
-                    allowedMcpNames = session.config.allowedMcpNames,
-                )
-            session.previousId = newPrev
-            QuantaAISessionState.instance.state.agents
-                .indexOfFirst { it.id == agentId }
-                .takeIf { it >= 0 }
-                ?.let { idx ->
-                    val current = QuantaAISessionState.instance.state.agents[idx]
-                    QuantaAISessionState.instance.state.agents[idx] = current.copy(previousId = newPrev)
-                }
-
-            // Persist transcript and schedule proactive summarization
-            persistAgentMessage(agentId, "user", message)
-            persistAgentMessage(agentId, "assistant", reply)
-            try {
-                scheduleAgentSummaryIfNeeded(agentId, session.config.model)
-            } catch (_: Throwable) {
-            }
-
-            QDLog.info(logger) { "Agent[$agentId] reply length=${reply.length}" }
-            val out = reply.ifBlank { "<no message>" }
-            pcs.firePropertyChange("agent_task_finished", null, AgentTaskResult(requestId, agentId, true, out, null))
-            out
-        } catch (t: Throwable) {
-            if (isContextWindowError(t)) {
-                try {
-                    val openAI = project.service<OpenAIService>()
-                    val filter: ((Class<*>) -> Boolean)? =
-                        if (session.config.allowedBuiltInTools) null else { _ -> false }
-                    val includeMcp = session.config.includeMcp
-                    val agentLabel = "AI(${session.config.role})"
-                    val retry =
-                        softResetAndRetryAgentTurnOnce(
-                            openAI = openAI,
-                            agentId = agentId,
-                            session = session,
-                            message = message,
-                            agentLabel = agentLabel,
-                            toolClassFilter = filter,
-                            includeMcp = includeMcp,
-                        )
-                    if (retry != null) {
-                        val (reply, newPrev) = retry
-                        session.previousId = newPrev
-                        QuantaAISessionState.instance.state.agents
-                            .indexOfFirst { it.id == agentId }
-                            .takeIf { it >= 0 }
-                            ?.let { idx ->
-                                val current = QuantaAISessionState.instance.state.agents[idx]
-                                QuantaAISessionState.instance.state.agents[idx] = current.copy(previousId = newPrev)
-                            }
-
-                        persistAgentMessage(agentId, "user", message)
-                        persistAgentMessage(agentId, "assistant", reply)
-                        try {
-                            scheduleAgentSummaryIfNeeded(agentId, session.config.model)
-                        } catch (_: Throwable) {
-                        }
-
-                        val out = reply.ifBlank { "<no message>" }
-                        pcs.firePropertyChange(
-                            "agent_task_finished",
-                            null,
-                            AgentTaskResult(requestId, agentId, true, out, null),
-                        )
-                        return out
-                    }
-                } catch (_: Throwable) {
-                }
-            }
-
-            val err = t.message ?: t.javaClass.simpleName
-            pcs.firePropertyChange("agent_task_finished", null, AgentTaskResult(requestId, agentId, false, null, err))
-            "Agent error: $err"
-        } finally {
-            markAgentTurnFinished(agentId)
         }
     }
 

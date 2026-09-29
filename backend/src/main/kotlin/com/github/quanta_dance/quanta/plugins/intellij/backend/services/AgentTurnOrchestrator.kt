@@ -16,10 +16,12 @@ import com.intellij.openapi.project.Project
 import com.openai.models.responses.ResponseFunctionToolCall
 import com.openai.models.responses.ResponseInputItem
 import com.openai.models.responses.StructuredResponse
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 
 /**
  * Runs the main agent-turn orchestration loop for OpenAI-backed chat turns.
@@ -44,8 +46,15 @@ class AgentTurnOrchestrator(
     ) -> Pair<StructuredResponse<OpenAIResponse>, String?>,
     private val systemMessage: (String) -> ResponseInputItem,
     private val persistAndShow: (role: String, agentLabel: String, text: String) -> Unit,
+    private val toolExecutionDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
     private val objectMapper = ObjectMapper()
+    private val performanceTelemetry = runCatching { project.service<PerformanceTelemetryService>() }.getOrNull()
+
+    private fun <T> measureToolExecution(
+        toolName: String,
+        block: () -> T,
+    ): T = performanceTelemetry?.measureCurrentPhase("tool_execution:$toolName", block = block) ?: block()
 
     private data class GuardrailDecision(
         val allowExecution: Boolean,
@@ -180,30 +189,62 @@ class AgentTurnOrchestrator(
         executionMode: String,
         parallelBatchSize: Int = 1,
     ): ToolExecutionOutcome =
-        runCatching {
-            val toolResult =
-                if (plan.decision.allowExecution) {
-                    toolExecutionService.executeToolCall(plan.functionCall, agentLabel)
-                } else {
-                    QDLog.warn(thisLogger()) {
-                        "OpenAIService.agentTurn: stability intervention tool=${plan.functionCall.name()} callId=${plan.callId} reason=${plan.decision.reason} executionMode=$executionMode"
+        measureToolExecution(plan.functionCall.name()) {
+            runCatching {
+                val toolResult =
+                    if (plan.decision.allowExecution) {
+                        toolExecutionService.executeToolCall(plan.functionCall, agentLabel)
+                    } else {
+                        QDLog.warn(thisLogger()) {
+                            "OpenAIService.agentTurn: stability intervention tool=${plan.functionCall.name()} callId=${plan.callId} reason=${plan.decision.reason} executionMode=$executionMode"
+                        }
+                        guardrailToolResult(plan.functionCall, plan.decision.reason ?: "guardrail_blocked")
                     }
-                    guardrailToolResult(plan.functionCall, plan.decision.reason ?: "guardrail_blocked")
-                }
-            ToolExecutionOutcome(
-                plan = plan,
-                executionMode = executionMode,
-                parallelBatchSize = parallelBatchSize,
-                result = toolResult,
-            )
-        }.getOrElse {
-            ToolExecutionOutcome(
-                plan = plan,
-                executionMode = executionMode,
-                parallelBatchSize = parallelBatchSize,
-                failure = it,
-            )
+                ToolExecutionOutcome(
+                    plan = plan,
+                    executionMode = executionMode,
+                    parallelBatchSize = parallelBatchSize,
+                    result = toolResult,
+                )
+            }.getOrElse {
+                ToolExecutionOutcome(
+                    plan = plan,
+                    executionMode = executionMode,
+                    parallelBatchSize = parallelBatchSize,
+                    failure = it,
+                )
+            }
         }
+
+    private suspend fun executeParallelPlannedTool(
+        plan: ToolExecutionPlan,
+        agentLabel: String,
+        toolExecutionService: ToolExecutionService,
+        parallelBatchSize: Int,
+    ): ToolExecutionOutcome {
+        val queuedAtNanos = System.nanoTime()
+        return withContext(toolExecutionDispatcher) {
+            val startedAtNanos = System.nanoTime()
+            val queueWaitMs = (startedAtNanos - queuedAtNanos) / 1_000_000
+            QDLog.info(thisLogger()) {
+                "Tool execution started name=${plan.functionCall.name()} callId=${plan.callId} queueWaitMs=$queueWaitMs"
+            }
+            try {
+                executePlannedTool(
+                    plan = plan,
+                    agentLabel = agentLabel,
+                    toolExecutionService = toolExecutionService,
+                    executionMode = "parallel",
+                    parallelBatchSize = parallelBatchSize,
+                )
+            } finally {
+                val executionMs = (System.nanoTime() - startedAtNanos) / 1_000_000
+                QDLog.info(thisLogger()) {
+                    "Tool execution completed name=${plan.functionCall.name()} callId=${plan.callId} executionMs=$executionMs"
+                }
+            }
+        }
+    }
 
     private fun applyToolExecutionOutcome(
         outcome: ToolExecutionOutcome,
@@ -260,7 +301,7 @@ class AgentTurnOrchestrator(
         agentLabel: String,
         responseId: String?,
         onToolUpdate: ((OpenAIService.ToolTurnUpdate) -> Unit)?,
-    ) {
+    ): String? {
         val plans =
             functionCalls.map { functionCall ->
                 val plan = buildToolExecutionPlan(functionCall, toolExecutionService, guardrailState)
@@ -277,19 +318,24 @@ class AgentTurnOrchestrator(
         while (index < plans.size) {
             val plan = plans[index]
             if (!plan.canRunInParallel) {
+                val outcome =
+                    executePlannedTool(
+                        plan = plan,
+                        agentLabel = agentLabel,
+                        toolExecutionService = toolExecutionService,
+                        executionMode = "sequential",
+                    )
                 applyToolExecutionOutcome(
-                    outcome =
-                        executePlannedTool(
-                            plan = plan,
-                            agentLabel = agentLabel,
-                            toolExecutionService = toolExecutionService,
-                            executionMode = "sequential",
-                        ),
+                    outcome = outcome,
                     guardrailState = guardrailState,
                     pendingToolOutputs = pendingToolOutputs,
                     responseId = responseId,
                     onToolUpdate = onToolUpdate,
                 )
+                outcome.result
+                    ?.takeIf { it.handoffToAsyncCoordination }
+                    ?.handoffMessage
+                    ?.let { return it }
                 index += 1
                 continue
             }
@@ -310,20 +356,23 @@ class AgentTurnOrchestrator(
                         ),
                     )
                 } else {
-                    runBlocking {
-                        parallelPlans
-                            .map { batchPlan ->
-                                async(Dispatchers.IO) {
-                                    executePlannedTool(
-                                        plan = batchPlan,
-                                        agentLabel = agentLabel,
-                                        toolExecutionService = toolExecutionService,
-                                        executionMode = "parallel",
-                                        parallelBatchSize = parallelPlans.size,
-                                    )
-                                }
-                            }.awaitAll()
-                    }
+                    parallelPlans
+                        .chunked(MAX_PARALLEL_TOOL_EXECUTIONS)
+                        .flatMap { toolBatch ->
+                            runBlocking {
+                                toolBatch
+                                    .map { batchPlan ->
+                                        async {
+                                            executeParallelPlannedTool(
+                                                plan = batchPlan,
+                                                agentLabel = agentLabel,
+                                                toolExecutionService = toolExecutionService,
+                                                parallelBatchSize = toolBatch.size,
+                                            )
+                                        }
+                                    }.awaitAll()
+                            }
+                        }
                 }
             outcomes.forEach { outcome ->
                 applyToolExecutionOutcome(
@@ -334,8 +383,14 @@ class AgentTurnOrchestrator(
                     onToolUpdate = onToolUpdate,
                 )
             }
+            outcomes
+                .firstOrNull { it.result?.handoffToAsyncCoordination == true }
+                ?.result
+                ?.handoffMessage
+                ?.let { return it }
             index = parallelEndExclusive
         }
+        return null
     }
 
     private fun logTurnSummary(
@@ -371,6 +426,7 @@ class AgentTurnOrchestrator(
         val planService = project.service<SessionPlanService>()
         val activePlanCoordinator = ActiveSessionPlanCoordinator(continuationPolicy)
         var reprocess = true
+        var terminalAsyncHandoffText: String? = null
         var loopState = ActivePlanLoopState()
         val configuredContinuations =
             try {
@@ -434,7 +490,7 @@ class AgentTurnOrchestrator(
                             }
                             probeIndex += 1
                         }
-                        if (functionCalls.isNotEmpty()) {
+                        val handoffMessage =
                             executeFunctionCallBatch(
                                 functionCalls = functionCalls,
                                 toolExecutionService = toolExecutionService,
@@ -444,8 +500,13 @@ class AgentTurnOrchestrator(
                                 responseId = newId,
                                 onToolUpdate = onToolUpdate,
                             )
+                        if (handoffMessage != null) {
+                            terminalAsyncHandoffText = handoffMessage
+                            aggregated.append(handoffMessage).append('\n')
+                            outputIndex = outputItems.size
+                        } else {
+                            outputIndex = probeIndex
                         }
-                        outputIndex = probeIndex
                     }
 
                     item.isMessage() -> {
@@ -523,9 +584,14 @@ class AgentTurnOrchestrator(
                     }
                 }
             }
-            val hasPending = pendingToolOutputs.isNotEmpty()
-            if (hasPending) inputs.addAll(pendingToolOutputs)
-            if (hasPending) reprocess = true
+            if (terminalAsyncHandoffText != null) {
+                pendingToolOutputs.clear()
+                reprocess = false
+            } else {
+                val hasPending = pendingToolOutputs.isNotEmpty()
+                if (hasPending) inputs.addAll(pendingToolOutputs)
+                if (hasPending) reprocess = true
+            }
         }
         logTurnSummary(guardrailState, agentLabel, localPrevId)
         return aggregated.toString().trim() to localPrevId
@@ -534,5 +600,6 @@ class AgentTurnOrchestrator(
     companion object {
         private const val ACP_STATUS_TOOL = "GetAcpDelegationStatusTool"
         private const val MAX_ACP_STATUS_CHECKS_PER_TURN = 1
+        private const val MAX_PARALLEL_TOOL_EXECUTIONS = 4
     }
 }

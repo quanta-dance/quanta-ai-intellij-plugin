@@ -11,7 +11,10 @@ data class ToolExecutionItem(
     val toolName: String,
     val displayText: String,
     val status: ToolExecutionStatus,
+    /** Project-relative file path that can be opened in an editor. */
     val filePath: String? = null,
+    /** Project-relative directory path that can be selected in the Project tool window. */
+    val directoryPath: String? = null,
     val errorText: String? = null,
     val detailText: String? = null,
 )

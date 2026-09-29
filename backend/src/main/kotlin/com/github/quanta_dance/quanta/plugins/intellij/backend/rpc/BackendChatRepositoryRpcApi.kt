@@ -78,7 +78,7 @@ class BackendChatRepositoryRpcApi : ChatRepositoryRpcApi {
         messageContent: String,
     ) {
         val backendProject = findBackendProject(projectPath) ?: return
-        return BackendChatRepositoryModel.getInstance(backendProject).sendMessage(messageContent)
+        BackendChatRepositoryModel.getInstance(backendProject).sendMessage(messageContent)
     }
 
     override suspend fun stopAllAgents(projectPath: String): Int {

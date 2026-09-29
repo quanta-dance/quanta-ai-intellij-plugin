@@ -5,6 +5,8 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.services
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ToolsRegistry
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.ide.ListFiles
+import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.project.SearchInFiles
 import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.system.TerminalCommandTool
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ToolExecutionStatus
 import com.github.quanta_dance.quanta.plugins.intellij.shared.tools.ToolInterface
@@ -142,6 +144,51 @@ class ToolExecutionPresenterTest {
         } finally {
             unmockkObject(ToolsRegistry)
         }
+    }
+
+    @Test
+    fun `list files card presents and links the requested directory`() {
+        val functionCall =
+            mockFunctionCall(
+                name = "ListFiles",
+                arguments = """{"path":"build"}""",
+            )
+
+        val item =
+            ToolExecutionPresenter(project = null, mapper = ObjectMapper()).buildToolExecutionItem(
+                functionCall = functionCall,
+                status = ToolExecutionStatus.SUCCEEDED,
+            )
+
+        assertEquals("Listing files in build", item.displayText)
+        assertEquals("Directory: build", item.detailText)
+        assertEquals("build", item.directoryPath)
+        assertEquals(null, item.filePath)
+    }
+
+    @Test
+    fun `list files presentation includes the requested directory`() {
+        val tool = ListFiles().apply { path = "frontend/src/main/kotlin" }
+
+        val presentation = tool.presentation(ToolExecutionStatus.EXECUTING)
+
+        assertEquals("Listing files in frontend/src/main/kotlin", presentation.title)
+        assertEquals("Directory: frontend/src/main/kotlin", presentation.detail)
+    }
+
+    @Test
+    fun `search files presentation includes query and filters`() {
+        val tool =
+            SearchInFiles().apply {
+                query = "ToolExecutionPresenter"
+                includeExtensions = listOf("kt", "java")
+                excludePathSegments = listOf("build", "out")
+            }
+
+        val presentation = tool.presentation(ToolExecutionStatus.EXECUTING)
+
+        assertEquals("Searching files for \"ToolExecutionPresenter\"", presentation.title)
+        assertEquals("Extensions: kt, java · Excluding: build, out", presentation.detail)
     }
 
     private fun mockFunctionCall(

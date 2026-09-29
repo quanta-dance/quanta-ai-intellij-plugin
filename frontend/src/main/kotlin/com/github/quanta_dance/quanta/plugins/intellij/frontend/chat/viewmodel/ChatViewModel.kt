@@ -9,7 +9,9 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentCh
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationParticipantDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.LocalQuantaAcpSessionDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServerStatusDto
 import com.intellij.openapi.Disposable
 import kotlinx.coroutines.CancellationException
@@ -27,6 +29,7 @@ interface ChatViewModelApi : Disposable {
     val sessionsFlow: StateFlow<List<ChatSessionDto>>
     val planStatusFlow: StateFlow<ChatPlanStatusDto>
     val agentsFlow: StateFlow<List<AgentInfoDto>>
+    val collaborationParticipantsFlow: StateFlow<List<CollaborationParticipantDto>>
     val acpAgentsFlow: StateFlow<List<AcpAgentDto>>
     val acpDiscoveryLoadingFlow: StateFlow<Boolean>
     val allowedAcpAgentIdsFlow: StateFlow<Set<String>>
@@ -35,6 +38,8 @@ interface ChatViewModelApi : Disposable {
     val mcpConfigurationErrorFlow: StateFlow<String?>
     val delegatedTasksFlow: StateFlow<List<DelegatedTaskDto>>
     val channelEventsFlow: StateFlow<List<AgentChannelEventDto>>
+    val quantaAcpInviteFlow: StateFlow<String?>
+    val availableLocalQuantaAcpSessionsFlow: StateFlow<List<LocalQuantaAcpSessionDto>>
 
     fun onPromptInputChanged(input: String)
 
@@ -69,6 +74,18 @@ interface ChatViewModelApi : Disposable {
 
     fun onCreateDefaultAgentTeam()
 
+    fun onCreateQuantaAcpShare()
+
+    fun onJoinQuantaAcpShare(invite: String)
+
+    fun onRefreshAvailableLocalQuantaAcpSessions()
+
+    fun onForgetLocalQuantaAcpSession(peerIdentity: String)
+
+    fun onStopQuantaAcpShare()
+
+    fun onRemoveJoinedQuantaAcpAgent(agentId: String)
+
     fun searchChatMessagesHandler(): SearchChatMessagesHandler
 
     val promptInputState: StateFlow<MessageInputState>
@@ -86,6 +103,8 @@ class ChatViewModel(
 
     override val planStatusFlow: StateFlow<ChatPlanStatusDto> = repository.planStatusFlow
     override val agentsFlow: StateFlow<List<AgentInfoDto>> = repository.agentsFlow
+    override val collaborationParticipantsFlow: StateFlow<List<CollaborationParticipantDto>> =
+        repository.collaborationParticipantsFlow
     override val acpAgentsFlow: StateFlow<List<AcpAgentDto>> = repository.acpAgentsFlow
     override val acpDiscoveryLoadingFlow: StateFlow<Boolean> = repository.acpDiscoveryLoadingFlow
     override val allowedAcpAgentIdsFlow: StateFlow<Set<String>> = repository.allowedAcpAgentIdsFlow
@@ -94,6 +113,9 @@ class ChatViewModel(
     override val mcpConfigurationErrorFlow: StateFlow<String?> = repository.mcpConfigurationErrorFlow
     override val delegatedTasksFlow: StateFlow<List<DelegatedTaskDto>> = repository.delegatedTasksFlow
     override val channelEventsFlow: StateFlow<List<AgentChannelEventDto>> = repository.channelEventsFlow
+    override val quantaAcpInviteFlow: StateFlow<String?> = repository.quantaAcpInviteFlow
+    override val availableLocalQuantaAcpSessionsFlow: StateFlow<List<LocalQuantaAcpSessionDto>> =
+        repository.availableLocalQuantaAcpSessionsFlow
 
     private val _promptInputState = MutableStateFlow<MessageInputState>(MessageInputState.Disabled)
     override val promptInputState: StateFlow<MessageInputState> = _promptInputState.asStateFlow()
@@ -128,7 +150,7 @@ class ChatViewModel(
                 }
 
                 _promptInputState.value is MessageInputState.Sending -> {
-                    MessageInputState.Enabled(input)
+                    MessageInputState.Sending(input)
                 }
 
                 else -> {
@@ -138,6 +160,7 @@ class ChatViewModel(
     }
 
     override fun onSendMessage() {
+        if (currentSendMessageJob?.isActive == true || _promptInputState.value is MessageInputState.Sending) return
         currentSendMessageJob =
             coroutineScope.launch {
                 try {
@@ -153,6 +176,8 @@ class ChatViewModel(
                 } catch (e: Exception) {
                     if (e is CancellationException) throw e
                     emitPromptInputState(MessageInputState.SendFailed(e.message ?: "Unknown error", e))
+                } finally {
+                    currentSendMessageJob = null
                 }
             }
     }
@@ -229,6 +254,30 @@ class ChatViewModel(
         coroutineScope.launch {
             repository.createDefaultAgentTeam()
         }
+    }
+
+    override fun onCreateQuantaAcpShare() {
+        coroutineScope.launch { repository.createQuantaAcpShare() }
+    }
+
+    override fun onJoinQuantaAcpShare(invite: String) {
+        coroutineScope.launch { repository.joinQuantaAcpShare(invite) }
+    }
+
+    override fun onRefreshAvailableLocalQuantaAcpSessions() {
+        coroutineScope.launch { repository.refreshAvailableLocalQuantaAcpSessions() }
+    }
+
+    override fun onForgetLocalQuantaAcpSession(peerIdentity: String) {
+        coroutineScope.launch { repository.forgetLocalQuantaAcpSession(peerIdentity) }
+    }
+
+    override fun onStopQuantaAcpShare() {
+        coroutineScope.launch { repository.stopQuantaAcpShare() }
+    }
+
+    override fun onRemoveJoinedQuantaAcpAgent(agentId: String) {
+        coroutineScope.launch { repository.removeJoinedQuantaAcpAgent(agentId) }
     }
 
     override fun searchChatMessagesHandler(): SearchChatMessagesHandler = searchChatMessagesHandler

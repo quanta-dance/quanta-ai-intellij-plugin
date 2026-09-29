@@ -40,7 +40,13 @@ class OpenAIStartupSafetyTest {
     @Test
     fun `open ai service can be created before frontend sync completes`() {
         val project = mockk<Project>(relaxed = true)
+        val executionContexts = BackendExecutionContextsService()
+        every { project.getService(BackendExecutionContextsService::class.java) } returns executionContexts
 
-        OpenAIService(project)
+        try {
+            OpenAIService(project)
+        } finally {
+            executionContexts.dispose()
+        }
     }
 }

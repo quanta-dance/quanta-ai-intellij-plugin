@@ -39,6 +39,84 @@ class AcpAgentDiscoveryServiceTest {
     }
 
     @Test
+    fun `deduplicates the same ACP executable discovered through PATH and JetBrains config`() {
+        val directory = Files.createTempDirectory("duplicate-acp-agent")
+        val script = directory.resolve("claude-agent-acp")
+        Files.writeString(
+            script,
+            """
+            #!/bin/sh
+            read request
+            echo '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentInfo":{"name":"Claude ACP"}}}'
+            """.trimIndent(),
+        )
+        assertTrue(script.toFile().setExecutable(true))
+        val config = Files.createTempFile("duplicate-acp", ".json")
+        Files.writeString(
+            config,
+            """
+            {
+              "agent_servers": {
+                "Configured Claude": {
+                  "command": "$script"
+                }
+              }
+            }
+            """.trimIndent(),
+        )
+
+        val agents =
+            AcpAgentDiscoveryService(
+                environment = mapOf("PATH" to directory.toString()),
+                jetBrainsConfigService = JetBrainsAcpConfigService(config.toFile()),
+            ).discover()
+
+        assertEquals(1, agents.size)
+        assertEquals("Claude ACP", agents.single().name)
+    }
+
+    @Test
+    fun `prefers configured invocation and probes a duplicated executable once`() {
+        val directory = Files.createTempDirectory("duplicate-configured-acp-agent")
+        val script = directory.resolve("claude-agent-acp")
+        Files.writeString(
+            script,
+            """
+            #!/bin/sh
+            [ "${'$'}1" = "--configured" ] || exit 1
+            read request
+            echo '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentInfo":{"name":"Configured Claude ACP"}}}'
+            """.trimIndent(),
+        )
+        assertTrue(script.toFile().setExecutable(true))
+        val config = Files.createTempFile("duplicate-configured-acp", ".json")
+        Files.writeString(
+            config,
+            """
+            {
+              "agent_servers": {
+                "Configured Claude": {
+                  "command": "$script",
+                  "args": ["--configured"],
+                  "env": {"ACP_CONFIG_TEST": "configured"}
+                }
+              }
+            }
+            """.trimIndent(),
+        )
+
+        val agents =
+            AcpAgentDiscoveryService(
+                environment = mapOf("PATH" to directory.toString()),
+                jetBrainsConfigService = JetBrainsAcpConfigService(config.toFile()),
+            ).discover()
+
+        assertEquals(1, agents.size)
+        assertEquals("Configured Claude ACP", agents.single().name)
+        assertEquals(listOf(script.toString(), "--configured"), agents.single().command)
+    }
+
+    @Test
     fun `waits for a cold-starting ACP adapter within the default handshake timeout`() {
         val directory = Files.createTempDirectory("slow-acp-agent")
         val script = directory.resolve("claude-agent-acp")

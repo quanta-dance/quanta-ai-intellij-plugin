@@ -14,8 +14,10 @@ models to assist developers with code modifications, reviews, and refactoring di
     - Custom Prompts: Execute user-defined AI prompts
 
 - **Agentic Team Mode:** Coordinate Quanta-managed teammates and explicitly approved external ACP agents in the current chat.
+    - Teammates and paired ACP collaborators receive tracked asynchronous work; independent participants can work in parallel and Quanta posts one final synthesis after requested reports settle.
+    - Pair another Quanta-enabled IDE project on the same machine through **Shared IDE collaborators**. Discovery is UI-driven, while pairing and subsequent ACP work stay backend-to-backend over localhost.
     - External ACP agents are discovered separately from authorization; add an agent to a chat before it can receive project context or tasks.
-    - Live ACP task cards show progress, findings, sign-in guidance, and cancellation while the main agent continues coordinating work.
+    - Live collaboration state shows activity, progress, findings, sign-in guidance, cancellation, and terminal outcomes without exposing raw routing tools.
 
 - **Voice Interaction:** Speak to AI via microphone and receive voice feedback (with optional local TTS)
 
