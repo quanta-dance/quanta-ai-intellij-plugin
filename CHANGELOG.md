@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2026.09.29.01]
+
+### Fixed
+- Bundled Jackson Core in the split-mode backend module so ACP startup and other backend JSON services load on IDE builds that do not provide Jackson on the backend classpath.
+- Replaced the frontend quick-action catalog's Jackson dependency with the IntelliJ-provided Kotlin serialization runtime, preventing frontend startup failures when Jackson is absent from the frontend classpath.
+
 ## [2026.09.29]
 
 This release adds autonomous, asynchronous collaboration across Quanta-managed teammates and paired local Quanta IDEs, while making agent turns, ACP rosters, and collaboration UI faster and more reliable.
