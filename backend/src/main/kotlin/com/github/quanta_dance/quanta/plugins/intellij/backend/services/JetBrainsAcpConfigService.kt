@@ -41,7 +41,7 @@ class JetBrainsAcpConfigService(
             return emptyList()
         }
         return servers
-            .fields()
+            .properties()
             .asSequence()
             .mapNotNull { (name, definition) ->
                 val command = definition.path("command").asText().trim()
@@ -60,7 +60,7 @@ class JetBrainsAcpConfigService(
                     definition
                         .path("env")
                         .takeIf { it.isObject }
-                        ?.fields()
+                        ?.properties()
                         ?.asSequence()
                         ?.mapNotNull { (key, value) ->
                             value.takeIf { it.isTextual }?.asText()?.let { key to it }

@@ -184,11 +184,12 @@ private fun selectProjectForMcpEditor(): Project? {
             "${project.name} — $path (#${index + 1})"
         }
     val selectedIndex =
-        Messages.showChooseDialog(
+        Messages.showDialog(
+            projects.first(),
             "MCP configuration is shared, but the file must open in a selected project window.",
             "Choose Project for MCP Configuration",
             choices.toTypedArray(),
-            choices.first(),
+            0,
             Messages.getQuestionIcon(),
         )
     return projects.getOrNull(selectedIndex)

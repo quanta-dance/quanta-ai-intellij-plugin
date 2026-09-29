@@ -22,9 +22,9 @@ Project structure highlights
 Important environment & versions
 
 - Java: 21
-- Kotlin: 2.2.21
-- Kotlin JVM target: 17
-- Gradle: 9.3.1
+- Kotlin Gradle plugin: 2.2.0
+- Kotlin JVM target: 21
+- Gradle wrapper: 9.4.0
 
 How AI agents should work with this project
 

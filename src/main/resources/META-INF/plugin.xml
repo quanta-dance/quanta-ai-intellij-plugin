@@ -19,7 +19,7 @@
         <li><b>Safe code changes:</b> apply focused patches with content guards, review refactoring suggestions, and validate updates.</li>
         <li><b>IDE and terminal tools:</b> search the project, run managed commands, execute tests, and inspect results.</li>
         <li><b>MCP integration:</b> connect external Model Context Protocol servers and make their tools available to the assistant.</li>
-        <li><b>Voice and media:</b> use speech input and output, generate or edit images, and create short videos.</li>
+        <li><b>Voice and media:</b> use speech input and output and generate or edit images.</li>
         <li><b>Remote-ready UI:</b> work in local IntelliJ projects, split mode, and Remote Development environments.</li>
     </ul>
 
