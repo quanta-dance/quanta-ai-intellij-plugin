@@ -131,13 +131,14 @@ class CreateOrUpdateFile :
                 WriteCommandAction.runWriteCommandAction(project) {
                     var attempts = 0
                     while (attempts < 3) {
-                        targetDocument?.let(fileDocumentManager::saveDocument)
                         PsiDocumentManager.getInstance(project).commitAllDocuments()
                         if (!PsiDocumentManager.getInstance(project).hasUncommitedDocuments()) break
                         attempts++
                     }
-                    target?.let { VfsUtil.markDirtyAndRefresh(true, false, false, it) }
-                    PsiDocumentManager.getInstance(project).commitAllDocuments()
+                    targetDocument?.let { document ->
+                        PsiDocumentManager.getInstance(project).commitDocument(document)
+                        fileDocumentManager.saveDocument(document)
+                    }
                 }
             }
         } catch (_: Throwable) {

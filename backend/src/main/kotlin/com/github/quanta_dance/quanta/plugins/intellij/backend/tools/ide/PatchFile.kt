@@ -21,7 +21,6 @@ import com.intellij.openapi.editor.Document
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
-import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiManager
 import com.intellij.psi.codeStyle.CodeStyleManager
@@ -516,11 +515,6 @@ class PatchFile :
                     } catch (e: Throwable) {
                         throw wrapPatchWriteFailure(relToBase, "commit patched document", e)
                     }
-                    try {
-                        docManager.saveDocument(document)
-                    } catch (e: Throwable) {
-                        throw wrapPatchWriteFailure(relToBase, "save patched document", e)
-                    }
 
                     if (reformatAfterUpdate || optimizeImportsAfterUpdate) {
                         try {
@@ -531,6 +525,17 @@ class PatchFile :
                             }
                         } catch (_: Throwable) {
                         }
+                    }
+
+                    try {
+                        PsiDocumentManager.getInstance(project).commitDocument(document)
+                    } catch (e: Throwable) {
+                        throw wrapPatchWriteFailure(relToBase, "commit post-processed document", e)
+                    }
+                    try {
+                        docManager.saveDocument(document)
+                    } catch (e: Throwable) {
+                        throw wrapPatchWriteFailure(relToBase, "save patched document", e)
                     }
 
                     if (mismatches.isEmpty()) {
@@ -585,24 +590,6 @@ class PatchFile :
                 code = "patch_failed",
                 retriable = false,
             )
-        }
-
-        try {
-            ApplicationManager.getApplication().invokeAndWait {
-                ApplicationManager.getApplication().runWriteAction {
-                    val vFile = PathUtils.resolveVirtualFileWithinProject(project, relToBase)
-                    if (vFile != null) {
-                        val fileDocumentManager = FileDocumentManager.getInstance()
-                        fileDocumentManager.getDocument(vFile)?.let(fileDocumentManager::saveDocument)
-                        VfsUtil.markDirtyAndRefresh(true, true, true, vFile)
-                        try {
-                            PsiDocumentManager.getInstance(project).commitAllDocuments()
-                        } catch (_: Throwable) {
-                        }
-                    }
-                }
-            }
-        } catch (_: Throwable) {
         }
 
         var fileHashSha256: String? = null

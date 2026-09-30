@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - Fail closed when terminal execution is disabled or has no configured allowlist, and reject shell chaining, substitution, and redirection in allowlisted command requests.
+- Commit patched and post-processed documents before returning, and remove the redundant asynchronous VFS refresh that could race subsequent patches and trigger IDE file-cache conflicts.
 
 ## [2026.09.29.02]
 
