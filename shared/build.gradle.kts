@@ -15,6 +15,9 @@ dependencies {
     intellijPlatform {
         intellijIdea(libs.versions.intellij.platform)
     }
+
+    testImplementation(kotlin("test"))
+    testImplementation(libs.kotlin.serialization.json.jvm)
 }
 
 kotlin {

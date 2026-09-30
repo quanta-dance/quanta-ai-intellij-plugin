@@ -5,37 +5,36 @@ package com.github.quanta_dance.quanta.plugins.intellij.frontend.actions
 
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendActionCatalog
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendQuantaSettingsState
-import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaBackendApi
-import com.intellij.notification.NotificationGroupManager
-import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
-import kotlinx.coroutines.runBlocking
+import com.intellij.openapi.actionSystem.CommonDataKeys
 
-/**
- * Frontend action entry point for the review flow.
- *
- * TODO: this action currently exercises backend connectivity with a simple ping and should evolve
- * into the real review request flow described in the migration map.
- */
+/** Sends the selected editor code to chat with a code-review instruction. */
 class ReviewSelectedAction : AnAction("Review") {
     override fun actionPerformed(event: AnActionEvent) {
         val project = event.project ?: return
+        val selectedText = event.getData(CommonDataKeys.EDITOR)?.selectionModel?.selectedText
+        if (selectedText.isNullOrBlank()) {
+            notifyEditorAction(project, "Select code to review.", isError = true)
+            return
+        }
 
-        val response =
-            runBlocking {
-                QuantaBackendApi.getInstance().ping()
-            }
-
-        NotificationGroupManager
-            .getInstance()
-            .getNotificationGroup("Plugin Notifications")
-            .createNotification(
-                "Quanta AI",
-                "backend replied: $response",
-                NotificationType.INFORMATION,
-            ).notify(project)
+        val instruction =
+            FrontendActionCatalog
+                .actionById(FrontendQuantaSettingsState.instance.state.actionConfigsJson, "review")
+                ?.instruction
+                ?: "Review the selected code and suggest improvements."
+        sendEditorActionPrompt(
+            project = project,
+            prompt =
+                EditorActionPrompt.review(
+                    instruction,
+                    event.getData(CommonDataKeys.VIRTUAL_FILE)?.path,
+                    selectedText,
+                ),
+            scopeName = "review-selected-code",
+        )
     }
 
     override fun update(event: AnActionEvent) {

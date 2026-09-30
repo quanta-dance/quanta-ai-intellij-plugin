@@ -385,41 +385,14 @@ class TerminalCommandTool :
 
     private fun parsePosition(value: String?): TerminalReadPosition = parseEnum(value, TerminalReadPosition.TAIL)
 
-    private fun validateAllowedCommand(cmd: String): String? =
-        try {
-            val settings = BackendRuntimeSettingsService.instance.settings
-            if (settings.terminalToolEnabled == true) {
-                val allowedPrefixes =
-                    settings.terminalAllowedCommandsCsv
-                        .split(',')
-                        .map { it.trim() }
-                        .filter { it.isNotBlank() }
-                        .map { it.split(Regex("\\s+")) }
-                        .filter { it.isNotEmpty() }
-                if (allowedPrefixes.isNotEmpty()) {
-                    val cmdTokens = cmd.split(Regex("\\s+"))
-                    val allowed =
-                        allowedPrefixes.any { prefix ->
-                            cmdTokens.size >= prefix.size &&
-                                prefix.indices.all { index -> cmdTokens[index] == prefix[index] }
-                        }
-                    if (!allowed) {
-                        val allowedText = allowedPrefixes.joinToString(", ") { it.joinToString(" ") }
-                        val msg = "Command is not allowed: '$cmd'. Allowed prefixes: $allowedText"
-                        QDLog.warn(logger) { msg }
-                        msg
-                    } else {
-                        null
-                    }
-                } else {
-                    null
-                }
-            } else {
-                null
-            }
-        } catch (_: Throwable) {
-            null
-        }
+    private fun validateAllowedCommand(cmd: String): String? {
+        val settings = BackendRuntimeSettingsService.instance.settings
+        return validateAllowedTerminalCommand(
+            command = cmd,
+            enabled = settings.terminalToolEnabled == true,
+            allowedCommandsCsv = settings.terminalAllowedCommandsCsv,
+        )
+    }
 
     private fun <T : Enum<T>> parseEnum(
         value: String?,

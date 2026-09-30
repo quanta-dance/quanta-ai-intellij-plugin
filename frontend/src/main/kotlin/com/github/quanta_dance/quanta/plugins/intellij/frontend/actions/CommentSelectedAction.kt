@@ -3,40 +3,38 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.actions
 
-import com.github.quanta_dance.quanta.plugins.intellij.frontend.comment.FrontendCommentServices
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendActionCatalog
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendQuantaSettingsState
-import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.CommentRequest
-import com.intellij.notification.NotificationGroupManager
-import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
-import kotlinx.coroutines.runBlocking
 
+/** Sends the selected editor code to chat with a documentation-comment instruction. */
 class CommentSelectedAction : AnAction("Comment") {
     override fun actionPerformed(event: AnActionEvent) {
         val project = event.project ?: return
         val selectedText = event.getData(CommonDataKeys.EDITOR)?.selectionModel?.selectedText
-        val filePath = event.getData(CommonDataKeys.VIRTUAL_FILE)?.path
-        val response =
-            runBlocking {
-                FrontendCommentServices.commentService().comment(
-                    CommentRequest(
-                        filePath = filePath,
-                        selectedText = selectedText,
-                    ),
-                )
-            }
-        NotificationGroupManager
-            .getInstance()
-            .getNotificationGroup("Plugin Notifications")
-            .createNotification(
-                "Quanta AI",
-                response.message,
-                if (response.success) NotificationType.INFORMATION else NotificationType.WARNING,
-            ).notify(project)
+        if (selectedText.isNullOrBlank()) {
+            notifyEditorAction(project, "Select code to document.", isError = true)
+            return
+        }
+
+        val instruction =
+            FrontendActionCatalog
+                .actionById(FrontendQuantaSettingsState.instance.state.actionConfigsJson, "comment")
+                ?.instruction
+                ?: "Add helpful comments to the selected code."
+        sendEditorActionPrompt(
+            project = project,
+            prompt =
+                EditorActionPrompt.comment(
+                    instruction,
+                    event.getData(CommonDataKeys.VIRTUAL_FILE)?.path,
+                    selectedText,
+                ),
+            scopeName = "comment-selected-code",
+        )
     }
 
     override fun update(event: AnActionEvent) {

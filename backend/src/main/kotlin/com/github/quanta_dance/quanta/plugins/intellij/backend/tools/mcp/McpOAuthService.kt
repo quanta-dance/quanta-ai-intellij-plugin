@@ -29,11 +29,11 @@ import java.util.concurrent.TimeUnit
 
 /** Implements OAuth 2.1 Authorization Code with PKCE for protected remote MCP servers. */
 internal class McpOAuthService(
+    private val httpClient: HttpClient = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build(),
     private val onInteractiveAuthorizationRequired: (String) -> Unit = {},
 ) {
     private val log = Logger.getInstance(McpOAuthService::class.java)
     private val mapper = jacksonObjectMapper()
-    private val httpClient = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build()
 
     private val authorizationRequests = ConcurrentHashMap<String, CompletableFuture<String>>()
     private val recentAuthorizationFailures = ConcurrentHashMap<String, RecentFailure>()

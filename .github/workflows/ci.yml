@@ -35,8 +35,9 @@ jobs:
         with:
           name: test-reports
           path: |
-            backend/build/reports/tests/test/
-            backend/build/test-results/
+            **/build/test-results/test/**
+            **/build/reports/tests/test/**
+          if-no-files-found: warn
           retention-days: 30
 
       - name: Verify plugin compatibility
@@ -48,12 +49,3 @@ jobs:
         with:
           name: plugin-verifier-report
           path: build/reports/pluginVerifier/**
-
-      - name: Publish test reports on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-reports
-          path: |
-            build/test-results/**
-            build/reports/tests/**

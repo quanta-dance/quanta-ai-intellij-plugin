@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- Added shared RPC serialization compatibility tests, direct chat-session lifecycle coverage, MCP OAuth authorization-probe scenarios, and editor-action prompt tests.
+
+### Improved
+- Review and comment actions now send selected code through the existing chat flow; custom prompts accept user-authored instructions and optional selected-code context.
+- Rebuild and close the cached OpenAI client when synchronized endpoint or credential settings change.
+- Collect test XML and HTML reports across every Gradle module in one always-run CI artifact.
+
+### Fixed
+- Fail closed when terminal execution is disabled or has no configured allowlist, and reject shell chaining, substitution, and redirection in allowlisted command requests.
+
 ## [2026.09.29.02]
 
 ### Improved
