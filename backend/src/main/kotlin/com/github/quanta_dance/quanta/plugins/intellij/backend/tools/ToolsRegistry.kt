@@ -132,12 +132,7 @@ object ToolsRegistry {
                 Group.GENERIC,
             ),
         )
-        list.add(
-            ToolEntry(
-                com.github.quanta_dance.quanta.plugins.intellij.backend.tools.media.GenerateVideo::class.java,
-                Group.GENERIC,
-            ),
-        )
+
         list.add(
             ToolEntry(
                 com.github.quanta_dance.quanta.plugins.intellij.backend.tools.media.SoundGeneratorTool::class.java,

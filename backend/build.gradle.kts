@@ -116,9 +116,7 @@ tasks {
         duplicatesStrategy = DuplicatesStrategy.EXCLUDE
         from(
             provider {
-                backendRuntime
-                    .resolvedConfiguration
-                    .resolvedArtifacts
+                backendRuntime.incoming.artifacts.artifacts
                     .filter { it.file.name.endsWith(".jar") }
                     // Jackson is not available from the split-mode backend classpath. Keep its
                     // complete runtime dependency set in this module JAR, including jackson-core.
@@ -171,10 +169,8 @@ tasks {
         // Java 11 implementation at the normal class path because a flattened JAR is not multi-release.
         from(
             provider {
-                backendRuntime
-                    .resolvedConfiguration
-                    .resolvedArtifacts
-                    .filter { it.moduleVersion.id.group == "io.projectreactor" && it.name == "reactor-core" }
+                backendRuntime.incoming.artifacts.artifacts
+                    .filter { it.file.name.startsWith("reactor-core-") }
                     .map { zipTree(it.file).matching { include("META-INF/versions/11/reactor/core/publisher/CallSiteSupplierFactory.class") } }
             },
         ) {
@@ -186,10 +182,8 @@ tasks {
         // Restore it and its lightweight MeterBinder interface after removing unrelated binders above.
         from(
             provider {
-                backendRuntime
-                    .resolvedConfiguration
-                    .resolvedArtifacts
-                    .filter { it.moduleVersion.id.group == "io.micrometer" && it.name == "micrometer-core" }
+                backendRuntime.incoming.artifacts.artifacts
+                    .filter { it.file.name.startsWith("micrometer-core-") }
                     .map {
                         zipTree(it.file).matching {
                             include("io/micrometer/core/instrument/binder/MeterBinder.class")

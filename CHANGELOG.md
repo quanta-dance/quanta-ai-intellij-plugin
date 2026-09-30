@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2026.09.29.02]
+
+### Improved
+- Replaced deprecated Gradle dependency-resolution APIs and updated documented Kotlin, Gradle, and JVM target versions.
+- Replaced deprecated IntelliJ UI APIs and Jackson field iteration calls.
+
+### Removed
+- Removed video generation backed by the OpenAI Sora API ahead of its announced shutdown on September 24, 2026.
+
 ## [2026.09.29.01]
 
 ### Fixed

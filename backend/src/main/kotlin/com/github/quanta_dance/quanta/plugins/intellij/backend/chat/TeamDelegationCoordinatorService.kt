@@ -25,7 +25,7 @@ class TeamDelegationCoordinatorService(
     )
 
     /** Opaque handle used while the caller atomically registers every member of one team request. */
-    data class GroupHandle internal constructor(
+    class GroupHandle internal constructor(
         internal val id: String,
     )
 

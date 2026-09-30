@@ -7,6 +7,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,7 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.ClickableText
+import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,6 +36,7 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -348,12 +350,25 @@ private fun markdownInlineText(
     val uriHandler = LocalUriHandler.current
     var hoveredLink by remember(annotatedText) { mutableStateOf(false) }
     var textLayoutResult by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
-    ClickableText(
+    BasicText(
         text = annotatedText,
         modifier =
             Modifier
                 .fillMaxWidth()
-                .pointerHoverIcon(
+                .pointerInput(annotatedText, uriHandler) {
+                    detectTapGestures { position ->
+                        textLayoutResult
+                            ?.takeIf { it.hasLinkAt(position, annotatedText) }
+                            ?.getOffsetForPosition(position)
+                            ?.let { offset ->
+                                annotatedText
+                                    .getStringAnnotations(LINK_TAG, offset, offset)
+                                    .firstOrNull()
+                                    ?.item
+                                    ?.let(uriHandler::openUri)
+                            }
+                    }
+                }.pointerHoverIcon(
                     icon = if (hoveredLink) PointerIcon.Hand else PointerIcon.Default,
                     overrideDescendants = true,
                 ).onPointerEvent(PointerEventType.Move) { event ->
@@ -364,13 +379,6 @@ private fun markdownInlineText(
                 },
         style = baseStyle,
         onTextLayout = { textLayoutResult = it },
-        onClick = { offset ->
-            annotatedText
-                .getStringAnnotations(LINK_TAG, offset, offset)
-                .firstOrNull()
-                ?.item
-                ?.let(uriHandler::openUri)
-        },
     )
 }
 
