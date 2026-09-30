@@ -21,20 +21,18 @@
 **Frontend**
 - UI/tool adapters that call the shared contracts
 
-### Slice 2 — Review action flow
+### Slice 2 — selected-code and custom editor actions
+**Status:** implemented through the existing chat RPC so the frontend remains presentation-focused without adding a parallel inference API.
+
 **Frontend**
-- `ReviewSelectedAction`
-- any editor/UI request collection
-- TODO: replace current frontend-local review placeholder adapter with backend/RPC-backed execution
+- `ReviewSelectedAction` and `CommentSelectedAction` require a code selection and send an explicit instruction, file path, and selected source to chat.
+- `CustomUserAction` collects a user-authored prompt and optionally attaches the selected code as context.
+- Responses appear in chat; all actions leave source edits for explicit user review.
 
-**Shared**
-- review request/response DTOs
-- RPC contract for review
+**Shared/backend**
+- Existing chat repository RPC owns request execution and OpenAI orchestration.
+- Former frontend-local and placeholder action adapters are no longer on the active execution path; their unused contracts may be retired in follow-up cleanup.
 
-**Backend**
-- selected-code review orchestration
-- PSI/project context extraction
-- OpenAI request orchestration if server-owned
 
 ### Slice 3 — Search/embedding/indexing
 **Backend-heavy**

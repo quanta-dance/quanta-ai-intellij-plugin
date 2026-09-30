@@ -136,4 +136,24 @@ class ChatConversationStateServiceTest {
         assertEquals(listOf("codex"), sessions[0].allowedAcpAgentIds)
         assertEquals(listOf("opencode"), sessions[1].allowedAcpAgentIds)
     }
+
+    @Test
+    fun `session activation and deletion keep exactly one valid active session`() {
+        val service = ChatConversationStateService()
+        val first = ChatConversationStateService.PersistedChatSession(id = "first", updatedAtEpochMs = 1)
+        val second = ChatConversationStateService.PersistedChatSession(id = "second", updatedAtEpochMs = 2)
+        service.loadState(
+            ChatConversationStateService.State(
+                activeSessionId = first.id,
+                sessions = mutableListOf(first, second),
+            ),
+        )
+
+        assertTrue(service.activateSession(second.id))
+        assertEquals(second.id, service.getActiveSessionId())
+        assertEquals(first.id, service.deleteSession(second.id))
+        assertEquals(first.id, service.getActiveSessionId())
+        assertFalse(service.activateSession("missing"))
+        assertEquals(listOf(first.id), service.listSessions().filter { it.isActive }.map { it.id })
+    }
 }

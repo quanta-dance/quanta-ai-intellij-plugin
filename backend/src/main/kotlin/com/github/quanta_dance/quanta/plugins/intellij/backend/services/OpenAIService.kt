@@ -28,12 +28,17 @@ class OpenAIService(
 ) : Disposable {
     private val pcs = PropertyChangeSupport(this)
 
-    @Volatile
-    private var oAI: OpenAIClient? = null
-
-    @Volatile
-    private var clientKey: Pair<String, String> =
-        BackendRuntimeSettingsService.instance.settings.let { it.openAiUrl to it.openAiToken }
+    private val openAIClientCache =
+        OpenAIClientCache(
+            initialKey = BackendRuntimeSettingsService.instance.settings.let { it.openAiUrl to it.openAiToken },
+            createClient = { OpenAIClientProvider.get(project) },
+            closeClient = { it.close() },
+            onRefresh = { (url, token) ->
+                QDLog.info(thisLogger()) {
+                    "OpenAIService: rebuilding OpenAI client due to backend settings change. url=$url, tokenPresent=${token.isNotBlank()}"
+                }
+            },
+        )
 
     @Volatile
     private var modelKey: Pair<Boolean, String> =
@@ -132,7 +137,7 @@ class OpenAIService(
         QDLog.info(thisLogger()) { "AI Service initialized (project service ready)." }
         // Backend runtime settings are synchronized from the frontend.
         // The frontend owns persistence, UI refresh, and display concerns.
-        clientKey = BackendRuntimeSettingsService.instance.settings.let { it.openAiUrl to it.openAiToken }
+
         modelKey =
             BackendRuntimeSettingsService.instance.settings.let { (it.dynamicModelEnabled == true) to it.aiChatModel }
 
@@ -140,8 +145,7 @@ class OpenAIService(
     }
 
     override fun dispose() {
-        oAI?.close()
-        oAI = null
+        openAIClientCache.dispose()
     }
 
     /**
@@ -150,26 +154,16 @@ class OpenAIService(
      * This protects split-mode sessions where the frontend synchronizes URL/token only after the
      * backend service has already been created.
      */
-    private fun ensureClientIsCurrent() {
-        val settings = BackendRuntimeSettingsService.instance.settings
-        val latestClientKey = settings.openAiUrl to settings.openAiToken
-        if (!BackendRuntimeSettingsService.instance.hasFrontendSync()) {
-            return
-        }
-        if (oAI == null || latestClientKey != clientKey) {
-            QDLog.info(thisLogger()) {
-                "OpenAIService: rebuilding OpenAI client due to backend settings change. url=${settings.openAiUrl}, tokenPresent=${settings.openAiToken.isNotBlank()}"
-            }
-            oAI?.close()
-            oAI = OpenAIClientProvider.get(project)
-            clientKey = latestClientKey
-        }
+    private fun ensureClientIsCurrent(): OpenAIClient? {
+        val snapshot = BackendRuntimeSettingsService.instance.snapshot()
+        val latestClientKey = snapshot.state.openAiUrl to snapshot.state.openAiToken
+        return openAIClientCache.getOrRefresh(latestClientKey, snapshot.hasFrontendSync)
     }
 
     private fun requireClientReady(): OpenAIClient {
-        ensureClientIsCurrent()
+        val client = ensureClientIsCurrent()
         BackendRuntimeSettingsService.instance.requireFrontendSync("OpenAI requests")
-        return checkNotNull(oAI) {
+        return checkNotNull(client) {
             "OpenAI client was not initialized after frontend settings sync completed."
         }
     }

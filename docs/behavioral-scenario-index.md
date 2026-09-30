@@ -10,9 +10,11 @@ This file points to executable scenarios/tests that act as the primary documenta
 - `backend/src/test/kotlin/com/github/quanta_dance/quanta/plugins/intellij/backend/contracts/BackendWorkspaceFileServiceTest.kt`
   - verifies backend workspace file service rejects blank paths with friendly backend errors
 
-### Split-mode settings synchronization
-- `backend/src/test/kotlin/com/github/quanta_dance/quanta/plugins/intellij/backend/rpc/BackendSettingsSyncScenarioTest.kt`
-  - verifies settings RPC updates backend state and the effective OpenAI connection settings used for fresh clients
+### Settings synchronization and OpenAI client readiness
+- `backend/src/test/kotlin/com/github/quanta_dance/quanta/plugins/intellij/backend/rpc/BackendSettingsRpcApiTest.kt`
+  - verifies settings RPC read/write mappings to backend runtime state
+- `backend/src/test/kotlin/com/github/quanta_dance/quanta/plugins/intellij/backend/openai/OpenAIClientProviderTest.kt`
+  - verifies OpenAI client creation is blocked until frontend settings sync and succeeds after sync
 
 ### Asynchronous collaboration and ACP lifecycle
 - `backend/src/test/kotlin/com/github/quanta_dance/quanta/plugins/intellij/backend/services/CollaborationRouterServiceTest.kt`
@@ -28,11 +30,29 @@ This file points to executable scenarios/tests that act as the primary documenta
 - `backend/src/test/kotlin/com/github/quanta_dance/quanta/plugins/intellij/backend/services/AcpAgentRosterIdentityTest.kt`
   - verifies paired Quanta peers keep one stable roster identity across transient endpoint changes
 
+### Shared RPC serialization contracts
+- `shared/src/test/kotlin/com/github/quanta_dance/quanta/plugins/intellij/shared/rpc/models/SharedRpcSerializationTest.kt`
+  - verifies collaboration participant DTO round-tripping and defaults for fields omitted by older clients
+
+### Selected-code and custom editor actions
+- `frontend/src/test/kotlin/com/github/quanta_dance/quanta/plugins/intellij/frontend/actions/EditorActionPromptTest.kt`
+  - verifies review/comment prompts include selected code context, preserve code formatting, and custom prompts only include selection context when present
+- Review, comment, and custom prompts are submitted through the existing chat RPC; responses appear in chat and edits are not applied automatically
+
+### Terminal and MCP security policies
+- `backend/src/test/kotlin/com/github/quanta_dance/quanta/plugins/intellij/backend/tools/system/TerminalCommandPolicyTest.kt`
+  - verifies terminal command policy fails closed when disabled or unconfigured and rejects shell chaining/substitution
+- `backend/src/test/kotlin/com/github/quanta_dance/quanta/plugins/intellij/backend/tools/mcp/McpRemoteConnectionPolicyTest.kt` and `McpOAuthAuthorizationProbeTest.kt`
+  - verify secure remote MCP transport, OAuth refresh policy, configured authorization-header forwarding, and 401 Bearer challenge handling
+
+### Chat/session lifecycle
+- `backend/src/test/kotlin/com/github/quanta_dance/quanta/plugins/intellij/backend/chat/ChatConversationStateServiceTest.kt`
+  - verifies restart recovery, transient-state persistence rules, ACP permissions, and active-session selection/deletion
+
 ## Known gaps
-- Full end-to-end refresh inside `OpenAIService` is still only partially covered; the current scenario verifies backend state sync and the refreshed connection settings consumed by client creation.
-- Review/comment/custom-prompt full backend execution scenarios are still blocked by ongoing migration from placeholder adapters to RPC-backed implementations.
-- Chat/session lifecycle still needs targeted behavior scenarios beyond code-level KDoc.
-- Some areas are currently documented only through KDoc and architecture notes because test-runtime repair is deferred; those docs should be treated as guidance, not executable proof.
+- OpenAI client cache tests cover deferred creation before frontend settings sync, credential-change replacement, and closing old clients; a full live `OpenAIService` request/rebuild integration scenario remains uncovered.
+- Editor action prompt construction is unit-tested, but UI invocation and end-to-end chat RPC response delivery do not yet have an integration scenario.
+- Chat/session state transitions now have direct service tests; async request cancellation and concurrent session-switch behavior still need dedicated scenarios.
 
 ## Maintenance rule
 When a behavior becomes important to explain repeatedly, prefer adding or updating an executable scenario here before expanding prose elsewhere.

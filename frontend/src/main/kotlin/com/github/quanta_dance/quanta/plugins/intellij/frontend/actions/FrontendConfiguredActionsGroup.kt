@@ -3,15 +3,13 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.actions
 
-import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel.FrontendChatRepositoryModel
-import com.github.quanta_dance.quanta.plugins.intellij.frontend.coroutines.CoroutineScopeHolder
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendActionCatalog
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendQuantaSettingsState
 import com.intellij.openapi.actionSystem.ActionGroup
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
-import kotlinx.coroutines.launch
+import com.intellij.openapi.actionSystem.CommonDataKeys
 
 /**
  * Dynamic editor action group backed by the configurable frontend action catalog.
@@ -19,10 +17,17 @@ import kotlinx.coroutines.launch
  * It turns persisted action definitions into runtime action instances that forward intent into chat.
  */
 class FrontendConfiguredActionsGroup : ActionGroup() {
-    override fun getChildren(e: AnActionEvent?): Array<AnAction> {
-        val actions = FrontendActionCatalog.decode(FrontendQuantaSettingsState.instance.state.actionConfigsJson)
-        return FrontendActionCatalog.normalized(actions).map { FrontendConfiguredAction(it) }.toTypedArray()
-    }
+    override fun getChildren(e: AnActionEvent?): Array<AnAction> =
+        FrontendActionCatalog
+            .normalized(FrontendActionCatalog.decode(FrontendQuantaSettingsState.instance.state.actionConfigsJson))
+            .map { config ->
+                when (config.id) {
+                    "review" -> ReviewSelectedAction()
+                    "comment" -> CommentSelectedAction()
+                    else -> FrontendConfiguredAction(config)
+                }
+            }.plus(CustomUserAction())
+            .toTypedArray()
 
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
 }
@@ -38,11 +43,16 @@ private class FrontendConfiguredAction(
                 append(": ")
                 append(config.instruction)
             }
-        CoroutineScopeHolder.getInstance(project).getPluginScope().launch {
-            runCatching {
-                FrontendChatRepositoryModel.getInstance(project).sendMessage(text)
-            }
-        }
+        sendEditorActionPrompt(
+            project = project,
+            prompt =
+                EditorActionPrompt.custom(
+                    text,
+                    e.getData(CommonDataKeys.VIRTUAL_FILE)?.path,
+                    e.getData(CommonDataKeys.EDITOR)?.selectionModel?.selectedText,
+                ),
+            scopeName = "configured-editor-action",
+        )
     }
 
     override fun update(e: AnActionEvent) {

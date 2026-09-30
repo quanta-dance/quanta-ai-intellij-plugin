@@ -3,38 +3,33 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.actions
 
-import com.github.quanta_dance.quanta.plugins.intellij.frontend.prompts.FrontendCustomPromptServices
-import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.CustomPromptRequest
-import com.intellij.notification.NotificationGroupManager
-import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
-import kotlinx.coroutines.runBlocking
+import com.intellij.openapi.actionSystem.CommonDataKeys
+import com.intellij.openapi.ui.Messages
 
-/**
- * Frontend action that dispatches a canned custom-prompt request.
- *
- * It is primarily a user-facing entry point into the custom prompt contract and related adapter
- * chain.
- */
-class CustomUserAction : AnAction("Custom User Action") {
+/** Prompts for a user-authored instruction and sends it to Quanta AI chat. */
+class CustomUserAction : AnAction("Custom Prompt") {
     override fun actionPerformed(event: AnActionEvent) {
         val project = event.project ?: return
-        val response =
-            runBlocking {
-                FrontendCustomPromptServices.customPromptService().run(
-                    CustomPromptRequest("Custom prompt execution requested from frontend action."),
-                )
-            }
-        NotificationGroupManager
-            .getInstance()
-            .getNotificationGroup("Plugin Notifications")
-            .createNotification(
-                "Quanta AI",
-                response.message,
-                if (response.success) NotificationType.INFORMATION else NotificationType.WARNING,
-            ).notify(project)
+        val prompt =
+            Messages
+                .showInputDialog(
+                    project,
+                    "Enter an instruction for Quanta AI:",
+                    "Custom Prompt",
+                    null,
+                )?.trim()
+                ?.takeIf(String::isNotEmpty) ?: return
+        val selectedText = event.getData(CommonDataKeys.EDITOR)?.selectionModel?.selectedText
+        val filePath = event.getData(CommonDataKeys.VIRTUAL_FILE)?.path
+
+        sendEditorActionPrompt(
+            project = project,
+            prompt = EditorActionPrompt.custom(prompt, filePath, selectedText),
+            scopeName = "custom-user-prompt",
+        )
     }
 
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
