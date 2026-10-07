@@ -164,35 +164,17 @@ class FrontendQuantaPluginConfigurable : Configurable {
 
 private fun selectProjectForMcpEditor(): Project? {
     val projects = ProjectManager.getInstance().openProjects.filterNot(Project::isDisposed)
-    when (projects.size) {
-        0 -> {
-            Messages.showWarningDialog(
-                "No open project found. Open a project to edit its MCP servers file.",
-                "QuantaDance",
-            )
-            return null
-        }
-
-        1 -> {
-            return projects.single()
-        }
+    if (projects.isEmpty()) {
+        Messages.showWarningDialog(
+            "No open project found. Open a project to edit its MCP servers file.",
+            "QuantaDance",
+        )
+        return null
     }
 
-    val choices =
-        projects.mapIndexed { index, project ->
-            val path = project.basePath?.takeIf(String::isNotBlank) ?: "no project path"
-            "${project.name} — $path (#${index + 1})"
-        }
-    val selectedIndex =
-        Messages.showDialog(
-            projects.first(),
-            "MCP configuration is shared, but the file must open in a selected project window.",
-            "Choose Project for MCP Configuration",
-            choices.toTypedArray(),
-            0,
-            Messages.getQuestionIcon(),
-        )
-    return projects.getOrNull(selectedIndex)
+    // Application-level settings have no guaranteed project owner. When no focused project is
+    // available, use IntelliJ's stable open-project order rather than prompting the user.
+    return projects.first()
 }
 
 private class FrontendQuantaSettingsComponent {

@@ -24,6 +24,34 @@ data class McpServersFile(
     val mcpServers: Map<String, McpServerConfig> = emptyMap(),
 )
 
+/** The lifecycle operations required to reconcile one parsed MCP configuration snapshot with another. */
+internal data class McpServerConfigChanges(
+    val added: Set<String>,
+    val removed: Set<String>,
+    val changed: Set<String>,
+)
+
+/**
+ * Computes the server lifecycle changes for a newly parsed configuration.
+ *
+ * A server whose name is retained but whose transport configuration changes must be restarted.
+ */
+internal fun calculateMcpServerConfigChanges(
+    previous: McpServersFile,
+    current: McpServersFile,
+): McpServerConfigChanges {
+    val previousServers = previous.mcpServers
+    val currentServers = current.mcpServers
+    return McpServerConfigChanges(
+        added = currentServers.keys - previousServers.keys,
+        removed = previousServers.keys - currentServers.keys,
+        changed =
+            currentServers.keys
+                .intersect(previousServers.keys)
+                .filterTo(linkedSetOf()) { name -> previousServers[name] != currentServers[name] },
+    )
+}
+
 object McpServersConfigLoader {
     private val log = Logger.getInstance(McpServersConfigLoader::class.java)
     private val mapper = jacksonObjectMapper()
