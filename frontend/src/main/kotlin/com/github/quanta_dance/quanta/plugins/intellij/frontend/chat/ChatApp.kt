@@ -478,27 +478,27 @@ private fun mcpToolsDialog(
             )
             Divider(orientation = Orientation.Horizontal)
 
-            when {
-                configurationLoading -> {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        loadingIndicator()
-                        Text(
-                            "Syncing MCP configuration and discovering available tools…",
-                            style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
-                        )
-                    }
-                }
-
-                configurationError != null -> {
+            if (configurationLoading) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    loadingIndicator()
                     Text(
-                        "MCP configuration could not be loaded: $configurationError",
-                        style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color(0xFFE0B86A)),
+                        "Refreshing MCP configuration in the background. Server controls remain available.",
+                        style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
                     )
                 }
+            }
 
+            configurationError?.let { error ->
+                Text(
+                    "MCP configuration could not be loaded: $error",
+                    style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color(0xFFE0B86A)),
+                )
+            }
+
+            when {
                 servers.isEmpty() -> {
                     Text(
                         "No MCP servers are configured. Configure servers in Settings to make tools available here.",
@@ -609,8 +609,10 @@ private fun loadingIndicator() {
 
 private fun McpServerStatusDto.connectionDescription(): String =
     when {
+        requiresAuthorization && connecting -> "Authorization in progress…"
+        requiresAuthorization -> "Authorization required"
+        connecting -> "Checking connection and discovering tools…"
         connected -> "Connected · $toolCount tool${if (toolCount == 1) "" else "s"}"
-        connecting -> "Connecting or waiting for authorization"
         enabledForCurrentChat -> "Enabled for this chat · Not connected"
         else -> "Disabled for this chat"
     }

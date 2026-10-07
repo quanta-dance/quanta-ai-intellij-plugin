@@ -40,6 +40,7 @@ class BackendExecutionContextsService : Disposable {
 
     private val mcpExecutor = namedFixedPool(size = 4, prefix = "qd-mcp")
     private val mcpLifecycleExecutor = namedSinglePool(prefix = "qd-mcp-lifecycle")
+    private val mcpDiscoveryExecutor = namedFixedPool(size = 4, prefix = "qd-mcp-discovery")
     private val interactiveAgentExecutor =
         namedBoundedFixedPool(size = 2, queueCapacity = 32, prefix = "qd-agent-interactive")
     private val backgroundAgentExecutor =
@@ -52,6 +53,7 @@ class BackendExecutionContextsService : Disposable {
 
     val mcpDispatcher: ExecutorCoroutineDispatcher = mcpExecutor.asCoroutineDispatcher()
     val mcpLifecycleDispatcher: ExecutorCoroutineDispatcher = mcpLifecycleExecutor.asCoroutineDispatcher()
+    val mcpDiscoveryDispatcher: ExecutorCoroutineDispatcher = mcpDiscoveryExecutor.asCoroutineDispatcher()
     val interactiveAgentDispatcher: ExecutorCoroutineDispatcher = interactiveAgentExecutor.asCoroutineDispatcher()
     val backgroundAgentDispatcher: ExecutorCoroutineDispatcher = backgroundAgentExecutor.asCoroutineDispatcher()
     val toolExecutionDispatcher: ExecutorCoroutineDispatcher = toolExecutionExecutor.asCoroutineDispatcher()
@@ -62,6 +64,7 @@ class BackendExecutionContextsService : Disposable {
 
     val mcpScope: CoroutineScope = CoroutineScope(SupervisorJob() + mcpDispatcher)
     val mcpLifecycleScope: CoroutineScope = CoroutineScope(SupervisorJob() + mcpLifecycleDispatcher)
+    val mcpDiscoveryScope: CoroutineScope = CoroutineScope(SupervisorJob() + mcpDiscoveryDispatcher)
     val interactiveAgentScope: CoroutineScope = CoroutineScope(SupervisorJob() + interactiveAgentDispatcher)
     val backgroundAgentScope: CoroutineScope = CoroutineScope(SupervisorJob() + backgroundAgentDispatcher)
     val toolExecutionScope: CoroutineScope = CoroutineScope(SupervisorJob() + toolExecutionDispatcher)
@@ -74,6 +77,7 @@ class BackendExecutionContextsService : Disposable {
         listOf(
             mcpScope,
             mcpLifecycleScope,
+            mcpDiscoveryScope,
             interactiveAgentScope,
             backgroundAgentScope,
             toolExecutionScope,
@@ -87,6 +91,7 @@ class BackendExecutionContextsService : Disposable {
         listOf(
             mcpDispatcher,
             mcpLifecycleDispatcher,
+            mcpDiscoveryDispatcher,
             interactiveAgentDispatcher,
             backgroundAgentDispatcher,
             toolExecutionDispatcher,

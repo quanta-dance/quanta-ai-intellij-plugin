@@ -132,6 +132,7 @@ class McpClientService(
     private val toolCache = ConcurrentHashMap<String, List<Tool>>()
     private val serverErrors = ConcurrentHashMap<String, String>()
     private val connectingServers = ConcurrentHashMap.newKeySet<String>()
+    private val connectionJobs = ConcurrentHashMap<String, Job>()
     private val authorizationRequestedServers = ConcurrentHashMap.newKeySet<String>()
     private val authorizationRequiredServers = ConcurrentHashMap.newKeySet<String>()
     private val oauthChallenges = ConcurrentHashMap<String, McpOAuthService.AuthorizationChallenge>()
@@ -175,11 +176,12 @@ class McpClientService(
         QDLog.debug(log) { "McpClientService dispose: shutting down ${clients.size} MCP servers" }
         oauthRefreshJobs.values.forEach(Job::cancel)
         oauthRefreshJobs.clear()
-        (clients.keys + toolCache.keys).toSet().forEach { name ->
+        (clients.keys + toolCache.keys + connectionJobs.keys).toSet().forEach { name ->
             shutdownServer(name)
         }
         clients.clear()
         toolCache.clear()
+        connectionJobs.clear()
     }
 
     private fun notifyRuntimeConfigIssue(
@@ -267,10 +269,14 @@ class McpClientService(
 
         QDLog.debug(log) { "Loaded mcpServers: ${newConfig.mcpServers.keys.joinToString()}" }
 
-        // Reconcile current running state with new config
+        // Publish the parsed configuration before lifecycle work starts so the UI keeps the existing
+        // roster visible during refresh and shows newly configured servers immediately.
+        val previousConfig = serversConfig
+        serversConfig = newConfig
+
+        // Reconcile current running state with the newly published configuration.
         try {
-            reconcileConfigs(serversConfig, newConfig)
-            serversConfig = newConfig
+            reconcileConfigs(previousConfig, newConfig)
         } catch (t: Throwable) {
             logRuntimeDependencyFailure("refresh reconcile", t)
             throw t
@@ -278,7 +284,7 @@ class McpClientService(
 
         // Probe every configured transport with the configured headers. Browser OAuth is requested only
         // after that probe receives an actual HTTP 401 response, never by guessing header names.
-        serversConfig.mcpServers.forEach { (name, config) ->
+        newConfig.mcpServers.forEach { (name, _) ->
             QDLog.info(log) { "McpClientService refresh: scheduling tool discovery for configured server '$name'" }
             discoverToolsAsync(name)
         }
@@ -351,6 +357,8 @@ class McpClientService(
 
     private fun shutdownServer(name: String) {
         QDLog.info(log) { "Shutting down MCP server '$name'" }
+        connectionJobs.remove(name)?.cancel()
+        connectingServers.remove(name)
         oauthRefreshJobs.remove(name)?.cancel()
         oauthChallenges.remove(name)
         oauthRefreshFailures.remove(name)
@@ -368,16 +376,12 @@ class McpClientService(
         name: String,
         cfg: McpServerConfig,
     ) {
-        if (cfg.url != null) {
-            connectAndDiscoverAsync(name, cfg)
-            return
-        }
         if (clients.containsKey(name)) {
             QDLog.debug(log) { "startServer: server '$name' already has a client" }
             return
         }
-        QDLog.debug(log) { "startServer: preparing stdio server '$name'" }
-        ensureClient(name, cfg)
+        QDLog.debug(log) { "startServer: scheduling client preparation for '$name'" }
+        connectAndDiscoverAsync(name, cfg)
     }
 
     /**
@@ -742,16 +746,21 @@ class McpClientService(
             QDLog.debug(log) { "MCP connection/discovery for '$server' is already in progress" }
             return
         }
-        executionContexts.mcpLifecycleScope.launch {
-            try {
-                if (cfg.url != null) ensureClientUrl(server, cfg) else ensureClient(server, cfg)
-                clients[server]?.let { discoverTools(server) }
-            } catch (e: Exception) {
-                QDLog.warn(log) { "connectAndDiscoverAsync[$server]: failed - ${causeDetails(e)}" }
-            } finally {
-                connectingServers.remove(server)
+        connectionJobs[server] =
+            executionContexts.mcpDiscoveryScope.launch {
+                try {
+                    if (serversConfig.mcpServers[server] != cfg) return@launch
+                    if (cfg.url != null) ensureClientUrl(server, cfg) else ensureClient(server, cfg)
+                    if (serversConfig.mcpServers[server] == cfg) {
+                        clients[server]?.let { discoverTools(server) }
+                    }
+                } catch (e: Exception) {
+                    QDLog.warn(log) { "connectAndDiscoverAsync[$server]: failed - ${causeDetails(e)}" }
+                } finally {
+                    connectingServers.remove(server)
+                    connectionJobs.remove(server)
+                }
             }
-        }
     }
 
     fun listServers(): List<String> = serversConfig.mcpServers.keys.sorted()
