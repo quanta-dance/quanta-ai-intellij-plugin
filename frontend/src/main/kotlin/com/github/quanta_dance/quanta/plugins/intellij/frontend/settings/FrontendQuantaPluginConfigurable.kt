@@ -7,6 +7,8 @@ import com.github.quanta_dance.quanta.plugins.intellij.frontend.logging.Frontend
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.rpc.FrontendSettingsRpcService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AcpManualAgentDto
 import com.intellij.ide.BrowserUtil
+import com.intellij.ide.DataManager
+import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.service
 import com.intellij.openapi.fileEditor.FileEditorManager
@@ -25,6 +27,7 @@ import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.FormBuilder
 import kotlinx.coroutines.runBlocking
 import java.awt.Color
+import java.awt.Component
 import java.awt.Cursor
 import java.awt.FlowLayout
 import java.awt.event.MouseAdapter
@@ -162,19 +165,16 @@ class FrontendQuantaPluginConfigurable : Configurable {
     }
 }
 
-private fun selectProjectForMcpEditor(): Project? {
-    val projects = ProjectManager.getInstance().openProjects.filterNot(Project::isDisposed)
-    if (projects.isEmpty()) {
-        Messages.showWarningDialog(
-            "No open project found. Open a project to edit its MCP servers file.",
-            "QuantaDance",
-        )
-        return null
-    }
+private fun selectProjectForMcpEditor(component: Component): Project? {
+    val project = DataManager.getInstance().getDataContext(component).getData(CommonDataKeys.PROJECT)
+    if (project != null && !project.isDisposed) return project
 
-    // Application-level settings have no guaranteed project owner. When no focused project is
-    // available, use IntelliJ's stable open-project order rather than prompting the user.
-    return projects.first()
+    Messages.showWarningDialog(
+        "The current Settings window is not associated with an open project. " +
+            "Open Settings from the project where you want to edit MCP servers.",
+        "QuantaDance",
+    )
+    return null
 }
 
 private class FrontendQuantaSettingsComponent {
@@ -277,8 +277,8 @@ private class FrontendQuantaSettingsComponent {
     private val editMcpButton =
         JButton("Edit MCP Servers…").apply {
             toolTipText = "Open or create .quantadance/mcp-servers.json in the current project"
-            addActionListener {
-                val project = selectProjectForMcpEditor() ?: return@addActionListener
+            addActionListener { event ->
+                val project = (event.source as? Component)?.let(::selectProjectForMcpEditor) ?: return@addActionListener
                 val file = project.service<FrontendMcpConfigService>().ensureExists()
                 project
                     .service<FrontendBackendLogBridge>()
