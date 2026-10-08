@@ -326,32 +326,24 @@ class McpClientService(
         oldCfg: McpServersFile,
         newCfg: McpServersFile,
     ) {
-        val oldServers = oldCfg.mcpServers
         val newServers = newCfg.mcpServers
+        val changes = calculateMcpServerConfigChanges(oldCfg, newCfg)
 
-        val removed = oldServers.keys - newServers.keys
-        val added = newServers.keys - oldServers.keys
-        val maybeChanged = newServers.keys.intersect(oldServers.keys)
+        // Stop removed servers and clear their tools.
+        changes.removed.forEach(::shutdownServer)
 
-        // Stop removed servers and clear their tools
-        removed.forEach { name -> shutdownServer(name) }
+        // Start added servers.
+        changes.added.forEach { name -> startServer(name, newServers.getValue(name)) }
 
-        // Start added servers
-        added.forEach { name -> startServer(name, newServers.getValue(name)) }
-
-        // Restart changed servers
-        maybeChanged.forEach { name ->
-            val old = oldServers[name]
-            val neu = newServers[name]
-            if (old != neu && neu != null) {
-                shutdownServer(name)
-                startServer(name, neu)
-            }
+        // Restart servers whose transport configuration changed.
+        changes.changed.forEach { name ->
+            shutdownServer(name)
+            startServer(name, newServers.getValue(name))
         }
 
         QDLog.info(log) {
-            "Reconcile complete. added=${added.size}, removed=${removed.size}, " +
-                "changed=${maybeChanged.count { oldServers[it] != newServers[it] }}"
+            "Reconcile complete. added=${changes.added.size}, removed=${changes.removed.size}, " +
+                "changed=${changes.changed.size}"
         }
     }
 
