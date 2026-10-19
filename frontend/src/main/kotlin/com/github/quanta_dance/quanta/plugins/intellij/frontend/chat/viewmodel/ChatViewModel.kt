@@ -16,6 +16,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServ
 import com.intellij.openapi.Disposable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -126,6 +127,7 @@ class ChatViewModel(
             messagesFlow = repository.messagesFlow,
         )
 
+    private val queuedMessages = ArrayDeque<String>()
     private var currentSendMessageJob: Job? = null
 
     init {
@@ -160,35 +162,25 @@ class ChatViewModel(
     }
 
     override fun onSendMessage() {
-        if (currentSendMessageJob?.isActive == true || _promptInputState.value is MessageInputState.Sending) return
-        currentSendMessageJob =
-            coroutineScope.launch {
-                try {
-                    val currentUserMessage = getCurrentInputTextIfNotEmpty() ?: return@launch
-                    emitPromptInputState(MessageInputState.Sending(""))
-                    repository.sendMessage(currentUserMessage)
-                    emitPromptInputState(
-                        when (val currentInputState = getCurrentInputTextIfNotEmpty()) {
-                            null -> MessageInputState.Disabled
-                            else -> MessageInputState.Enabled(currentInputState)
-                        },
-                    )
-                } catch (e: Exception) {
-                    if (e is CancellationException) throw e
-                    emitPromptInputState(MessageInputState.SendFailed(e.message ?: "Unknown error", e))
-                } finally {
-                    currentSendMessageJob = null
-                }
+        val currentUserMessage = getCurrentInputTextIfNotEmpty() ?: return
+        val sendMessageJob =
+            synchronized(queuedMessages) {
+                queuedMessages.addLast(currentUserMessage)
+                currentSendMessageJob ?: startSendingQueuedMessages().also { currentSendMessageJob = it }
             }
+        emitPromptInputState(MessageInputState.Sending(""))
+        sendMessageJob.start()
     }
 
     override fun onAbortSendingMessage() {
-        currentSendMessageJob?.cancel()
+        val sendMessageJob =
+            synchronized(queuedMessages) {
+                queuedMessages.clear()
+                currentSendMessageJob.also { currentSendMessageJob = null }
+            }
+        sendMessageJob?.cancel()
         emitPromptInputState(
-            when (val currentPromptInput = getCurrentInputTextIfNotEmpty()) {
-                null -> MessageInputState.Disabled
-                else -> MessageInputState.Enabled(currentPromptInput)
-            },
+            getCurrentInputTextIfNotEmpty()?.let(MessageInputState::Enabled) ?: MessageInputState.Disabled,
         )
     }
 
@@ -292,7 +284,45 @@ class ChatViewModel(
         _promptInputState.value = newState
     }
 
+    private fun startSendingQueuedMessages(): Job =
+        coroutineScope.launch(start = CoroutineStart.LAZY) {
+            try {
+                while (true) {
+                    val messages =
+                        synchronized(queuedMessages) {
+                            if (queuedMessages.isEmpty()) {
+                                currentSendMessageJob = null
+                                return@launch
+                            }
+                            buildList {
+                                while (queuedMessages.isNotEmpty()) {
+                                    add(queuedMessages.removeFirst())
+                                }
+                            }
+                        }
+                    repository.sendMessage(messages.joinToString(separator = "\n\n"))
+                }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                synchronized(queuedMessages) {
+                    currentSendMessageJob = null
+                }
+                emitPromptInputState(MessageInputState.SendFailed(e.message ?: "Unknown error", e))
+            } finally {
+                if (_promptInputState.value !is MessageInputState.SendFailed && currentSendMessageJob?.isActive != true) {
+                    emitPromptInputState(
+                        getCurrentInputTextIfNotEmpty()?.let(MessageInputState::Enabled) ?: MessageInputState.Disabled,
+                    )
+                }
+            }
+        }
+
     override fun dispose() {
-        currentSendMessageJob?.cancel()
+        val sendMessageJob =
+            synchronized(queuedMessages) {
+                queuedMessages.clear()
+                currentSendMessageJob.also { currentSendMessageJob = null }
+            }
+        sendMessageJob?.cancel()
     }
 }

@@ -198,8 +198,10 @@ fun promptInput(
                                         onStop(message.toString())
                                     }
 
-                                    isSending -> {
-                                        // Keep the draft for the next linear turn; do not submit it concurrently.
+                                    isSending && message.isNotBlank() -> {
+                                        onSend(message.toString())
+                                        skipInputChangeUpdate = true
+                                        textFieldState.setTextAndPlaceCursorAtEnd("")
                                     }
 
                                     isSettingsSyncFailed -> {
@@ -628,25 +630,50 @@ fun promptInput(
                             )
                         }
 
-                        OutlinedButton(
-                            modifier = Modifier.wrapContentSize(),
-                            onClick = { onStop(textFieldState.text.toString()) },
-                            content = {
-                                Row(
-                                    Modifier.padding(4.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceEvenly,
-                                ) {
-                                    Text("Stop")
-                                    Icon(
-                                        modifier = Modifier.size(JewelTheme.iconButtonStyle.metrics.minSize.height),
-                                        key = ChatAppIcons.Prompt.stop,
-                                        contentDescription = "Stop sending",
-                                        tint = ChatAppColors.Icon.stopIconTint,
-                                    )
-                                }
-                            },
-                        )
+                        if (textFieldState.text.isNotBlank()) {
+                            DefaultButton(
+                                modifier = Modifier.wrapContentSize(),
+                                onClick = {
+                                    onSend(textFieldState.text.toString())
+                                    skipInputChangeUpdate = true
+                                    textFieldState.setTextAndPlaceCursorAtEnd("")
+                                },
+                                content = {
+                                    Row(
+                                        Modifier.padding(4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceEvenly,
+                                    ) {
+                                        Text("Send")
+                                        Icon(
+                                            modifier = Modifier.size(JewelTheme.iconButtonStyle.metrics.minSize.height),
+                                            key = ChatAppIcons.Prompt.send,
+                                            contentDescription = "Send",
+                                        )
+                                    }
+                                },
+                            )
+                        } else {
+                            OutlinedButton(
+                                modifier = Modifier.wrapContentSize(),
+                                onClick = { onStop(textFieldState.text.toString()) },
+                                content = {
+                                    Row(
+                                        Modifier.padding(4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceEvenly,
+                                    ) {
+                                        Text("Stop")
+                                        Icon(
+                                            modifier = Modifier.size(JewelTheme.iconButtonStyle.metrics.minSize.height),
+                                            key = ChatAppIcons.Prompt.stop,
+                                            contentDescription = "Stop sending",
+                                            tint = ChatAppColors.Icon.stopIconTint,
+                                        )
+                                    }
+                                },
+                            )
+                        }
                     }
                 }
             }
