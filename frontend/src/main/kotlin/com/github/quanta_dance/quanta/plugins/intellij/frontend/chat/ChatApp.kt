@@ -78,6 +78,7 @@ import androidx.compose.ui.zIndex
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.ModularPluginFrontendBundle
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel.ChatViewModel
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel.MessageInputState
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendMcpConfigService
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendQuantaSettingsState
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendSettingsSyncStateService
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.ui.SearchState
@@ -104,7 +105,9 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.Delegat
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskStatusDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.LocalQuantaAcpSessionDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServerStatusDto
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.service
+import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
 import kotlinx.coroutines.delay
@@ -313,7 +316,7 @@ fun chatApp(
                     delegatedTasks = delegatedTasks,
                     managerBusy =
                         messageInputState is MessageInputState.Sending ||
-                            chatMessages.any(ChatMessage::isAIThinkingMessage),
+                                chatMessages.any(ChatMessage::isAIThinkingMessage),
                 )
             }
 
@@ -385,11 +388,11 @@ fun chatApp(
                         val message =
                             if (allowed) {
                                 "Add ${agent.name} to this chat and turn on agentic team mode?\n\n" +
-                                    "This independent external ACP agent may receive task context and access this project " +
-                                    "using its own tools.\n\n${agent.transportDescription()}"
+                                        "This independent external ACP agent may receive task context and access this project " +
+                                        "using its own tools.\n\n${agent.transportDescription()}"
                             } else if (removeSharedPeer) {
                                 "Remove ${agent.name} from this chat and forget this shared Quanta ACP peer? " +
-                                    "It will no longer appear in the roster."
+                                        "It will no longer appear in the roster."
                             } else {
                                 "Remove ${agent.name} from this chat? Any active work for this agent will be stopped."
                             }
@@ -425,7 +428,7 @@ fun chatApp(
                             Messages.showYesNoDialog(
                                 project,
                                 "Remove ${agent.name} from this chat and forget this shared Quanta ACP peer? " +
-                                    "It will no longer appear in the roster.",
+                                        "It will no longer appear in the roster.",
                                 "Remove Shared Collaborator",
                                 "Remove",
                                 "Cancel",
@@ -446,11 +449,27 @@ fun chatApp(
                     configurationError = mcpConfigurationError,
                     onSetEnabled = viewModel::onSetMcpServerEnabled,
                     onReconnect = viewModel::onRetryMcpServerConnection,
+                    onEditConfiguration = { openMcpConfigurationInEditor(project) },
                     onDismiss = { showMcpToolsDialog = false },
                 )
             }
         },
     )
+}
+
+private fun openMcpConfigurationInEditor(project: Project) {
+    try {
+        val virtualFile = project.service<FrontendMcpConfigService>().ensureExists()
+        ApplicationManager.getApplication().invokeLater {
+            FileEditorManager.getInstance(project).openFile(virtualFile, true)
+        }
+    } catch (e: Exception) {
+        Messages.showErrorDialog(
+            project,
+            "Failed to create or open mcp-servers.json: ${e.message}",
+            "QuantaDance",
+        )
+    }
 }
 
 @Composable
@@ -460,6 +479,7 @@ private fun mcpToolsDialog(
     configurationError: String?,
     onSetEnabled: (String, Boolean) -> Unit,
     onReconnect: (String) -> Unit,
+    onEditConfiguration: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     Dialog(onDismissRequest = onDismiss) {
@@ -471,7 +491,14 @@ private fun mcpToolsDialog(
                     .padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text("MCP tools", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("MCP tools", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                OutlinedButton(onClick = onEditConfiguration) { Text("Edit") }
+            }
             Text(
                 "Enable only the MCP servers this chat should expose to AI. These choices apply only to this chat.",
                 style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
@@ -1051,7 +1078,7 @@ private data class AgentPresence(
 private fun DelegatedTaskDto.isAssignedTo(participant: CollaborationParticipantDto): Boolean {
     val transportId = participant.transportId ?: return false
     return transportId in assignedAgentIds ||
-        assignedRoles.any { role -> role.trim().equals(participant.displayName.trim(), ignoreCase = true) }
+            assignedRoles.any { role -> role.trim().equals(participant.displayName.trim(), ignoreCase = true) }
 }
 
 @Composable
@@ -1071,7 +1098,7 @@ private fun agentPresenceStrip(
                     }
 
                     tasks.any { it.status == DelegatedTaskStatusDto.RUNNING } ||
-                        participant.availability == CollaborationAvailabilityDto.BUSY -> {
+                            participant.availability == CollaborationAvailabilityDto.BUSY -> {
                         AgentPresenceState.WORKING
                     }
 
@@ -1080,7 +1107,7 @@ private fun agentPresenceStrip(
                     }
 
                     tasks.any { it.status == DelegatedTaskStatusDto.FAILED } ||
-                        participant.availability == CollaborationAvailabilityDto.OFFLINE -> {
+                            participant.availability == CollaborationAvailabilityDto.OFFLINE -> {
                         AgentPresenceState.FAILED
                     }
 
@@ -1220,12 +1247,12 @@ private fun agentPresenceAvatar(presence: AgentPresence) {
     val isWorking = presence.state == AgentPresenceState.WORKING
     val activityTransition = rememberInfiniteTransition(label = "agentPresenceActivity")
     val activityPulse by
-        activityTransition.animateFloat(
-            initialValue = 0.25f,
-            targetValue = 0.75f,
-            animationSpec = infiniteRepeatable(tween(durationMillis = 900, easing = LinearEasing)),
-            label = "agentPresencePulse",
-        )
+    activityTransition.animateFloat(
+        initialValue = 0.25f,
+        targetValue = 0.75f,
+        animationSpec = infiniteRepeatable(tween(durationMillis = 900, easing = LinearEasing)),
+        label = "agentPresencePulse",
+    )
 
     if (showProfileDialog) {
         agentProfileDialog(

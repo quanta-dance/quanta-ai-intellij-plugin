@@ -18,7 +18,6 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.Messages
-import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPasswordField
@@ -57,21 +56,21 @@ class FrontendQuantaPluginConfigurable : Configurable {
         val settings = FrontendQuantaSettingsState.instance.state
         return settingsComponent.run {
             hostValue != settings.openAiUrl ||
-                tokenValue != settings.openAiToken ||
-                voiceEnabled != settings.voiceEnabled ||
-                voiceByLocalTTS != settings.voiceByLocalTTS ||
-                preferredOpenAiTtsVoice != settings.preferredOpenAiTtsVoice ||
-                maxTokensValue != settings.maxTokens ||
-                aiChatModelValue != settings.aiChatModel ||
-                dynamicModelEnabled != (settings.dynamicModelEnabled ?: false) ||
-                debugEnabled != settings.debugEnabled ||
-                maxAutomaticTurns != settings.maxAutomaticTurns ||
-                maxMessageWidth != settings.maxMessageWidth ||
-                terminalToolEnabled != (settings.terminalToolEnabled ?: false) ||
-                terminalAllowedCommandsCsv != settings.terminalAllowedCommandsCsv ||
-                manualAcpAgents != settings.manualAcpAgents ||
-                extraInstructionsValue != (settings.extraInstructions ?: "") ||
-                actionConfigsValue != settings.actionConfigsJson
+                    tokenValue != settings.openAiToken ||
+                    voiceEnabled != settings.voiceEnabled ||
+                    voiceByLocalTTS != settings.voiceByLocalTTS ||
+                    preferredOpenAiTtsVoice != settings.preferredOpenAiTtsVoice ||
+                    maxTokensValue != settings.maxTokens ||
+                    aiChatModelValue != settings.aiChatModel ||
+                    dynamicModelEnabled != (settings.dynamicModelEnabled ?: false) ||
+                    debugEnabled != settings.debugEnabled ||
+                    maxAutomaticTurns != settings.maxAutomaticTurns ||
+                    maxMessageWidth != settings.maxMessageWidth ||
+                    terminalToolEnabled != (settings.terminalToolEnabled ?: false) ||
+                    terminalAllowedCommandsCsv != settings.terminalAllowedCommandsCsv ||
+                    manualAcpAgents != settings.manualAcpAgents ||
+                    extraInstructionsValue != (settings.extraInstructions ?: "") ||
+                    actionConfigsValue != settings.actionConfigsJson
         }
     }
 
@@ -171,7 +170,7 @@ private fun selectProjectForMcpEditor(component: Component): Project? {
 
     Messages.showWarningDialog(
         "The current Settings window is not associated with an open project. " +
-            "Open Settings from the project where you want to edit MCP servers.",
+                "Open Settings from the project where you want to edit MCP servers.",
         "QuantaDance",
     )
     return null
@@ -218,7 +217,7 @@ private class FrontendQuantaSettingsComponent {
             (document as AbstractDocument).documentFilter = DigitsOnlyDocumentFilter()
             toolTipText =
                 "Maximum chat message width in dp " +
-                "(${FrontendQuantaSettingsState.MIN_MESSAGE_WIDTH}..${FrontendQuantaSettingsState.MAX_MESSAGE_WIDTH})."
+                        "(${FrontendQuantaSettingsState.MIN_MESSAGE_WIDTH}..${FrontendQuantaSettingsState.MAX_MESSAGE_WIDTH})."
         }
     private val followEnabledField = JBCheckBox("Follow enabled")
     private val terminalToolEnabledField = JBCheckBox("Enable Terminal tool (dangerous)")
@@ -276,24 +275,16 @@ private class FrontendQuantaSettingsComponent {
 
     private val editMcpButton =
         JButton("Edit MCP Servers…").apply {
-            toolTipText = "Open or create .quantadance/mcp-servers.json in the current project"
+            toolTipText = "Open or create the frontend MCP configuration JSON"
             addActionListener { event ->
                 val project = (event.source as? Component)?.let(::selectProjectForMcpEditor) ?: return@addActionListener
-                val file = project.service<FrontendMcpConfigService>().ensureExists()
-                project
-                    .service<FrontendBackendLogBridge>()
-                    .info("Edit MCP Servers opened path=${file.absolutePath} for project=${project.name}")
                 try {
-                    LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)?.let { vFile ->
-                        ApplicationManager.getApplication().invokeLater {
-                            FileEditorManager.getInstance(project).openFile(vFile, true)
-                        }
-                    } ?: run {
-                        Messages.showErrorDialog(
-                            project,
-                            "Failed to open mcp-servers.json in editor.",
-                            "QuantaDance",
-                        )
+                    val virtualFile = project.service<FrontendMcpConfigService>().ensureExists()
+                    project
+                        .service<FrontendBackendLogBridge>()
+                        .info("Edit MCP Servers opened path=${virtualFile.path} for project=${project.name}")
+                    ApplicationManager.getApplication().invokeLater {
+                        FileEditorManager.getInstance(project).openFile(virtualFile, true)
                     }
                 } catch (e: Exception) {
                     Messages.showErrorDialog(
@@ -457,8 +448,8 @@ private class FrontendQuantaSettingsComponent {
         if (value == null || value !in FrontendQuantaSettingsState.MESSAGE_WIDTH_RANGE) {
             throw ConfigurationException(
                 "Max message width must be a whole number from " +
-                    "${FrontendQuantaSettingsState.MIN_MESSAGE_WIDTH} to " +
-                    "${FrontendQuantaSettingsState.MAX_MESSAGE_WIDTH} dp.",
+                        "${FrontendQuantaSettingsState.MIN_MESSAGE_WIDTH} to " +
+                        "${FrontendQuantaSettingsState.MAX_MESSAGE_WIDTH} dp.",
             )
         }
     }

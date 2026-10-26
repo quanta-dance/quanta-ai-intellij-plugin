@@ -153,8 +153,9 @@ class McpClientService(
 
     init {
         installReactorDroppedErrorHandler()
-        // Do not schedule refresh here; perform initial refresh from ProjectActivity when project is open
-        QDLog.debug(log) { "McpClientService init: awaiting startup activity for initial refresh" }
+        // Settings sync or the first status/tool request schedules the initial refresh. This keeps
+        // the service usable even when it is created after the frontend has already synced config.
+        QDLog.debug(log) { "McpClientService init: awaiting synced configuration or first MCP request" }
     }
 
     /**
@@ -755,7 +756,11 @@ class McpClientService(
             }
     }
 
-    fun listServers(): List<String> = serversConfig.mcpServers.keys.sorted()
+    /** Returns the current roster and starts reconciliation if this service missed an earlier settings sync. */
+    fun listServers(): List<String> {
+        refreshIfConfigChanged()
+        return serversConfig.mcpServers.keys.sorted()
+    }
 
     fun getServerStatus(name: String): ServerStatus {
         val connected = clients.containsKey(name)

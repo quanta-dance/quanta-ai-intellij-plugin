@@ -153,7 +153,9 @@ class FrontendChatRepositoryModel(
             _mcpConfigurationLoadingFlow.value = mcpStatuses.configurationLoading
             _mcpConfigurationErrorFlow.value = mcpStatuses.configurationError
         }.onFailure { error ->
-            _mcpConfigurationLoadingFlow.value = true
+            _mcpConfigurationLoadingFlow.value = false
+            _mcpConfigurationErrorFlow.value =
+                "Unable to retrieve MCP status: ${error.message ?: error::class.simpleName}"
             logger.warn("Failed to refresh MCP server statuses from backend", error)
         }
         runCatching {

@@ -6,10 +6,15 @@ package com.github.quanta_dance.quanta.plugins.intellij.frontend.settings
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.logging.FrontendBackendLogBridge
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.PathManager
+import com.intellij.openapi.application.WriteAction
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.io.FileUtilRt
+import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.openapi.vfs.VfsUtil
+import com.intellij.openapi.vfs.VfsUtilCore
+import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.openapi.vfs.newvfs.BulkFileListener
 import com.intellij.openapi.vfs.newvfs.events.VFileEvent
@@ -83,11 +88,28 @@ class FrontendMcpConfigService(
 
     fun file(): File = configFile
 
-    fun ensureExists(): File {
+    /**
+     * Returns the configuration as an IDE-managed [VirtualFile].
+     *
+     * Creating and writing the JSON through VFS keeps its document cache coherent with the editor;
+     * raw [File] writes here can otherwise cause a file-cache conflict when the file is opened.
+     */
+    fun ensureExists(): VirtualFile {
         val file = configFile
         file.parentFile?.mkdirs()
-        if (!file.exists()) {
-            file.writeText(DEFAULT_MCP_JSON)
+        val parent =
+            LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file.parentFile)
+                ?: error("Unable to access MCP configuration directory: ${file.parentFile.absolutePath}")
+        var created = false
+        val virtualFile =
+            WriteAction.compute<VirtualFile, RuntimeException> {
+                parent.findChild(file.name)
+                    ?: parent.createChildData(this, file.name).also {
+                        VfsUtil.saveText(it, DEFAULT_MCP_JSON)
+                        created = true
+                    }
+            }
+        if (created) {
             log.info("Created default frontend MCP config at ${file.absolutePath}; watcher is active for path=$configPathSi")
             syncJob?.cancel()
             syncJob =
@@ -95,17 +117,18 @@ class FrontendMcpConfigService(
                     project.service<FrontendSettingsSyncStateService>().retryNow()
                 }
         }
-        return file
+        return virtualFile
     }
 
     fun readForSync(): String? =
         try {
             val file = configFile
-            if (!file.exists()) {
+            val virtualFile = LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)
+            if (virtualFile == null) {
                 log.info("Frontend MCP config is absent at ${file.absolutePath}; returning empty JSON for sync")
                 DEFAULT_MCP_JSON
             } else {
-                val text = file.readText()
+                val text = VfsUtilCore.loadText(virtualFile)
                 if (text.isBlank()) {
                     log.warn("Frontend MCP config read blank content from ${file.absolutePath}; skipping sync for this transient state")
                     null
