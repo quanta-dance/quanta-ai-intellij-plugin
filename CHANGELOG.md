@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2026.10.27]
+
+### Fixed
+- Read the frontend MCP server JSON during startup, reload and synchronize it in the background after edits, and recover MCP discovery when the backend service initializes after a settings sync.
+- Added an Edit action to the per-chat MCP tools dialog and use IntelliJ VFS APIs consistently when opening or saving the shared MCP configuration file, preventing configuration refresh stalls and file-cache conflicts.
+- Show MCP status-retrieval failures in the chat UI instead of leaving the configuration panel indefinitely in a refreshing state.
+
 ## [2026.10.20]
 
 ### Added

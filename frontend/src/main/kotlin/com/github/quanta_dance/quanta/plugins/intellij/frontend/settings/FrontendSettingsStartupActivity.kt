@@ -3,11 +3,9 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.settings
 
-import com.github.quanta_dance.quanta.plugins.intellij.frontend.coroutines.CoroutineScopeHolder
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.ProjectActivity
-import kotlinx.coroutines.launch
 
 /**
  * Startup sync that pushes the local frontend settings snapshot to the backend.
@@ -17,9 +15,9 @@ import kotlinx.coroutines.launch
  */
 class FrontendSettingsStartupActivity : ProjectActivity {
     override suspend fun execute(project: Project) {
+        // Start the frontend-owned JSON read and backend sync before the chat model can request MCP
+        // status. The sync itself remains non-blocking for MCP transport discovery on the backend.
         project.service<FrontendMcpConfigService>()
-        CoroutineScopeHolder.getInstance(project).getPluginScope().launch {
-            project.service<FrontendSettingsSyncStateService>().syncOnStartup()
-        }
+        project.service<FrontendSettingsSyncStateService>().syncOnStartup()
     }
 }

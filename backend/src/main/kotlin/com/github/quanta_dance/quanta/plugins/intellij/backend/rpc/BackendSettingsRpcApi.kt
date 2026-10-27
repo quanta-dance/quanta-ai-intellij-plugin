@@ -79,21 +79,26 @@ class BackendSettingsRpcApi : QuantaSettingsApi {
                     settings.terminalToolEnabled != previousRuntimeSettings.terminalToolEnabled
             BackendRuntimeSettingsService.instance.updateFrom(settings)
 
-            if (mcpConfigurationChanged || toolConfigurationChanged) {
-                ProjectManager.getInstance().openProjects.filterNot { it.isDisposed }.forEach { project ->
-                    if (toolConfigurationChanged) project.service<ToolCatalogService>().refreshAsync()
-                    if (!mcpConfigurationChanged) return@forEach
+            val openProjects = ProjectManager.getInstance().openProjects.filterNot { it.isDisposed }
+            if (!mcpConfigurationChanged && !toolConfigurationChanged) {
+                log.info("Backend settings sync: tool and MCP configuration unchanged")
+            }
+            openProjects.forEach { project ->
+                if (toolConfigurationChanged) project.service<ToolCatalogService>().refreshAsync()
+
+                // The MCP service can be created after an earlier frontend sync. Reconcile it in
+                // that case too; otherwise its initial state remains loading indefinitely.
+                val mcp = project.service<McpClientService>()
+                if (mcpConfigurationChanged || mcp.isConfigurationLoading()) {
                     log.info(
-                        "Backend settings sync: MCP config changed (chars=${settings.mcpServersJson.length}), refreshing MCP runtime",
+                        "Backend settings sync: reconciling MCP runtime for project=${project.name}, " +
+                            "configChanged=$mcpConfigurationChanged",
                     )
-                    runCatching {
-                        project.service<McpClientService>().refresh()
-                    }.onFailure { error ->
-                        log.warn("Backend settings sync: failed to refresh MCP for project=${project.name}", error)
-                    }
+                    runCatching { mcp.refresh() }
+                        .onFailure { error ->
+                            log.warn("Backend settings sync: failed to refresh MCP for project=${project.name}", error)
+                        }
                 }
-            } else {
-                log.info("Backend settings sync: tool and MCP configuration unchanged, skipping refresh")
             }
         }
 

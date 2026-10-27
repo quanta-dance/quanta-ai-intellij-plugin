@@ -18,7 +18,6 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.Messages
-import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPasswordField
@@ -276,24 +275,16 @@ private class FrontendQuantaSettingsComponent {
 
     private val editMcpButton =
         JButton("Edit MCP Servers…").apply {
-            toolTipText = "Open or create .quantadance/mcp-servers.json in the current project"
+            toolTipText = "Open or create the frontend MCP configuration JSON"
             addActionListener { event ->
                 val project = (event.source as? Component)?.let(::selectProjectForMcpEditor) ?: return@addActionListener
-                val file = project.service<FrontendMcpConfigService>().ensureExists()
-                project
-                    .service<FrontendBackendLogBridge>()
-                    .info("Edit MCP Servers opened path=${file.absolutePath} for project=${project.name}")
                 try {
-                    LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)?.let { vFile ->
-                        ApplicationManager.getApplication().invokeLater {
-                            FileEditorManager.getInstance(project).openFile(vFile, true)
-                        }
-                    } ?: run {
-                        Messages.showErrorDialog(
-                            project,
-                            "Failed to open mcp-servers.json in editor.",
-                            "QuantaDance",
-                        )
+                    val virtualFile = project.service<FrontendMcpConfigService>().ensureExists()
+                    project
+                        .service<FrontendBackendLogBridge>()
+                        .info("Edit MCP Servers opened path=${virtualFile.path} for project=${project.name}")
+                    ApplicationManager.getApplication().invokeLater {
+                        FileEditorManager.getInstance(project).openFile(virtualFile, true)
                     }
                 } catch (e: Exception) {
                     Messages.showErrorDialog(
