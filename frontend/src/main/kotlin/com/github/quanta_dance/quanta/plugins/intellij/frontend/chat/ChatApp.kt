@@ -316,7 +316,7 @@ fun chatApp(
                     delegatedTasks = delegatedTasks,
                     managerBusy =
                         messageInputState is MessageInputState.Sending ||
-                                chatMessages.any(ChatMessage::isAIThinkingMessage),
+                            chatMessages.any(ChatMessage::isAIThinkingMessage),
                 )
             }
 
@@ -388,11 +388,11 @@ fun chatApp(
                         val message =
                             if (allowed) {
                                 "Add ${agent.name} to this chat and turn on agentic team mode?\n\n" +
-                                        "This independent external ACP agent may receive task context and access this project " +
-                                        "using its own tools.\n\n${agent.transportDescription()}"
+                                    "This independent external ACP agent may receive task context and access this project " +
+                                    "using its own tools.\n\n${agent.transportDescription()}"
                             } else if (removeSharedPeer) {
                                 "Remove ${agent.name} from this chat and forget this shared Quanta ACP peer? " +
-                                        "It will no longer appear in the roster."
+                                    "It will no longer appear in the roster."
                             } else {
                                 "Remove ${agent.name} from this chat? Any active work for this agent will be stopped."
                             }
@@ -428,7 +428,7 @@ fun chatApp(
                             Messages.showYesNoDialog(
                                 project,
                                 "Remove ${agent.name} from this chat and forget this shared Quanta ACP peer? " +
-                                        "It will no longer appear in the roster.",
+                                    "It will no longer appear in the roster.",
                                 "Remove Shared Collaborator",
                                 "Remove",
                                 "Cancel",
@@ -1078,7 +1078,7 @@ private data class AgentPresence(
 private fun DelegatedTaskDto.isAssignedTo(participant: CollaborationParticipantDto): Boolean {
     val transportId = participant.transportId ?: return false
     return transportId in assignedAgentIds ||
-            assignedRoles.any { role -> role.trim().equals(participant.displayName.trim(), ignoreCase = true) }
+        assignedRoles.any { role -> role.trim().equals(participant.displayName.trim(), ignoreCase = true) }
 }
 
 @Composable
@@ -1098,7 +1098,7 @@ private fun agentPresenceStrip(
                     }
 
                     tasks.any { it.status == DelegatedTaskStatusDto.RUNNING } ||
-                            participant.availability == CollaborationAvailabilityDto.BUSY -> {
+                        participant.availability == CollaborationAvailabilityDto.BUSY -> {
                         AgentPresenceState.WORKING
                     }
 
@@ -1107,7 +1107,7 @@ private fun agentPresenceStrip(
                     }
 
                     tasks.any { it.status == DelegatedTaskStatusDto.FAILED } ||
-                            participant.availability == CollaborationAvailabilityDto.OFFLINE -> {
+                        participant.availability == CollaborationAvailabilityDto.OFFLINE -> {
                         AgentPresenceState.FAILED
                     }
 
@@ -1247,12 +1247,12 @@ private fun agentPresenceAvatar(presence: AgentPresence) {
     val isWorking = presence.state == AgentPresenceState.WORKING
     val activityTransition = rememberInfiniteTransition(label = "agentPresenceActivity")
     val activityPulse by
-    activityTransition.animateFloat(
-        initialValue = 0.25f,
-        targetValue = 0.75f,
-        animationSpec = infiniteRepeatable(tween(durationMillis = 900, easing = LinearEasing)),
-        label = "agentPresencePulse",
-    )
+        activityTransition.animateFloat(
+            initialValue = 0.25f,
+            targetValue = 0.75f,
+            animationSpec = infiniteRepeatable(tween(durationMillis = 900, easing = LinearEasing)),
+            label = "agentPresencePulse",
+        )
 
     if (showProfileDialog) {
         agentProfileDialog(
