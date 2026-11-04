@@ -77,6 +77,12 @@ internal fun mcpConnectionErrorMessage(error: Throwable): String =
         }
     }
 
+/** A refresh preflight may be retried only when no refresh token was sent. */
+internal fun hasOAuthRefreshRecoveryAttemptRemaining(
+    attempt: Int,
+    maxAttempts: Int,
+): Boolean = attempt < maxAttempts
+
 /**
  * Reactor reports exceptions emitted after a subscriber has already been cancelled through its global
  * `onErrorDropped` hook. The MCP SDK's stdio transport can legitimately produce either of these
@@ -604,28 +610,35 @@ class McpClientService(
         name: String,
         cfg: McpServerConfig,
         delayMillis: Long,
+        attempt: Int = 0,
     ) {
         val job =
             executionContexts.mcpLifecycleScope.launch {
                 delay(delayMillis)
-                refreshOAuthToken(name, cfg)
+                refreshOAuthToken(name, cfg, attempt)
             }
         oauthRefreshJobs.put(name, job)?.cancel()
-        QDLog.debug(log) { "MCP OAuth: scheduled token refresh for '$name' in ${delayMillis}ms" }
+        QDLog.debug(log) {
+            "MCP OAuth: scheduled token refresh for '$name' in ${delayMillis}ms (attempt ${attempt + 1})"
+        }
     }
 
     private fun refreshOAuthToken(
         name: String,
         cfg: McpServerConfig,
+        attempt: Int,
     ) {
         val url = cfg.url ?: return
         val challenge =
             oauthChallenges[name]
-                ?: oauth.probeAuthorization(url, cfg.headers).challenge
-                ?: run {
-                    markOAuthRefreshFailure(name, url, "The MCP server no longer advertises an OAuth challenge")
-                    return
-                }
+                ?: runCatching { oauth.probeAuthorization(url, cfg.headers).challenge }
+                    .getOrElse { error ->
+                        deferOAuthRefresh(name, cfg, attempt, error.message ?: error.javaClass.simpleName)
+                        return
+                    } ?: run {
+                deferOAuthRefresh(name, cfg, attempt, "The MCP server did not advertise an OAuth challenge")
+                return
+            }
         oauthChallenges[name] = challenge
         when (val refresh = oauth.refreshStoredToken(name, url, challenge, cfg.oauthClientId)) {
             is McpOAuthService.TokenRefreshResult.Success -> {
@@ -638,7 +651,11 @@ class McpClientService(
                 connectAndDiscoverAsync(name, cfg)
             }
 
-            is McpOAuthService.TokenRefreshResult.Failure -> {
+            is McpOAuthService.TokenRefreshResult.RetryableFailure -> {
+                deferOAuthRefresh(name, cfg, attempt, refresh.message)
+            }
+
+            is McpOAuthService.TokenRefreshResult.TerminalFailure -> {
                 // Refresh-token rotation makes token-endpoint failures non-idempotent: the server may have
                 // consumed and rotated the token even when the client did not receive a usable response.
                 // Retrying could replay the old token and revoke the entire token family, so require a new
@@ -646,6 +663,36 @@ class McpClientService(
                 markOAuthRefreshFailure(name, url, refresh.message)
             }
         }
+    }
+
+    /**
+     * Retains credentials when connectivity or OAuth metadata discovery failed before a refresh token was sent.
+     * This is common immediately after waking from sleep while network or VPN routes are still being restored.
+     */
+    private fun deferOAuthRefresh(
+        name: String,
+        cfg: McpServerConfig,
+        attempt: Int,
+        reason: String,
+    ) {
+        if (hasOAuthRefreshRecoveryAttemptRemaining(attempt, MAX_OAUTH_REFRESH_RECOVERY_ATTEMPTS)) {
+            QDLog.warn(log) {
+                "MCP OAuth: refresh preflight failed for '$name'; preserving credentials and retrying: $reason"
+            }
+            scheduleOAuthRefreshAttempt(name, cfg, OAUTH_REFRESH_RECOVERY_DELAY_MILLIS, attempt + 1)
+            return
+        }
+
+        oauthRefreshJobs.remove(name)
+        serverErrors[name] = "OAuth refresh is temporarily unavailable. Select Retry after network access is restored."
+        notifyRuntimeConfigIssue(
+            title = "MCP authorization refresh delayed",
+            content =
+                "Could not verify OAuth metadata for MCP server '$name'. " +
+                    "Stored credentials were kept; use Retry after network access is restored.",
+            type = NotificationType.WARNING,
+        )
+        QDLog.warn(log) { "MCP OAuth: refresh preflight retries exhausted for '$name'; credentials retained: $reason" }
     }
 
     private fun markOAuthRefreshFailure(
@@ -770,6 +817,8 @@ class McpClientService(
 
     private companion object {
         const val OAUTH_REFRESH_LEEWAY_SECONDS = 60L
+        const val OAUTH_REFRESH_RECOVERY_DELAY_MILLIS = 30_000L
+        const val MAX_OAUTH_REFRESH_RECOVERY_ATTEMPTS = 3
     }
 
     private fun extractFirstNumber(text: String): Number? {

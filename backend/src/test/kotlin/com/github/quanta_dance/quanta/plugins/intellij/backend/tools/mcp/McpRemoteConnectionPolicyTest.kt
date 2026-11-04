@@ -45,6 +45,13 @@ class McpRemoteConnectionPolicyTest {
     }
 
     @Test
+    fun `preserves stored credentials through bounded preflight recovery attempts`() {
+        assertTrue(hasOAuthRefreshRecoveryAttemptRemaining(attempt = 0, maxAttempts = 3))
+        assertTrue(hasOAuthRefreshRecoveryAttemptRemaining(attempt = 2, maxAttempts = 3))
+        assertFalse(hasOAuthRefreshRecoveryAttemptRemaining(attempt = 3, maxAttempts = 3))
+    }
+
+    @Test
     fun summarizesInitializationTimeoutAsRetryableGuidance() {
         val error = RuntimeException(TimeoutException("MCP initialize timed out"))
 
