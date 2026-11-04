@@ -45,37 +45,6 @@ class McpRemoteConnectionPolicyTest {
     }
 
     @Test
-    fun retriesRefreshOnlyWhileTheCurrentTokenCanStillCoverTheRetryDelay() {
-        assertTrue(
-            shouldRetryOAuthRefresh(
-                attempts = 1,
-                expiresAtSeconds = 1_000,
-                nowSeconds = 900,
-                maxAttempts = 3,
-                retrySeconds = 30,
-            ),
-        )
-        assertFalse(
-            shouldRetryOAuthRefresh(
-                attempts = 3,
-                expiresAtSeconds = 1_000,
-                nowSeconds = 900,
-                maxAttempts = 3,
-                retrySeconds = 30,
-            ),
-        )
-        assertFalse(
-            shouldRetryOAuthRefresh(
-                attempts = 1,
-                expiresAtSeconds = 930,
-                nowSeconds = 900,
-                maxAttempts = 3,
-                retrySeconds = 30,
-            ),
-        )
-    }
-
-    @Test
     fun summarizesInitializationTimeoutAsRetryableGuidance() {
         val error = RuntimeException(TimeoutException("MCP initialize timed out"))
 

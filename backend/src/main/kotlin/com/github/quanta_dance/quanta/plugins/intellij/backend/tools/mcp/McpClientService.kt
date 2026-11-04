@@ -65,14 +65,6 @@ internal fun oauthRefreshDelayMillis(
     leewaySeconds: Long,
 ): Long = ((expiresAtSeconds - nowSeconds - leewaySeconds).coerceAtLeast(0L)) * 1_000
 
-internal fun shouldRetryOAuthRefresh(
-    attempts: Int,
-    expiresAtSeconds: Long,
-    nowSeconds: Long,
-    maxAttempts: Int,
-    retrySeconds: Long,
-): Boolean = attempts < maxAttempts && expiresAtSeconds - nowSeconds > retrySeconds
-
 /** Produces concise recoverable MCP connection copy while retaining full failures in the IDE log. */
 internal fun mcpConnectionErrorMessage(error: Throwable): String =
     when {
@@ -137,7 +129,6 @@ class McpClientService(
     private val authorizationRequiredServers = ConcurrentHashMap.newKeySet<String>()
     private val oauthChallenges = ConcurrentHashMap<String, McpOAuthService.AuthorizationChallenge>()
     private val oauthRefreshJobs = ConcurrentHashMap<String, Job>()
-    private val oauthRefreshFailures = ConcurrentHashMap<String, Int>()
 
     // A failed remote endpoint must not repeatedly trigger OAuth or connection attempts during tool polling.
     // It is cleared only by a configuration change/removal or a successful connection.
@@ -354,7 +345,6 @@ class McpClientService(
         connectingServers.remove(name)
         oauthRefreshJobs.remove(name)?.cancel()
         oauthChallenges.remove(name)
-        oauthRefreshFailures.remove(name)
         clients.remove(name)?.let { client ->
             runCatching { client.close() }
         }
@@ -546,7 +536,6 @@ class McpClientService(
                 failedUrlConnections.remove(name)
                 authorizationRequiredServers.remove(name)
                 authorizationRequestedServers.remove(name)
-                oauthRefreshFailures.remove(name)
                 if (oauthTokenAttached) {
                     oauth.storedTokenExpiresAt(name, url)?.let { expiresAt ->
                         scheduleOAuthRefresh(name, cfg, expiresAt)
@@ -641,7 +630,6 @@ class McpClientService(
         when (val refresh = oauth.refreshStoredToken(name, url, challenge, cfg.oauthClientId)) {
             is McpOAuthService.TokenRefreshResult.Success -> {
                 QDLog.info(log) { "MCP OAuth: token refresh succeeded for '$name'; reconnecting with the refreshed token" }
-                oauthRefreshFailures.remove(name)
                 clients.remove(name)?.let { client -> runCatching { client.close() } }
                 toolCache.remove(name)
                 serverErrors.remove(name)
@@ -651,28 +639,11 @@ class McpClientService(
             }
 
             is McpOAuthService.TokenRefreshResult.Failure -> {
-                val expiresAt = oauth.storedTokenExpiresAt(name, url) ?: 0L
-                val attempts = oauthRefreshFailures.merge(name, 1, Int::plus) ?: 1
-                if (
-                    shouldRetryOAuthRefresh(
-                        attempts = attempts,
-                        expiresAtSeconds = expiresAt,
-                        nowSeconds =
-                            java.time.Instant
-                                .now()
-                                .epochSecond,
-                        maxAttempts = MAX_OAUTH_REFRESH_ATTEMPTS,
-                        retrySeconds = OAUTH_REFRESH_RETRY_SECONDS,
-                    )
-                ) {
-                    QDLog.warn(log) {
-                        "MCP OAuth: refresh attempt $attempts for '$name' failed before expiry; retrying in " +
-                            "$OAUTH_REFRESH_RETRY_SECONDS seconds: ${refresh.message}"
-                    }
-                    scheduleOAuthRefreshAttempt(name, cfg, OAUTH_REFRESH_RETRY_SECONDS * 1_000)
-                } else {
-                    markOAuthRefreshFailure(name, url, refresh.message)
-                }
+                // Refresh-token rotation makes token-endpoint failures non-idempotent: the server may have
+                // consumed and rotated the token even when the client did not receive a usable response.
+                // Retrying could replay the old token and revoke the entire token family, so require a new
+                // interactive authorization instead.
+                markOAuthRefreshFailure(name, url, refresh.message)
             }
         }
     }
@@ -799,8 +770,6 @@ class McpClientService(
 
     private companion object {
         const val OAUTH_REFRESH_LEEWAY_SECONDS = 60L
-        const val OAUTH_REFRESH_RETRY_SECONDS = 30L
-        const val MAX_OAUTH_REFRESH_ATTEMPTS = 3
     }
 
     private fun extractFirstNumber(text: String): Number? {
