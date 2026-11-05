@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2026.11.05]
+
+### Fixed
+- Prevented concurrent MCP OAuth refresh paths from replaying Devstack's rotating refresh tokens; refreshed credential bundles are persisted before they are shared with other callers.
+- Request `offline_access` when the MCP protected-resource metadata advertises it, allowing providers that require the scope to issue refresh tokens.
+- Preserved MCP OAuth credentials after preflight discovery or temporary network failures, including laptop sleep/resume, and retried only failures that occur before a refresh token is sent.
+- Require interactive authorization after a token request is rejected or its outcome is ambiguous, avoiding unsafe replay of single-use refresh tokens.
+
 ## [2026.10.27]
 
 ### Fixed
