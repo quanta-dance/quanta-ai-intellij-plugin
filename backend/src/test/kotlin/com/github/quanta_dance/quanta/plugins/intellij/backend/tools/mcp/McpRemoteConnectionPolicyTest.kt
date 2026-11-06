@@ -45,34 +45,10 @@ class McpRemoteConnectionPolicyTest {
     }
 
     @Test
-    fun retriesRefreshOnlyWhileTheCurrentTokenCanStillCoverTheRetryDelay() {
-        assertTrue(
-            shouldRetryOAuthRefresh(
-                attempts = 1,
-                expiresAtSeconds = 1_000,
-                nowSeconds = 900,
-                maxAttempts = 3,
-                retrySeconds = 30,
-            ),
-        )
-        assertFalse(
-            shouldRetryOAuthRefresh(
-                attempts = 3,
-                expiresAtSeconds = 1_000,
-                nowSeconds = 900,
-                maxAttempts = 3,
-                retrySeconds = 30,
-            ),
-        )
-        assertFalse(
-            shouldRetryOAuthRefresh(
-                attempts = 1,
-                expiresAtSeconds = 930,
-                nowSeconds = 900,
-                maxAttempts = 3,
-                retrySeconds = 30,
-            ),
-        )
+    fun `preserves stored credentials through bounded preflight recovery attempts`() {
+        assertTrue(hasOAuthRefreshRecoveryAttemptRemaining(attempt = 0, maxAttempts = 3))
+        assertTrue(hasOAuthRefreshRecoveryAttemptRemaining(attempt = 2, maxAttempts = 3))
+        assertFalse(hasOAuthRefreshRecoveryAttemptRemaining(attempt = 3, maxAttempts = 3))
     }
 
     @Test

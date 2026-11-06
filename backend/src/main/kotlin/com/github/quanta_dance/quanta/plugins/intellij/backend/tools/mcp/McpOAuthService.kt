@@ -27,6 +27,43 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
+/** Combines required resource scopes with advertised offline access without requesting unadvertised scopes. */
+internal fun oauthAuthorizationScopes(
+    challengeScopes: List<String>,
+    protectedResourceScopes: List<String>,
+): List<String> {
+    val requiredScopes = challengeScopes.ifEmpty { protectedResourceScopes }
+    return (requiredScopes + protectedResourceScopes.filter { it == "offline_access" }).distinct()
+}
+
+/**
+ * Coalesces refreshes for one credential so refresh-token rotation cannot invalidate a token family.
+ *
+ * OAuth providers may invalidate an entire token family when the same rotating refresh token is presented twice.
+ * Both background scheduling and an on-demand reconnect therefore share one refresh operation per credential.
+ */
+internal class McpOAuthRefreshCoordinator<T> {
+    private val requests = ConcurrentHashMap<String, CompletableFuture<T>>()
+
+    fun refresh(
+        key: String,
+        action: () -> T,
+    ): T {
+        val newRequest = CompletableFuture<T>()
+        val existingRequest = requests.putIfAbsent(key, newRequest)
+        if (existingRequest != null) return existingRequest.get()
+
+        return try {
+            action().also(newRequest::complete)
+        } catch (error: Throwable) {
+            newRequest.completeExceptionally(error)
+            throw error
+        } finally {
+            requests.remove(key, newRequest)
+        }
+    }
+}
+
 /** Implements OAuth 2.1 Authorization Code with PKCE for protected remote MCP servers. */
 internal class McpOAuthService(
     private val httpClient: HttpClient = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build(),
@@ -36,6 +73,7 @@ internal class McpOAuthService(
     private val mapper = jacksonObjectMapper()
 
     private val authorizationRequests = ConcurrentHashMap<String, CompletableFuture<String>>()
+    private val refreshRequests = McpOAuthRefreshCoordinator<OAuthToken>()
     private val recentAuthorizationFailures = ConcurrentHashMap<String, RecentFailure>()
 
     /**
@@ -113,7 +151,7 @@ internal class McpOAuthService(
         val token =
             if (stored?.refreshToken != null && reusableClientId != null) {
                 log.info("MCP OAuth: refreshing stored token for '$serverName'")
-                runCatching { refresh(metadata, reusableClientId, stored.refreshToken, resource) }
+                runCatching { refreshStoredToken(serverName, resource, metadata, reusableClientId) }
                     .onFailure {
                         log.info(
                             "MCP OAuth refresh failed for '$serverName'; starting interactive login: ${it.message}",
@@ -124,7 +162,7 @@ internal class McpOAuthService(
             } ?: authorize(
                 serverName = serverName,
                 metadata = metadata,
-                scopes = challenge.scopes.ifEmpty { protectedResource.scopes },
+                scopes = oauthAuthorizationScopes(challenge.scopes, protectedResource.scopes),
                 configuredClientId = configuredClientId,
                 savedClientId = reusableClientId,
                 resource = resource,
@@ -150,19 +188,26 @@ internal class McpOAuthService(
         val resource = requireHttps(resourceUrl, "MCP resource URL")
         val stored =
             loadToken(serverName, resource)
-                ?: return TokenRefreshResult.Failure("No stored OAuth token is available")
-        val refreshToken =
-            stored.refreshToken
-                ?: return TokenRefreshResult.Failure("The stored OAuth token does not include a refresh token")
+                ?: return TokenRefreshResult.TerminalFailure("No stored OAuth token is available")
+        if (stored.refreshToken == null) {
+            return TokenRefreshResult.TerminalFailure("The stored OAuth token does not include a refresh token")
+        }
         val clientId =
             configuredClientId?.takeIf { it.isNotBlank() } ?: loadClientId(serverName, resource)
-                ?: return TokenRefreshResult.Failure("No OAuth client ID is available for token refresh")
+                ?: return TokenRefreshResult.TerminalFailure("No OAuth client ID is available for token refresh")
+
+        val metadata =
+            runCatching {
+                val protectedResource = discoverProtectedResource(resource, challenge.metadataUri)
+                discoverAuthorizationServer(protectedResource.authorizationServer)
+            }.getOrElse { error ->
+                val message = error.message ?: error.javaClass.simpleName
+                log.warn("MCP OAuth: refresh discovery failed for '$serverName': $message")
+                return TokenRefreshResult.RetryableFailure(message)
+            }
 
         return runCatching {
-            val protectedResource = discoverProtectedResource(resource, challenge.metadataUri)
-            val metadata = discoverAuthorizationServer(protectedResource.authorizationServer)
-            val refreshed = refresh(metadata, clientId, refreshToken, resource)
-            saveToken(serverName, resource, refreshed)
+            val refreshed = refreshStoredToken(serverName, resource, metadata, clientId)
             QDLog.info(log) {
                 "MCP OAuth: refreshed stored token for '$serverName' " +
                     "(${safeTokenDescription(refreshed.accessToken)}, refreshTokenPresent=${refreshed.refreshToken != null})"
@@ -170,8 +215,10 @@ internal class McpOAuthService(
             TokenRefreshResult.Success(refreshed.expiresAt)
         }.getOrElse { error ->
             val message = error.message ?: error.javaClass.simpleName
-            log.warn("MCP OAuth: background token refresh failed for '$serverName': $message")
-            TokenRefreshResult.Failure(message)
+            log.warn("MCP OAuth: token refresh request failed for '$serverName': $message")
+            // The token endpoint may have consumed a rotating refresh token even when its response was lost.
+            // Retrying it is unsafe, so force interactive authorization instead.
+            TokenRefreshResult.TerminalFailure(message)
         }
     }
 
@@ -365,6 +412,21 @@ internal class McpOAuthService(
             callback.stop(0)
         }
     }
+
+    private fun refreshStoredToken(
+        serverName: String,
+        resource: URI,
+        metadata: AuthorizationServerMetadata,
+        clientId: String,
+    ): OAuthToken =
+        refreshRequests.refresh("$serverName|$resource") {
+            val stored = loadToken(serverName, resource) ?: error("No stored OAuth token is available")
+            val refreshToken = stored.refreshToken ?: error("The stored OAuth token does not include a refresh token")
+            val refreshed = refresh(metadata, clientId, refreshToken, resource)
+            // Persist the rotated refresh token before returning it to any concurrent caller.
+            saveToken(serverName, resource, refreshed)
+            refreshed
+        }
 
     private fun refresh(
         metadata: AuthorizationServerMetadata,
@@ -660,7 +722,13 @@ internal class McpOAuthService(
             val expiresAt: Long,
         ) : TokenRefreshResult
 
-        data class Failure(
+        /** Refresh-token request was not sent, so the stored token family remains safe to retry later. */
+        data class RetryableFailure(
+            val message: String,
+        ) : TokenRefreshResult
+
+        /** The refresh-token request was sent or local credentials are incomplete; require reauthorization. */
+        data class TerminalFailure(
             val message: String,
         ) : TokenRefreshResult
     }

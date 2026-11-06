@@ -65,14 +65,6 @@ internal fun oauthRefreshDelayMillis(
     leewaySeconds: Long,
 ): Long = ((expiresAtSeconds - nowSeconds - leewaySeconds).coerceAtLeast(0L)) * 1_000
 
-internal fun shouldRetryOAuthRefresh(
-    attempts: Int,
-    expiresAtSeconds: Long,
-    nowSeconds: Long,
-    maxAttempts: Int,
-    retrySeconds: Long,
-): Boolean = attempts < maxAttempts && expiresAtSeconds - nowSeconds > retrySeconds
-
 /** Produces concise recoverable MCP connection copy while retaining full failures in the IDE log. */
 internal fun mcpConnectionErrorMessage(error: Throwable): String =
     when {
@@ -84,6 +76,12 @@ internal fun mcpConnectionErrorMessage(error: Throwable): String =
             error.message ?: error.javaClass.simpleName
         }
     }
+
+/** A refresh preflight may be retried only when no refresh token was sent. */
+internal fun hasOAuthRefreshRecoveryAttemptRemaining(
+    attempt: Int,
+    maxAttempts: Int,
+): Boolean = attempt < maxAttempts
 
 /**
  * Reactor reports exceptions emitted after a subscriber has already been cancelled through its global
@@ -137,7 +135,6 @@ class McpClientService(
     private val authorizationRequiredServers = ConcurrentHashMap.newKeySet<String>()
     private val oauthChallenges = ConcurrentHashMap<String, McpOAuthService.AuthorizationChallenge>()
     private val oauthRefreshJobs = ConcurrentHashMap<String, Job>()
-    private val oauthRefreshFailures = ConcurrentHashMap<String, Int>()
 
     // A failed remote endpoint must not repeatedly trigger OAuth or connection attempts during tool polling.
     // It is cleared only by a configuration change/removal or a successful connection.
@@ -354,7 +351,6 @@ class McpClientService(
         connectingServers.remove(name)
         oauthRefreshJobs.remove(name)?.cancel()
         oauthChallenges.remove(name)
-        oauthRefreshFailures.remove(name)
         clients.remove(name)?.let { client ->
             runCatching { client.close() }
         }
@@ -546,7 +542,6 @@ class McpClientService(
                 failedUrlConnections.remove(name)
                 authorizationRequiredServers.remove(name)
                 authorizationRequestedServers.remove(name)
-                oauthRefreshFailures.remove(name)
                 if (oauthTokenAttached) {
                     oauth.storedTokenExpiresAt(name, url)?.let { expiresAt ->
                         scheduleOAuthRefresh(name, cfg, expiresAt)
@@ -615,33 +610,39 @@ class McpClientService(
         name: String,
         cfg: McpServerConfig,
         delayMillis: Long,
+        attempt: Int = 0,
     ) {
         val job =
             executionContexts.mcpLifecycleScope.launch {
                 delay(delayMillis)
-                refreshOAuthToken(name, cfg)
+                refreshOAuthToken(name, cfg, attempt)
             }
         oauthRefreshJobs.put(name, job)?.cancel()
-        QDLog.debug(log) { "MCP OAuth: scheduled token refresh for '$name' in ${delayMillis}ms" }
+        QDLog.debug(log) {
+            "MCP OAuth: scheduled token refresh for '$name' in ${delayMillis}ms (attempt ${attempt + 1})"
+        }
     }
 
     private fun refreshOAuthToken(
         name: String,
         cfg: McpServerConfig,
+        attempt: Int,
     ) {
         val url = cfg.url ?: return
         val challenge =
             oauthChallenges[name]
-                ?: oauth.probeAuthorization(url, cfg.headers).challenge
-                ?: run {
-                    markOAuthRefreshFailure(name, url, "The MCP server no longer advertises an OAuth challenge")
-                    return
-                }
+                ?: runCatching { oauth.probeAuthorization(url, cfg.headers).challenge }
+                    .getOrElse { error ->
+                        deferOAuthRefresh(name, cfg, attempt, error.message ?: error.javaClass.simpleName)
+                        return
+                    } ?: run {
+                deferOAuthRefresh(name, cfg, attempt, "The MCP server did not advertise an OAuth challenge")
+                return
+            }
         oauthChallenges[name] = challenge
         when (val refresh = oauth.refreshStoredToken(name, url, challenge, cfg.oauthClientId)) {
             is McpOAuthService.TokenRefreshResult.Success -> {
                 QDLog.info(log) { "MCP OAuth: token refresh succeeded for '$name'; reconnecting with the refreshed token" }
-                oauthRefreshFailures.remove(name)
                 clients.remove(name)?.let { client -> runCatching { client.close() } }
                 toolCache.remove(name)
                 serverErrors.remove(name)
@@ -650,31 +651,48 @@ class McpClientService(
                 connectAndDiscoverAsync(name, cfg)
             }
 
-            is McpOAuthService.TokenRefreshResult.Failure -> {
-                val expiresAt = oauth.storedTokenExpiresAt(name, url) ?: 0L
-                val attempts = oauthRefreshFailures.merge(name, 1, Int::plus) ?: 1
-                if (
-                    shouldRetryOAuthRefresh(
-                        attempts = attempts,
-                        expiresAtSeconds = expiresAt,
-                        nowSeconds =
-                            java.time.Instant
-                                .now()
-                                .epochSecond,
-                        maxAttempts = MAX_OAUTH_REFRESH_ATTEMPTS,
-                        retrySeconds = OAUTH_REFRESH_RETRY_SECONDS,
-                    )
-                ) {
-                    QDLog.warn(log) {
-                        "MCP OAuth: refresh attempt $attempts for '$name' failed before expiry; retrying in " +
-                            "$OAUTH_REFRESH_RETRY_SECONDS seconds: ${refresh.message}"
-                    }
-                    scheduleOAuthRefreshAttempt(name, cfg, OAUTH_REFRESH_RETRY_SECONDS * 1_000)
-                } else {
-                    markOAuthRefreshFailure(name, url, refresh.message)
-                }
+            is McpOAuthService.TokenRefreshResult.RetryableFailure -> {
+                deferOAuthRefresh(name, cfg, attempt, refresh.message)
+            }
+
+            is McpOAuthService.TokenRefreshResult.TerminalFailure -> {
+                // Refresh-token rotation makes token-endpoint failures non-idempotent: the server may have
+                // consumed and rotated the token even when the client did not receive a usable response.
+                // Retrying could replay the old token and revoke the entire token family, so require a new
+                // interactive authorization instead.
+                markOAuthRefreshFailure(name, url, refresh.message)
             }
         }
+    }
+
+    /**
+     * Retains credentials when connectivity or OAuth metadata discovery failed before a refresh token was sent.
+     * This is common immediately after waking from sleep while network or VPN routes are still being restored.
+     */
+    private fun deferOAuthRefresh(
+        name: String,
+        cfg: McpServerConfig,
+        attempt: Int,
+        reason: String,
+    ) {
+        if (hasOAuthRefreshRecoveryAttemptRemaining(attempt, MAX_OAUTH_REFRESH_RECOVERY_ATTEMPTS)) {
+            QDLog.warn(log) {
+                "MCP OAuth: refresh preflight failed for '$name'; preserving credentials and retrying: $reason"
+            }
+            scheduleOAuthRefreshAttempt(name, cfg, OAUTH_REFRESH_RECOVERY_DELAY_MILLIS, attempt + 1)
+            return
+        }
+
+        oauthRefreshJobs.remove(name)
+        serverErrors[name] = "OAuth refresh is temporarily unavailable. Select Retry after network access is restored."
+        notifyRuntimeConfigIssue(
+            title = "MCP authorization refresh delayed",
+            content =
+                "Could not verify OAuth metadata for MCP server '$name'. " +
+                    "Stored credentials were kept; use Retry after network access is restored.",
+            type = NotificationType.WARNING,
+        )
+        QDLog.warn(log) { "MCP OAuth: refresh preflight retries exhausted for '$name'; credentials retained: $reason" }
     }
 
     private fun markOAuthRefreshFailure(
@@ -799,8 +817,8 @@ class McpClientService(
 
     private companion object {
         const val OAUTH_REFRESH_LEEWAY_SECONDS = 60L
-        const val OAUTH_REFRESH_RETRY_SECONDS = 30L
-        const val MAX_OAUTH_REFRESH_ATTEMPTS = 3
+        const val OAUTH_REFRESH_RECOVERY_DELAY_MILLIS = 30_000L
+        const val MAX_OAUTH_REFRESH_RECOVERY_ATTEMPTS = 3
     }
 
     private fun extractFirstNumber(text: String): Number? {
