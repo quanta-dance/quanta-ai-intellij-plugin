@@ -86,6 +86,9 @@ class FrontendChatRepositoryModel(
     private val _mcpConfigurationErrorFlow = MutableStateFlow<String?>(null)
     override val mcpConfigurationErrorFlow: StateFlow<String?> = _mcpConfigurationErrorFlow.asStateFlow()
 
+    /** True when an IDE notification requests that the MCP tools dialog be opened. */
+    val openMcpToolsDialogFlow = MutableStateFlow(false)
+
     private val _delegatedTasksFlow = MutableStateFlow<List<DelegatedTaskDto>>(emptyList())
     override val delegatedTasksFlow: StateFlow<List<DelegatedTaskDto>> = _delegatedTasksFlow.asStateFlow()
 
@@ -152,6 +155,7 @@ class FrontendChatRepositoryModel(
             _mcpServersFlow.value = mcpStatuses.servers
             _mcpConfigurationLoadingFlow.value = mcpStatuses.configurationLoading
             _mcpConfigurationErrorFlow.value = mcpStatuses.configurationError
+            openMcpToolsDialogFlow.value = mcpStatuses.openToolsDialog
         }.onFailure { error ->
             _mcpConfigurationLoadingFlow.value = false
             _mcpConfigurationErrorFlow.value =

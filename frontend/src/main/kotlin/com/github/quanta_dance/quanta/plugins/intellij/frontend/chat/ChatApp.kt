@@ -77,6 +77,7 @@ import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.ModularPluginFrontendBundle
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel.ChatViewModel
+import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel.FrontendChatRepositoryModel
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel.MessageInputState
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendMcpConfigService
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.settings.FrontendQuantaSettingsState
@@ -159,6 +160,11 @@ fun chatApp(
     val mcpServers by viewModel.mcpServersFlow.collectAsState(emptyList())
     val mcpConfigurationLoading by viewModel.mcpConfigurationLoadingFlow.collectAsState(true)
     val mcpConfigurationError by viewModel.mcpConfigurationErrorFlow.collectAsState(null)
+    val openMcpToolsDialog by
+        project
+            .service<FrontendChatRepositoryModel>()
+            .openMcpToolsDialogFlow
+            .collectAsState()
     val delegatedTasks by viewModel.delegatedTasksFlow.collectAsState(emptyList())
     val channelEvents by viewModel.channelEventsFlow.collectAsState(emptyList())
     val quantaAcpInvite by viewModel.quantaAcpInviteFlow.collectAsState(null)
@@ -173,6 +179,11 @@ fun chatApp(
     var lastSpokenMessageId by remember { mutableStateOf<String?>(null) }
     var showAgenticTeamDialog by remember { mutableStateOf(false) }
     var showMcpToolsDialog by remember { mutableStateOf(false) }
+    var selectedMcpToolCatalogServer by remember { mutableStateOf<McpServerStatusDto?>(null) }
+
+    LaunchedEffect(openMcpToolsDialog) {
+        if (openMcpToolsDialog) showMcpToolsDialog = true
+    }
 
     val lastMessageScrollKey =
         remember(chatMessages) {
@@ -450,8 +461,13 @@ fun chatApp(
                     onSetEnabled = viewModel::onSetMcpServerEnabled,
                     onReconnect = viewModel::onRetryMcpServerConnection,
                     onEditConfiguration = { openMcpConfigurationInEditor(project) },
+                    onShowToolCatalog = { server -> selectedMcpToolCatalogServer = server },
                     onDismiss = { showMcpToolsDialog = false },
                 )
+            }
+
+            selectedMcpToolCatalogServer?.let { server ->
+                mcpToolCatalogDialog(server = server, onDismiss = { selectedMcpToolCatalogServer = null })
             }
         },
     )
@@ -480,6 +496,7 @@ private fun mcpToolsDialog(
     onSetEnabled: (String, Boolean) -> Unit,
     onReconnect: (String) -> Unit,
     onEditConfiguration: () -> Unit,
+    onShowToolCatalog: (McpServerStatusDto) -> Unit,
     onDismiss: () -> Unit,
 ) {
     Dialog(onDismissRequest = onDismiss) {
@@ -554,6 +571,17 @@ private fun mcpToolsDialog(
                                         server.connectionDescription(),
                                         style = JewelTheme.defaultTextStyle.copy(fontSize = 11.sp, color = Color.Gray),
                                     )
+                                    if (server.connected) {
+                                        Text(
+                                            "${server.toolCount} tool${if (server.toolCount == 1) "" else "s"}",
+                                            modifier = Modifier.clickable { onShowToolCatalog(server) },
+                                            style =
+                                                JewelTheme.defaultTextStyle.copy(
+                                                    fontSize = 11.sp,
+                                                    color = Color(0xFF6EA8FE),
+                                                ),
+                                        )
+                                    }
                                     server.error?.let { error ->
                                         Text(
                                             error,
@@ -639,10 +667,65 @@ private fun McpServerStatusDto.connectionDescription(): String =
         requiresAuthorization && connecting -> "Authorization in progress…"
         requiresAuthorization -> "Authorization required"
         connecting -> "Checking connection and discovering tools…"
-        connected -> "Connected · $toolCount tool${if (toolCount == 1) "" else "s"}"
+        connected -> "Connected"
         enabledForCurrentChat -> "Enabled for this chat · Not connected"
         else -> "Disabled for this chat"
     }
+
+@Composable
+private fun mcpToolCatalogDialog(
+    server: McpServerStatusDto,
+    onDismiss: () -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier =
+                Modifier
+                    .widthIn(min = 460.dp, max = 680.dp)
+                    .background(ChatAppColors.Panel.background, RoundedCornerShape(12.dp))
+                    .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text(
+                "${server.name} tools (${server.tools.size})",
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 16.sp,
+            )
+            if (server.tools.isEmpty()) {
+                Text(
+                    "No tool metadata is available yet. Reopen this catalog after discovery completes.",
+                    style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier.heightIn(max = 420.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(server.tools, key = { tool -> tool.name }) { tool ->
+                        Column(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .background(Color.White.copy(alpha = 0.04f), RoundedCornerShape(8.dp))
+                                    .padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text(tool.name, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                tool.description?.takeIf(String::isNotBlank)
+                                    ?: "No description provided by this MCP server.",
+                                style = JewelTheme.defaultTextStyle.copy(fontSize = 12.sp, color = Color.Gray),
+                            )
+                        }
+                    }
+                }
+            }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                DefaultButton(onClick = onDismiss) { Text("Done") }
+            }
+        }
+    }
+}
 
 @Composable
 private fun agenticTeamDialog(

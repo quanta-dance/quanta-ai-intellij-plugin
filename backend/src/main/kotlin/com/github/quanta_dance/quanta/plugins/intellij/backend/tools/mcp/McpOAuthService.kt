@@ -164,7 +164,6 @@ internal class McpOAuthService(
                 metadata = metadata,
                 scopes = oauthAuthorizationScopes(challenge.scopes, protectedResource.scopes),
                 configuredClientId = configuredClientId,
-                savedClientId = reusableClientId,
                 resource = resource,
             )
         saveToken(serverName, resource, token)
@@ -340,12 +339,17 @@ internal class McpOAuthService(
         return response.requiredString("client_id", endpoint)
     }
 
+    /**
+     * Starts a fresh interactive authorization. A dynamically registered client is deliberately not reused
+     * here: each flow binds a new ephemeral loopback redirect URI, and the authorization server may have
+     * discarded its dynamic-client database. Persisted dynamic client IDs remain available only for token
+     * refresh, which does not use a redirect URI.
+     */
     private fun authorize(
         serverName: String,
         metadata: AuthorizationServerMetadata,
         scopes: List<String>,
         configuredClientId: String?,
-        savedClientId: String?,
         resource: URI,
     ): OAuthToken {
         // Bind an ephemeral loopback port before constructing the redirect URI. Multiple MCP servers can
@@ -355,7 +359,6 @@ internal class McpOAuthService(
             val redirectUri = "http://127.0.0.1:${callback.address.port}/oauth/callback"
             val clientId =
                 configuredClientId?.takeIf { it.isNotBlank() }
-                    ?: savedClientId
                     ?: registerClient(metadata, resource, redirectUri).also { saveClientId(serverName, resource, it) }
             val state = randomUrlSafe()
             val verifier = randomUrlSafe(64)

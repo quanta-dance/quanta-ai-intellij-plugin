@@ -6,6 +6,8 @@ package com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp
 import com.github.quanta_dance.quanta.plugins.intellij.backend.logging.QDLog
 import com.github.quanta_dance.quanta.plugins.intellij.backend.services.BackendExecutionContextsService
 import com.github.quanta_dance.quanta.plugins.intellij.backend.settings.BackendRuntimeSettingsService
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpToolDescriptorDto
+import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
@@ -121,6 +123,7 @@ class McpClientService(
         val connected: Boolean,
         val connecting: Boolean,
         val toolCount: Int,
+        val tools: List<McpToolDescriptorDto>,
         val error: String? = null,
     )
 
@@ -139,6 +142,7 @@ class McpClientService(
     // A failed remote endpoint must not repeatedly trigger OAuth or connection attempts during tool polling.
     // It is cleared only by a configuration change/removal or a successful connection.
     private val failedUrlConnections = ConcurrentHashMap<String, String>()
+    private val openMcpToolsDialogRequested = AtomicBoolean(false)
     private val initialized = AtomicBoolean(false)
     private val refreshScheduled = AtomicBoolean(false)
 
@@ -182,17 +186,31 @@ class McpClientService(
         connectionJobs.clear()
     }
 
+    /** Requests that the frontend open its MCP tools dialog on its next status poll. */
+    fun requestMcpToolsDialog() {
+        openMcpToolsDialogRequested.set(true)
+    }
+
+    fun consumeMcpToolsDialogRequest(): Boolean = openMcpToolsDialogRequested.getAndSet(false)
+
     private fun notifyRuntimeConfigIssue(
         title: String,
         content: String,
         type: NotificationType,
+        openMcpToolsAction: Boolean = false,
     ) {
         val group = NotificationGroupManager.getInstance().getNotificationGroup("Plugin Notifications")
         if (group == null) {
             QDLog.info(log) { "$title: $content" }
             return
         }
-        group.createNotification(title, content, type).notify(project)
+        val notification = group.createNotification(title, content, type)
+        if (openMcpToolsAction) {
+            notification.addAction(
+                NotificationAction.createSimpleExpiring("Open MCP tools") { requestMcpToolsDialog() },
+            )
+        }
+        notification.notify(project)
     }
 
     /**
@@ -569,6 +587,7 @@ class McpClientService(
                 title = "MCP server unavailable",
                 content = "Could not connect to MCP server '$name': $failure. Use Retry in MCP tools to try again.",
                 type = NotificationType.WARNING,
+                openMcpToolsAction = true,
             )
             QDLog.warn(log) {
                 "ensureClient(url): pausing automatic retries for configured server '$name' at $url " +
@@ -783,9 +802,9 @@ class McpClientService(
     fun getServerStatus(name: String): ServerStatus {
         val connected = clients.containsKey(name)
         val connecting = !connected && name in connectingServers
-        val toolCount = toolCache[name]?.size ?: 0
+        val tools = toolCache[name].orEmpty().map { tool -> McpToolDescriptorDto(tool.name(), tool.description()) }
         val error = serverErrors[name]
-        return ServerStatus(connected, connecting, toolCount, error)
+        return ServerStatus(connected, connecting, tools.size, tools, error)
     }
 
     /** Whether the last configured-header probe received HTTP 401 for this server. */
