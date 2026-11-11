@@ -104,6 +104,7 @@ class QuantaBackendRpcApi : QuantaBackendApi {
                     connected = status.connected,
                     connecting = status.connecting,
                     toolCount = status.toolCount,
+                    tools = status.tools,
                     requiresAuthorization = mcp.requiresAuthorization(name) && !status.connected,
                     error = status.error,
                 )
@@ -112,6 +113,7 @@ class QuantaBackendRpcApi : QuantaBackendApi {
             servers = servers,
             configurationLoading = mcp.isConfigurationLoading(),
             configurationError = mcp.getConfigLoadError(),
+            openToolsDialog = mcp.consumeMcpToolsDialogRequest(),
         )
     }
 
