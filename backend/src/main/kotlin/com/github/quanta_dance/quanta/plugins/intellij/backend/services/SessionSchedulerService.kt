@@ -10,7 +10,9 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -40,30 +42,26 @@ class SessionSchedulerService(
 
     private val logger = Logger.getInstance(SessionSchedulerService::class.java)
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-    private val dispatcherJob: Job =
-        scope.launch {
-            while (true) {
-                try {
-                    delay(1_000)
-                    fireDueJobs()
-                } catch (_: Throwable) {
-                }
-            }
-        }
 
     private val jobs = ConcurrentHashMap<String, JobInfo>()
+    private val scheduledJobs = ConcurrentHashMap<String, Job>()
     private val agentJobIds = ConcurrentHashMap<String, String>()
 
     override fun dispose() {
-        dispatcherJob.cancel()
         scope.cancel()
         jobs.clear()
+        scheduledJobs.clear()
         agentJobIds.clear()
     }
 
     fun list(): List<JobInfo> = jobs.values.sortedBy { it.nextRunAtMs }
 
-    fun cancel(jobId: String): Boolean = jobs.remove(jobId) != null
+    fun cancel(jobId: String): Boolean {
+        scheduledJobs.remove(jobId)?.cancel()
+        val job = jobs.remove(jobId) ?: return false
+        agentJobIds.remove(job.ownerAgentId, jobId)
+        return true
+    }
 
     fun add(
         name: String,
@@ -74,34 +72,34 @@ class SessionSchedulerService(
         val id = UUID.randomUUID().toString()
         val info = JobInfo(id, name, message, System.currentTimeMillis() + delayMs, ownerAgentId)
         jobs[id] = info
-        agentJobIds[ownerAgentId]?.let { previousJobId -> jobs.remove(previousJobId) }
-        agentJobIds[ownerAgentId] = id
+        agentJobIds.put(ownerAgentId, id)?.let { previousJobId -> cancel(previousJobId) }
+        val scheduledJob =
+            scope.launch(start = CoroutineStart.LAZY) {
+                delay(delayMs.coerceAtLeast(0))
+                fireJob(info)
+            }
+        scheduledJobs[id] = scheduledJob
+        scheduledJob.start()
         return info
     }
 
-    private fun fireDueJobs() {
-        val now = System.currentTimeMillis()
-        val dueJobs = jobs.values.filter { it.nextRunAtMs <= now }
-        if (dueJobs.isEmpty()) return
-
-        dueJobs.forEach { job ->
-            if (!jobs.remove(job.id, job)) return@forEach
-            agentJobIds.remove(job.ownerAgentId, job.id)
-            try {
-                scope.launch {
-                    val reminderContext =
-                        buildString {
-                            appendLine("A scheduled reminder has fired.")
-                            appendLine("Reminder context: ${job.message}")
-                            appendLine("Respond naturally to the user with a friendly reminder.")
-                            appendLine("Do not echo the reminder context verbatim or say that the reminder was acknowledged.")
-                        }
-                    project.service<ChatConversationService>().sendScheduledReminder(reminderContext)
-                    QDLog.debug(logger) { "Scheduled reminder fired: job=${job.id} owner=${job.ownerAgentId}" }
+    private suspend fun fireJob(job: JobInfo) {
+        if (!jobs.remove(job.id, job)) return
+        scheduledJobs.remove(job.id)
+        agentJobIds.remove(job.ownerAgentId, job.id)
+        try {
+            val reminderContext =
+                buildString {
+                    appendLine("A scheduled reminder has fired.")
+                    appendLine("Reminder context: ${job.message}")
+                    appendLine("Respond naturally to the user with a friendly reminder.")
+                    appendLine("Do not echo the reminder context verbatim or say that the reminder was acknowledged.")
                 }
-            } catch (t: Throwable) {
-                QDLog.warn(logger, { "Failed to fire scheduled reminder job=${job.id}" }, t)
-            }
+            project.service<ChatConversationService>().sendScheduledReminder(reminderContext)
+            QDLog.debug(logger) { "Scheduled reminder fired: job=${job.id} owner=${job.ownerAgentId}" }
+        } catch (t: Throwable) {
+            if (t is CancellationException) throw t
+            QDLog.warn(logger, { "Failed to fire scheduled reminder job=${job.id}" }, t)
         }
     }
 }

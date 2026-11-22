@@ -178,13 +178,6 @@ class FrontendChatRepositoryModel(
         }.onFailure { error ->
             logger.warn("Failed to refresh current delegated tasks from backend", error)
         }
-
-        runCatching {
-            _acpAgentsFlow.value = backendApi.getKnownAcpAgents(projectPath)
-            _availableLocalQuantaAcpSessionsFlow.value = backendApi.getAvailableLocalQuantaAcpSessions(projectPath)
-        }.onFailure { error ->
-            logger.warn("Failed to load known ACP agents or local Quanta shares from backend", error)
-        }
     }
 
     private suspend fun pollCurrentState() {
