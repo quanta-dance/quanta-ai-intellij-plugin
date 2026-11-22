@@ -18,6 +18,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPla
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationParticipantDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskStatusDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.LocalQuantaAcpSessionDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServerStatusDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.toChatMessage
@@ -49,6 +50,9 @@ class FrontendChatRepositoryModel(
     private val logger = thisLogger()
 
     companion object {
+        private const val ACTIVE_POLL_INTERVAL_MS = 1_500L
+        private const val IDLE_POLL_INTERVAL_MS = 15_000L
+
         fun getInstance(project: Project): FrontendChatRepositoryModel = project.getService(FrontendChatRepositoryModel::class.java)
     }
 
@@ -193,10 +197,15 @@ class FrontendChatRepositoryModel(
 
     private suspend fun pollCurrentState() {
         while (true) {
+            delay(if (hasActiveWork()) ACTIVE_POLL_INTERVAL_MS else IDLE_POLL_INTERVAL_MS)
             refreshCurrentState()
-            delay(1_500)
         }
     }
+
+    private fun hasActiveWork(): Boolean =
+        _messagesFlow.value.any(ChatMessage::isAIThinkingMessage) ||
+            _delegatedTasksFlow.value.any { it.status == DelegatedTaskStatusDto.RUNNING } ||
+            _mcpConfigurationLoadingFlow.value
 
     override suspend fun sendMessage(messageContent: String) {
         syncSettingsToBackend()

@@ -252,7 +252,7 @@ fun chatApp(
             if (maxMessageWidth != configuredMaxMessageWidth) {
                 maxMessageWidth = configuredMaxMessageWidth
             }
-            kotlinx.coroutines.delay(300)
+            kotlinx.coroutines.delay(1_000)
         }
     }
 
@@ -1328,14 +1328,6 @@ private fun agentPresenceAvatar(presence: AgentPresence) {
     }
 
     val isWorking = presence.state == AgentPresenceState.WORKING
-    val activityTransition = rememberInfiniteTransition(label = "agentPresenceActivity")
-    val activityPulse by
-        activityTransition.animateFloat(
-            initialValue = 0.25f,
-            targetValue = 0.75f,
-            animationSpec = infiniteRepeatable(tween(durationMillis = 900, easing = LinearEasing)),
-            label = "agentPresencePulse",
-        )
 
     if (showProfileDialog) {
         agentProfileDialog(
@@ -1355,18 +1347,28 @@ private fun agentPresenceAvatar(presence: AgentPresence) {
                 .onPointerEvent(PointerEventType.Exit) { isAvatarHovered = false },
         contentAlignment = Alignment.Center,
     ) {
-        Canvas(
-            modifier =
-                Modifier
-                    .size(42.dp)
-                    .alpha(if (isWorking) activityPulse else 0f),
-        ) {
-            val strokeWidth = 2.dp.toPx()
-            drawCircle(
-                color = presence.state.color,
-                radius = size.minDimension / 2 - strokeWidth / 2 - 1.dp.toPx(),
-                style = Stroke(width = strokeWidth),
-            )
+        if (isWorking) {
+            val activityTransition = rememberInfiniteTransition(label = "agentPresenceActivity")
+            val activityPulse by
+                activityTransition.animateFloat(
+                    initialValue = 0.25f,
+                    targetValue = 0.75f,
+                    animationSpec = infiniteRepeatable(tween(durationMillis = 900, easing = LinearEasing)),
+                    label = "agentPresencePulse",
+                )
+            Canvas(
+                modifier =
+                    Modifier
+                        .size(42.dp)
+                        .alpha(activityPulse),
+            ) {
+                val strokeWidth = 2.dp.toPx()
+                drawCircle(
+                    color = presence.state.color,
+                    radius = size.minDimension / 2 - strokeWidth / 2 - 1.dp.toPx(),
+                    style = Stroke(width = strokeWidth),
+                )
+            }
         }
         if (showStatusPopup) {
             val hoverSummary =
