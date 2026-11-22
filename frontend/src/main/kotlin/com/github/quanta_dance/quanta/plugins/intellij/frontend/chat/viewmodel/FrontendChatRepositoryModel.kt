@@ -12,7 +12,6 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMess
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.ChatRepositoryRpcApi
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaBackendApi
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AcpAgentDto
-import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
@@ -95,9 +94,6 @@ class FrontendChatRepositoryModel(
 
     private val _delegatedTasksFlow = MutableStateFlow<List<DelegatedTaskDto>>(emptyList())
     override val delegatedTasksFlow: StateFlow<List<DelegatedTaskDto>> = _delegatedTasksFlow.asStateFlow()
-
-    private val _channelEventsFlow = MutableStateFlow<List<AgentChannelEventDto>>(emptyList())
-    override val channelEventsFlow: StateFlow<List<AgentChannelEventDto>> = _channelEventsFlow.asStateFlow()
 
     private val _quantaAcpInviteFlow = MutableStateFlow<String?>(null)
     override val quantaAcpInviteFlow: StateFlow<String?> = _quantaAcpInviteFlow.asStateFlow()
@@ -182,11 +178,7 @@ class FrontendChatRepositoryModel(
         }.onFailure { error ->
             logger.warn("Failed to refresh current delegated tasks from backend", error)
         }
-        runCatching {
-            _channelEventsFlow.value = backendApi.getCurrentChannelEvents(projectPath)
-        }.onFailure { error ->
-            logger.warn("Failed to refresh current channel events from backend", error)
-        }
+
         runCatching {
             _acpAgentsFlow.value = backendApi.getKnownAcpAgents(projectPath)
             _availableLocalQuantaAcpSessionsFlow.value = backendApi.getAvailableLocalQuantaAcpSessions(projectPath)
@@ -232,7 +224,9 @@ class FrontendChatRepositoryModel(
     }
 
     override suspend fun setAgenticMode(enabled: Boolean) {
-        FrontendQuantaSettingsState.instance.state.agenticEnabled = enabled
+        val settingsState = FrontendQuantaSettingsState.instance
+        settingsState.state.agenticEnabled = enabled
+        settingsState.notifySettingsChanged()
         syncSettingsToBackend()
         refreshCurrentState()
         if (enabled) refreshAllowedAcpAgentsIfNeeded()

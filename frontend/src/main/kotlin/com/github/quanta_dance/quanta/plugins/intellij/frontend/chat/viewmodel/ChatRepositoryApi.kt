@@ -5,7 +5,6 @@ package com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel
 
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AcpAgentDto
-import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
@@ -28,7 +27,7 @@ interface ChatRepositoryApi {
     val mcpConfigurationLoadingFlow: StateFlow<Boolean>
     val mcpConfigurationErrorFlow: StateFlow<String?>
     val delegatedTasksFlow: StateFlow<List<DelegatedTaskDto>>
-    val channelEventsFlow: StateFlow<List<AgentChannelEventDto>>
+
     val quantaAcpInviteFlow: StateFlow<String?>
     val availableLocalQuantaAcpSessionsFlow: StateFlow<List<LocalQuantaAcpSessionDto>>
 

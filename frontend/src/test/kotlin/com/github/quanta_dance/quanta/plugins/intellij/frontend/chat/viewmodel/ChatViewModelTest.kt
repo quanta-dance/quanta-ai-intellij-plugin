@@ -5,7 +5,6 @@ package com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel
 
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AcpAgentDto
-import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
@@ -95,7 +94,7 @@ class ChatViewModelTest {
             every { mcpConfigurationLoadingFlow } returns MutableStateFlow(false)
             every { mcpConfigurationErrorFlow } returns MutableStateFlow<String?>(null)
             every { delegatedTasksFlow } returns MutableStateFlow(emptyList<DelegatedTaskDto>())
-            every { channelEventsFlow } returns MutableStateFlow(emptyList<AgentChannelEventDto>())
+
             every { quantaAcpInviteFlow } returns MutableStateFlow<String?>(null)
             every { availableLocalQuantaAcpSessionsFlow } returns MutableStateFlow(emptyList<LocalQuantaAcpSessionDto>())
         }

@@ -77,7 +77,8 @@ class FrontendQuantaPluginConfigurable : Configurable {
     override fun apply() {
         settingsComponent.validateMaxMessageWidth()
 
-        val settings = FrontendQuantaSettingsState.instance.state
+        val settingsState = FrontendQuantaSettingsState.instance
+        val settings = settingsState.state
         settingsComponent.run {
             settings.openAiUrl = hostValue
             settings.openAiToken = tokenValue
@@ -98,6 +99,7 @@ class FrontendQuantaPluginConfigurable : Configurable {
             settings.actionConfigsJson =
                 actionConfigsValue.ifBlank { FrontendActionCatalog.encode(FrontendActionCatalog.defaultActions) }
         }
+        settingsState.notifySettingsChanged()
         syncSettingsToBackend(settings)
     }
 

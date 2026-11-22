@@ -5,7 +5,6 @@ package com.github.quanta_dance.quanta.plugins.intellij.shared.rpc
 
 import com.github.quanta_dance.quanta.plugins.intellij.models.Suggestion
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AcpAgentDto
-import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ApplyRefactorSuggestionResultDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
@@ -65,8 +64,6 @@ interface QuantaBackendApi : RemoteApi<Unit> {
     suspend fun getCollaborationParticipants(projectPath: String): List<CollaborationParticipantDto>
 
     suspend fun getCurrentDelegatedTasks(projectPath: String): List<DelegatedTaskDto>
-
-    suspend fun getCurrentChannelEvents(projectPath: String): List<AgentChannelEventDto>
 
     suspend fun createDefaultAgentTeam(projectPath: String): List<AgentInfoDto>
 
