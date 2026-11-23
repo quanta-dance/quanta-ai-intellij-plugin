@@ -104,6 +104,8 @@ class FrontendChatRepositoryModel(
         _availableLocalQuantaAcpSessionsFlow.asStateFlow()
 
     private val acpDiscoveryMutex = Mutex()
+    private val stateRefreshMutex = Mutex()
+    private var lastMessageRevision: Long? = null
     private val toolWindowVisibleFlow = MutableStateFlow(true)
     private val agenticTeamDialogVisibleFlow = MutableStateFlow(false)
     private val mcpToolsDialogVisibleFlow = MutableStateFlow(false)
@@ -128,7 +130,9 @@ class FrontendChatRepositoryModel(
         refreshCurrentState()
     }
 
-    private suspend fun refreshCurrentState() {
+    private suspend fun refreshCurrentState() = stateRefreshMutex.withLock { refreshCurrentStateLocked() }
+
+    private suspend fun refreshCurrentStateLocked() {
         val chatApi =
             runCatching { ChatRepositoryRpcApi.getInstance() }
                 .getOrElse { error ->
@@ -149,10 +153,17 @@ class FrontendChatRepositoryModel(
                 mcpToolsDialogVisible = mcpToolsDialogVisibleFlow.value,
             )
 
-        runCatching {
-            _messagesFlow.value = chatApi.getCurrentMessages(projectPath).map { it.toChatMessage() }
-        }.onFailure { error ->
-            logger.warn("Failed to refresh current messages from backend", error)
+        val messageRevision =
+            runCatching { chatApi.getCurrentMessageRevision(projectPath) }
+                .onFailure { error -> logger.warn("Failed to refresh current message revision from backend", error) }
+                .getOrNull()
+        if (ChatMessageRefreshPolicy.shouldRefresh(lastMessageRevision, messageRevision)) {
+            runCatching {
+                _messagesFlow.value = chatApi.getCurrentMessages(projectPath).map { it.toChatMessage() }
+                lastMessageRevision = messageRevision
+            }.onFailure { error ->
+                logger.warn("Failed to refresh current messages from backend", error)
+            }
         }
         runCatching {
             _sessionsFlow.value = chatApi.getCurrentSessions(projectPath)

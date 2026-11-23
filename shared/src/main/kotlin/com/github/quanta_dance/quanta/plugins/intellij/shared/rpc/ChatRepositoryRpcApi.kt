@@ -22,6 +22,9 @@ interface ChatRepositoryRpcApi : RemoteApi<Unit> {
         suspend fun getInstance(): ChatRepositoryRpcApi = RemoteApiProviderService.resolve(remoteApiDescriptor<ChatRepositoryRpcApi>())
     }
 
+    /** Returns a cheap monotonically increasing revision for the current chat message snapshot. */
+    suspend fun getCurrentMessageRevision(projectPath: String): Long
+
     suspend fun getCurrentMessages(projectPath: String): List<ChatMessageDto>
 
     suspend fun getCurrentSessions(projectPath: String): List<ChatSessionDto>

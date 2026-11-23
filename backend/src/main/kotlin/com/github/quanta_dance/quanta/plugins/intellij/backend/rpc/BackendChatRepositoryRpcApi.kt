@@ -14,6 +14,11 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSes
  * operations to the backend chat repository model.
  */
 class BackendChatRepositoryRpcApi : ChatRepositoryRpcApi {
+    override suspend fun getCurrentMessageRevision(projectPath: String): Long {
+        val backendProject = findBackendProject(projectPath) ?: return -1
+        return BackendChatRepositoryModel.getInstance(backendProject).getCurrentMessageRevision()
+    }
+
     override suspend fun getCurrentMessages(projectPath: String): List<ChatMessageDto> {
         val backendProject = findBackendProject(projectPath) ?: return emptyList()
         return BackendChatRepositoryModel.getInstance(backendProject).getCurrentMessages()

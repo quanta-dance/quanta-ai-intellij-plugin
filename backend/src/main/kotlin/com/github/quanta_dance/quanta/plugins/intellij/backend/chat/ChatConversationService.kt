@@ -143,6 +143,8 @@ class ChatConversationService(
             messagesList.map { it.toChatMessageDto() }
         }
 
+    fun currentMessageRevision(): Long = messageRevision.get()
+
     fun currentMessages(): List<ChatMessageDto> = _messages.value.map { it.toChatMessageDto() }
 
     fun sessionsFlow(): Flow<List<ChatSessionDto>> = _sessions
