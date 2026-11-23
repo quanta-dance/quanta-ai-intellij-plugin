@@ -31,6 +31,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -103,6 +104,7 @@ class FrontendChatRepositoryModel(
         _availableLocalQuantaAcpSessionsFlow.asStateFlow()
 
     private val acpDiscoveryMutex = Mutex()
+    private val toolWindowVisibleFlow = MutableStateFlow(true)
 
     init {
         coroutineScope.launch {
@@ -180,9 +182,15 @@ class FrontendChatRepositoryModel(
         }
     }
 
+    /** Prevents periodic snapshot polling while the Compose tool window is hidden. */
+    fun setToolWindowVisible(visible: Boolean) {
+        toolWindowVisibleFlow.value = visible
+    }
+
     private suspend fun pollCurrentState() {
         while (true) {
             delay(if (hasActiveWork()) ACTIVE_POLL_INTERVAL_MS else IDLE_POLL_INTERVAL_MS)
+            toolWindowVisibleFlow.first { it }
             refreshCurrentState()
         }
     }
