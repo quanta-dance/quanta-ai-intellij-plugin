@@ -112,8 +112,12 @@ class QuantaBackendRpcApi : QuantaBackendApi {
             servers = servers,
             configurationLoading = mcp.isConfigurationLoading(),
             configurationError = mcp.getConfigLoadError(),
-            openToolsDialog = mcp.consumeMcpToolsDialogRequest(),
         )
+    }
+
+    override suspend fun consumeMcpToolsDialogRequest(projectPath: String): Boolean {
+        val backendProject = findBackendProject(projectPath) ?: return false
+        return backendProject.service<McpClientService>().consumeMcpToolsDialogRequest()
     }
 
     override suspend fun retryMcpServerConnection(

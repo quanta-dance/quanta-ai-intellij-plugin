@@ -11,6 +11,4 @@ data class McpServerStatusesDto(
     val servers: List<McpServerStatusDto> = emptyList(),
     val configurationLoading: Boolean = false,
     val configurationError: String? = null,
-    /** One-shot request from an IDE notification to open the frontend MCP tools dialog. */
-    val openToolsDialog: Boolean = false,
 )

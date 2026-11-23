@@ -72,6 +72,10 @@ interface ChatViewModelApi : Disposable {
 
     fun onRetryMcpServerConnection(serverName: String)
 
+    fun onAgenticTeamDialogVisibilityChanged(visible: Boolean)
+
+    fun onMcpToolsDialogVisibilityChanged(visible: Boolean)
+
     fun onCreateDefaultAgentTeam()
 
     fun onCreateQuantaAcpShare()
@@ -239,6 +243,14 @@ class ChatViewModel(
 
     override fun onRetryMcpServerConnection(serverName: String) {
         coroutineScope.launch { repository.retryMcpServerConnection(serverName) }
+    }
+
+    override fun onAgenticTeamDialogVisibilityChanged(visible: Boolean) {
+        coroutineScope.launch { repository.setAgenticTeamDialogVisible(visible) }
+    }
+
+    override fun onMcpToolsDialogVisibilityChanged(visible: Boolean) {
+        coroutineScope.launch { repository.setMcpToolsDialogVisible(visible) }
     }
 
     override fun onCreateDefaultAgentTeam() {

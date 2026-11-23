@@ -52,6 +52,9 @@ interface QuantaBackendApi : RemoteApi<Unit> {
     /** Returns configured MCP servers and whether their synced configuration is still being applied. */
     suspend fun getMcpServerStatuses(projectPath: String): McpServerStatusesDto
 
+    /** Consumes a pending request from an IDE notification to open the MCP tools dialog. */
+    suspend fun consumeMcpToolsDialogRequest(projectPath: String): Boolean
+
     /** Retries the selected MCP server's connection/authentication flow without blocking the caller. */
     suspend fun retryMcpServerConnection(
         projectPath: String,

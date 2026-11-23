@@ -55,6 +55,10 @@ interface ChatRepositoryApi {
 
     suspend fun retryMcpServerConnection(serverName: String)
 
+    suspend fun setAgenticTeamDialogVisible(visible: Boolean)
+
+    suspend fun setMcpToolsDialogVisible(visible: Boolean)
+
     suspend fun createDefaultAgentTeam()
 
     suspend fun createQuantaAcpShare()

@@ -181,6 +181,14 @@ fun chatApp(
     var showMcpToolsDialog by remember { mutableStateOf(false) }
     var selectedMcpToolCatalogServer by remember { mutableStateOf<McpServerStatusDto?>(null) }
 
+    LaunchedEffect(showAgenticTeamDialog) {
+        viewModel.onAgenticTeamDialogVisibilityChanged(showAgenticTeamDialog)
+    }
+
+    LaunchedEffect(showMcpToolsDialog) {
+        viewModel.onMcpToolsDialogVisibilityChanged(showMcpToolsDialog)
+    }
+
     LaunchedEffect(openMcpToolsDialog) {
         if (openMcpToolsDialog) showMcpToolsDialog = true
     }

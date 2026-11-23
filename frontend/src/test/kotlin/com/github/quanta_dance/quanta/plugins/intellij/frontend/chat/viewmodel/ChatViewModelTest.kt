@@ -13,6 +13,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.Delegat
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.LocalQuantaAcpSessionDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServerStatusDto
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
@@ -77,6 +78,24 @@ class ChatViewModelTest {
             releaseSecondSubmission.complete(Unit)
             yield()
             assertEquals(MessageInputState.Disabled, viewModel.promptInputState.value)
+            viewModel.dispose()
+        }
+
+    @Test
+    fun `forwards dialog visibility changes without a polling timer`() =
+        runBlocking {
+            val repository = mockRepository()
+            val viewModel =
+                ChatViewModel(
+                    coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+                    repository = repository,
+                )
+
+            viewModel.onAgenticTeamDialogVisibilityChanged(true)
+            viewModel.onMcpToolsDialogVisibilityChanged(true)
+
+            coVerify(exactly = 1) { repository.setAgenticTeamDialogVisible(true) }
+            coVerify(exactly = 1) { repository.setMcpToolsDialogVisible(true) }
             viewModel.dispose()
         }
 

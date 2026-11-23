@@ -105,6 +105,8 @@ class FrontendChatRepositoryModel(
 
     private val acpDiscoveryMutex = Mutex()
     private val toolWindowVisibleFlow = MutableStateFlow(true)
+    private val agenticTeamDialogVisibleFlow = MutableStateFlow(false)
+    private val mcpToolsDialogVisibleFlow = MutableStateFlow(false)
 
     init {
         coroutineScope.launch {
@@ -140,6 +142,12 @@ class FrontendChatRepositoryModel(
                     return
                 }
         val projectPath = project.rpcProjectPath()
+        val refreshTargets =
+            ChatStateRefreshTargets.forUi(
+                agenticEnabled = FrontendQuantaSettingsState.instance.state.agenticEnabled ?: true,
+                agenticTeamDialogVisible = agenticTeamDialogVisibleFlow.value,
+                mcpToolsDialogVisible = mcpToolsDialogVisibleFlow.value,
+            )
 
         runCatching {
             _messagesFlow.value = chatApi.getCurrentMessages(projectPath).map { it.toChatMessage() }
@@ -153,38 +161,65 @@ class FrontendChatRepositoryModel(
             logger.warn("Failed to refresh current sessions from backend", error)
         }
         runCatching {
-            val mcpStatuses = backendApi.getMcpServerStatuses(projectPath)
-            _mcpServersFlow.value = mcpStatuses.servers
-            _mcpConfigurationLoadingFlow.value = mcpStatuses.configurationLoading
-            _mcpConfigurationErrorFlow.value = mcpStatuses.configurationError
-            openMcpToolsDialogFlow.value = mcpStatuses.openToolsDialog
+            openMcpToolsDialogFlow.value = backendApi.consumeMcpToolsDialogRequest(projectPath)
         }.onFailure { error ->
-            _mcpConfigurationLoadingFlow.value = false
-            _mcpConfigurationErrorFlow.value =
-                "Unable to retrieve MCP status: ${error.message ?: error::class.simpleName}"
-            logger.warn("Failed to refresh MCP server statuses from backend", error)
+            logger.warn("Failed to consume MCP tools dialog request from backend", error)
+        }
+        if (refreshTargets.mcpStatus) {
+            refreshMcpServerStatuses(backendApi, projectPath)
         }
         runCatching {
             _planStatusFlow.value = backendApi.getCurrentPlanStatus(projectPath)
         }.onFailure { error ->
             logger.warn("Failed to refresh current plan status from backend", error)
         }
-        runCatching {
-            _agentsFlow.value = backendApi.getCurrentAgents(projectPath)
-            _collaborationParticipantsFlow.value = backendApi.getCollaborationParticipants(projectPath)
-        }.onFailure { error ->
-            logger.warn("Failed to refresh current collaboration roster from backend", error)
-        }
-        runCatching {
-            _delegatedTasksFlow.value = backendApi.getCurrentDelegatedTasks(projectPath)
-        }.onFailure { error ->
-            logger.warn("Failed to refresh current delegated tasks from backend", error)
+        if (refreshTargets.agenticState) {
+            runCatching {
+                _agentsFlow.value = backendApi.getCurrentAgents(projectPath)
+                _collaborationParticipantsFlow.value = backendApi.getCollaborationParticipants(projectPath)
+            }.onFailure { error ->
+                logger.warn("Failed to refresh current collaboration roster from backend", error)
+            }
+            runCatching {
+                _delegatedTasksFlow.value = backendApi.getCurrentDelegatedTasks(projectPath)
+            }.onFailure { error ->
+                logger.warn("Failed to refresh current delegated tasks from backend", error)
+            }
         }
     }
 
     /** Prevents periodic snapshot polling while the Compose tool window is hidden. */
     fun setToolWindowVisible(visible: Boolean) {
         toolWindowVisibleFlow.value = visible
+    }
+
+    /** Fetches agent/team state only while agentic UI consumes it. */
+    override suspend fun setAgenticTeamDialogVisible(visible: Boolean) {
+        agenticTeamDialogVisibleFlow.value = visible
+        if (visible) refreshCurrentState()
+    }
+
+    /** Fetches detailed MCP status only while the MCP tools dialog consumes it. */
+    override suspend fun setMcpToolsDialogVisible(visible: Boolean) {
+        mcpToolsDialogVisibleFlow.value = visible
+        if (visible) refreshCurrentState()
+    }
+
+    private suspend fun refreshMcpServerStatuses(
+        backendApi: QuantaBackendApi,
+        projectPath: String,
+    ) {
+        runCatching {
+            val mcpStatuses = backendApi.getMcpServerStatuses(projectPath)
+            _mcpServersFlow.value = mcpStatuses.servers
+            _mcpConfigurationLoadingFlow.value = mcpStatuses.configurationLoading
+            _mcpConfigurationErrorFlow.value = mcpStatuses.configurationError
+        }.onFailure { error ->
+            _mcpConfigurationLoadingFlow.value = false
+            _mcpConfigurationErrorFlow.value =
+                "Unable to retrieve MCP status: ${error.message ?: error::class.simpleName}"
+            logger.warn("Failed to refresh MCP server statuses from backend", error)
+        }
     }
 
     private suspend fun pollCurrentState() {
@@ -197,8 +232,17 @@ class FrontendChatRepositoryModel(
 
     private fun hasActiveWork(): Boolean =
         _messagesFlow.value.any(ChatMessage::isAIThinkingMessage) ||
-            _delegatedTasksFlow.value.any { it.status == DelegatedTaskStatusDto.RUNNING } ||
-            _mcpConfigurationLoadingFlow.value
+            (
+                currentRefreshTargets().agenticState &&
+                    _delegatedTasksFlow.value.any { it.status == DelegatedTaskStatusDto.RUNNING }
+            )
+
+    private fun currentRefreshTargets(): ChatStateRefreshTargets =
+        ChatStateRefreshTargets.forUi(
+            agenticEnabled = FrontendQuantaSettingsState.instance.state.agenticEnabled ?: true,
+            agenticTeamDialogVisible = agenticTeamDialogVisibleFlow.value,
+            mcpToolsDialogVisible = mcpToolsDialogVisibleFlow.value,
+        )
 
     override suspend fun sendMessage(messageContent: String) {
         syncSettingsToBackend()
