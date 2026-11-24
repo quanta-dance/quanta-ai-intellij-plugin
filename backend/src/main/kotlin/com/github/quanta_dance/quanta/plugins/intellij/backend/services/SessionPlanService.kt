@@ -132,6 +132,8 @@ class SessionPlanService(
 
     fun getStatus(): String = loadPlanSnapshot().normalizedStatus()
 
+    fun currentPlanRevision(): Long = loadPlanSnapshot().revision
+
     fun getCurrentPlanStatus(): ChatPlanStatusDto = planStatusDto(loadPlanSnapshot())
 
     fun publishCurrentStatus() {

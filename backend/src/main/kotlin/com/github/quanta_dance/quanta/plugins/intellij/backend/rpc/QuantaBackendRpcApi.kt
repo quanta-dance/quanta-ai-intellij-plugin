@@ -42,7 +42,7 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.psi.PsiDocumentManager
-import java.util.Base64
+import java.util.*
 
 /**
  * Backend implementation of the broad shared Quanta backend RPC surface.
@@ -73,6 +73,11 @@ class QuantaBackendRpcApi : QuantaBackendApi {
     override suspend fun getCurrentPlanStatus(projectPath: String): ChatPlanStatusDto {
         val backendProject = findBackendProject(projectPath) ?: return ChatPlanStatusDto()
         return backendProject.service<SessionPlanService>().getCurrentPlanStatus()
+    }
+
+    override suspend fun getCurrentPlanRevision(projectPath: String): Long {
+        val backendProject = findBackendProject(projectPath) ?: return -1
+        return backendProject.service<SessionPlanService>().currentPlanRevision()
     }
 
     override suspend fun getKnownAcpAgents(projectPath: String): List<AcpAgentDto> {

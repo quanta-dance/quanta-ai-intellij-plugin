@@ -19,6 +19,11 @@ class BackendChatRepositoryRpcApi : ChatRepositoryRpcApi {
         return BackendChatRepositoryModel.getInstance(backendProject).getCurrentMessageRevision()
     }
 
+    override suspend fun getCurrentSessionRevision(projectPath: String): Long {
+        val backendProject = findBackendProject(projectPath) ?: return -1
+        return BackendChatRepositoryModel.getInstance(backendProject).getCurrentSessionRevision()
+    }
+
     override suspend fun getCurrentMessages(projectPath: String): List<ChatMessageDto> {
         val backendProject = findBackendProject(projectPath) ?: return emptyList()
         return BackendChatRepositoryModel.getInstance(backendProject).getCurrentMessages()

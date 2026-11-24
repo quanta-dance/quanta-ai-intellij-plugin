@@ -14,12 +14,14 @@ class ChatMessageRefreshPolicyTest {
     }
 
     @Test
-    fun `skips unchanged message snapshots`() {
+    fun `skips unchanged message session and plan snapshots`() {
         assertFalse(ChatMessageRefreshPolicy.shouldRefresh(cachedRevision = 42, backendRevision = 42))
+        assertFalse(ChatMessageRefreshPolicy.shouldRefresh(cachedRevision = 7, backendRevision = 7))
+        assertFalse(ChatMessageRefreshPolicy.shouldRefresh(cachedRevision = 3, backendRevision = 3))
     }
 
     @Test
-    fun `fetches messages when the backend revision changes or is unavailable`() {
+    fun `fetches snapshots when the backend revision changes or is unavailable`() {
         assertTrue(ChatMessageRefreshPolicy.shouldRefresh(cachedRevision = 42, backendRevision = 43))
         assertTrue(ChatMessageRefreshPolicy.shouldRefresh(cachedRevision = 42, backendRevision = null))
     }

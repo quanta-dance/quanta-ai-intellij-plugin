@@ -3,7 +3,11 @@
 
 package com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel
 
-/** Keeps full message snapshots off the periodic RPC path until the backend reports a change. */
+/**
+ * Decides whether a periodic snapshot refresh must transfer full state after a cheap revision check.
+ *
+ * An unavailable revision deliberately refreshes the snapshot so split-mode RPC failures cannot leave the UI stale.
+ */
 internal object ChatMessageRefreshPolicy {
     fun shouldRefresh(
         cachedRevision: Long?,

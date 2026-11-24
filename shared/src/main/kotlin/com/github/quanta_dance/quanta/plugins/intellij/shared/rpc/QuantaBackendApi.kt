@@ -41,7 +41,11 @@ interface QuantaBackendApi : RemoteApi<Unit> {
         entry: FrontendLogDto,
     )
 
+    /** Returns the full current plan state when plan details are required by the UI. */
     suspend fun getCurrentPlanStatus(projectPath: String): ChatPlanStatusDto
+
+    /** Returns the current plan revision without serializing the complete plan text and task lists. */
+    suspend fun getCurrentPlanRevision(projectPath: String): Long
 
     /** Returns the last verified ACP roster without starting a new discovery probe. */
     suspend fun getKnownAcpAgents(projectPath: String): List<AcpAgentDto>

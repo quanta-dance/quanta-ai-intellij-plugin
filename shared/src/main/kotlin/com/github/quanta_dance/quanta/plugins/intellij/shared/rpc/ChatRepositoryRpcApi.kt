@@ -25,6 +25,9 @@ interface ChatRepositoryRpcApi : RemoteApi<Unit> {
     /** Returns a cheap monotonically increasing revision for the current chat message snapshot. */
     suspend fun getCurrentMessageRevision(projectPath: String): Long
 
+    /** Returns a cheap monotonically increasing revision for sessions and active-session permissions. */
+    suspend fun getCurrentSessionRevision(projectPath: String): Long
+
     suspend fun getCurrentMessages(projectPath: String): List<ChatMessageDto>
 
     suspend fun getCurrentSessions(projectPath: String): List<ChatSessionDto>

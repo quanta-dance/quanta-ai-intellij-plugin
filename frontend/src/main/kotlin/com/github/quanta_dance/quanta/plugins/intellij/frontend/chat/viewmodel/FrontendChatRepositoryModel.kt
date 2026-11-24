@@ -106,6 +106,8 @@ class FrontendChatRepositoryModel(
     private val acpDiscoveryMutex = Mutex()
     private val stateRefreshMutex = Mutex()
     private var lastMessageRevision: Long? = null
+    private var lastSessionRevision: Long? = null
+    private var lastPlanRevision: Long? = null
     private val toolWindowVisibleFlow = MutableStateFlow(true)
     private val agenticTeamDialogVisibleFlow = MutableStateFlow(false)
     private val mcpToolsDialogVisibleFlow = MutableStateFlow(false)
@@ -153,24 +155,8 @@ class FrontendChatRepositoryModel(
                 mcpToolsDialogVisible = mcpToolsDialogVisibleFlow.value,
             )
 
-        val messageRevision =
-            runCatching { chatApi.getCurrentMessageRevision(projectPath) }
-                .onFailure { error -> logger.warn("Failed to refresh current message revision from backend", error) }
-                .getOrNull()
-        if (ChatMessageRefreshPolicy.shouldRefresh(lastMessageRevision, messageRevision)) {
-            runCatching {
-                _messagesFlow.value = chatApi.getCurrentMessages(projectPath).map { it.toChatMessage() }
-                lastMessageRevision = messageRevision
-            }.onFailure { error ->
-                logger.warn("Failed to refresh current messages from backend", error)
-            }
-        }
-        runCatching {
-            _sessionsFlow.value = chatApi.getCurrentSessions(projectPath)
-            _allowedAcpAgentIdsFlow.value = chatApi.getAllowedAcpAgentIds(projectPath).toSet()
-        }.onFailure { error ->
-            logger.warn("Failed to refresh current sessions from backend", error)
-        }
+        refreshMessages(chatApi, projectPath)
+        refreshSessionState(chatApi, projectPath)
         runCatching {
             openMcpToolsDialogFlow.value = backendApi.consumeMcpToolsDialogRequest(projectPath)
         }.onFailure { error ->
@@ -179,11 +165,7 @@ class FrontendChatRepositoryModel(
         if (refreshTargets.mcpStatus) {
             refreshMcpServerStatuses(backendApi, projectPath)
         }
-        runCatching {
-            _planStatusFlow.value = backendApi.getCurrentPlanStatus(projectPath)
-        }.onFailure { error ->
-            logger.warn("Failed to refresh current plan status from backend", error)
-        }
+        refreshPlanStatus(backendApi, projectPath)
         if (refreshTargets.agenticState) {
             runCatching {
                 _agentsFlow.value = backendApi.getCurrentAgents(projectPath)
@@ -214,6 +196,61 @@ class FrontendChatRepositoryModel(
     override suspend fun setMcpToolsDialogVisible(visible: Boolean) {
         mcpToolsDialogVisibleFlow.value = visible
         if (visible) refreshCurrentState()
+    }
+
+    private suspend fun refreshMessages(
+        chatApi: ChatRepositoryRpcApi,
+        projectPath: String,
+    ) {
+        val messageRevision =
+            runCatching { chatApi.getCurrentMessageRevision(projectPath) }
+                .onFailure { error -> logger.warn("Failed to refresh current message revision from backend", error) }
+                .getOrNull()
+        if (ChatMessageRefreshPolicy.shouldRefresh(lastMessageRevision, messageRevision)) {
+            runCatching {
+                _messagesFlow.value = chatApi.getCurrentMessages(projectPath).map { it.toChatMessage() }
+                lastMessageRevision = messageRevision
+            }.onFailure { error ->
+                logger.warn("Failed to refresh current messages from backend", error)
+            }
+        }
+    }
+
+    private suspend fun refreshSessionState(
+        chatApi: ChatRepositoryRpcApi,
+        projectPath: String,
+    ) {
+        val sessionRevision =
+            runCatching { chatApi.getCurrentSessionRevision(projectPath) }
+                .onFailure { error -> logger.warn("Failed to refresh current session revision from backend", error) }
+                .getOrNull()
+        if (ChatMessageRefreshPolicy.shouldRefresh(lastSessionRevision, sessionRevision)) {
+            runCatching {
+                _sessionsFlow.value = chatApi.getCurrentSessions(projectPath)
+                _allowedAcpAgentIdsFlow.value = chatApi.getAllowedAcpAgentIds(projectPath).toSet()
+                lastSessionRevision = sessionRevision
+            }.onFailure { error ->
+                logger.warn("Failed to refresh current sessions from backend", error)
+            }
+        }
+    }
+
+    private suspend fun refreshPlanStatus(
+        backendApi: QuantaBackendApi,
+        projectPath: String,
+    ) {
+        val planRevision =
+            runCatching { backendApi.getCurrentPlanRevision(projectPath) }
+                .onFailure { error -> logger.warn("Failed to refresh current plan revision from backend", error) }
+                .getOrNull()
+        if (ChatMessageRefreshPolicy.shouldRefresh(lastPlanRevision, planRevision)) {
+            runCatching {
+                _planStatusFlow.value = backendApi.getCurrentPlanStatus(projectPath)
+                lastPlanRevision = planRevision
+            }.onFailure { error ->
+                logger.warn("Failed to refresh current plan status from backend", error)
+            }
+        }
     }
 
     private suspend fun refreshMcpServerStatuses(

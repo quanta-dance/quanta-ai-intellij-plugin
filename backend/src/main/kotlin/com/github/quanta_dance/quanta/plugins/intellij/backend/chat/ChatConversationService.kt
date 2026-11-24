@@ -86,6 +86,7 @@ class ChatConversationService(
     private val acpContinuationRunning = AtomicBoolean(false)
     private val persistenceFlushScheduled = AtomicBoolean(false)
     private val messageRevision = AtomicLong(0)
+    private val sessionRevision = AtomicLong(0)
     private val persistedMessageRevision = AtomicLong(0)
     private val acpEventInboxes =
         ConcurrentHashMap<String, ConcurrentLinkedQueue<AcpDelegationTaskService.MeaningfulEvent>>()
@@ -145,6 +146,8 @@ class ChatConversationService(
 
     fun currentMessageRevision(): Long = messageRevision.get()
 
+    fun currentSessionRevision(): Long = sessionRevision.get()
+
     fun currentMessages(): List<ChatMessageDto> = _messages.value.map { it.toChatMessageDto() }
 
     fun sessionsFlow(): Flow<List<ChatSessionDto>> = _sessions
@@ -161,7 +164,7 @@ class ChatConversationService(
             val sessionId = persistence.getActiveSessionId()
             if (!allowed) acpDelegations.cancelForSessionAgent(sessionId, agentId)
             persistence.setAcpAgentAllowed(sessionId, agentId, allowed)
-            _sessions.value = persistence.listSessions()
+            refreshSessions()
         }
     }
 
@@ -169,7 +172,7 @@ class ChatConversationService(
     fun removeAcpAgentFromAllSessions(agentId: String) {
         onChatPublicationThread {
             persistence.removeAcpAgentFromAllSessions(agentId)
-            _sessions.value = persistence.listSessions()
+            refreshSessions()
         }
     }
 
@@ -179,7 +182,7 @@ class ChatConversationService(
             persistence.removeAcpAgentsMatching { agentId ->
                 agentId.startsWith("quanta:") && agentId !in liveAgentIds
             }
-            _sessions.value = persistence.listSessions()
+            refreshSessions()
         }
     }
 
@@ -191,7 +194,7 @@ class ChatConversationService(
     ) {
         onChatPublicationThread {
             persistence.setMcpServerEnabled(persistence.getActiveSessionId(), serverName, enabled)
-            _sessions.value = persistence.listSessions()
+            refreshSessions()
         }
     }
 
@@ -215,7 +218,7 @@ class ChatConversationService(
             persistence.saveActiveAgents(agentManager.getPersistedAgentProfiles())
             val sessionId = persistence.createSession()
             _messages.value = emptyList()
-            _sessions.value = persistence.listSessions()
+            refreshSessions()
             openAIService.switchToSession(sessionId, null)
             project.service<SessionPlanService>().publishCurrentStatus()
             agentManager.reloadAgentsFromSession()
@@ -233,7 +236,7 @@ class ChatConversationService(
             persistence.saveActiveAgents(agentManager.getPersistedAgentProfiles())
             if (!persistence.activateSession(sessionId)) return@onChatPublicationThread
             _messages.value = persistence.loadActiveMessages()
-            _sessions.value = persistence.listSessions()
+            refreshSessions()
             openAIService.switchToSession(sessionId, persistence.getActiveLastResponseId())
             project.service<SessionPlanService>().publishCurrentStatus()
             agentManager.reloadAgentsFromSession()
@@ -246,7 +249,7 @@ class ChatConversationService(
             acpDelegations.cancelForSession(sessionId)
             val nextSessionId = persistence.deleteSession(sessionId)
             _messages.value = persistence.loadActiveMessages()
-            _sessions.value = persistence.listSessions()
+            refreshSessions()
             openAIService.switchToSession(nextSessionId, persistence.getActiveLastResponseId())
             project.service<SessionPlanService>().publishCurrentStatus()
             agentManager.reloadAgentsFromSession()
@@ -1157,7 +1160,12 @@ class ChatConversationService(
 
     private fun persistMessagesNow() {
         persistence.saveActiveMessages(_messages.value, openAIService.getLastResponseId())
+        refreshSessions()
+    }
+
+    private fun refreshSessions() {
         _sessions.value = persistence.listSessions()
+        sessionRevision.incrementAndGet()
     }
 
     companion object {
