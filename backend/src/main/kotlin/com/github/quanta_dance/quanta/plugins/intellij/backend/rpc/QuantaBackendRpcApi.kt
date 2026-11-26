@@ -42,7 +42,7 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.psi.PsiDocumentManager
-import java.util.*
+import java.util.Base64
 
 /**
  * Backend implementation of the broad shared Quanta backend RPC surface.
