@@ -13,7 +13,7 @@ fun latestChangeNotesFromChangelog(): String {
     if (changelog.isBlank()) return ""
 
     val lines = changelog.lines()
-    val startIndex = lines.indexOfFirst { it.startsWith("## [") }
+    val startIndex = lines.indexOfFirst { it.startsWith("## [") && it != "## [Unreleased]" }
     if (startIndex < 0) return ""
     val endIndex = lines.drop(startIndex + 1).indexOfFirst { it.startsWith("## [") }
         .let { if (it < 0) lines.size else startIndex + 1 + it }

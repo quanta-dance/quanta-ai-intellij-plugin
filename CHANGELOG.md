@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2026.11.26]
+
+This release adds detailed MCP tool visibility and recovery controls while substantially reducing Quanta AI's idle CPU, rendering, allocation, and RPC overhead.
+
+### Added
+- Show the tools exposed by each configured MCP server directly in the MCP Tools dialog, including tool names, descriptions, and input-schema summaries.
+- Add per-server MCP recovery actions so users can retry failed connections without restarting the IDE.
+- Add focused frontend regression tests for polling, visibility, and revision-based refresh policies.
+
+### Improved
+- Make settings updates event-driven instead of periodically polling for changes.
+- Use adaptive, visibility-aware chat refreshes: polling pauses while the Quanta tool window is hidden, runs more slowly while idle, and preserves fast refreshes during active work.
+- Fetch MCP details and agent/team state only when the relevant UI is open or agentic mode needs it.
+- Use lightweight message, session, and plan revisions to avoid transferring and mapping unchanged snapshots.
+- Replace the scheduler's permanent one-second scan with cancellable one-shot jobs scheduled for each task's due time.
+
+### Fixed
+- Stop idle agent-presence indicators from continuously animating and driving Compose/Skia rendering work.
+- Prevent MCP OAuth retry recovery from unnecessarily reopening the MCP Tools dialog.
+
 ## [2026.11.05]
 
 ### Fixed
