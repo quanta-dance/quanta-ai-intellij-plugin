@@ -12,12 +12,12 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMess
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.ChatRepositoryRpcApi
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaBackendApi
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AcpAgentDto
-import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationParticipantDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskDto
+import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.DelegatedTaskStatusDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.LocalQuantaAcpSessionDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServerStatusDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.toChatMessage
@@ -31,6 +31,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -49,6 +50,9 @@ class FrontendChatRepositoryModel(
     private val logger = thisLogger()
 
     companion object {
+        private const val ACTIVE_POLL_INTERVAL_MS = 1_500L
+        private const val IDLE_POLL_INTERVAL_MS = 15_000L
+
         fun getInstance(project: Project): FrontendChatRepositoryModel = project.getService(FrontendChatRepositoryModel::class.java)
     }
 
@@ -92,9 +96,6 @@ class FrontendChatRepositoryModel(
     private val _delegatedTasksFlow = MutableStateFlow<List<DelegatedTaskDto>>(emptyList())
     override val delegatedTasksFlow: StateFlow<List<DelegatedTaskDto>> = _delegatedTasksFlow.asStateFlow()
 
-    private val _channelEventsFlow = MutableStateFlow<List<AgentChannelEventDto>>(emptyList())
-    override val channelEventsFlow: StateFlow<List<AgentChannelEventDto>> = _channelEventsFlow.asStateFlow()
-
     private val _quantaAcpInviteFlow = MutableStateFlow<String?>(null)
     override val quantaAcpInviteFlow: StateFlow<String?> = _quantaAcpInviteFlow.asStateFlow()
 
@@ -103,6 +104,13 @@ class FrontendChatRepositoryModel(
         _availableLocalQuantaAcpSessionsFlow.asStateFlow()
 
     private val acpDiscoveryMutex = Mutex()
+    private val stateRefreshMutex = Mutex()
+    private var lastMessageRevision: Long? = null
+    private var lastSessionRevision: Long? = null
+    private var lastPlanRevision: Long? = null
+    private val toolWindowVisibleFlow = MutableStateFlow(true)
+    private val agenticTeamDialogVisibleFlow = MutableStateFlow(false)
+    private val mcpToolsDialogVisibleFlow = MutableStateFlow(false)
 
     init {
         coroutineScope.launch {
@@ -124,7 +132,9 @@ class FrontendChatRepositoryModel(
         refreshCurrentState()
     }
 
-    private suspend fun refreshCurrentState() {
+    private suspend fun refreshCurrentState() = stateRefreshMutex.withLock { refreshCurrentStateLocked() }
+
+    private suspend fun refreshCurrentStateLocked() {
         val chatApi =
             runCatching { ChatRepositoryRpcApi.getInstance() }
                 .getOrElse { error ->
@@ -138,65 +148,149 @@ class FrontendChatRepositoryModel(
                     return
                 }
         val projectPath = project.rpcProjectPath()
+        val refreshTargets =
+            ChatStateRefreshTargets.forUi(
+                agenticEnabled = FrontendQuantaSettingsState.instance.state.agenticEnabled ?: true,
+                agenticTeamDialogVisible = agenticTeamDialogVisibleFlow.value,
+                mcpToolsDialogVisible = mcpToolsDialogVisibleFlow.value,
+            )
 
+        refreshMessages(chatApi, projectPath)
+        refreshSessionState(chatApi, projectPath)
         runCatching {
-            _messagesFlow.value = chatApi.getCurrentMessages(projectPath).map { it.toChatMessage() }
+            openMcpToolsDialogFlow.value = backendApi.consumeMcpToolsDialogRequest(projectPath)
         }.onFailure { error ->
-            logger.warn("Failed to refresh current messages from backend", error)
+            logger.warn("Failed to consume MCP tools dialog request from backend", error)
         }
-        runCatching {
-            _sessionsFlow.value = chatApi.getCurrentSessions(projectPath)
-            _allowedAcpAgentIdsFlow.value = chatApi.getAllowedAcpAgentIds(projectPath).toSet()
-        }.onFailure { error ->
-            logger.warn("Failed to refresh current sessions from backend", error)
+        if (refreshTargets.mcpStatus) {
+            refreshMcpServerStatuses(backendApi, projectPath)
         }
+        refreshPlanStatus(backendApi, projectPath)
+        if (refreshTargets.agenticState) {
+            runCatching {
+                _agentsFlow.value = backendApi.getCurrentAgents(projectPath)
+                _collaborationParticipantsFlow.value = backendApi.getCollaborationParticipants(projectPath)
+            }.onFailure { error ->
+                logger.warn("Failed to refresh current collaboration roster from backend", error)
+            }
+            runCatching {
+                _delegatedTasksFlow.value = backendApi.getCurrentDelegatedTasks(projectPath)
+            }.onFailure { error ->
+                logger.warn("Failed to refresh current delegated tasks from backend", error)
+            }
+        }
+    }
+
+    /** Prevents periodic snapshot polling while the Compose tool window is hidden. */
+    fun setToolWindowVisible(visible: Boolean) {
+        toolWindowVisibleFlow.value = visible
+    }
+
+    /** Fetches agent/team state only while agentic UI consumes it. */
+    override suspend fun setAgenticTeamDialogVisible(visible: Boolean) {
+        agenticTeamDialogVisibleFlow.value = visible
+        if (visible) refreshCurrentState()
+    }
+
+    /** Fetches detailed MCP status only while the MCP tools dialog consumes it. */
+    override suspend fun setMcpToolsDialogVisible(visible: Boolean) {
+        mcpToolsDialogVisibleFlow.value = visible
+        if (visible) refreshCurrentState()
+    }
+
+    private suspend fun refreshMessages(
+        chatApi: ChatRepositoryRpcApi,
+        projectPath: String,
+    ) {
+        val messageRevision =
+            runCatching { chatApi.getCurrentMessageRevision(projectPath) }
+                .onFailure { error -> logger.warn("Failed to refresh current message revision from backend", error) }
+                .getOrNull()
+        if (ChatMessageRefreshPolicy.shouldRefresh(lastMessageRevision, messageRevision)) {
+            runCatching {
+                _messagesFlow.value = chatApi.getCurrentMessages(projectPath).map { it.toChatMessage() }
+                lastMessageRevision = messageRevision
+            }.onFailure { error ->
+                logger.warn("Failed to refresh current messages from backend", error)
+            }
+        }
+    }
+
+    private suspend fun refreshSessionState(
+        chatApi: ChatRepositoryRpcApi,
+        projectPath: String,
+    ) {
+        val sessionRevision =
+            runCatching { chatApi.getCurrentSessionRevision(projectPath) }
+                .onFailure { error -> logger.warn("Failed to refresh current session revision from backend", error) }
+                .getOrNull()
+        if (ChatMessageRefreshPolicy.shouldRefresh(lastSessionRevision, sessionRevision)) {
+            runCatching {
+                _sessionsFlow.value = chatApi.getCurrentSessions(projectPath)
+                _allowedAcpAgentIdsFlow.value = chatApi.getAllowedAcpAgentIds(projectPath).toSet()
+                lastSessionRevision = sessionRevision
+            }.onFailure { error ->
+                logger.warn("Failed to refresh current sessions from backend", error)
+            }
+        }
+    }
+
+    private suspend fun refreshPlanStatus(
+        backendApi: QuantaBackendApi,
+        projectPath: String,
+    ) {
+        val planRevision =
+            runCatching { backendApi.getCurrentPlanRevision(projectPath) }
+                .onFailure { error -> logger.warn("Failed to refresh current plan revision from backend", error) }
+                .getOrNull()
+        if (ChatMessageRefreshPolicy.shouldRefresh(lastPlanRevision, planRevision)) {
+            runCatching {
+                _planStatusFlow.value = backendApi.getCurrentPlanStatus(projectPath)
+                lastPlanRevision = planRevision
+            }.onFailure { error ->
+                logger.warn("Failed to refresh current plan status from backend", error)
+            }
+        }
+    }
+
+    private suspend fun refreshMcpServerStatuses(
+        backendApi: QuantaBackendApi,
+        projectPath: String,
+    ) {
         runCatching {
             val mcpStatuses = backendApi.getMcpServerStatuses(projectPath)
             _mcpServersFlow.value = mcpStatuses.servers
             _mcpConfigurationLoadingFlow.value = mcpStatuses.configurationLoading
             _mcpConfigurationErrorFlow.value = mcpStatuses.configurationError
-            openMcpToolsDialogFlow.value = mcpStatuses.openToolsDialog
         }.onFailure { error ->
             _mcpConfigurationLoadingFlow.value = false
             _mcpConfigurationErrorFlow.value =
                 "Unable to retrieve MCP status: ${error.message ?: error::class.simpleName}"
             logger.warn("Failed to refresh MCP server statuses from backend", error)
         }
-        runCatching {
-            _planStatusFlow.value = backendApi.getCurrentPlanStatus(projectPath)
-        }.onFailure { error ->
-            logger.warn("Failed to refresh current plan status from backend", error)
-        }
-        runCatching {
-            _agentsFlow.value = backendApi.getCurrentAgents(projectPath)
-            _collaborationParticipantsFlow.value = backendApi.getCollaborationParticipants(projectPath)
-        }.onFailure { error ->
-            logger.warn("Failed to refresh current collaboration roster from backend", error)
-        }
-        runCatching {
-            _delegatedTasksFlow.value = backendApi.getCurrentDelegatedTasks(projectPath)
-        }.onFailure { error ->
-            logger.warn("Failed to refresh current delegated tasks from backend", error)
-        }
-        runCatching {
-            _channelEventsFlow.value = backendApi.getCurrentChannelEvents(projectPath)
-        }.onFailure { error ->
-            logger.warn("Failed to refresh current channel events from backend", error)
-        }
-        runCatching {
-            _acpAgentsFlow.value = backendApi.getKnownAcpAgents(projectPath)
-            _availableLocalQuantaAcpSessionsFlow.value = backendApi.getAvailableLocalQuantaAcpSessions(projectPath)
-        }.onFailure { error ->
-            logger.warn("Failed to load known ACP agents or local Quanta shares from backend", error)
-        }
     }
 
     private suspend fun pollCurrentState() {
         while (true) {
+            delay(if (hasActiveWork()) ACTIVE_POLL_INTERVAL_MS else IDLE_POLL_INTERVAL_MS)
+            toolWindowVisibleFlow.first { it }
             refreshCurrentState()
-            delay(1_500)
         }
     }
+
+    private fun hasActiveWork(): Boolean =
+        _messagesFlow.value.any(ChatMessage::isAIThinkingMessage) ||
+            (
+                currentRefreshTargets().agenticState &&
+                    _delegatedTasksFlow.value.any { it.status == DelegatedTaskStatusDto.RUNNING }
+            )
+
+    private fun currentRefreshTargets(): ChatStateRefreshTargets =
+        ChatStateRefreshTargets.forUi(
+            agenticEnabled = FrontendQuantaSettingsState.instance.state.agenticEnabled ?: true,
+            agenticTeamDialogVisible = agenticTeamDialogVisibleFlow.value,
+            mcpToolsDialogVisible = mcpToolsDialogVisibleFlow.value,
+        )
 
     override suspend fun sendMessage(messageContent: String) {
         syncSettingsToBackend()
@@ -223,7 +317,9 @@ class FrontendChatRepositoryModel(
     }
 
     override suspend fun setAgenticMode(enabled: Boolean) {
-        FrontendQuantaSettingsState.instance.state.agenticEnabled = enabled
+        val settingsState = FrontendQuantaSettingsState.instance
+        settingsState.state.agenticEnabled = enabled
+        settingsState.notifySettingsChanged()
         syncSettingsToBackend()
         refreshCurrentState()
         if (enabled) refreshAllowedAcpAgentsIfNeeded()

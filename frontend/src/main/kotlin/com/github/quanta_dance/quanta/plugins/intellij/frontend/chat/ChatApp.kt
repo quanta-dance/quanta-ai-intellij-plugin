@@ -95,8 +95,6 @@ import com.github.quanta_dance.quanta.plugins.intellij.frontend.voice.FrontendAI
 import com.github.quanta_dance.quanta.plugins.intellij.frontend.voice.FrontendMicrophoneService
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AcpAgentDto
-import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelAuthorTypeDto
-import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.CollaborationAvailabilityDto
@@ -140,13 +138,15 @@ fun chatApp(
     val settingsSyncService = project.service<FrontendSettingsSyncStateService>()
     val settingsSyncState by settingsSyncService.stateFlow.collectAsState()
     val scope = rememberCoroutineScope()
-    var voiceEnabled by remember { mutableStateOf(FrontendQuantaSettingsState.instance.state.voiceEnabled) }
-    var selectedModel by remember { mutableStateOf(FrontendQuantaSettingsState.instance.state.aiChatModel) }
-    var availableModels by remember { mutableStateOf(FrontendQuantaSettingsState.instance.state.availableChatModels) }
-    var agenticEnabled by remember { mutableStateOf(FrontendQuantaSettingsState.instance.state.agenticEnabled ?: true) }
+    val settingsState = FrontendQuantaSettingsState.instance
+    val settingsRevision by settingsState.stateChangeFlow.collectAsState()
+    var voiceEnabled by remember { mutableStateOf(settingsState.state.voiceEnabled) }
+    var selectedModel by remember { mutableStateOf(settingsState.state.aiChatModel) }
+    var availableModels by remember { mutableStateOf(settingsState.state.availableChatModels) }
+    var agenticEnabled by remember { mutableStateOf(settingsState.state.agenticEnabled ?: true) }
     var maxMessageWidth by remember {
         mutableStateOf(
-            FrontendQuantaSettingsState.instance.state.maxMessageWidth.coerceIn(
+            settingsState.state.maxMessageWidth.coerceIn(
                 FrontendQuantaSettingsState.MESSAGE_WIDTH_RANGE,
             ),
         )
@@ -166,7 +166,7 @@ fun chatApp(
             .openMcpToolsDialogFlow
             .collectAsState()
     val delegatedTasks by viewModel.delegatedTasksFlow.collectAsState(emptyList())
-    val channelEvents by viewModel.channelEventsFlow.collectAsState(emptyList())
+
     val quantaAcpInvite by viewModel.quantaAcpInviteFlow.collectAsState(null)
     val availableLocalQuantaAcpSessions by viewModel.availableLocalQuantaAcpSessionsFlow.collectAsState(emptyList())
     val hasRunningAgentWork = delegatedTasks.any { it.status == DelegatedTaskStatusDto.RUNNING }
@@ -180,6 +180,14 @@ fun chatApp(
     var showAgenticTeamDialog by remember { mutableStateOf(false) }
     var showMcpToolsDialog by remember { mutableStateOf(false) }
     var selectedMcpToolCatalogServer by remember { mutableStateOf<McpServerStatusDto?>(null) }
+
+    LaunchedEffect(showAgenticTeamDialog) {
+        viewModel.onAgenticTeamDialogVisibilityChanged(showAgenticTeamDialog)
+    }
+
+    LaunchedEffect(showMcpToolsDialog) {
+        viewModel.onMcpToolsDialogVisibilityChanged(showMcpToolsDialog)
+    }
 
     LaunchedEffect(openMcpToolsDialog) {
         if (openMcpToolsDialog) showMcpToolsDialog = true
@@ -235,25 +243,13 @@ fun chatApp(
         }
     }
 
-    LaunchedEffect(Unit) {
-        while (true) {
-            val settings = FrontendQuantaSettingsState.instance.state
-            if (voiceEnabled != settings.voiceEnabled) {
-                voiceEnabled = settings.voiceEnabled
-            }
-            if (selectedModel != settings.aiChatModel) {
-                selectedModel = settings.aiChatModel
-            }
-            if (availableModels != settings.availableChatModels) {
-                availableModels = settings.availableChatModels
-            }
-            val configuredMaxMessageWidth =
-                settings.maxMessageWidth.coerceIn(FrontendQuantaSettingsState.MESSAGE_WIDTH_RANGE)
-            if (maxMessageWidth != configuredMaxMessageWidth) {
-                maxMessageWidth = configuredMaxMessageWidth
-            }
-            kotlinx.coroutines.delay(300)
-        }
+    LaunchedEffect(settingsRevision) {
+        val settings = settingsState.state
+        voiceEnabled = settings.voiceEnabled
+        selectedModel = settings.aiChatModel
+        availableModels = settings.availableChatModels
+        agenticEnabled = settings.agenticEnabled ?: true
+        maxMessageWidth = settings.maxMessageWidth.coerceIn(FrontendQuantaSettingsState.MESSAGE_WIDTH_RANGE)
     }
 
     LaunchedEffect(chatMessages, voiceEnabled) {
@@ -348,7 +344,8 @@ fun chatApp(
                 agenticEnabled = agenticEnabled,
                 onModelSelected = { model ->
                     selectedModel = model
-                    FrontendQuantaSettingsState.instance.state.aiChatModel = model
+                    settingsState.state.aiChatModel = model
+                    settingsState.notifySettingsChanged()
                 },
                 onToggleMic = { microphoneService.toggleListening() },
                 onToggleAgenticMode = {
@@ -358,7 +355,8 @@ fun chatApp(
                 onToggleMcpTools = { showMcpToolsDialog = true },
                 onToggleVoiceFeedback = {
                     voiceEnabled = !voiceEnabled
-                    FrontendQuantaSettingsState.instance.state.voiceEnabled = voiceEnabled
+                    settingsState.state.voiceEnabled = voiceEnabled
+                    settingsState.notifySettingsChanged()
                     if (!voiceEnabled) {
                         voiceService.stopTalking()
                     }
@@ -384,7 +382,8 @@ fun chatApp(
                     availableLocalQuantaAcpSessions = availableLocalQuantaAcpSessions,
                     onSetAgenticEnabled = { enabled ->
                         agenticEnabled = enabled
-                        FrontendQuantaSettingsState.instance.state.agenticEnabled = enabled
+                        settingsState.state.agenticEnabled = enabled
+                        settingsState.notifySettingsChanged()
                         viewModel.onSetAgenticMode(enabled)
                     },
                     onRefresh = { viewModel.onRefreshAcpAgents() },
@@ -423,7 +422,8 @@ fun chatApp(
                                 val enableAgenticMode = allowed && !agenticEnabled
                                 if (enableAgenticMode) {
                                     agenticEnabled = true
-                                    FrontendQuantaSettingsState.instance.state.agenticEnabled = true
+                                    settingsState.state.agenticEnabled = true
+                                    settingsState.notifySettingsChanged()
                                 }
                                 viewModel.onSetAcpAgentAllowed(agent.id, allowed, enableAgenticMode)
                             }
@@ -1054,80 +1054,6 @@ private fun AcpAgentDto.transportDescription(): String =
         "External · Local application · $executablePath"
     }
 
-@Composable
-private fun channelActivityPanel(
-    modifier: Modifier = Modifier,
-    tasks: List<DelegatedTaskDto>,
-    events: List<AgentChannelEventDto>,
-) {
-    if (tasks.isEmpty() && events.isEmpty()) return
-    Column(
-        modifier =
-            modifier
-                .padding(horizontal = 8.dp, vertical = 4.dp)
-                .background(Color.White.copy(alpha = 0.03f), RoundedCornerShape(8.dp))
-                .padding(8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Text("Team channel", fontWeight = FontWeight.SemiBold)
-        tasks.takeLast(3).forEach { task ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Box(
-                    modifier =
-                        Modifier
-                            .size(8.dp)
-                            .background(taskStatusColor(task.status), RoundedCornerShape(99.dp)),
-                )
-                Text(task.title, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                Text(task.status.name.lowercase(), fontSize = 11.sp, color = ChatAppColors.Text.disabled)
-                if (task.assignedRoles.isNotEmpty()) {
-                    Text(
-                        task.assignedRoles.joinToString(", "),
-                        fontSize = 11.sp,
-                        color = ChatAppColors.Text.disabled,
-                    )
-                }
-            }
-        }
-        events.takeLast(4).forEach { event ->
-            if (event.kind.name == "TOOL_ACTIVITY") {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(eventAuthorLabel(event), fontSize = 11.sp, color = ChatAppColors.Text.disabled)
-                    Box(
-                        modifier =
-                            Modifier
-                                .background(Color.White.copy(alpha = 0.06f), RoundedCornerShape(999.dp))
-                                .padding(horizontal = 8.dp, vertical = 4.dp),
-                    ) {
-                        Text(event.text, fontSize = 11.sp)
-                    }
-                }
-            } else {
-                Text(
-                    text = "${eventAuthorLabel(event)}: ${event.text}",
-                    fontSize = 11.sp,
-                    color = ChatAppColors.Text.disabled,
-                )
-            }
-        }
-    }
-}
-
-private fun eventAuthorLabel(event: AgentChannelEventDto): String =
-    when (event.authorType) {
-        AgentChannelAuthorTypeDto.DIRECTOR -> "Director"
-        AgentChannelAuthorTypeDto.MANAGER -> event.authorRole ?: "Manager"
-        AgentChannelAuthorTypeDto.AGENT -> event.authorRole ?: "Agent"
-        AgentChannelAuthorTypeDto.SYSTEM -> "System"
-    }
-
 private fun taskStatusColor(status: DelegatedTaskStatusDto): Color =
     when (status) {
         DelegatedTaskStatusDto.QUEUED -> Color(0xFFEBCB8B)
@@ -1328,14 +1254,6 @@ private fun agentPresenceAvatar(presence: AgentPresence) {
     }
 
     val isWorking = presence.state == AgentPresenceState.WORKING
-    val activityTransition = rememberInfiniteTransition(label = "agentPresenceActivity")
-    val activityPulse by
-        activityTransition.animateFloat(
-            initialValue = 0.25f,
-            targetValue = 0.75f,
-            animationSpec = infiniteRepeatable(tween(durationMillis = 900, easing = LinearEasing)),
-            label = "agentPresencePulse",
-        )
 
     if (showProfileDialog) {
         agentProfileDialog(
@@ -1355,18 +1273,28 @@ private fun agentPresenceAvatar(presence: AgentPresence) {
                 .onPointerEvent(PointerEventType.Exit) { isAvatarHovered = false },
         contentAlignment = Alignment.Center,
     ) {
-        Canvas(
-            modifier =
-                Modifier
-                    .size(42.dp)
-                    .alpha(if (isWorking) activityPulse else 0f),
-        ) {
-            val strokeWidth = 2.dp.toPx()
-            drawCircle(
-                color = presence.state.color,
-                radius = size.minDimension / 2 - strokeWidth / 2 - 1.dp.toPx(),
-                style = Stroke(width = strokeWidth),
-            )
+        if (isWorking) {
+            val activityTransition = rememberInfiniteTransition(label = "agentPresenceActivity")
+            val activityPulse by
+                activityTransition.animateFloat(
+                    initialValue = 0.25f,
+                    targetValue = 0.75f,
+                    animationSpec = infiniteRepeatable(tween(durationMillis = 900, easing = LinearEasing)),
+                    label = "agentPresencePulse",
+                )
+            Canvas(
+                modifier =
+                    Modifier
+                        .size(42.dp)
+                        .alpha(activityPulse),
+            ) {
+                val strokeWidth = 2.dp.toPx()
+                drawCircle(
+                    color = presence.state.color,
+                    radius = size.minDimension / 2 - strokeWidth / 2 - 1.dp.toPx(),
+                    style = Stroke(width = strokeWidth),
+                )
+            }
         }
         if (showStatusPopup) {
             val hoverSummary =

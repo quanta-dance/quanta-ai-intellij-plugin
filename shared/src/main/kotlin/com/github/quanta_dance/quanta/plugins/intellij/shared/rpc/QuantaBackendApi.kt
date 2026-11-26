@@ -5,7 +5,6 @@ package com.github.quanta_dance.quanta.plugins.intellij.shared.rpc
 
 import com.github.quanta_dance.quanta.plugins.intellij.models.Suggestion
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AcpAgentDto
-import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ApplyRefactorSuggestionResultDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
@@ -42,7 +41,11 @@ interface QuantaBackendApi : RemoteApi<Unit> {
         entry: FrontendLogDto,
     )
 
+    /** Returns the full current plan state when plan details are required by the UI. */
     suspend fun getCurrentPlanStatus(projectPath: String): ChatPlanStatusDto
+
+    /** Returns the current plan revision without serializing the complete plan text and task lists. */
+    suspend fun getCurrentPlanRevision(projectPath: String): Long
 
     /** Returns the last verified ACP roster without starting a new discovery probe. */
     suspend fun getKnownAcpAgents(projectPath: String): List<AcpAgentDto>
@@ -52,6 +55,9 @@ interface QuantaBackendApi : RemoteApi<Unit> {
 
     /** Returns configured MCP servers and whether their synced configuration is still being applied. */
     suspend fun getMcpServerStatuses(projectPath: String): McpServerStatusesDto
+
+    /** Consumes a pending request from an IDE notification to open the MCP tools dialog. */
+    suspend fun consumeMcpToolsDialogRequest(projectPath: String): Boolean
 
     /** Retries the selected MCP server's connection/authentication flow without blocking the caller. */
     suspend fun retryMcpServerConnection(
@@ -65,8 +71,6 @@ interface QuantaBackendApi : RemoteApi<Unit> {
     suspend fun getCollaborationParticipants(projectPath: String): List<CollaborationParticipantDto>
 
     suspend fun getCurrentDelegatedTasks(projectPath: String): List<DelegatedTaskDto>
-
-    suspend fun getCurrentChannelEvents(projectPath: String): List<AgentChannelEventDto>
 
     suspend fun createDefaultAgentTeam(projectPath: String): List<AgentInfoDto>
 

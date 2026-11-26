@@ -19,6 +19,8 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
+import com.intellij.openapi.wm.ToolWindowManager
+import com.intellij.openapi.wm.ex.ToolWindowManagerListener
 import org.jetbrains.jewel.bridge.addComposeTab
 
 /**
@@ -44,10 +46,20 @@ class QuantaFrontendToolWindowFactory :
         project: Project,
         toolWindow: ToolWindow,
     ) {
+        val repository = FrontendChatRepositoryModel.getInstance(project)
+        repository.setToolWindowVisible(toolWindow.isVisible)
+        project.messageBus.connect(toolWindow.disposable).subscribe(
+            ToolWindowManagerListener.TOPIC,
+            object : ToolWindowManagerListener {
+                override fun stateChanged(toolWindowManager: ToolWindowManager) {
+                    repository.setToolWindowVisible(toolWindow.isVisible)
+                }
+            },
+        )
         val viewModel =
             ChatViewModel(
                 CoroutineScopeHolder.getInstance(project).createScope(ChatViewModel::class.java.simpleName),
-                FrontendChatRepositoryModel.getInstance(project),
+                repository,
             )
         val voiceService = project.service<FrontendAIVoiceService>()
         Disposer.register(toolWindow.disposable, viewModel)

@@ -10,6 +10,10 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.State
 import com.intellij.openapi.components.Storage
 import com.intellij.openapi.components.service
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import java.util.concurrent.atomic.AtomicLong
 
 @Service(Service.Level.APP)
 @State(
@@ -53,6 +57,12 @@ class FrontendQuantaSettingsState : PersistentStateComponent<FrontendQuantaSetti
             get() = ApplicationManager.getApplication().service<FrontendQuantaSettingsState>()
     }
 
+    private val stateChangeRevision = AtomicLong(0)
+    private val _stateChangeFlow = MutableStateFlow(0L)
+
+    /** Emits after settings are changed locally or loaded from the backend. */
+    val stateChangeFlow: StateFlow<Long> = _stateChangeFlow.asStateFlow()
+
     private var state = State()
 
     override fun getState(): State = state
@@ -60,5 +70,11 @@ class FrontendQuantaSettingsState : PersistentStateComponent<FrontendQuantaSetti
     override fun loadState(state: State) {
         state.maxMessageWidth = state.maxMessageWidth.coerceIn(MESSAGE_WIDTH_RANGE)
         this.state = state
+        notifySettingsChanged()
+    }
+
+    /** Notifies live UI consumers after callers mutate [state] in place. */
+    fun notifySettingsChanged() {
+        _stateChangeFlow.value = stateChangeRevision.incrementAndGet()
     }
 }

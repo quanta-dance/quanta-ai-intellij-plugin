@@ -18,7 +18,6 @@ import com.github.quanta_dance.quanta.plugins.intellij.backend.tools.mcp.McpClie
 import com.github.quanta_dance.quanta.plugins.intellij.models.Suggestion
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.QuantaBackendApi
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AcpAgentDto
-import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ApplyRefactorSuggestionResultDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
@@ -76,6 +75,11 @@ class QuantaBackendRpcApi : QuantaBackendApi {
         return backendProject.service<SessionPlanService>().getCurrentPlanStatus()
     }
 
+    override suspend fun getCurrentPlanRevision(projectPath: String): Long {
+        val backendProject = findBackendProject(projectPath) ?: return -1
+        return backendProject.service<SessionPlanService>().currentPlanRevision()
+    }
+
     override suspend fun getKnownAcpAgents(projectPath: String): List<AcpAgentDto> {
         val backendProject = findBackendProject(projectPath) ?: return emptyList()
         return backendProject.service<AcpAgentRosterService>().agents()
@@ -113,8 +117,12 @@ class QuantaBackendRpcApi : QuantaBackendApi {
             servers = servers,
             configurationLoading = mcp.isConfigurationLoading(),
             configurationError = mcp.getConfigLoadError(),
-            openToolsDialog = mcp.consumeMcpToolsDialogRequest(),
         )
+    }
+
+    override suspend fun consumeMcpToolsDialogRequest(projectPath: String): Boolean {
+        val backendProject = findBackendProject(projectPath) ?: return false
+        return backendProject.service<McpClientService>().consumeMcpToolsDialogRequest()
     }
 
     override suspend fun retryMcpServerConnection(
@@ -143,13 +151,6 @@ class QuantaBackendRpcApi : QuantaBackendApi {
         return backendProject
             .service<com.github.quanta_dance.quanta.plugins.intellij.backend.chat.AgentChannelStateService>()
             .tasksFlow.value
-    }
-
-    override suspend fun getCurrentChannelEvents(projectPath: String): List<AgentChannelEventDto> {
-        val backendProject = findBackendProject(projectPath) ?: return emptyList()
-        return backendProject
-            .service<com.github.quanta_dance.quanta.plugins.intellij.backend.chat.AgentChannelStateService>()
-            .eventsFlow.value
     }
 
     override suspend fun createDefaultAgentTeam(projectPath: String): List<AgentInfoDto> {

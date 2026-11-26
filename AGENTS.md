@@ -73,6 +73,18 @@ Conventions and safety rules (must follow)
 - If you find a package where responsibilities overlap, keep the existing split, add a TODO in code or docs, and
   continue the documentation pass so the conflict stays visible.
 
+Performance maintenance workflow
+
+- Treat idle CPU, allocation rate, and rendering churn as regressions: a Quanta tool window that is hidden, idle, or displaying only static content must not run periodic UI animations, busy loops, or broad snapshot requests.
+- Profile before optimizing. Reproduce the issue, capture a 30–60 second IntelliJ CPU snapshot, and distinguish IDE/Skia rendering, `DefaultDispatcher` work, Gradle/compiler JVMs, and external processes before changing code.
+- Prefer event-driven invalidation (IntelliJ message bus, `StateFlow`, lifecycle visibility, explicit dialog open/close callbacks, and local action completion) over fixed-interval polling. When an RPC stream is incompatible with plugin verification, use a visibility-aware adaptive poll as the fallback.
+- Scope snapshot work to visible UI: do not fetch dialog-only data until its dialog is open, pause polling when the tool window is hidden, and refresh immediately on visibility or explicit user action so state is never needlessly stale.
+- Do not create `rememberInfiniteTransition`, timers, or long-lived coroutines for invisible or static UI. Create and dispose animations only while the corresponding visible element is actively changing.
+- Keep polling payloads narrow. Split cheap notification/revision checks from expensive lists, tool catalogs, and DTO graphs; fetch detailed payloads only after a change signal or visible consumer requires them.
+- Preserve cancellation semantics: delayed jobs and polling loops must be tied to the project/tool-window lifecycle, cancel promptly, and never log normal coroutine cancellation as an error.
+- Add a focused regression test for every polling, scheduling, or refresh-policy change. Test the decision boundary (idle vs. active, hidden vs. visible, and dialog closed vs. open) rather than depending on wall-clock timing.
+- Run the existing static formatting lint (`./gradlew spotlessCheck`) and the affected module tests for performance changes. Do not add broad static-analysis tooling without a clean baseline and a CI-enforced configuration; maintain current lint gates and add narrowly scoped tests first.
+
 Documentation maintenance workflow
 
 - Start from executable behavior and work upward.

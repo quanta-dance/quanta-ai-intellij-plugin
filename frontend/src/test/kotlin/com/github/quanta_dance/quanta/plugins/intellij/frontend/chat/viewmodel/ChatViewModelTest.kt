@@ -5,7 +5,6 @@ package com.github.quanta_dance.quanta.plugins.intellij.frontend.chat.viewmodel
 
 import com.github.quanta_dance.quanta.plugins.intellij.shared.contracts.ChatMessage
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AcpAgentDto
-import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentChannelEventDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.AgentInfoDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatPlanStatusDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.ChatSessionDto
@@ -14,6 +13,7 @@ import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.Delegat
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.LocalQuantaAcpSessionDto
 import com.github.quanta_dance.quanta.plugins.intellij.shared.rpc.models.McpServerStatusDto
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
@@ -81,6 +81,24 @@ class ChatViewModelTest {
             viewModel.dispose()
         }
 
+    @Test
+    fun `forwards dialog visibility changes without a polling timer`() =
+        runBlocking {
+            val repository = mockRepository()
+            val viewModel =
+                ChatViewModel(
+                    coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+                    repository = repository,
+                )
+
+            viewModel.onAgenticTeamDialogVisibilityChanged(true)
+            viewModel.onMcpToolsDialogVisibilityChanged(true)
+
+            coVerify(exactly = 1) { repository.setAgenticTeamDialogVisible(true) }
+            coVerify(exactly = 1) { repository.setMcpToolsDialogVisible(true) }
+            viewModel.dispose()
+        }
+
     private fun mockRepository(): ChatRepositoryApi =
         mockk {
             every { messagesFlow } returns MutableStateFlow(emptyList<ChatMessage>())
@@ -95,7 +113,7 @@ class ChatViewModelTest {
             every { mcpConfigurationLoadingFlow } returns MutableStateFlow(false)
             every { mcpConfigurationErrorFlow } returns MutableStateFlow<String?>(null)
             every { delegatedTasksFlow } returns MutableStateFlow(emptyList<DelegatedTaskDto>())
-            every { channelEventsFlow } returns MutableStateFlow(emptyList<AgentChannelEventDto>())
+
             every { quantaAcpInviteFlow } returns MutableStateFlow<String?>(null)
             every { availableLocalQuantaAcpSessionsFlow } returns MutableStateFlow(emptyList<LocalQuantaAcpSessionDto>())
         }
